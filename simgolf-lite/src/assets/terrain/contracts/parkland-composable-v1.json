@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "id": "parkland-composable-material-v1",
+  "theme": "parkland",
+  "status": "source-contract-only",
+  "runtimeAdoption": "downstream-zk459-zk461",
+  "source": {
+    "root": "src/assets/terrain/parkland-composable-v1",
+    "manifest": "manifest.json",
+    "generator": "scripts/gen-parkland-composable-assets.mjs",
+    "audit": "scripts/parkland-composable-asset-audit.mjs",
+    "author": "CourseCraft",
+    "externalProvider": "none",
+    "referencePixelsCopied": false,
+    "license": "project-original"
+  },
+  "phase": {
+    "id": "parkland-common-phase-v1",
+    "worldPeriodTiles": 8,
+    "origin": { "tileX": 0, "tileY": 0 },
+    "coordinateRule": "sample world coordinates modulo 8 tiles before applying the logical clip",
+    "wrapRule": "opposite borders are byte-identical",
+    "independentPerCellPhase": false
+  },
+  "qualities": {
+    "high": {
+      "scale": 4,
+      "fieldSourceSize": { "width": 256, "height": 256 },
+      "cellOutputSize": { "width": 256, "height": 128 },
+      "detailPolicy": "64 shared-phase irregular stamps; narrowest tuft radii and seven broken mowing swaths"
+    },
+    "medium": {
+      "scale": 2,
+      "fieldSourceSize": { "width": 128, "height": 128 },
+      "cellOutputSize": { "width": 128, "height": 64 },
+      "detailPolicy": "34-stamp deterministic prefix; medium tuft radii and five broken mowing swaths"
+    },
+    "low": {
+      "scale": 1,
+      "fieldSourceSize": { "width": 64, "height": 64 },
+      "cellOutputSize": { "width": 64, "height": 32 },
+      "policy": "explicit deterministic 16-stamp variant with broad readable tufts and three mowing swaths; never derive from legacy diamond bases"
+    }
+  },
+  "layers": {
+    "undercoat": {
+      "file": "{quality}/undercoat.png",
+      "coverage": "opaque exact-cell union backing plane",
+      "outlineFree": true,
+      "intendedOpacity": 255
+    },
+    "semanticCues": {
+      "file": "{quality}/semantic-{semantic}.png",
+      "semantics": ["fairway", "rough", "deep_rough", "green", "tee"],
+      "phase": "parkland-common-phase-v1",
+      "compositeLumaRange": [94, 126],
+      "maximumCompositeMeanLumaDelta": 24,
+      "minimumRgbCentroidDistance": 5,
+      "minimumPatternDistance": 0.04,
+      "minimumRoughUndercoatRgbDistance": 10,
+      "minimumRoughFairwayRgbDistance": 15,
+      "minimumTierCompositeDistance": { "highMedium": 1, "mediumLow": 1, "highLow": 2 },
+      "fullDiamondOutlines": false,
+      "patterns": {
+        "fairway": "tiered-broken-mowing-swaths",
+        "rough": "toroidal-irregular-blade-tufts",
+        "deep_rough": "toroidal-clustered-long-tufts",
+        "green": "toroidal-fine-care-specks",
+        "tee": "toroidal-short-care-stamps"
+      }
+    },
+    "pairHalfEdges": {
+      "file": "{quality}/edge-{pair}-{direction}.png",
+      "pairs": [
+        "fairway--rough",
+        "fairway--deep_rough",
+        "fairway--green",
+        "fairway--tee",
+        "rough--deep_rough",
+        "rough--green",
+        "rough--tee",
+        "deep_rough--green",
+        "deep_rough--tee",
+        "green--tee"
+      ],
+      "directions": ["n", "e", "s", "w"],
+      "transparentInterior": true,
+      "fullCellInteriorAlpha": false,
+      "rendering": "four crisp alpha/color bands with no feathered haze",
+      "metadata": ["pair", "direction", "logicalAnchor", "clipBounds", "intendedOpacity", "transformFromNorth"]
+    },
+    "pairCorners": {
+      "file": "{quality}/corner-{pair}-{corner}.png",
+      "corners": ["ne", "se", "sw", "nw"],
+      "samePairOnly": true,
+      "metadata": ["pair", "corner", "compatibleEdges", "logicalAnchor", "clipBounds", "intendedOpacity", "transformFromNorthEast"]
+    },
+    "hazardProofs": {
+      "file": "{quality}/hazard-{hazard}.png",
+      "hazards": ["water", "sand", "bunker", "shore"],
+      "role": "CourseCraft style primitives only; not gameplay masks or shape authoring",
+      "coordinatesWith": ["ZK-712", "ZK-713"],
+      "requirements": ["connected-organic-silhouette", "transparent-exterior", "recessed-depth-or-lip-palette", "no-diamond-or-square-outline"]
+    }
+  },
+  "palette": {
+    "modes": ["standard", "deuteranopia", "protanopia", "tritanopia"],
+    "metadataOwner": "source manifest palettes",
+    "minimumPairRgbDistance": 23,
+    "nonColorIdentityRequired": true,
+    "runtimePolicy": "consumer may tint semantic cues from the declared palette but must preserve the semantic pattern id"
+  },
+  "consumerInterface": {
+    "order": ["common undercoat", "one semantic cue", "pair half-edges", "same-pair corners", "renderer-owned details"],
+    "sampling": "world-phase sampling; clip only after sampling",
+    "undercoatCoverage": "draw once across the exact visible cell union, never once per cell",
+    "semanticCoverage": "draw one cue field per semantic region using the shared phase",
+    "edgeSelection": "canonical unordered pair plus side direction",
+    "cornerSelection": "same canonical unordered pair plus joined side corner",
+    "alpha": "straight RGBA source; consumer uses premultiplied blending",
+    "logicalCell": { "width": 64, "height": 32, "anchor": { "x": 32, "y": 16 } },
+    "topologyAuthority": "downstream renderer/geometry; these assets never define simulation or gameplay shapes",
+    "fallback": "retain the current Parkland runtime until ZK-459 and ZK-461 adopt this contract"
+  },
+  "atlas": {
+    "gutterPx": 2,
+    "scaleByQuality": { "high": 4, "medium": 2, "low": 1 },
+    "lossless": true,
+    "requiredManifestFields": ["sha256", "bytes", "width", "height", "role", "quality", "logicalAnchor", "clipBounds"]
+  },
+  "determinism": {
+    "hashAlgorithm": "sha256",
+    "manifestVersion": 1,
+    "independentGenerationRootsMustMatch": true,
+    "transparentRgb": "generated transparent pixels remain zeroed"
+  },
+  "metrics": {
+    "maximumWrapChannelDelta": 0,
+    "maximumCheckerboardScore": 1.5,
+    "maximumDeepRoughDiagonalAutocorrelation": 0.36,
+    "maximumCellBoundaryLumaDelta": 3,
+    "maximumHalfEdgeAlphaCoverage": 0.12,
+    "maximumCornerAlphaCoverage": 0.08,
+    "maximumTransitionInteriorDepth": 0.24,
+    "minimumHazardAlphaCoverage": 0.12,
+    "maximumHazardAlphaCoverage": 0.55,
+    "minimumHazardBoundaryRadialVariance": 0.001
+  },
+  "proofPolicy": {
+    "rawAlphaBacking": "8px-neutral-checkerboard",
+    "opaqueDiamondBackingAllowed": false,
+    "syntheticPairBoundaryAllowed": false,
+    "pairBoundary": "tile-snapped-straight-with-one-step",
+    "displayedSourceHashesRequired": true
+  },
+  "budgets": {
+    "sourceBytesMax": 4194304,
+    "filesMax": 271,
+    "futureAtlasBytesMax": 6291456,
+    "futureSelectedTransferBytesMax": 2097152,
+    "runtimeBytesAddedByThisPacket": 0
+  },
+  "rollback": {
+    "action": "remove the sidecar contract, generated source directory, generator, audit and package scripts",
+    "runtimeImpact": "none until downstream adoption"
+  }
+}

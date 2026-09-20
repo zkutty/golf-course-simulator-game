@@ -1,0 +1,8438 @@
+{
+  "version": 1,
+  "id": "parkland-composable-material-source-v1",
+  "contract": "../contracts/parkland-composable-v1.json",
+  "generatedBy": "scripts/gen-parkland-composable-assets.mjs",
+  "algorithm": "coursecraft-toroidal-stamps-and-crisp-multiband-half-edge-v2",
+  "hashAlgorithm": "sha256",
+  "provenance": {
+    "author": "CourseCraft",
+    "externalProvider": "none",
+    "referencePixelsCopied": false,
+    "sourceKind": "deterministic-procedural-original"
+  },
+  "phase": {
+    "id": "parkland-common-phase-v1",
+    "worldPeriodTiles": 8,
+    "origin": {
+      "tileX": 0,
+      "tileY": 0
+    },
+    "wrap": "byte-identical-opposite-borders"
+  },
+  "vocabulary": {
+    "semantics": [
+      "fairway",
+      "rough",
+      "deep_rough",
+      "green",
+      "tee"
+    ],
+    "pairs": [
+      "fairway--rough",
+      "fairway--deep_rough",
+      "fairway--green",
+      "fairway--tee",
+      "rough--deep_rough",
+      "rough--green",
+      "rough--tee",
+      "deep_rough--green",
+      "deep_rough--tee",
+      "green--tee"
+    ],
+    "directions": [
+      "n",
+      "e",
+      "s",
+      "w"
+    ],
+    "corners": [
+      "ne",
+      "se",
+      "sw",
+      "nw"
+    ],
+    "hazards": [
+      "water",
+      "sand",
+      "bunker",
+      "shore"
+    ]
+  },
+  "palettes": {
+    "standard": {
+      "undercoat": [
+        73,
+        124,
+        64
+      ],
+      "fairway": [
+        101,
+        158,
+        75
+      ],
+      "rough": [
+        45,
+        112,
+        75
+      ],
+      "deep_rough": [
+        30,
+        89,
+        42
+      ],
+      "green": [
+        78,
+        166,
+        94
+      ],
+      "tee": [
+        135,
+        157,
+        76
+      ]
+    },
+    "deuteranopia": {
+      "undercoat": [
+        82,
+        112,
+        105
+      ],
+      "fairway": [
+        74,
+        153,
+        187
+      ],
+      "rough": [
+        95,
+        119,
+        132
+      ],
+      "deep_rough": [
+        58,
+        88,
+        119
+      ],
+      "green": [
+        68,
+        178,
+        164
+      ],
+      "tee": [
+        205,
+        164,
+        69
+      ]
+    },
+    "protanopia": {
+      "undercoat": [
+        80,
+        113,
+        101
+      ],
+      "fairway": [
+        65,
+        151,
+        184
+      ],
+      "rough": [
+        92,
+        121,
+        125
+      ],
+      "deep_rough": [
+        55,
+        87,
+        111
+      ],
+      "green": [
+        74,
+        174,
+        156
+      ],
+      "tee": [
+        211,
+        167,
+        73
+      ]
+    },
+    "tritanopia": {
+      "undercoat": [
+        93,
+        115,
+        73
+      ],
+      "fairway": [
+        78,
+        154,
+        94
+      ],
+      "rough": [
+        105,
+        111,
+        57
+      ],
+      "deep_rough": [
+        80,
+        86,
+        47
+      ],
+      "green": [
+        67,
+        168,
+        118
+      ],
+      "tee": [
+        199,
+        126,
+        137
+      ]
+    }
+  },
+  "patterns": {
+    "fairway": "tiered-broken-mowing-swaths",
+    "rough": "toroidal-irregular-blade-tufts",
+    "deep_rough": "toroidal-clustered-long-tufts",
+    "green": "toroidal-fine-care-specks",
+    "tee": "toroidal-short-care-stamps"
+  },
+  "qualities": {
+    "high": {
+      "field": 256,
+      "cellWidth": 256,
+      "cellHeight": 128,
+      "scale": 4,
+      "stampCount": 64,
+      "detailScale": 1
+    },
+    "medium": {
+      "field": 128,
+      "cellWidth": 128,
+      "cellHeight": 64,
+      "scale": 2,
+      "stampCount": 34,
+      "detailScale": 0.68
+    },
+    "low": {
+      "field": 64,
+      "cellWidth": 64,
+      "cellHeight": 32,
+      "scale": 1,
+      "stampCount": 16,
+      "detailScale": 0.36
+    }
+  },
+  "atlas": {
+    "gutterPx": 2,
+    "lossless": true,
+    "scaleByQuality": {
+      "high": 4,
+      "medium": 2,
+      "low": 1
+    }
+  },
+  "files": {
+    "high/undercoat.png": {
+      "bytes": 9550,
+      "sha256": "d1b90d65e64a1090f6f50b06a632886f733ddd2fb6b7b39684fb3d86b7bc0a02",
+      "width": 256,
+      "height": 256,
+      "role": "common-undercoat",
+      "quality": "high",
+      "worldPeriodTiles": 8,
+      "logicalAnchor": {
+        "x": 0,
+        "y": 0
+      },
+      "intendedOpacity": 255
+    },
+    "high/semantic-fairway.png": {
+      "bytes": 2176,
+      "sha256": "e7a101412e88aed1120ba7b1b18dd1845c62f24010f95d2eaf01375b636195d8",
+      "width": 256,
+      "height": 256,
+      "role": "semantic-cue",
+      "semantic": "fairway",
+      "quality": "high",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "tiered-broken-mowing-swaths",
+      "intendedOpacityRange": [
+        42,
+        76
+      ]
+    },
+    "high/semantic-rough.png": {
+      "bytes": 12040,
+      "sha256": "f0110ba54505b7a0d6b3f4a2aa73475d0f17d9a4fe13292e3ab206c5bcf72be2",
+      "width": 256,
+      "height": 256,
+      "role": "semantic-cue",
+      "semantic": "rough",
+      "quality": "high",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-irregular-blade-tufts",
+      "intendedOpacityRange": [
+        108,
+        192
+      ]
+    },
+    "high/semantic-deep_rough.png": {
+      "bytes": 27041,
+      "sha256": "34c7b0e227ff04873172813592a0aa3ec66684dcc94ff55a49d4c30008b40800",
+      "width": 256,
+      "height": 256,
+      "role": "semantic-cue",
+      "semantic": "deep_rough",
+      "quality": "high",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-clustered-long-tufts",
+      "intendedOpacityRange": [
+        68,
+        182
+      ]
+    },
+    "high/semantic-green.png": {
+      "bytes": 7437,
+      "sha256": "5b4bdf8849fced4282014831a1cba4a3bca882ef14e3c4a1e2886ae43c88a587",
+      "width": 256,
+      "height": 256,
+      "role": "semantic-cue",
+      "semantic": "green",
+      "quality": "high",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-fine-care-specks",
+      "intendedOpacityRange": [
+        64,
+        127
+      ]
+    },
+    "high/semantic-tee.png": {
+      "bytes": 8031,
+      "sha256": "c69a7576b23e10358cc3a3084739dcb9945f09768e57cf5869035298bbf585ee",
+      "width": 256,
+      "height": 256,
+      "role": "semantic-cue",
+      "semantic": "tee",
+      "quality": "high",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-short-care-stamps",
+      "intendedOpacityRange": [
+        90,
+        170
+      ]
+    },
+    "high/edge-fairway--rough-n.png": {
+      "bytes": 993,
+      "sha256": "4921de19f02631b2a6ae82968e5026e3b924eaa1fe3ec2449fe6ed9ede149ed9",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "n",
+      "quality": "high",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--rough-e.png": {
+      "bytes": 1037,
+      "sha256": "dd63ea43ed1e489b5f6d55f8172faccdcb70aaf6c0336335cf0da92d770f8db6",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "e",
+      "quality": "high",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--rough-s.png": {
+      "bytes": 959,
+      "sha256": "c74d67d31d1fdc039932e92d72751486a67e348bfa30fc801ee24dcb956ad3ca",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "s",
+      "quality": "high",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--rough-w.png": {
+      "bytes": 958,
+      "sha256": "c091c7bc00735e5980abf31688638bb412f883cbfdf7490141d8b04abc9be727",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "w",
+      "quality": "high",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/corner-fairway--rough-ne.png": {
+      "bytes": 357,
+      "sha256": "b1c53c2a0e74f9323fab571a68e71a7861ce301d96cec65830ff024cb0359c33",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "ne",
+      "quality": "high",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 240,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--rough-se.png": {
+      "bytes": 321,
+      "sha256": "decd25b9cd62f65e2732a0d55de92d44e1dfbf89f73e533cbcd14dfd96b54dd1",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "se",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 120,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--rough-sw.png": {
+      "bytes": 355,
+      "sha256": "acb13911d92f75af209fe39dc268ec3603b99888cbfb3eb5e424fc163950b9ee",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "sw",
+      "quality": "high",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--rough-nw.png": {
+      "bytes": 323,
+      "sha256": "7fa9c8073665d1822f9e8ac6037535b1418ab41d00ff48f681ab34ff9c5ceca4",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "nw",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 1,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/edge-fairway--deep_rough-n.png": {
+      "bytes": 849,
+      "sha256": "e249a36ce9984a8f7b8330d746d9432a2f4d0bd68400c4d22d8094e702e28f3a",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "n",
+      "quality": "high",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--deep_rough-e.png": {
+      "bytes": 902,
+      "sha256": "02a745a3bd6b74df4fdb23ab7558dd46f0c0121925c497a3f8f36963e7f37833",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "e",
+      "quality": "high",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--deep_rough-s.png": {
+      "bytes": 839,
+      "sha256": "974383f6e1bbc6e682beca94e4590c5ef556925090dd0b75eaa21454ca8650b5",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "s",
+      "quality": "high",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--deep_rough-w.png": {
+      "bytes": 860,
+      "sha256": "8d8214b6e53fc5ba2e4a503e69f719b0a8a5b848dcf1d545c26121872acf1ad7",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "w",
+      "quality": "high",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/corner-fairway--deep_rough-ne.png": {
+      "bytes": 371,
+      "sha256": "c5ff6678f5ef6fb911a4bf900dd26e510b89b3d3b4d77747861c7adad67eca53",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "ne",
+      "quality": "high",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 240,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--deep_rough-se.png": {
+      "bytes": 335,
+      "sha256": "8b938f723d24a1ee7b05505942849194f72db633cb9a5bf0ae92e2f19db1ab32",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "se",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 120,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--deep_rough-sw.png": {
+      "bytes": 372,
+      "sha256": "f776ff763a6d1ab10d37c0aa050c2c1a122df4c1cc54c7388eb5efe2f16585fd",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "sw",
+      "quality": "high",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--deep_rough-nw.png": {
+      "bytes": 338,
+      "sha256": "a42d2fe3aeca46e37f722df8c691c2d1ef04c4906b6ffdb4c0ff0dcc19e00892",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "nw",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 1,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/edge-fairway--green-n.png": {
+      "bytes": 870,
+      "sha256": "2c317916f651204cc789e388231fda201e189fc4cdda86792ed57f7a4dcf60e2",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "n",
+      "quality": "high",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--green-e.png": {
+      "bytes": 925,
+      "sha256": "c5d3a6926ea6d03ee17b5532b94b6bbedd44917f6740708f908ea9e2c2ea9357",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "e",
+      "quality": "high",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--green-s.png": {
+      "bytes": 844,
+      "sha256": "76cd2d5d6f19d24fb30f82ded0cfa62e0adce5ed5d0e56721beef4beb4141434",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "s",
+      "quality": "high",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--green-w.png": {
+      "bytes": 863,
+      "sha256": "d066f7180afd5fcb22b1970cf2dc82e83b3b7fbb3b956e50ec8cabc2c30c42a0",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "w",
+      "quality": "high",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/corner-fairway--green-ne.png": {
+      "bytes": 348,
+      "sha256": "c83204007620b7af8074af703ad37b22049bf8489e2fa2789dc070766cf8c9df",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "ne",
+      "quality": "high",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 240,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--green-se.png": {
+      "bytes": 342,
+      "sha256": "3a309328e6bf08abd34e81410700f90f1d3969d9234954d9ca23f2c6c36dfb25",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "se",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 120,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--green-sw.png": {
+      "bytes": 357,
+      "sha256": "ab92c9f1212bf4c4a0d9732e898a1190ded42c5fa3ece12089a69acd384c8afd",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "sw",
+      "quality": "high",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--green-nw.png": {
+      "bytes": 344,
+      "sha256": "01a839a6d170bdd08d4e6e424f261c8eb595bc191ae2ac4aaed7c4bf604806d3",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "nw",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 1,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/edge-fairway--tee-n.png": {
+      "bytes": 911,
+      "sha256": "f661c65d34a0b12a7d29ce7ff08d3fcc12c5a915ea043b95946c54b628de520a",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "n",
+      "quality": "high",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--tee-e.png": {
+      "bytes": 954,
+      "sha256": "470ee4a890f34856ee5bd0f5ea6905f82ac3c3bf56ba1014dd4d8af3ae9ac238",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "e",
+      "quality": "high",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--tee-s.png": {
+      "bytes": 868,
+      "sha256": "57eccfae09b9399c428da0faed365f2505889e90e939ae836f1ddfc79477fe65",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "s",
+      "quality": "high",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-fairway--tee-w.png": {
+      "bytes": 881,
+      "sha256": "d8068a2955c0c50980e4e20ad78eccc0d9351dbff14acf0eb8ba42c483ec606f",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "w",
+      "quality": "high",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/corner-fairway--tee-ne.png": {
+      "bytes": 363,
+      "sha256": "113130e968bb774d873a6d77297953a4120955f86d36fe16b0d684c9ab338878",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "ne",
+      "quality": "high",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 240,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--tee-se.png": {
+      "bytes": 345,
+      "sha256": "b36aedbfbe8ecf3293b35c6a0433a7a668a93db74de14edcb94e832223b03fe9",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "se",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 120,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--tee-sw.png": {
+      "bytes": 360,
+      "sha256": "56afc06f923fa637719f6a4d446bdc0286dd258f0252dab6e0c49576d189c1aa",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "sw",
+      "quality": "high",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-fairway--tee-nw.png": {
+      "bytes": 354,
+      "sha256": "12314c4ec9ef547ae60cfd5aac14ea75f208903dfe2c590c9e124b37559b4701",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "nw",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 1,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/edge-rough--deep_rough-n.png": {
+      "bytes": 987,
+      "sha256": "3018505557b5db0586b2a43cbe505c8eba045d0ae888c9d6e0f75d33bba68836",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "n",
+      "quality": "high",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-rough--deep_rough-e.png": {
+      "bytes": 969,
+      "sha256": "5fc63edb343cf9ffa9c207bd6b8d468a863a90b5c914682eced86ca3bf776481",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "e",
+      "quality": "high",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-rough--deep_rough-s.png": {
+      "bytes": 916,
+      "sha256": "51c7d806a6203b7ecc8ba5ede8da629d069c2e1f966b08a230949dcb6966a049",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "s",
+      "quality": "high",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-rough--deep_rough-w.png": {
+      "bytes": 923,
+      "sha256": "50c6a5c7c5f9dbb12b08c1885fa4b11acc14b735371bbffb65fe4ffece512549",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "w",
+      "quality": "high",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/corner-rough--deep_rough-ne.png": {
+      "bytes": 352,
+      "sha256": "2a85aa918e9a4d4d860eb67b7483de2d2ca1419fd3918bcbf52bec8d7d2cd1d6",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "ne",
+      "quality": "high",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 240,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-rough--deep_rough-se.png": {
+      "bytes": 334,
+      "sha256": "050dc44d70c2ef0d8e650ab40947bc8169b5efe63348a1f572f5fd41b12e2545",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "se",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 120,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-rough--deep_rough-sw.png": {
+      "bytes": 354,
+      "sha256": "3f709df4eb1aed28cda1659435120c96d915f365c7758835d0c8e99241644e3a",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "sw",
+      "quality": "high",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-rough--deep_rough-nw.png": {
+      "bytes": 335,
+      "sha256": "5072686155fc0091f0c58a9081e46ab63fe528ca137ce70fbc18be537b2ceb48",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "nw",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 1,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/edge-rough--green-n.png": {
+      "bytes": 960,
+      "sha256": "2e79b90cc671fbe95287cb23fd3e6bbf58620e4f6a98f143bc7fedd94c178458",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "n",
+      "quality": "high",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-rough--green-e.png": {
+      "bytes": 1047,
+      "sha256": "ef86f8eb7f9c7e3c839316b0c9f8183439ee77c75cc41eeb6daa77f83873ee29",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "e",
+      "quality": "high",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-rough--green-s.png": {
+      "bytes": 952,
+      "sha256": "c3ce7e4f4afed5b3d0d64ebff902d0d970eae729355358e0cc8ca871445aadb3",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "s",
+      "quality": "high",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-rough--green-w.png": {
+      "bytes": 1000,
+      "sha256": "2fa648e704b584fcca77726af28badad1dfd6567c87f0c93472db08a612c3e44",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "w",
+      "quality": "high",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/corner-rough--green-ne.png": {
+      "bytes": 370,
+      "sha256": "a7c948322bb4aa0ce0bb7771327d9d3adb37edb050bcfc334f9815642c8afc6b",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "ne",
+      "quality": "high",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 240,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-rough--green-se.png": {
+      "bytes": 351,
+      "sha256": "aa9d8d1d5ec79232b553d2cec7f92b4b532f705da67857395ac7ba1a90ad592d",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "se",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 120,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-rough--green-sw.png": {
+      "bytes": 372,
+      "sha256": "0777c6529a9f02981c2ccc3e0424ec72b45c21dd6714648f563b16ec2245cee5",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "sw",
+      "quality": "high",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-rough--green-nw.png": {
+      "bytes": 351,
+      "sha256": "b43286208a692b257856c9fc7b9449393c4cc3ea0414b4c9116cd1689138af81",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "nw",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 1,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/edge-rough--tee-n.png": {
+      "bytes": 904,
+      "sha256": "a31742fed180c8ad013a9f764f335e5236e7871343e802526bde1107d024bdd8",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "n",
+      "quality": "high",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-rough--tee-e.png": {
+      "bytes": 965,
+      "sha256": "5e3960827ae25ddb99e37a1a4eb5eb63edc8c65496a59fb36a05dacc0896c04c",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "e",
+      "quality": "high",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-rough--tee-s.png": {
+      "bytes": 856,
+      "sha256": "c9d3ad1a5df34998f2bed4b1fcf2bd93817bbe6d06e43034452306b81f7be8f6",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "s",
+      "quality": "high",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-rough--tee-w.png": {
+      "bytes": 881,
+      "sha256": "f56de74b59d1856993608010d70438a2e58b399744ca1fdfedccceb20c1d44e2",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "w",
+      "quality": "high",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/corner-rough--tee-ne.png": {
+      "bytes": 362,
+      "sha256": "0f33b02f1efc05255104e1f5c02653e847a810a5d146494c763ec3fcb6102eb7",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "ne",
+      "quality": "high",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 240,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-rough--tee-se.png": {
+      "bytes": 356,
+      "sha256": "49d20dd26ea7fe3aadc5c3884e5721695038645cd4bd0ebda89293510e16d12a",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "se",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 120,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-rough--tee-sw.png": {
+      "bytes": 356,
+      "sha256": "cfe9a2e2cd4c8dc35263174928eb98c783944934bdcacd235774291d0fd13f72",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "sw",
+      "quality": "high",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-rough--tee-nw.png": {
+      "bytes": 361,
+      "sha256": "3774b60aefdfa0e0b5dd8f8c24accf6718cbcde096d09142cef9ce01e4501d83",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "nw",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 1,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/edge-deep_rough--green-n.png": {
+      "bytes": 949,
+      "sha256": "942988e7c276cbcb22e47cac69b87ea5e69427de797db2fc1ff87402a97cfe23",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "n",
+      "quality": "high",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-deep_rough--green-e.png": {
+      "bytes": 1036,
+      "sha256": "71e55ccc550a070884891d0c77c2e6a7e4cb91ef2806b82bb9a25027c4968f69",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "e",
+      "quality": "high",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-deep_rough--green-s.png": {
+      "bytes": 936,
+      "sha256": "41b5222017983ff357d27e371f3173b69dcda4d0d0c9c0c680944f80f19c56d1",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "s",
+      "quality": "high",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-deep_rough--green-w.png": {
+      "bytes": 947,
+      "sha256": "dfccb46ef46a2e17463915e0ea946bfa043b046c4bc8f87865f225bd71048227",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "w",
+      "quality": "high",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/corner-deep_rough--green-ne.png": {
+      "bytes": 357,
+      "sha256": "ccdda95c190f490f403ebce2a1acc6f9d8112f1b61c7ab92a23c97fd39c78a24",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "ne",
+      "quality": "high",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 240,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-deep_rough--green-se.png": {
+      "bytes": 360,
+      "sha256": "cfe8993e25140d08de6bcde8331088fde1f54f122ed1911d1b357ef9762e0f6b",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "se",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 120,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-deep_rough--green-sw.png": {
+      "bytes": 370,
+      "sha256": "30b31abe2108ecb07ff9f69c53308a2c1896cd10198369ed42627c61e1202b79",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "sw",
+      "quality": "high",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-deep_rough--green-nw.png": {
+      "bytes": 364,
+      "sha256": "0812aba2f1078ed424c5a2dafd2e161fb6e6d18087ec5f49ec1599d7b24d2cc5",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "nw",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 1,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/edge-deep_rough--tee-n.png": {
+      "bytes": 885,
+      "sha256": "6d38fab8f8f8f5382a6a86fd252f3aade1740cbec6c64de15353dfe8f08ceef8",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "n",
+      "quality": "high",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-deep_rough--tee-e.png": {
+      "bytes": 927,
+      "sha256": "59571dcada531daa35848f066e62ba725209a561621e53923a19230f45101dce",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "e",
+      "quality": "high",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-deep_rough--tee-s.png": {
+      "bytes": 856,
+      "sha256": "97dc6090062ae54a84e6a2dc39a1e4779bbc803033385048e062945c8a770c14",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "s",
+      "quality": "high",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-deep_rough--tee-w.png": {
+      "bytes": 869,
+      "sha256": "7bc82f32a5461b85afdfc968c8eea5dfe686d4e531934b45a18bcccaf06cca93",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "w",
+      "quality": "high",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/corner-deep_rough--tee-ne.png": {
+      "bytes": 370,
+      "sha256": "03cb84b25d2fc71dcbe7191fd8ea5a18838146867f3a7e9a8abeda1ddfe25b03",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "ne",
+      "quality": "high",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 240,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-deep_rough--tee-se.png": {
+      "bytes": 369,
+      "sha256": "c0fa4792fc7378ae41f62b7ca3b208bca5e5cbc9b4ebb1f821268aca330ebbab",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "se",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 120,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-deep_rough--tee-sw.png": {
+      "bytes": 371,
+      "sha256": "203a9c1188b18722daeed212572791ac64e30a0a6c76578c1ad227bf985a7cc1",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "sw",
+      "quality": "high",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-deep_rough--tee-nw.png": {
+      "bytes": 366,
+      "sha256": "46ffe960ae97b56085dbd9d637313530bd5cbb4e445c5201d02981691d9f06b9",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "nw",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 1,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/edge-green--tee-n.png": {
+      "bytes": 895,
+      "sha256": "a0f9e95b779dc98dbcc452cb7016d26e92a35aaa5250fc82f984381fa4092194",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "n",
+      "quality": "high",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-green--tee-e.png": {
+      "bytes": 936,
+      "sha256": "6d86be9d48883f95e69a232314f9f3e97c94191f842ea043eba94540493c47e0",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "e",
+      "quality": "high",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-green--tee-s.png": {
+      "bytes": 886,
+      "sha256": "f1e07b6fe84e3e2b7a09e549897cb163ede299af2244d9854952fea3b527ecab",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "s",
+      "quality": "high",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/edge-green--tee-w.png": {
+      "bytes": 909,
+      "sha256": "ee208e4c455db35df03ad0695ebc286672a0327febf51aff25cf2d899173994e",
+      "width": 256,
+      "height": 128,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "w",
+      "quality": "high",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 135,
+        "height": 68
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "high/corner-green--tee-ne.png": {
+      "bytes": 364,
+      "sha256": "64683009cb7e8a29dbdcaedd6f84e7bc43aa2e3b67f48f980ec375bb298fbce2",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "ne",
+      "quality": "high",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 240,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-green--tee-se.png": {
+      "bytes": 344,
+      "sha256": "eec52d340f8fc82e4133cb2e4ea16ebcdf05c98a037365dd4fb56d87a0b7a01a",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "se",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 120,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-green--tee-sw.png": {
+      "bytes": 364,
+      "sha256": "43a49f16615ad7bbb1952b06b3ce12bc49ebf7f4d859598cc94dbc3145ca6375",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "sw",
+      "quality": "high",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 60,
+        "width": 15,
+        "height": 8
+      },
+      "intendedOpacity": {
+        "maximum": 198,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/corner-green--tee-nw.png": {
+      "bytes": 346,
+      "sha256": "4560394802a270bced2e2ffe490bcb2ce7a1f0cd409967ff74af749117d2d0fe",
+      "width": 256,
+      "height": 128,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "nw",
+      "quality": "high",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 1,
+        "width": 16,
+        "height": 7
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "high/hazard-water.png": {
+      "bytes": 1657,
+      "sha256": "abf43f731871888c820516f96579f190f3361543105322eea797297e7fd84dcb",
+      "width": 256,
+      "height": 128,
+      "role": "hazard-style-proof",
+      "hazard": "water",
+      "quality": "high",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 34,
+        "y": 19,
+        "width": 186,
+        "height": 92
+      }
+    },
+    "high/hazard-sand.png": {
+      "bytes": 1111,
+      "sha256": "7c3670c4514dae76ad55476f36602caf1296d2327204974136cc398a1283835d",
+      "width": 256,
+      "height": 128,
+      "role": "hazard-style-proof",
+      "hazard": "sand",
+      "quality": "high",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 49,
+        "y": 21,
+        "width": 179,
+        "height": 96
+      }
+    },
+    "high/hazard-bunker.png": {
+      "bytes": 1049,
+      "sha256": "cfcf4284c630bf934f0e156e19f72499019ee8c3fea5478ef897a5a9d1335440",
+      "width": 256,
+      "height": 128,
+      "role": "hazard-style-proof",
+      "hazard": "bunker",
+      "quality": "high",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 40,
+        "y": 22,
+        "width": 177,
+        "height": 88
+      }
+    },
+    "high/hazard-shore.png": {
+      "bytes": 1404,
+      "sha256": "c3aab8c1d3279d1b56ce9b9d89c04d612cd238214a92922b0454a832849df611",
+      "width": 256,
+      "height": 128,
+      "role": "hazard-style-proof",
+      "hazard": "shore",
+      "quality": "high",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 128,
+        "y": 64
+      },
+      "clipBounds": {
+        "x": 35,
+        "y": 23,
+        "width": 194,
+        "height": 94
+      }
+    },
+    "medium/undercoat.png": {
+      "bytes": 4265,
+      "sha256": "cdaceb837b36eb5b643342b2c4bdb315bbb269a1869b6d20ad8d77a935c6f0c7",
+      "width": 128,
+      "height": 128,
+      "role": "common-undercoat",
+      "quality": "medium",
+      "worldPeriodTiles": 8,
+      "logicalAnchor": {
+        "x": 0,
+        "y": 0
+      },
+      "intendedOpacity": 255
+    },
+    "medium/semantic-fairway.png": {
+      "bytes": 908,
+      "sha256": "f9987db5806476a3adeb2792991bece0bbb243322a173f68d1dfab68b217ff1f",
+      "width": 128,
+      "height": 128,
+      "role": "semantic-cue",
+      "semantic": "fairway",
+      "quality": "medium",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "tiered-broken-mowing-swaths",
+      "intendedOpacityRange": [
+        42,
+        76
+      ]
+    },
+    "medium/semantic-rough.png": {
+      "bytes": 3656,
+      "sha256": "1010aa1226f3dd9b5a85425cc8a5bbeece99db8deab9928467bcea561ed93eb5",
+      "width": 128,
+      "height": 128,
+      "role": "semantic-cue",
+      "semantic": "rough",
+      "quality": "medium",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-irregular-blade-tufts",
+      "intendedOpacityRange": [
+        92,
+        158
+      ]
+    },
+    "medium/semantic-deep_rough.png": {
+      "bytes": 7571,
+      "sha256": "57984617a03d21805d83cce12c04936b57d19457e3e842d4f823696082388bb2",
+      "width": 128,
+      "height": 128,
+      "role": "semantic-cue",
+      "semantic": "deep_rough",
+      "quality": "medium",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-clustered-long-tufts",
+      "intendedOpacityRange": [
+        54,
+        139
+      ]
+    },
+    "medium/semantic-green.png": {
+      "bytes": 2292,
+      "sha256": "9c4b9a27ab03b1cbaf92f00e341a149e6da97a129c5a4982f64456e03a0051c0",
+      "width": 128,
+      "height": 128,
+      "role": "semantic-cue",
+      "semantic": "green",
+      "quality": "medium",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-fine-care-specks",
+      "intendedOpacityRange": [
+        48,
+        95
+      ]
+    },
+    "medium/semantic-tee.png": {
+      "bytes": 2501,
+      "sha256": "6a5bc92300eed04562ed4613187d6c442b13ab6d26e6c84604541c6926e28bb5",
+      "width": 128,
+      "height": 128,
+      "role": "semantic-cue",
+      "semantic": "tee",
+      "quality": "medium",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-short-care-stamps",
+      "intendedOpacityRange": [
+        74,
+        134
+      ]
+    },
+    "medium/edge-fairway--rough-n.png": {
+      "bytes": 463,
+      "sha256": "320f68530015daa702858678217d3256dcf477b36fe433829563c75124201c9e",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "n",
+      "quality": "medium",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--rough-e.png": {
+      "bytes": 452,
+      "sha256": "3eb9cbf7dce024de2d466e2c457685303b08cbb4127be0343efb11294f2a2a81",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "e",
+      "quality": "medium",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--rough-s.png": {
+      "bytes": 436,
+      "sha256": "b6af431e00341b18bd89c3c7a8c81da35b89d23982ef7bcefa28f0a2b5e309f2",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "s",
+      "quality": "medium",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--rough-w.png": {
+      "bytes": 433,
+      "sha256": "0f15c16fe9ce38ac5c2c823dca1ddd15926ba5853e9b553cf9e8f589363fd867",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "w",
+      "quality": "medium",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/corner-fairway--rough-ne.png": {
+      "bytes": 185,
+      "sha256": "2a734294423970f11ee298de02bdab1ed7a3d44b68ae4b231aad3c09168f8214",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "ne",
+      "quality": "medium",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--rough-se.png": {
+      "bytes": 188,
+      "sha256": "348f6e3b4c33786a1b5502cfb0dd26402511327021398486ec8bd4a79d1ae440",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "se",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 60,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--rough-sw.png": {
+      "bytes": 187,
+      "sha256": "501bd90cf8edf63f8a8a6689dc0c7ba91448b3a36641313ea3d2744723a24fa7",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "sw",
+      "quality": "medium",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--rough-nw.png": {
+      "bytes": 184,
+      "sha256": "25b8bf0024c985753bd3bf13b0a51b01a194d33db59e45dfd8e10bf67babcd29",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "nw",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 1,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/edge-fairway--deep_rough-n.png": {
+      "bytes": 441,
+      "sha256": "62bc4faa3404d78a5001530d340f1a59a8561a77bbe8890cfb483434ec3c4924",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "n",
+      "quality": "medium",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--deep_rough-e.png": {
+      "bytes": 430,
+      "sha256": "c59398824a7405e292235e94261328b3c28e30cb8d8314547e631fe073b1b143",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "e",
+      "quality": "medium",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--deep_rough-s.png": {
+      "bytes": 442,
+      "sha256": "359ce120732c2458e7fbfaee2a40c7841f50fdbf3d62533a9516e3083065fe66",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "s",
+      "quality": "medium",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--deep_rough-w.png": {
+      "bytes": 400,
+      "sha256": "9ee6016d1f9c6f4df723597ad0ce2494d7d2820902e16ac5f21dd1ba4da69240",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "w",
+      "quality": "medium",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/corner-fairway--deep_rough-ne.png": {
+      "bytes": 183,
+      "sha256": "983e1f5a8b43ee50a3bd639d88db68e967d3d18bab23a3e0ffafb547d615e6d0",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "ne",
+      "quality": "medium",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--deep_rough-se.png": {
+      "bytes": 181,
+      "sha256": "224fea89f20dc4697bdcdd81a8a8dfb27845890d1a3737e000934a1e19f69f86",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "se",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 60,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--deep_rough-sw.png": {
+      "bytes": 186,
+      "sha256": "3d385cd0c6ecb5be85c215a140a3aa61cd0987b439866d175a1d2df32026e0d9",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "sw",
+      "quality": "medium",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--deep_rough-nw.png": {
+      "bytes": 183,
+      "sha256": "566339d695f7abefcbb4e3db7690e725292fdbef5e243bafd04bfa6301e7c749",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "nw",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 1,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/edge-fairway--green-n.png": {
+      "bytes": 449,
+      "sha256": "78a7eb9396f461bd4fcd7b70ab2e01b5f5ca2376ba175f81d58a0fcc75512170",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "n",
+      "quality": "medium",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--green-e.png": {
+      "bytes": 437,
+      "sha256": "cb191881307a0b6a5779d5ffe592bb5172525b69a4e5aeffc7e459eb752f3626",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "e",
+      "quality": "medium",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--green-s.png": {
+      "bytes": 446,
+      "sha256": "903b82275f6e969c37fc2affef606a1c181e201a3db0f4fd1e07f8b8a9f1e23d",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "s",
+      "quality": "medium",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--green-w.png": {
+      "bytes": 429,
+      "sha256": "e05914b73aef953560b0695221603750dfa5ad63563608e83d10b7d9c67e3189",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "w",
+      "quality": "medium",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/corner-fairway--green-ne.png": {
+      "bytes": 180,
+      "sha256": "130a2480cb548cab2c5b47f1d024380509440b6fe146ffed684c79d278ada151",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "ne",
+      "quality": "medium",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--green-se.png": {
+      "bytes": 188,
+      "sha256": "a50a89563dff5f65af3aae262dc29699eb13f9c763585444df25eb2a431959b4",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "se",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 60,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--green-sw.png": {
+      "bytes": 182,
+      "sha256": "7a46a73cd658f414f970474ad608050baac83fc8d7d1a61385ca3a2981d954a5",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "sw",
+      "quality": "medium",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--green-nw.png": {
+      "bytes": 183,
+      "sha256": "f6eff000e5469301edd5eaff0022d29611379f3cd1d56e6bb5deb9187c7d4469",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "nw",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 1,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/edge-fairway--tee-n.png": {
+      "bytes": 499,
+      "sha256": "ee3cf7a0a3a61a2835be4ef0422cd71d1512e3822037927a923783fe249896cc",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "n",
+      "quality": "medium",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--tee-e.png": {
+      "bytes": 503,
+      "sha256": "2a4ffb220f5e265688f2519fc0dbea388b18afc7a8f3e8bc566c1e90385adbb2",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "e",
+      "quality": "medium",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--tee-s.png": {
+      "bytes": 482,
+      "sha256": "3dcf7a9d273d39f2508a0bc20d68777fe1c40e41eec85d2b6a5eb6c2b202b6b4",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "s",
+      "quality": "medium",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-fairway--tee-w.png": {
+      "bytes": 445,
+      "sha256": "f0e17f93052098927718d3ea784a900754a2ebda5fc37bd372aac1d4a2962645",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "w",
+      "quality": "medium",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/corner-fairway--tee-ne.png": {
+      "bytes": 185,
+      "sha256": "5c7a3282f065ef0dc9e1c38bf3d5d75adf21701cc59e38dfc99ddae3cfb575bc",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "ne",
+      "quality": "medium",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--tee-se.png": {
+      "bytes": 190,
+      "sha256": "8b496c7b4cf4e9c4e4e50193d09dbc63eb9837778730837a7a2f40c9c0706404",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "se",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 60,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--tee-sw.png": {
+      "bytes": 187,
+      "sha256": "46f1854a55045ff59fd424984536009f230e4c790a1971329fb7eeb33acf5747",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "sw",
+      "quality": "medium",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-fairway--tee-nw.png": {
+      "bytes": 186,
+      "sha256": "467399fb77427127f0285c3cd5de91de0e51c36f2e2e80c57b0d1cb40d4496e1",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "nw",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 1,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/edge-rough--deep_rough-n.png": {
+      "bytes": 487,
+      "sha256": "b28a460b6fd9c090de3088ff76847085877993844787596d3ffff79edefc6855",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "n",
+      "quality": "medium",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-rough--deep_rough-e.png": {
+      "bytes": 488,
+      "sha256": "4e50d0ad2d0a08954cff6c708387bc48428008bb4fe50f89be61401a96dfc37a",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "e",
+      "quality": "medium",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-rough--deep_rough-s.png": {
+      "bytes": 485,
+      "sha256": "b4509846fca17eb93abb471569ad391bfd07ef7c0ed9d818c9fcc7474a45e201",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "s",
+      "quality": "medium",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-rough--deep_rough-w.png": {
+      "bytes": 445,
+      "sha256": "37650e902e1b95dccf2bd05f645c1f19fa0eb150105491dddc40df4846218e4b",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "w",
+      "quality": "medium",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/corner-rough--deep_rough-ne.png": {
+      "bytes": 177,
+      "sha256": "548c6362ac4b9407324b7d0e734041aea4b7b7156ba17274faeecd131fc6acf8",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "ne",
+      "quality": "medium",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-rough--deep_rough-se.png": {
+      "bytes": 181,
+      "sha256": "67e0af9c6aeadc64bbe2a6186c0eba5324bf7ef407c40b5db2abea2b70e2171c",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "se",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 60,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-rough--deep_rough-sw.png": {
+      "bytes": 180,
+      "sha256": "00fd5210f0d8c2c6e82dd1f3876d69b952dc88f92f1cea83aaca12bc03796c6f",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "sw",
+      "quality": "medium",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-rough--deep_rough-nw.png": {
+      "bytes": 183,
+      "sha256": "c2a5761fe4718dd8b807494a946e989af80b500736dbf3845cd40acad33d73b3",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "nw",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 1,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/edge-rough--green-n.png": {
+      "bytes": 503,
+      "sha256": "51ea9c9f250b86f9f9f3c4129c872d9c367323574a2ffb7b6b3719eaaea85b71",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "n",
+      "quality": "medium",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-rough--green-e.png": {
+      "bytes": 545,
+      "sha256": "0a581b7bba47cd3fb0be341f91ac48ec033c8d95f501be3e0346b9e3a2654a87",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "e",
+      "quality": "medium",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-rough--green-s.png": {
+      "bytes": 521,
+      "sha256": "9c4fd336be7f862151ff2755e3bbae9b2803c22c67b0ec84b9bc5477c3e58d72",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "s",
+      "quality": "medium",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-rough--green-w.png": {
+      "bytes": 457,
+      "sha256": "5173d2d9476f1fba3e4c1ab7b12c6ea27aca4ed11af35b10dc73c4ff4224a750",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "w",
+      "quality": "medium",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/corner-rough--green-ne.png": {
+      "bytes": 186,
+      "sha256": "2329cdf8d604db17c948066e579f04baccbd51eb3c5a009ba04a16cf51aa0882",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "ne",
+      "quality": "medium",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-rough--green-se.png": {
+      "bytes": 180,
+      "sha256": "64685de6a465fddf735f89ad040a988f975aaf7ecb541f9205559e895ef34c85",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "se",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 60,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-rough--green-sw.png": {
+      "bytes": 190,
+      "sha256": "ffe84b5d7d07a7630168a746906fb16a4bf8e8920d025f05d87b492fc527e74d",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "sw",
+      "quality": "medium",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-rough--green-nw.png": {
+      "bytes": 183,
+      "sha256": "ff1030007d477a66c35d4d5fa6ddbc15edf56fc27d0410ee3b8fca2511811029",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "nw",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 1,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/edge-rough--tee-n.png": {
+      "bytes": 469,
+      "sha256": "4918d79a6ab127fa61bbd79e08de768946c272b33897a70e80e893896cf94df1",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "n",
+      "quality": "medium",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-rough--tee-e.png": {
+      "bytes": 501,
+      "sha256": "a14c0269c11d19a33e4ba09372e79ec73a76cc7c83d13ba25aef4d5219fb284a",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "e",
+      "quality": "medium",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-rough--tee-s.png": {
+      "bytes": 488,
+      "sha256": "31d01750ca420f5c2aa1b8966042e2406bd65b4ad2c9d1bc4677269508a37ae2",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "s",
+      "quality": "medium",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-rough--tee-w.png": {
+      "bytes": 455,
+      "sha256": "edd41d0b7de7b2ad39e1eb488e55ea56a0b95fcd42a2b5f437a9eb52991b237a",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "w",
+      "quality": "medium",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/corner-rough--tee-ne.png": {
+      "bytes": 179,
+      "sha256": "5badc8e3bb4d6b21daa773cab0af9cd4994a91b184025a43b26308a3f9030d9f",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "ne",
+      "quality": "medium",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-rough--tee-se.png": {
+      "bytes": 189,
+      "sha256": "2923936dd8740cd031a76b49b1f1ee19dce7acf24c75818b00fa05e557984bb9",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "se",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 60,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-rough--tee-sw.png": {
+      "bytes": 180,
+      "sha256": "dfdcd7dfcf0d74016f4cea556ed213cf20b8dbdbeaff4cf29dc667b7bf236a2e",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "sw",
+      "quality": "medium",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-rough--tee-nw.png": {
+      "bytes": 185,
+      "sha256": "82d8aa5a367d7aa79208a690d2277af3338ee48da9abe60f5022804ddc42142f",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "nw",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 1,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/edge-deep_rough--green-n.png": {
+      "bytes": 478,
+      "sha256": "51f46521e5eb957474cf20296bd829b6a9420e0c4dd4f3de9fab59db26a2d73a",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "n",
+      "quality": "medium",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-deep_rough--green-e.png": {
+      "bytes": 507,
+      "sha256": "4f2b2c3aea5e0c61ab464a0f348eb7b770a89575c0efd9e621514c51cb8933ad",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "e",
+      "quality": "medium",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-deep_rough--green-s.png": {
+      "bytes": 498,
+      "sha256": "9180503b473ac6d4ad7e3ffa485661deb4a5c7c658069fcaebaf42bbc87b1896",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "s",
+      "quality": "medium",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-deep_rough--green-w.png": {
+      "bytes": 455,
+      "sha256": "a71839d84165c51c09bd909ecf59d43c455cae9c9e52fab8a792d4b34edb5d30",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "w",
+      "quality": "medium",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/corner-deep_rough--green-ne.png": {
+      "bytes": 187,
+      "sha256": "2183b195339ffae5a429db9fec9a13fd9f99a3087a733ef3f0ca6b7a8155a49d",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "ne",
+      "quality": "medium",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-deep_rough--green-se.png": {
+      "bytes": 196,
+      "sha256": "2c88da7334aa596876f5cd99aa41b962840c68e2e1348538bea46c02b2ae8167",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "se",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 60,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-deep_rough--green-sw.png": {
+      "bytes": 190,
+      "sha256": "794fa32e0c72a1df96166df2db7f7adc886f47fc3758d7c4618abded4f53445b",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "sw",
+      "quality": "medium",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-deep_rough--green-nw.png": {
+      "bytes": 192,
+      "sha256": "0de14000efc1493d3ff23415c875302486784d5733c1c3d32e046f964f5a0898",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "nw",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 1,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/edge-deep_rough--tee-n.png": {
+      "bytes": 452,
+      "sha256": "86a38a9f901a389ca17a386e2856b1c5fd66938a16e2d7a7068581f68422c29b",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "n",
+      "quality": "medium",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-deep_rough--tee-e.png": {
+      "bytes": 434,
+      "sha256": "72a4fe617d179bbba6e30e3be307bf17a26db1159a0c1f04b3b31d85566afd24",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "e",
+      "quality": "medium",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-deep_rough--tee-s.png": {
+      "bytes": 458,
+      "sha256": "01e214423b204071c6b7a3df64be92528643b10cddf86b86fa5d9d9a9f0c0be0",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "s",
+      "quality": "medium",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-deep_rough--tee-w.png": {
+      "bytes": 422,
+      "sha256": "c97b938ba6387122390f699f6ef8dab3e6138a2dcf6b61eb61a299c4b1a81135",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "w",
+      "quality": "medium",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/corner-deep_rough--tee-ne.png": {
+      "bytes": 174,
+      "sha256": "2785fb5193f9f41a3bdf09b1c0472835bb291de25568c3c4fcb79fee9090cd93",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "ne",
+      "quality": "medium",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-deep_rough--tee-se.png": {
+      "bytes": 181,
+      "sha256": "1f3df894c08c92f99c83f9a08535ec5002f1fee13a4679abfaeca9541399254b",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "se",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 60,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-deep_rough--tee-sw.png": {
+      "bytes": 176,
+      "sha256": "d616c48dd43243a0499c5eef406d452217e90f90dc51de1c01707e6ff0d175c3",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "sw",
+      "quality": "medium",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-deep_rough--tee-nw.png": {
+      "bytes": 183,
+      "sha256": "ed51db4eb91418c9cc4142329bcca998ca9a345ef36436ed275a1e77c91f3ee0",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "nw",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 1,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/edge-green--tee-n.png": {
+      "bytes": 463,
+      "sha256": "f80a6666d36cb3bab94ea25c0a355b4bb2a94d522c2f67d46a51db2da2a1a243",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "n",
+      "quality": "medium",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-green--tee-e.png": {
+      "bytes": 471,
+      "sha256": "14c3b8147bf7c9a780944e6619b66a41e3299e1786710d8deb2cc48e7a069fa4",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "e",
+      "quality": "medium",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-green--tee-s.png": {
+      "bytes": 446,
+      "sha256": "662cb41d73feceeea57f4998392755c518c0105f15d43aa007f0a7b8dd21d185",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "s",
+      "quality": "medium",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/edge-green--tee-w.png": {
+      "bytes": 418,
+      "sha256": "f515f4dd72fc12e44e00d52e04fd591495a485a3bd71133a5cd478f96b3678ae",
+      "width": 128,
+      "height": 64,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "w",
+      "quality": "medium",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 67,
+        "height": 34
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "medium/corner-green--tee-ne.png": {
+      "bytes": 185,
+      "sha256": "a2185b21516ce12eb5a787c69fef5815626e2e9536b015fbaa90dac4eadf4d1a",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "ne",
+      "quality": "medium",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 120,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-green--tee-se.png": {
+      "bytes": 178,
+      "sha256": "01d0ba910d6f8ed32326a8852dc2e9b451c13443f7c2f1c587ee9a977a4d9aa0",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "se",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 60,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-green--tee-sw.png": {
+      "bytes": 190,
+      "sha256": "54f3838612eb16b51a746e1b71f131aac1a92854bdbeb71dac06da4de6cf3961",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "sw",
+      "quality": "medium",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 30,
+        "width": 7,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/corner-green--tee-nw.png": {
+      "bytes": 180,
+      "sha256": "1a82ab47e0d30e6227a2e3fe9b3866eb714e79c0d94e97ba679109c91b1ac7ae",
+      "width": 128,
+      "height": 64,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "nw",
+      "quality": "medium",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 60,
+        "y": 1,
+        "width": 8,
+        "height": 3
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "medium/hazard-water.png": {
+      "bytes": 902,
+      "sha256": "981d76b1699d453f0b3f1d930a642a67ac78a6311df3a7236f6ca6660768ffb9",
+      "width": 128,
+      "height": 64,
+      "role": "hazard-style-proof",
+      "hazard": "water",
+      "quality": "medium",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 17,
+        "y": 9,
+        "width": 93,
+        "height": 46
+      }
+    },
+    "medium/hazard-sand.png": {
+      "bytes": 678,
+      "sha256": "a2b2aa5f032de92fc0bf08111ed65e77f840acc7f390a8d3d371dff11f179723",
+      "width": 128,
+      "height": 64,
+      "role": "hazard-style-proof",
+      "hazard": "sand",
+      "quality": "medium",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 25,
+        "y": 11,
+        "width": 89,
+        "height": 47
+      }
+    },
+    "medium/hazard-bunker.png": {
+      "bytes": 668,
+      "sha256": "f9d0b65ebf9d8f92df2179743d96330c513b5b557c92431caaf786c8162bc6af",
+      "width": 128,
+      "height": 64,
+      "role": "hazard-style-proof",
+      "hazard": "bunker",
+      "quality": "medium",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 20,
+        "y": 11,
+        "width": 89,
+        "height": 44
+      }
+    },
+    "medium/hazard-shore.png": {
+      "bytes": 716,
+      "sha256": "c4ee6cd1081f1c11745e6e87fcbaabf39edca19866858ce90b3ec834d1e12f5e",
+      "width": 128,
+      "height": 64,
+      "role": "hazard-style-proof",
+      "hazard": "shore",
+      "quality": "medium",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 64,
+        "y": 32
+      },
+      "clipBounds": {
+        "x": 18,
+        "y": 12,
+        "width": 96,
+        "height": 46
+      }
+    },
+    "low/undercoat.png": {
+      "bytes": 1878,
+      "sha256": "7c98fa66c3a38814a65d4a5d8c3a0daaf0feddc6db339baa74034748dbb4a418",
+      "width": 64,
+      "height": 64,
+      "role": "common-undercoat",
+      "quality": "low",
+      "worldPeriodTiles": 8,
+      "logicalAnchor": {
+        "x": 0,
+        "y": 0
+      },
+      "intendedOpacity": 255
+    },
+    "low/semantic-fairway.png": {
+      "bytes": 403,
+      "sha256": "22244bcba9590a62b9982c585a3a0fe5bd010f85db37456f073cdadedbf3f311",
+      "width": 64,
+      "height": 64,
+      "role": "semantic-cue",
+      "semantic": "fairway",
+      "quality": "low",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "tiered-broken-mowing-swaths",
+      "intendedOpacityRange": [
+        42,
+        76
+      ]
+    },
+    "low/semantic-rough.png": {
+      "bytes": 1226,
+      "sha256": "83143fba45fe68d09a76cfeeed27b57c23bf65499cb8d1c0e49d797a2ffd28ff",
+      "width": 64,
+      "height": 64,
+      "role": "semantic-cue",
+      "semantic": "rough",
+      "quality": "low",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-irregular-blade-tufts",
+      "intendedOpacityRange": [
+        76,
+        126
+      ]
+    },
+    "low/semantic-deep_rough.png": {
+      "bytes": 2303,
+      "sha256": "0b9f972a3de0a8e8fcecf328332858099580848f083b3a76ea71076d13b0b013",
+      "width": 64,
+      "height": 64,
+      "role": "semantic-cue",
+      "semantic": "deep_rough",
+      "quality": "low",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-clustered-long-tufts",
+      "intendedOpacityRange": [
+        40,
+        98
+      ]
+    },
+    "low/semantic-green.png": {
+      "bytes": 742,
+      "sha256": "1da66ca8754614928af44fa2dda01b6199edb5fea513f9bef78ed0f85fd9d8e9",
+      "width": 64,
+      "height": 64,
+      "role": "semantic-cue",
+      "semantic": "green",
+      "quality": "low",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-fine-care-specks",
+      "intendedOpacityRange": [
+        32,
+        66
+      ]
+    },
+    "low/semantic-tee.png": {
+      "bytes": 759,
+      "sha256": "006382bdc922cb5bb94fca5ae01a1236e9a154c8869105fc2fc101e00efcdce2",
+      "width": 64,
+      "height": 64,
+      "role": "semantic-cue",
+      "semantic": "tee",
+      "quality": "low",
+      "worldPeriodTiles": 8,
+      "phase": "parkland-common-phase-v1",
+      "pattern": "toroidal-short-care-stamps",
+      "intendedOpacityRange": [
+        58,
+        100
+      ]
+    },
+    "low/edge-fairway--rough-n.png": {
+      "bytes": 276,
+      "sha256": "016003c1ffe1f072b2697b3f2c6772cac6fe27dde1e6f2ba3942888b611cdcaf",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "n",
+      "quality": "low",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--rough-e.png": {
+      "bytes": 263,
+      "sha256": "a6db4ccafc4ab9ced6760afefc8f3c86c460efd8de87b459d3693c604fb4ce81",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "e",
+      "quality": "low",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--rough-s.png": {
+      "bytes": 295,
+      "sha256": "ceae3499d91ac6e4c8677b579b542a4484e25372c560150860a59e2ab7092e57",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "s",
+      "quality": "low",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--rough-w.png": {
+      "bytes": 268,
+      "sha256": "b8b6d2842d7eaa7360a520bce0260dcc3a1ac9e952786c9f8133f1a4643f43d6",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--rough",
+      "direction": "w",
+      "quality": "low",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/corner-fairway--rough-ne.png": {
+      "bytes": 139,
+      "sha256": "b077843b4b5a43bba18f7ffc4ce025fb5a5a0c6dac9acd35bf7ad9525245fe71",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "ne",
+      "quality": "low",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 58,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--rough-se.png": {
+      "bytes": 128,
+      "sha256": "19daaf07da426de2c153b295d5743ab297e4b430713ca3afcc420912feda33a7",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "se",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 29,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--rough-sw.png": {
+      "bytes": 142,
+      "sha256": "87f3fc2ef41750695f06d96ff86cd991f506ab92cbf96e46d87143ec23a9c4b9",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "sw",
+      "quality": "low",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--rough-nw.png": {
+      "bytes": 128,
+      "sha256": "0d5ca3363b54f24a39799799bbe0c8543690ac7b706bc90e39c0e71de8e00859",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--rough",
+      "corner": "nw",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 1,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/edge-fairway--deep_rough-n.png": {
+      "bytes": 276,
+      "sha256": "9799dae422a4273d852f390baf2acaa3dffd8e8913e8346f4509b2c7d4ebbe0e",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "n",
+      "quality": "low",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--deep_rough-e.png": {
+      "bytes": 266,
+      "sha256": "811b6eff3951b7e2d9281beedb4ad451f9b6fb91e3558bfc5eb13018168d9cda",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "e",
+      "quality": "low",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--deep_rough-s.png": {
+      "bytes": 302,
+      "sha256": "928a9199c9287dd1aa5bfc77852cf6dbca2c68db44a354413e5dfa97f2bf347f",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "s",
+      "quality": "low",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--deep_rough-w.png": {
+      "bytes": 272,
+      "sha256": "7a36c717982d6f94b8b4646ffbd21a2e63ff89ab57ca3cf773beacab050b9652",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--deep_rough",
+      "direction": "w",
+      "quality": "low",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/corner-fairway--deep_rough-ne.png": {
+      "bytes": 139,
+      "sha256": "8710f0eb71853f12c76d77b2879742fff7943685e334993e5583802ee26cc94f",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "ne",
+      "quality": "low",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 58,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--deep_rough-se.png": {
+      "bytes": 130,
+      "sha256": "aea32294c1d71fef0dca8141777810545fe64ceafe363fb61138a22595e84645",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "se",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 29,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--deep_rough-sw.png": {
+      "bytes": 144,
+      "sha256": "5413d82e0b8441632d28d743c2dcd3df56dbf6ff8d234116811da988db311f00",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "sw",
+      "quality": "low",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--deep_rough-nw.png": {
+      "bytes": 128,
+      "sha256": "398b3ba0fbacf1ed376ac50a7d1852f79939a5c8a830d831029fc11af546b38c",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--deep_rough",
+      "corner": "nw",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 1,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/edge-fairway--green-n.png": {
+      "bytes": 271,
+      "sha256": "f4d53e1ffe2f5154b983a6b3927401944659d04b089b79641ac6a11429d289b8",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "n",
+      "quality": "low",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--green-e.png": {
+      "bytes": 270,
+      "sha256": "d047ec88e7e295dc1b6d8ea862d8482f09a6cd50894c1929e83da9bd23118706",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "e",
+      "quality": "low",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--green-s.png": {
+      "bytes": 294,
+      "sha256": "4d1550464429a61c940382b6b78dfc5b516fddec0ed8150b40d13ad083a5503a",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "s",
+      "quality": "low",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--green-w.png": {
+      "bytes": 263,
+      "sha256": "9c0c98a1ab57d0f365bce382509d2e17f186ec5699f29c3505b2d580abdbd8f0",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--green",
+      "direction": "w",
+      "quality": "low",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/corner-fairway--green-ne.png": {
+      "bytes": 140,
+      "sha256": "a059fc9731eccad3d2174de976d91148e4d6d9959555073f8b76669562630a89",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "ne",
+      "quality": "low",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 58,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--green-se.png": {
+      "bytes": 129,
+      "sha256": "38c0393ef0b115c355d68407b20615340095f43a7dba7141ccb1282085a91037",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "se",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 29,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--green-sw.png": {
+      "bytes": 142,
+      "sha256": "d29fc697c753070365a5aa67ea8382ff629029667504e80d470fba118707f832",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "sw",
+      "quality": "low",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--green-nw.png": {
+      "bytes": 124,
+      "sha256": "29cce5d0c193fd3248b5fa15d526c095d752cd1765bded2c981fded323a43c66",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--green",
+      "corner": "nw",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 1,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/edge-fairway--tee-n.png": {
+      "bytes": 285,
+      "sha256": "8f4c5a5edf2f230a55d7bbe4bbd33be8d99fbd8aae80abf519747047cc0fedd9",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "n",
+      "quality": "low",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--tee-e.png": {
+      "bytes": 280,
+      "sha256": "b775f9b93f852c1be888c679fbb2b7f94a0384a1d4248acfc4f13ded79c3f4cc",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "e",
+      "quality": "low",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--tee-s.png": {
+      "bytes": 302,
+      "sha256": "203f78fb2dd5da5d67993ca8fe089706eba12fd93434a1f3b11d84ffdd1781a3",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "s",
+      "quality": "low",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-fairway--tee-w.png": {
+      "bytes": 273,
+      "sha256": "4058b7d1d88b74471a7fda6c7f3caa8bd7ae40538afd58b317113edb0a931575",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "fairway--tee",
+      "direction": "w",
+      "quality": "low",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/corner-fairway--tee-ne.png": {
+      "bytes": 135,
+      "sha256": "7fb3a64cd3d1365bb0faf88f76e467eeb393f57384779354d66a05f9bcaf37df",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "ne",
+      "quality": "low",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 58,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--tee-se.png": {
+      "bytes": 128,
+      "sha256": "da06cf4b12027f05a27f6060dc9264acc060cad7cf6619a3afad566e7d3f1aff",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "se",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 29,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--tee-sw.png": {
+      "bytes": 142,
+      "sha256": "a5ec8f3d483b784750e61342f513d3ff9b1867a564764461a5872346a84c1ef5",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "sw",
+      "quality": "low",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-fairway--tee-nw.png": {
+      "bytes": 128,
+      "sha256": "659fb61430eb60849bfcaec16204980bb021268da39ac15af745390813b8bdfa",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "fairway--tee",
+      "corner": "nw",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 1,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/edge-rough--deep_rough-n.png": {
+      "bytes": 282,
+      "sha256": "0f067a8630389e8d67fd2039a4298343967a70353729107dcd772b55dcf4b586",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "n",
+      "quality": "low",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-rough--deep_rough-e.png": {
+      "bytes": 276,
+      "sha256": "5e77c175540e1ac3ed559dd29623757327e321193f8682354a0fe0a28bf931d9",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "e",
+      "quality": "low",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-rough--deep_rough-s.png": {
+      "bytes": 302,
+      "sha256": "8602a2d7b62402aac47c0604a7045c0dc0a0ad5f7eacdf99695d627d56d7276e",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "s",
+      "quality": "low",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-rough--deep_rough-w.png": {
+      "bytes": 278,
+      "sha256": "41691a02a127269a1fac878c6e21bf3c4f144cd7ed3c3df9e1932c3ac79d1d85",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--deep_rough",
+      "direction": "w",
+      "quality": "low",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/corner-rough--deep_rough-ne.png": {
+      "bytes": 130,
+      "sha256": "ed2eec52573fb0db9e80e3d74f8a2d394ebb04ec0ac348f039ba144b3a923ff5",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "ne",
+      "quality": "low",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 58,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-rough--deep_rough-se.png": {
+      "bytes": 130,
+      "sha256": "0b10887006cb22dfa5a91f8d4803c25b2a55a4aa92255b9dfa21731fbf2f84cb",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "se",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 29,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-rough--deep_rough-sw.png": {
+      "bytes": 143,
+      "sha256": "6afbe490c4c21d68b7775faf23426e5f856fe66534e96f57b16640894e1b3b8c",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "sw",
+      "quality": "low",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-rough--deep_rough-nw.png": {
+      "bytes": 129,
+      "sha256": "60b651d648348a473eaf1f661a411b89ac91f89580392cbbf0e57b92df2dea1b",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--deep_rough",
+      "corner": "nw",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 1,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/edge-rough--green-n.png": {
+      "bytes": 288,
+      "sha256": "a8b6ae3d77fbe8b0a94569d0b4e54f73aec9f4353d28569eab4bdf113318cc49",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "n",
+      "quality": "low",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-rough--green-e.png": {
+      "bytes": 280,
+      "sha256": "6e6600136b58a1b5712d45a4739f7c5ad57cb46d7d68c87e097be7d9964f3486",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "e",
+      "quality": "low",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-rough--green-s.png": {
+      "bytes": 300,
+      "sha256": "58c154716a001371af27d705589b1c2314ca5443289acb2d8435284f3ee8aa4b",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "s",
+      "quality": "low",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-rough--green-w.png": {
+      "bytes": 275,
+      "sha256": "cd2a1e40bc7824382f4af2d0ab207793ebf00140a0917dda6e6c671688750609",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--green",
+      "direction": "w",
+      "quality": "low",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/corner-rough--green-ne.png": {
+      "bytes": 140,
+      "sha256": "5f02cec7f65a2ac26a7e956eea1e7dee2118c9f4d779c30464c74b226293fbec",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "ne",
+      "quality": "low",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 58,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-rough--green-se.png": {
+      "bytes": 132,
+      "sha256": "f91b7d2c497777225d45e795c1c2f58161b538fba9fe079aceac0be06bd1c22b",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "se",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 29,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-rough--green-sw.png": {
+      "bytes": 144,
+      "sha256": "2cdad8440cad615938cd2e145645b6bf3119fa97c89cdbe3604315df3c1a3e2b",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "sw",
+      "quality": "low",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-rough--green-nw.png": {
+      "bytes": 129,
+      "sha256": "0c88d0241d0e7042cd79d89040a8e79b15effd06d1fbade95fe8e758bebae66a",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--green",
+      "corner": "nw",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 1,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/edge-rough--tee-n.png": {
+      "bytes": 284,
+      "sha256": "ab8f94f0093746a1517c39f694190df6f1c5ea14302b33de7cc4a18dddba0a33",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "n",
+      "quality": "low",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-rough--tee-e.png": {
+      "bytes": 292,
+      "sha256": "e4376067420f09d3954c871fbdb74a872fa13f17d44973d8ae0ae23ea6b414c5",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "e",
+      "quality": "low",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-rough--tee-s.png": {
+      "bytes": 312,
+      "sha256": "cb6cd34f855d1ece2a06d9a50e0556325a1637bcde401963c5902391f5146428",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "s",
+      "quality": "low",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-rough--tee-w.png": {
+      "bytes": 284,
+      "sha256": "e41c72858e4deb8c76a23b47ddfbfa072c9ad9da62aa1a229fc99390325833af",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "rough--tee",
+      "direction": "w",
+      "quality": "low",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/corner-rough--tee-ne.png": {
+      "bytes": 142,
+      "sha256": "87d39bf631bfc53ff517155d2a81832c2e5d59d278babc64b9e75a85737bc280",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "ne",
+      "quality": "low",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 58,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-rough--tee-se.png": {
+      "bytes": 128,
+      "sha256": "86b5a183990672c6051f487ef6407d0b63963170f3ef0225850e50339fd75826",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "se",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 29,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-rough--tee-sw.png": {
+      "bytes": 146,
+      "sha256": "56bb041ed9038719ad8513bb6da5a12c25733e1d01ffecc46689425ebbb2f6bd",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "sw",
+      "quality": "low",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-rough--tee-nw.png": {
+      "bytes": 125,
+      "sha256": "dd4015c397aaeb5a2b5254011a34cdabf0dcbb75cc1e9efaa8955f545fb842f8",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "rough--tee",
+      "corner": "nw",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 1,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/edge-deep_rough--green-n.png": {
+      "bytes": 284,
+      "sha256": "de466d46948b28fae59b6cdedadcca29bedad0b2a7dbc9e0c50e65fbfcd8de40",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "n",
+      "quality": "low",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-deep_rough--green-e.png": {
+      "bytes": 279,
+      "sha256": "512b9853b44ccf993dffe007622cb186d1042a1faf5560d4b1a9eea70f0bc294",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "e",
+      "quality": "low",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-deep_rough--green-s.png": {
+      "bytes": 300,
+      "sha256": "528cd745c58621a22f87ef5e241dc52ebfd82269127e9ad9dbc34f9c23dc8ebb",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "s",
+      "quality": "low",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-deep_rough--green-w.png": {
+      "bytes": 270,
+      "sha256": "672c3ea286dc4d9932ab72653261585007e645068c1ee65e62f5b7c5b932e83c",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--green",
+      "direction": "w",
+      "quality": "low",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/corner-deep_rough--green-ne.png": {
+      "bytes": 137,
+      "sha256": "a451333cfe0550bee3e971861545064d6359dfc097bd870bd9da394504d5e827",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "ne",
+      "quality": "low",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 58,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-deep_rough--green-se.png": {
+      "bytes": 132,
+      "sha256": "f60951c7b1220cb199293848c775e3963f3b97f62a93a0cd98eeea85e331e2a7",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "se",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 29,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-deep_rough--green-sw.png": {
+      "bytes": 146,
+      "sha256": "ab7d6496685dd96e098b34d55151bfeb9deee70a0f6d1ad95383a8471b05951a",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "sw",
+      "quality": "low",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-deep_rough--green-nw.png": {
+      "bytes": 130,
+      "sha256": "6d52de7e471055e02a70fbc39fd1f6e472cf86575aeefda2a4a36740d9b233c0",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "deep_rough--green",
+      "corner": "nw",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 1,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/edge-deep_rough--tee-n.png": {
+      "bytes": 294,
+      "sha256": "4391c1cbab2c746f29e67a2af7f274f4225133c76adb4bbcbd7e3d0fc7402a04",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "n",
+      "quality": "low",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-deep_rough--tee-e.png": {
+      "bytes": 272,
+      "sha256": "e1d77e64e57bb9c1c9025d05261f05b52c1d2913e9a0b7c5a187aafd718dd049",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "e",
+      "quality": "low",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-deep_rough--tee-s.png": {
+      "bytes": 297,
+      "sha256": "fdb6c50fad52988e35773e80ad6e63775c014267d32ebbeb62fbc0de7ea3ddac",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "s",
+      "quality": "low",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-deep_rough--tee-w.png": {
+      "bytes": 263,
+      "sha256": "37161f4a15b698cadf0ddc98dbb11db725fb55b7cf5340922ed67a518c6c7001",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "deep_rough--tee",
+      "direction": "w",
+      "quality": "low",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/corner-deep_rough--tee-ne.png": {
+      "bytes": 143,
+      "sha256": "edac94af09b44c5b9180657f83f63e02e795702b52b07b8ac9ef94761238bb89",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "ne",
+      "quality": "low",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 58,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-deep_rough--tee-se.png": {
+      "bytes": 129,
+      "sha256": "ac6fa0fcd3788f3d125ddbc7d330822b21880118cf2aa741701926ac5cbd97cf",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "se",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 29,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-deep_rough--tee-sw.png": {
+      "bytes": 144,
+      "sha256": "cbf64cd63a994ab1d9817c2a6148d37d0e9a1764cff8a5b05507d42f81014419",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "sw",
+      "quality": "low",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-deep_rough--tee-nw.png": {
+      "bytes": 129,
+      "sha256": "8c7fa7760061cc889c48b417b7516543908b1657cae92f83b532cd8c6a68972d",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "deep_rough--tee",
+      "corner": "nw",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 1,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/edge-green--tee-n.png": {
+      "bytes": 290,
+      "sha256": "1fcb0d45df308378b040c5dce63e79f1d1d733adcafacd96d1b09972aa685582",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "n",
+      "quality": "low",
+      "transformFromNorth": "identity",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-green--tee-e.png": {
+      "bytes": 283,
+      "sha256": "5ec805a51704ade92011960a4490315e2173488fa5a6799e3339f2a6b6d10d28",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "e",
+      "quality": "low",
+      "transformFromNorth": "flip-y",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-green--tee-s.png": {
+      "bytes": 306,
+      "sha256": "ccb168a146ddca2ad0384cc511ee435bb127ab80d4053e151c924fa1d06f6b64",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "s",
+      "quality": "low",
+      "transformFromNorth": "rotate-180",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 15,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/edge-green--tee-w.png": {
+      "bytes": 287,
+      "sha256": "57615992405be1c7da067b1d6006570a561734e09e04707df5cbd15dd00d0251",
+      "width": 64,
+      "height": 32,
+      "role": "pair-half-edge",
+      "pair": "green--tee",
+      "direction": "w",
+      "quality": "low",
+      "transformFromNorth": "flip-x",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 0,
+        "width": 33,
+        "height": 17
+      },
+      "intendedOpacity": {
+        "maximum": 216,
+        "bands": [
+          216,
+          196,
+          170,
+          132
+        ]
+      }
+    },
+    "low/corner-green--tee-ne.png": {
+      "bytes": 139,
+      "sha256": "fd8db10486a998da3b2fe0b380689e313471e423955b5fb9967bf374b7303f18",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "ne",
+      "quality": "low",
+      "transformFromNorthEast": "identity",
+      "compatibleEdges": [
+        "n",
+        "e"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 58,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-green--tee-se.png": {
+      "bytes": 130,
+      "sha256": "395688aba0c1be2666382d9d26881e3b58ea3c7afd069b5d6ef182b56a6b6739",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "se",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-90",
+      "compatibleEdges": [
+        "e",
+        "s"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 29,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-green--tee-sw.png": {
+      "bytes": 143,
+      "sha256": "a0b5501e0d1d2757e8e3d19f7de0afda0f554a972481f43d38e1ac0916e68947",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "sw",
+      "quality": "low",
+      "transformFromNorthEast": "rotate-180",
+      "compatibleEdges": [
+        "s",
+        "w"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 1,
+        "y": 14,
+        "width": 5,
+        "height": 4
+      },
+      "intendedOpacity": {
+        "maximum": 178,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/corner-green--tee-nw.png": {
+      "bytes": 129,
+      "sha256": "c352c76ed47a10d024600131843d089bb03fe2e3cd99f1f7811cf7a944d622a8",
+      "width": 64,
+      "height": 32,
+      "role": "pair-corner",
+      "pair": "green--tee",
+      "corner": "nw",
+      "quality": "low",
+      "transformFromNorthEast": "iso-rotate-270",
+      "compatibleEdges": [
+        "w",
+        "n"
+      ],
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 30,
+        "y": 1,
+        "width": 4,
+        "height": 2
+      },
+      "intendedOpacity": {
+        "maximum": 152,
+        "bands": [
+          198,
+          178,
+          152,
+          118
+        ]
+      }
+    },
+    "low/hazard-water.png": {
+      "bytes": 526,
+      "sha256": "f009c721c9f715b6673a3552961fd68365fc1b73db0e550e1ac328642c1d17f7",
+      "width": 64,
+      "height": 32,
+      "role": "hazard-style-proof",
+      "hazard": "water",
+      "quality": "low",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 8,
+        "y": 5,
+        "width": 47,
+        "height": 23
+      }
+    },
+    "low/hazard-sand.png": {
+      "bytes": 381,
+      "sha256": "e98cd88d09c75f04472cb254244f282f8f0a92deef9921cb27e67a7b80deb3aa",
+      "width": 64,
+      "height": 32,
+      "role": "hazard-style-proof",
+      "hazard": "sand",
+      "quality": "low",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 12,
+        "y": 5,
+        "width": 45,
+        "height": 24
+      }
+    },
+    "low/hazard-bunker.png": {
+      "bytes": 358,
+      "sha256": "9ac43f94fc23f69c3f8c97860ac617201c2c07214149b6846b3ad6e5c9bd2d61",
+      "width": 64,
+      "height": 32,
+      "role": "hazard-style-proof",
+      "hazard": "bunker",
+      "quality": "low",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 10,
+        "y": 6,
+        "width": 44,
+        "height": 21
+      }
+    },
+    "low/hazard-shore.png": {
+      "bytes": 454,
+      "sha256": "9e1b1576b6e6ef6926e019e2dda10a1025af4c2327dda39b604e5ae46ecf9095",
+      "width": 64,
+      "height": 32,
+      "role": "hazard-style-proof",
+      "hazard": "shore",
+      "quality": "low",
+      "topologyAuthority": "proof-only-not-a-gameplay-mask",
+      "logicalAnchor": {
+        "x": 32,
+        "y": 16
+      },
+      "clipBounds": {
+        "x": 9,
+        "y": 6,
+        "width": 48,
+        "height": 23
+      }
+    }
+  }
+}
