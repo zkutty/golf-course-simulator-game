@@ -2312,3 +2312,85 @@ classic course-builder references.
   is 1,608,674 bytes, 45 bytes under the fixed 1,608,719-byte budget.
 - NEXT: independent visual/scope review owns acceptance. This worktree remains
   uncommitted; do not integrate, push, deploy, promote, or mutate Linear here.
+
+## ZK-459 pair-preserving Parkland fringes — attempt 1/3 — 2026-09-20
+
+- Added a pure canonical planner over the approved ZK-461 common material field.
+  The authoritative M19 fixture reconciles 289 differing turf adjacencies into
+  28 elevation omissions, 157 explicit rough/deep-rough same-presentation
+  omissions, and exactly 104 emitted half-edges. The six supported emitted pair
+  counts are 4 fairway/deep-rough, 8 fairway/green, 57 fairway/rough,
+  6 fairway/tee, 15 rough/green, and 14 rough/tee; direction counts are
+  north 30, east 20, south 31, and west 23. Sixteen same-pair corner patches
+  are planned without bridging excluded or mixed-pair joins.
+- Rendering consumes the approved ZK-463 transparent pair-addressable sources
+  with exact pair identity, canonical once-only ownership, shared heightfield
+  clipping, and no full-cell or generic contour sprites. Diagnostics expose
+  authoritative/planned/emitted counts, owner keys, pair/direction/corner
+  counts, forbidden zero counters, source hashes, quality/rotation mappings,
+  and unchanged tile/elevation authority hashes. Hazard banks, paths,
+  buildings/exclusions, cliffs/elevation, gameplay authority, and the ZK-461
+  common phase remain unchanged.
+- Deterministic quality-specific runtime atlases are generated outside the
+  immutable `parkland-composable-v1` source root. The generator verifies every
+  source SHA before packing, and tests prove byte-for-byte atlas-frame identity
+  plus exhaustive provenance coverage for all 240 H/M/L fringe and corner
+  assets. Only the selected quality atlas is loaded through the existing
+  deferred composable path.
+- Native review passed the required 13-frame standard/accessibility matrix and
+  an independent repeat. All frames were directly inspected with no internal
+  same-turf lines, cracks/double edges, disconnected joins, full diamonds,
+  plates/halos, blur, fringe-weight regression, green identity regression, Low
+  style swap, or hazard/path/elevation regression. The post-relocation matrix
+  exactly matches the pre-move run for all screenshot hashes, diagnostics, and
+  course authority hashes. Evidence is under
+  `/private/tmp/zk459-pair-fringe-attempt1-evidence`.
+- Gates pass: TypeScript; focused planner/renderer/loader tests (25/25);
+  Parkland composable and 4x contracts (10/10); residency (4/4); M35,
+  ZK-1200, and ZK-473 browser regressions (3/3); lint/i18n with zero errors and
+  11 existing Hook warnings; production build and chained audits; and full CI
+  (259 files, 2,044 passed, one intentional skip, plus 5/5 audio audits). The
+  immutable composable audit remains exactly 270 source files. Initial JavaScript
+  is 1,608,683 bytes, 36 bytes below its fixed budget; total dist retains 84,150
+  bytes of headroom.
+- Independent visual review rejected attempt 1: the packed ZK-463 source pixels
+  remained an imperceptible hairline/corner dot at gameplay zoom, despite the
+  ownership and provenance gates passing. The packet was preserved separately;
+  its visual acceptance claim is superseded by attempt 2 below.
+
+## ZK-459 pair-preserving Parkland fringes — attempt 2/3 — 2026-09-20
+
+- Retained the proven attempt-1 canonical planner, exact pair ownership,
+  deferred quality-specific packing, diagnostics, and authority invariants.
+  Replaced only the rejected runtime art with deterministic H/M/L derived
+  atlases synthesized from the immutable ZK-463 seam/color guides and ZK-461
+  owner semantic fields. Each strip has three quantized inward material bands
+  with bounded nonzero texture modulation; corners are compatible incident-band
+  wedges rather than source dots.
+- Quantitative tests verify guide and semantic provenance, byte-repeatable atlas
+  and per-frame hashes, three nonempty bands, exact strip coverage, bounded
+  corner area/overlap/continuity, nonzero-but-bounded modulation, no alpha holes,
+  and zero outside/opposite-side spill. The authoritative M19 reconciliation is
+  unchanged: 289 differing joins = 104 emitted strips + 157 explicit
+  rough/deep-rough same-presentation omissions + 28 elevation omissions, with
+  exactly 16 same-pair corner patches and no blocked or mixed-pair bridge.
+- Native review passed the purpose-built 24-frame all-six-pair close-up proof
+  across High, Medium, Low, and Medium deuteranopia. The complete 13-view M19
+  matrix and independent repeat also passed; every screenshot SHA-256,
+  diagnostic object, and course authority hash matched exactly. Inspection
+  found readable restrained inward material, connected wedges, unchanged green
+  identity, and no cracks/doubles, internal same-turf lines, full diamonds,
+  plates/halos, blur, Low style swap, or hazard/path/elevation regression.
+- Gates pass: TypeScript; focused renderer/planner/loader tests (25/25);
+  Parkland composable and 4x contracts (10/10); residency (4/4); delivery
+  evidence (3/3); M35/ZK-1200/ZK-473 browser regressions (3/3); the required
+  bundled gameplay client; lint/i18n with zero errors and 11 existing Hook
+  warnings; production build and chained audits; and full CI (259 files, 2,044
+  passed, one intentional skip, plus 5/5 audio audits).
+- Final production budgets pass without raising ceilings: initial JavaScript is
+  1,608,683 bytes (36 bytes headroom), initial critical transfer is 3,785,465
+  bytes, selected-biome maximum is 3,534,481 bytes, and total dist is
+  116,930,937 bytes (45,074 bytes headroom).
+- NEXT: independent visual and scope review owns acceptance. This attempt-2
+  worktree remains uncommitted; do not integrate, push, deploy, promote, or
+  mutate Linear here.

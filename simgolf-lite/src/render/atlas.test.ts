@@ -3,8 +3,29 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { assetsLoad } = vi.hoisted(() => ({ assetsLoad: vi.fn() }));
 vi.mock("pixi.js", () => ({
   Assets: { load: assetsLoad },
+  Rectangle: class {
+    readonly x;
+    readonly y;
+    readonly width;
+    readonly height;
+    constructor(x: number, y: number, width: number, height: number) {
+      this.x = x;
+      this.y = y;
+      this.width = width;
+      this.height = height;
+    }
+  },
   Spritesheet: class {},
-  Texture: class {},
+  Texture: class {
+    readonly source;
+    readonly frame;
+    readonly label;
+    constructor(options: { source: unknown; frame: unknown; label: string }) {
+      this.source = options.source;
+      this.frame = options.frame;
+      this.label = options.label;
+    }
+  },
 }));
 
 import {
@@ -111,8 +132,10 @@ describe("incremental biome atlas loading", () => {
     expect(urls.some((url) => url.includes("spring-"))).toBe(false);
     expect(urls.some((url) => url.includes("path-material-parkland-high-shoulder"))).toBe(true);
     expect(urls.some((url) => url.includes("path-material-parkland-high-edge"))).toBe(true);
-    expect(urls.filter((url) => url.includes("parkland-composable-v1/high/")).length).toBe(6);
-    expect(atlasResidencySnapshot().parklandComposableFields).toBe(6);
+    // One undercoat + five cues + one pair atlas for the selected quality only.
+    expect(urls.filter((url) => url.includes("parkland-composable-v1/")).length).toBe(6);
+    expect(urls.filter((url) => url.includes("parkland-pair-atlas-v2/")).length).toBe(1);
+    expect(atlasResidencySnapshot().parklandComposableFields).toBe(86);
     expect(urls.some((url) => url.includes("links-") || url.includes("desert-"))).toBe(false);
   });
 
@@ -188,8 +211,9 @@ describe("incremental biome atlas loading", () => {
     expect(urls.some((url) => url.includes("details-parkland-low"))).toBe(false);
     expect(urls.some((url) => url.includes("props-parkland-low"))).toBe(false);
     expect(urls.some((url) => url.includes("autumn-"))).toBe(false);
-    expect(urls.filter((url) => url.includes("parkland-composable-v1/low/")).length).toBe(6);
-    expect(atlasResidencySnapshot().parklandComposableFields).toBe(6);
+    expect(urls.filter((url) => url.includes("parkland-composable-v1/")).length).toBe(6);
+    expect(urls.filter((url) => url.includes("parkland-pair-atlas-v2/")).length).toBe(1);
+    expect(atlasResidencySnapshot().parklandComposableFields).toBe(86);
     const undercoat = getParklandComposableField("parkland", "low", "undercoat") as unknown as {
       source: { style: { addressMode: string; scaleMode: string } };
     };
@@ -198,6 +222,8 @@ describe("incremental biome atlas loading", () => {
     };
     expect(undercoat.source.style).toMatchObject({ addressMode: "repeat", scaleMode: "nearest" });
     expect(fairway.source.style).toMatchObject({ addressMode: "repeat", scaleMode: "nearest" });
+    expect(getParklandComposableField("parkland", "low", "edge:fairway--rough:n")).not.toBeNull();
+    expect(getParklandComposableField("parkland", "medium", "edge:fairway--rough:n")).toBeNull();
   });
 
   it("loads repeat-safe path shoulder and edge fields only for supported qualities", async () => {
