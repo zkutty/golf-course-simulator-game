@@ -1313,6 +1313,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     points: Point[];
     last: Point;
   } | null>(null);
+  const terrainStrokePointerDownCellRef = useRef<Point | null>(null);
   const [fineGreenStrokePreview, setFineGreenStrokePreview] = useState<FineGreenSculptPreview | null>(null);
   const fineGreenStrokeRef = useRef<{
     pointerId: number;
@@ -2345,6 +2346,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
         };
       },
       screenToTile,
+      screenToWorld: screenToWorldPoint,
+      terrainStrokePointerDownCell: () => (
+        terrainStrokePointerDownCellRef.current
+          ? { ...terrainStrokePointerDownCellRef.current }
+          : null
+      ),
+      resetTerrainStrokePointerDownCell: () => {
+        terrainStrokePointerDownCellRef.current = null;
+      },
     };
     window.__coursecraftPixiTest = api;
     return () => {
@@ -2367,6 +2377,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     rotation,
     seasonalPlantsSignature,
     screenToTile,
+    screenToWorldPoint,
     surfaceHeightAt,
     worldPointToScreen,
   ]);
@@ -5473,6 +5484,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
     const beginTerrainStroke = (point: Point, pointerId: number) => {
       if (!onPreviewTerrainStroke) return;
+      if (import.meta.env.MODE === "e2e") {
+        terrainStrokePointerDownCellRef.current = {
+          x: Math.floor(point.x),
+          y: Math.floor(point.y),
+        };
+      }
       const points = [point];
       terrainStrokeRef.current = {
         pointerId,

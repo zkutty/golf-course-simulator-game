@@ -22,6 +22,9 @@ interface Window {
     tileToScreen(x: number, y: number): { x: number; y: number } | null;
     openingPreview(): { targetIds: number[]; outlineCount: number } | null;
     screenToTile(x: number, y: number): { x: number; y: number } | null;
+    screenToWorld(x: number, y: number): { x: number; y: number } | null;
+    terrainStrokePointerDownCell(): { x: number; y: number } | null;
+    resetTerrainStrokePointerDownCell(): void;
     surfaceCareLayer(): {
       children: number;
       workers: number;
@@ -192,6 +195,32 @@ interface Window {
     m35Metrics(): import("./game/render/m35Telemetry").M35TelemetrySnapshot;
     resetM35Metrics(): void;
     setPaintCash(cash: number): void;
+    setZk470PlacementFixture(actionClass: "terrain-stroke" | "tee" | "pin" | "prop" | "structure" | "occlusion-selection"): Promise<import("./game/testing/zk470PlacementFixture").Zk470PlacementTarget>;
+    configureZk470PlacementAction(actionClass: "terrain-stroke" | "tee" | "pin" | "prop" | "structure" | "occlusion-selection"): void;
+    zk470PlacementSnapshot(actionClass: "terrain-stroke" | "tee" | "pin" | "prop" | "structure" | "occlusion-selection"): Promise<{
+      target: import("./game/testing/zk470PlacementFixture").Zk470PlacementTarget;
+      selectedCell: { x: number; y: number } | null;
+      handledPointerCell: { x: number; y: number } | null;
+      committedCell: { x: number; y: number } | null;
+      courseHash: string;
+      worldHash: string;
+      authoritative: {
+        terrain: import("./game/models/types").Terrain;
+        tee: { x: number; y: number } | null;
+        pin: { x: number; y: number } | null;
+        obstacle: import("./game/models/types").Obstacle | null;
+        building: import("./game/models/types").Building | null;
+      };
+    }>;
+    zk470Undo(): void;
+    zk470Redo(): void;
+    zk470PersistenceProbe(actionClass: "terrain-stroke" | "tee" | "pin" | "prop" | "structure" | "occlusion-selection"): Promise<{
+      id: string;
+      beforeHash: string;
+      afterHash: string | null;
+      firstDifference: { path: string; before: unknown; after: unknown } | null;
+      cleanedUp: boolean;
+    }>;
     advanceLiveClock(realMs: number, speed: "1x" | "2x" | "4x"): {
       dayMinute: number;
       speed: "paused" | "1x" | "2x" | "4x";
