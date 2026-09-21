@@ -1,0 +1,89 @@
+{
+  "schema": "ParklandHabitatFieldManifestV1",
+  "version": 1,
+  "id": "parkland-habitat-field-v1",
+  "status": "source-contract-only",
+  "runtimeAdoption": "downstream-zk472-composition-node",
+  "source": {
+    "root": "src/assets/terrain/parkland-habitat-4x",
+    "manifest": "manifest.json",
+    "manifestHash": "manifest.sha256",
+    "generator": "scripts/gen-parkland-habitat-field.mjs",
+    "validator": "scripts/parkland-habitat-field-audit.mjs",
+    "author": "CourseCraft",
+    "externalProvider": "none",
+    "referencePixelsCopied": false,
+    "license": "project-original"
+  },
+  "semanticFamilies": [
+    "woodland_floor",
+    "understory_edge",
+    "meadow_deep_rough_margin",
+    "wet_shore",
+    "rock_leaf_transition"
+  ],
+  "topology": {
+    "roles": ["interior", "boundary", "convex", "concave", "termination"],
+    "directions": ["n", "e", "s", "w"],
+    "corners": ["ne", "se", "sw", "nw"],
+    "rule": "select topology from connected habitat occupancy; compose adjacent frames at declared edge anchors",
+    "authority": "visual-only; never defines collision, obstacle, terrain, or simulation state",
+    "wholeGrovePadsForbidden": true,
+    "oneStampPerCellCadenceForbidden": true,
+    "treeAuthority": "real Parkland prop sprites remain the only canopy and obstacle authority"
+  },
+  "tiers": {
+    "high": { "scale": 4, "frame": { "width": 256, "height": 128 }, "gutterPx": 4, "variantPolicy": "full clusters and micro-accents" },
+    "medium": { "scale": 2, "frame": { "width": 128, "height": 64 }, "gutterPx": 2, "variantPolicy": "reduced micro-accents, topology preserved" },
+    "low": { "scale": 1, "frame": { "width": 64, "height": 32 }, "gutterPx": 1, "variantPolicy": "broad clusters, topology preserved; not derived from legacy 2x terrain" }
+  },
+  "frameVocabulary": {
+    "interiorVariants": 3,
+    "boundaryDirections": 4,
+    "convexCorners": 4,
+    "concaveCorners": 4,
+    "terminationDirections": 4,
+    "framesPerFamily": 19,
+    "framesPerTier": 95
+  },
+  "palette": {
+    "modes": ["standard", "deuteranopia", "protanopia", "tritanopia"],
+    "nonColorIdentityRequired": true,
+    "familyPatternIdsRequired": true,
+    "transformFormat": "each mode and family declares four {from,to} RGB mappings covering every non-transparent source color",
+    "minimumModeFamilyCentroidDistance": 14,
+    "minimumMappedColorDistance": 8,
+    "minimumMappedLuma": 18,
+    "tierCoverageRequired": true
+  },
+  "atlas": {
+    "format": "lossless RGBA PNG plus JSON frame map",
+    "packing": "10 columns, row-major, extruded gutter",
+    "maximumDimension": 4096,
+    "transparentRgb": "zero",
+    "requiredFrameFields": ["id", "family", "topologyRole", "direction", "corner", "variant", "anchor", "edgeAnchors", "frame", "sourceSha256"]
+  },
+  "determinism": {
+    "hashAlgorithm": "sha256",
+    "independentGenerationRootsMustMatch": true,
+    "manifestSidecarRequired": true
+  },
+  "budgets": {
+    "sourceBytesMax": 4194304,
+    "atlasBytesMaxPerTier": 2097152,
+    "totalAtlasBytesMax": 4194304,
+    "selectedTierDecodedBytesMax": 14680064,
+    "runtimeBytesAddedByThisPacket": 0,
+    "fileCountMax": 12
+  },
+  "proof": {
+    "file": "evidence/asset-proof-not-zk473.png",
+    "label": "ASSET PROOF — NOT ZK-473 EVIDENCE",
+    "requirements": ["normal-size", "current-parkland-terrain", "real-parkland-props", "multi-cell-connected-compositions", "no-exposed-ellipse", "no-dash-row", "no-identical-stamp-cadence"]
+  },
+  "rollback": {
+    "action": "remove the habitat contract, generated source directory, generator, validator, tests, and package scripts",
+    "legacy2xImpact": "none",
+    "runtimeImpact": "none until a separately reviewed consumer adopts this source"
+  }
+}
