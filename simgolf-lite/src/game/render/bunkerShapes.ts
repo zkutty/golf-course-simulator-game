@@ -135,23 +135,36 @@ function connectedBunkerRing(
   ringIndex: number,
   cellCount: number,
   visualType: BunkerVisualType,
+  terrain: "sand" | "water" | "wetland" = "sand",
 ): SurfacePoint[] {
   if (ring.length < 3) return ring.map((point) => ({ ...point }));
   const seed = hashString(`${topologyKey}:${ringIndex}`);
   const phaseA = random01(seed, 0) * Math.PI * 2;
   const phaseB = random01(seed, 1) * Math.PI * 2;
-  const baseInset = visualType === "pot"
-    ? 0.18
-    : visualType === "greenside"
-      ? cellCount <= 4 ? 0.145 : 0.125
-      : cellCount <= 4 ? 0.095 : 0.075;
-  const waveStrength = visualType === "fairway" ? 0.82 : 1;
+  const baseInset = terrain === "water"
+    ? cellCount <= 4 ? 0.105 : 0.075
+    : terrain === "wetland"
+      ? cellCount <= 4 ? 0.13 : 0.095
+      : visualType === "pot"
+        ? 0.18
+        : visualType === "greenside"
+          ? cellCount <= 4 ? 0.145 : 0.125
+          : cellCount <= 4 ? 0.095 : 0.075;
+  const waveStrength = terrain === "water"
+    ? 1.28
+    : terrain === "wetland"
+      ? 1.42
+      : visualType === "fairway" ? 0.82 : 1;
   const samples = sampleClosedRing(
     ring,
-    visualType === "fairway" ? 0.28 : 0.22,
+    terrain === "water" || terrain === "wetland"
+      ? 0.2
+      : visualType === "fairway" ? 0.28 : 0.22,
   );
-  const lobeLength = 1.35 + random01(seed, 2) * 0.7;
-  const secondaryLength = 0.68 + random01(seed, 3) * 0.28;
+  const lobeLength = (terrain === "water" ? 1.75 : terrain === "wetland" ? 1.42 : 1.35)
+    + random01(seed, 2) * 0.7;
+  const secondaryLength = (terrain === "water" ? 0.88 : 0.68)
+    + random01(seed, 3) * 0.28;
 
   return samples.map((point, index) => {
     const previous = samples[(index - 1 + samples.length) % samples.length];
@@ -163,14 +176,17 @@ function connectedBunkerRing(
     const normalY = tangentX / length;
     const slowWave = Math.sin(
       point.distance / lobeLength * Math.PI * 2 + phaseA,
-    ) * 0.05 * waveStrength;
+    ) * (terrain === "water" ? 0.065 : 0.05) * waveStrength;
     const secondaryWave = Math.sin(
       point.distance / secondaryLength * Math.PI * 2 + phaseB,
     ) * 0.018 * waveStrength;
     const grain = (random01(seed, index + 11) - 0.5) * 0.006 * waveStrength;
-    const inset = Math.max(0.07, Math.min(0.205, (
+    const inset = Math.max(terrain === "water" ? 0.045 : 0.07, Math.min(
+      terrain === "water" ? 0.2 : terrain === "wetland" ? 0.23 : 0.205,
+      (
       baseInset + slowWave + secondaryWave + grain
-    )));
+      ),
+    ));
     return {
       x: point.x + normalX * inset,
       y: point.y + normalY * inset,
@@ -231,4 +247,36 @@ export function buildBunkerVisualRings(
   return valid.map((ring, index) => (
     connectedBunkerRing(ring, topologyKey, index, cellCount, visualType)
   ));
+}
+
+/**
+ * Returns the sole presentation contour for every recessed natural hazard.
+ * The authoritative cells continue to own gameplay and picking, while this
+ * dense deterministic ring is shared by the floor mask, bank, lip, and
+ * shoreline details. Water and wetland use slower asymmetrical bays than a
+ * bunker, avoiding both raw tile staircases and a generic rounded plate.
+ */
+export function buildHazardVisualRings(
+  terrain: Terrain,
+  rings: readonly (readonly SurfacePoint[])[],
+  topologyKey: string,
+  cellCount: number,
+  visualType: BunkerVisualType = cellCount === 1 ? "pot" : "greenside",
+): SurfacePoint[][] {
+  if (terrain === "sand") {
+    return buildBunkerVisualRings(rings, topologyKey, cellCount, visualType);
+  }
+  if (terrain !== "water" && terrain !== "wetland") {
+    return rings.map((ring) => ring.map((point) => ({ ...point })));
+  }
+  return rings
+    .filter((ring) => ring.length >= 3)
+    .map((ring, index) => connectedBunkerRing(
+      ring,
+      `${terrain}:${topologyKey}`,
+      index,
+      cellCount,
+      "fairway",
+      terrain,
+    ));
 }
