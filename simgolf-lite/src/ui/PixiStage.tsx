@@ -99,6 +99,7 @@ import { bindingFromEvent, type BindingAction, type Keybindings } from "../acces
 import { FLYOVER_DURATION_MS, buildFlyoverKeys, sampleFlyover, type FlyoverKey } from "../game/render/flyover";
 import { PerfWindow } from "../game/render/perfStats";
 import { recordM35Metric } from "../game/render/m35Telemetry";
+import type { CourseSceneCompositionPlanV1 } from "../game/render/courseSceneComposition";
 import {
   MAX_ACTIVE_IMPACTS,
   MAX_ACTIVE_RIPPLES,
@@ -229,6 +230,8 @@ import {
 } from "./renderer/scenes/mobilityEntitiesScene";
 
 type DeferredWorldScenes = typeof import("./renderer/scenes/deferredWorldScenes");
+type DeriveCourseSceneComposition = typeof import("../game/render/courseSceneComposition")["deriveCourseSceneComposition"];
+type DeriveCourseSceneCamera = typeof import("../game/render/courseSceneCamera")["deriveCourseSceneCamera"];
 
 const TERRAIN_LABEL_KEYS: Record<Terrain, MessageKey> = {
   fairway: "designDock.terrain.fairway",
@@ -1182,6 +1185,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
       ? requestedProps.course
       : { ...requestedProps.course, theme: atlasContext.biome }
   ), [atlasContext.biome, requestedProps.course]);
+  const initialCameraCompositionInputRef = useRef<readonly [Course, number]>([
+    renderedCourse,
+    requestedProps.worldSeed,
+  ]);
   // All scene effects consume the last completely activated atlas context.
   // Requested adaptive-quality changes stay off-screen while their bundle is
   // loading, so Pixi never combines a new fallback terrain tier with objects
@@ -1205,6 +1212,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const holeMarkersSceneRef = useRef<HoleMarkersSceneSystem | null>(null);
   const mobilityEntitiesSceneRef = useRef<MobilityEntitiesSceneSystem | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
+  const sceneCameraDeriversRef = useRef<readonly [DeriveCourseSceneComposition, DeriveCourseSceneCamera] | null>(null);
+  const [courseSceneCompositionEntry, setCourseSceneCompositionEntry] = useState<readonly [
+    Course,
+    number,
+    CourseSceneCompositionPlanV1,
+  ] | null>(null);
   const renderRevisionTrackerRef = useRef(new RenderRevisionTracker());
   const [appReady, setAppReady] = useState(false);
   const atlasRevision = atlasContext.generation;
@@ -1379,7 +1392,21 @@ export function PixiStage(requestedProps: PixiStageProps) {
     liveActive,
     onPickGolfer,
     onViewChange,
+    onCameraCenter,
+    selectedTeeSet,
+    showGridOverlays,
+    worldSeed,
   } = props;
+  const courseSceneComposition = courseSceneCompositionEntry?.[0] === course
+    && courseSceneCompositionEntry[1] === worldSeed
+    ? courseSceneCompositionEntry[2]
+    : null;
+  useEffect(() => {
+    if (!appReady || courseSceneComposition) return;
+    const derivePlan = sceneCameraDeriversRef.current?.[0];
+    if (!derivePlan) return;
+    setCourseSceneCompositionEntry([course, worldSeed, derivePlan({ course, seed: worldSeed })]);
+  }, [appReady, course, courseSceneComposition, worldSeed]);
   const effectiveTiles = useMemo(() => effectiveSurfaceTilesForRenderer(
     course.tiles,
     course.width,
@@ -1877,23 +1904,38 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const fitWholeCourse = useCallback(
     (snap: boolean) => {
       const app = appRef.current;
-      if (!app) return;
+      const deriveCamera = sceneCameraDeriversRef.current?.[1];
+      if (!app || !courseSceneComposition || !deriveCamera) return;
       const cam = camRef.current;
-      cam.tcx = course.width / 2;
-      cam.tcy = course.height / 2;
-      cam.tzoom = fitZoomForTileBounds(
-        0, 0, course.width - 1, course.height - 1,
-        app.screen.width, app.screen.height, rotation
-      );
+      const frame = deriveCamera({
+        course,
+        composition: courseSceneComposition,
+        activeHoleIndex,
+        teeSet: selectedTeeSet,
+        viewport: { width: app.screen.width, height: app.screen.height },
+        rotation,
+        mode: "overview",
+      });
+      cam.tcx = frame.center.x;
+      cam.tcy = frame.center.y;
+      cam.tzoom = frame.zoom;
       if (snap) {
         cam.cx = cam.tcx;
         cam.cy = cam.tcy;
         cam.zoom = cam.tzoom;
       }
       applyCamera();
-      props.onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
+      onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
     },
-    [course.width, course.height, rotation, applyCamera, props.onCameraCenter]
+    [
+      activeHoleIndex,
+      applyCamera,
+      course,
+      courseSceneComposition,
+      onCameraCenter,
+      selectedTeeSet,
+      rotation,
+    ]
   );
 
   /**
@@ -1902,50 +1944,26 @@ export function PixiStage(requestedProps: PixiStageProps) {
    */
   const fitDefaultView = useCallback(
     (snap: boolean) => {
-      if (props.showGridOverlays) {
+      if (showGridOverlays) {
         fitWholeCourse(snap);
         return;
       }
       const app = appRef.current;
-      if (!app) return;
-      const completeHole = holes[activeHoleIndex]?.tee && holes[activeHoleIndex]?.green
-        ? holes[activeHoleIndex]
-        : holes.find((hole) => hole.tee && hole.green);
+      const deriveCamera = sceneCameraDeriversRef.current?.[1];
+      if (!app || !courseSceneComposition || !deriveCamera) return;
       const cam = camRef.current;
-      if (completeHole?.tee && completeHole.green) {
-        const padding = 4;
-        const minX = Math.max(0, Math.min(completeHole.tee.x, completeHole.green.x) - padding);
-        const minY = Math.max(0, Math.min(completeHole.tee.y, completeHole.green.y) - padding);
-        const maxX = Math.min(course.width - 1, Math.max(completeHole.tee.x, completeHole.green.x) + padding);
-        const maxY = Math.min(course.height - 1, Math.max(completeHole.tee.y, completeHole.green.y) + padding);
-        cam.tcx = (minX + maxX + 1) / 2;
-        cam.tcy = (minY + maxY + 1) / 2;
-        cam.tzoom = Math.min(MAX_ZOOM, Math.max(
-          minimumZoom(),
-          fitZoomForTileBounds(
-            minX,
-            minY,
-            maxX,
-            maxY,
-            app.screen.width,
-            app.screen.height,
-            rotation,
-          ) * 1.08,
-        ));
-      } else {
-        cam.tcx = course.width / 2;
-        cam.tcy = course.height / 2;
-        const overview = fitZoomForTileBounds(
-          0,
-          0,
-          course.width - 1,
-          course.height - 1,
-          app.screen.width,
-          app.screen.height,
-          rotation,
-        );
-        cam.tzoom = Math.min(MAX_ZOOM, Math.max(minimumZoom(), overview * 1.42));
-      }
+      const frame = deriveCamera({
+        course,
+        composition: courseSceneComposition,
+        activeHoleIndex,
+        teeSet: selectedTeeSet,
+        viewport: { width: app.screen.width, height: app.screen.height },
+        rotation,
+        mode: "normal",
+      });
+      cam.tcx = frame.center.x;
+      cam.tcy = frame.center.y;
+      cam.tzoom = Math.min(MAX_ZOOM, Math.max(minimumZoom(), frame.zoom));
       const centered = clampCenter(cam.tcx, cam.tcy, cam.tzoom);
       cam.tcx = centered.x;
       cam.tcy = centered.y;
@@ -1955,19 +1973,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
         cam.zoom = cam.tzoom;
       }
       applyCamera();
-      props.onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
+      onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
     },
     [
       activeHoleIndex,
       applyCamera,
       clampCenter,
-      course.height,
-      course.width,
+      course,
+      courseSceneComposition,
       fitWholeCourse,
-      holes,
       minimumZoom,
-      props.onCameraCenter,
-      props.showGridOverlays,
+      onCameraCenter,
+      selectedTeeSet,
+      showGridOverlays,
       rotation,
     ],
   );
@@ -2437,7 +2455,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
         app.destroy(true, { children: true, texture: true });
         return;
       }
-      const deferredWorldScenes = await import("./renderer/scenes/deferredWorldScenes");
+      const [deferredWorldScenes, compositionModule, cameraModule] = await Promise.all([
+        import("./renderer/scenes/deferredWorldScenes"),
+        import("../game/render/courseSceneComposition"),
+        import("../game/render/courseSceneCamera"),
+      ]);
       if (cancelled) {
         app.destroy(true, { children: true, texture: true });
         return;
@@ -2453,6 +2475,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
         return;
       }
       deferredWorldScenesRef.current = deferredWorldScenes;
+      sceneCameraDeriversRef.current = [
+        compositionModule.deriveCourseSceneComposition,
+        cameraModule.deriveCourseSceneCamera,
+      ];
+      const initialCompositionInput = initialCameraCompositionInputRef.current;
+      setCourseSceneCompositionEntry([
+        initialCompositionInput[0],
+        initialCompositionInput[1],
+        compositionModule.deriveCourseSceneComposition({
+          course: initialCompositionInput[0],
+          seed: initialCompositionInput[1],
+        }),
+      ]);
 
       app.canvas.style.display = "block";
       app.canvas.style.position = "absolute";
@@ -2511,6 +2546,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
       console.error("[PixiStage] Course renderer initialization failed", error);
       deferredWorldScenesRef.current = null;
+      sceneCameraDeriversRef.current = null;
       setRendererError(true);
       try { app.destroy(true, { children: true, texture: true }); } catch { /* partially initialized */ }
     });
@@ -2689,31 +2725,30 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
   // One-time camera init: snap to the selected normal/overview framing.
   useEffect(() => {
-    if (!appReady) return;
+    if (!appReady || !courseSceneComposition) return;
     const cam = camRef.current;
     if (!cam.initialized) {
       cam.initialized = true;
       fitDefaultView(true);
     }
-  }, [appReady, fitDefaultView]);
+  }, [appReady, courseSceneComposition, fitDefaultView]);
 
   // Loading another fixture/save can replace a 220×140 course with a much
   // smaller one after Pixi has initialized. Refit once per course/view
   // signature so the new estate cannot appear as a tiny object off-center.
   useEffect(() => {
-    if (!appReady || cameraState || props.referenceCamera) return;
-    const completeHole = holes[activeHoleIndex]?.tee && holes[activeHoleIndex]?.green
-      ? holes[activeHoleIndex]
-      : holes.find((hole) => hole.tee && hole.green);
+    if (!appReady || !courseSceneComposition || cameraState || props.referenceCamera) return;
     const signature = [
       course.name,
       course.width,
       course.height,
-      props.showGridOverlays ? "overview" : "normal",
-      completeHole?.tee?.x ?? "-",
-      completeHole?.tee?.y ?? "-",
-      completeHole?.green?.x ?? "-",
-      completeHole?.green?.y ?? "-",
+      activeHoleIndex,
+      course.activePinRotation ?? "A",
+      selectedTeeSet ?? "member",
+      courseSceneComposition.courseHash,
+      courseSceneComposition.obstacleHash,
+      courseSceneComposition.semanticSeed,
+      showGridOverlays ? "overview" : "normal",
     ].join(":");
     if (lastAutoFitSignatureRef.current === signature) return;
     lastAutoFitSignatureRef.current = signature;
@@ -2722,12 +2757,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
     activeHoleIndex,
     appReady,
     cameraState,
+    course.activePinRotation,
     course.height,
     course.name,
     course.width,
+    courseSceneComposition,
     fitDefaultView,
-    holes,
-    props.showGridOverlays,
+    selectedTeeSet,
+    showGridOverlays,
     props.referenceCamera,
   ]);
 
