@@ -59,6 +59,7 @@ export interface NaturalPropsSceneSystem extends RenderSceneSystem {
   contentCount(): number;
   habitatDetailCount(): number;
   habitatMassDiagnostics(): readonly HabitatMassDiagnostics[];
+  legacyHabitatCount(): number;
   fallbackTextureCount(): number;
   rebuildCount(): number;
 }
@@ -714,24 +715,23 @@ export function createNaturalPropsSceneSystem(
       .slice(0, habitatBudget)
       .map((entry) => `${entry.obstacle.x},${entry.obstacle.y}`));
 
-    // Overview has no detail atlas residency, but must still retain the
-    // authored Parkland mass silhouette. Reuse the Medium planner result as
-    // a graphics-only source: it is an existing accepted topology, not a
-    // lower-LOD sampling pass or new per-cell scatter.
+    // The verified habitatField scene exclusively owns Parkland habitat.
+    // Preserve this legacy composition path only for other themes.
+    const legacyHabitatEnabled = course.theme !== "parkland";
     const compositionQuality = snapshot.graphicsQuality === "low" ? "medium" : snapshot.graphicsQuality;
-    const composition = deriveHabitatComposition({
+    const composition = legacyHabitatEnabled ? deriveHabitatComposition({
       course,
       tiles: snapshot.effectiveTiles,
       obstacles: snapshot.obstacles,
       worldSeed: snapshot.worldSeed,
       quality: compositionQuality,
-    });
-    const wetShore = deriveWetShoreComposition({
+    }) : [];
+    const wetShore = legacyHabitatEnabled ? deriveWetShoreComposition({
       course,
       tiles: snapshot.effectiveTiles,
       worldSeed: snapshot.worldSeed,
       quality: snapshot.graphicsQuality,
-    });
+    }) : [];
     // Composition order is a semantic world-space contract. Do not sort by
     // camera depth: rebuilding at another rotation must retain member order.
     const ecology = [...composition, ...wetShore.map((detail) => ({
@@ -847,7 +847,10 @@ export function createNaturalPropsSceneSystem(
       sprite.zIndex = placement.zIndex;
       objects.addChild(sprite);
 
-      const habitatGraphic = selectedHabitat ? createGraphics() : null;
+      // Parkland habitat presentation is exclusively owned by habitatField.
+      // Keep selectedHabitat for the accepted obstacle-shadow treatment, but
+      // do not emit the former per-tree ground pad.
+      const habitatGraphic = legacyHabitatEnabled && selectedHabitat ? createGraphics() : null;
       if (habitatGraphic && selectedHabitat) {
         drawHabitat(habitatGraphic, selectedHabitat);
         habitatGraphic.position.set(placement.position.x, placement.position.y - TILE_H / 2 + 1);
@@ -921,6 +924,9 @@ export function createNaturalPropsSceneSystem(
     contentCount: () => entries.size,
     habitatDetailCount: () => habitatDetails.length,
     habitatMassDiagnostics: () => habitatMassDiagnostics,
+    legacyHabitatCount: () => habitatDetails.length
+      + habitatMasses.reduce((total, mass) => total + mass.sprites.length + (mass.bed ? 1 : 0), 0)
+      + [...entries.values()].filter((entry) => entry.habitat != null).length,
     fallbackTextureCount: () => fallbackTextures.size,
     rebuildCount: () => rebuilds,
   };

@@ -194,6 +194,7 @@ import {
 import {
   RenderRevisionTracker,
   architectureOverlayRevisionDependencies,
+  habitatFieldRevisionDependencies,
   holeMarkersRevisionDependencies,
   mobilityEntitiesRevisionDependencies,
   playerProCollectionRevisionDependencies,
@@ -214,6 +215,7 @@ import {
 } from "./renderer/scenes/surfaceCareScene";
 import type { StableSceneDecalLayers } from "./renderer/scenes/structuresPropsScene";
 import type { NaturalPropsSceneSystem } from "./renderer/scenes/naturalPropsScene";
+import type { HabitatFieldSceneSystem } from "./renderer/scenes/habitatFieldScene";
 import type { PlayerProCollectionSceneSystem } from "./renderer/scenes/playerProCollectionScene";
 import type { HoleMarkersSceneSystem } from "./renderer/scenes/holeMarkersScene";
 import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
@@ -1198,6 +1200,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const sceneSystemHostRef = useRef<SceneSystemHost | null>(null);
   const atmosphereSceneRef = useRef<AtmosphereSceneSystem | null>(null);
   const naturalPropsSceneRef = useRef<NaturalPropsSceneSystem | null>(null);
+  const habitatFieldSceneRef = useRef<HabitatFieldSceneSystem | null>(null);
   const playerProCollectionSceneRef = useRef<PlayerProCollectionSceneSystem | null>(null);
   const holeMarkersSceneRef = useRef<HoleMarkersSceneSystem | null>(null);
   const mobilityEntitiesSceneRef = useRef<MobilityEntitiesSceneSystem | null>(null);
@@ -1633,6 +1636,18 @@ export function PixiStage(requestedProps: PixiStageProps) {
       seasonalPlantsSignature,
       surfaceHeightAt,
     ],
+    habitatField: habitatFieldRevisionDependencies({
+      atlasRevision,
+      course,
+      effectiveTiles,
+      obstacles,
+      holes,
+      worldSeed: props.worldSeed,
+      graphicsQuality: props.graphicsQuality,
+      colorVision: props.colorVision,
+      rotation,
+      surfaceHeightAt,
+    }),
     propertyAssets: propertyAssetsRevisionDependencies({
       course,
       hasResortServicePressure,
@@ -2264,6 +2279,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
               targetZoom: camRef.current.tzoom,
             },
           },
+          habitatField: {
+            ...(habitatFieldSceneRef.current?.diagnostics() ?? null),
+            legacyParklandHabitatCount: course.theme === "parkland"
+              ? naturalPropsSceneRef.current?.legacyHabitatCount() ?? 0
+              : 0,
+          },
           sharedContours: { ...sharedContourDiagnosticsRef.current },
           layers: layers ? {
             surround: stampedAtlasGeneration(layers.surround),
@@ -2287,6 +2308,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
               habitatMasses: naturalPropsSceneRef.current?.habitatMassDiagnostics().length ?? 0,
               habitatBedLayers: naturalPropsSceneRef.current?.habitatMassDiagnostics()
                 .reduce((total, mass) => total + mass.bedLayerCount, 0) ?? 0,
+              legacyHabitat: naturalPropsSceneRef.current?.legacyHabitatCount() ?? 0,
             },
             dressing: layers.seasonalTerrain.children.length + layers.surfaceCare.children.length,
           } : null,
@@ -2503,6 +2525,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       sceneSystemHostRef.current = null;
       atmosphereSceneRef.current = null;
       naturalPropsSceneRef.current = null;
+      habitatFieldSceneRef.current = null;
       playerProCollectionSceneRef.current = null;
       holeMarkersSceneRef.current = null;
       mobilityEntitiesSceneRef.current = null;
@@ -4581,6 +4604,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       layers.objects,
       layers.sceneDecals.naturalProps,
     );
+    const habitatField = deferredWorldScenes.createHabitatFieldSceneSystem(
+      layers.sceneDecals.naturalProps,
+    );
     const playerProCollection = deferredWorldScenes.createPlayerProCollectionSceneSystem(layers.objects);
     const holeMarkers = deferredWorldScenes.createHoleMarkersSceneSystem(
       layers.terrainDecals,
@@ -4609,10 +4635,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
       // Keep host lifecycle order; fixed decal sublayers separately preserve
       // the legacy estate -> natural -> authored-decoration compositing order.
       naturalProps,
+      habitatField,
       createPropertyAssetsSceneSystem(layers.objects),
     ]);
     atmosphereSceneRef.current = atmosphere;
     naturalPropsSceneRef.current = naturalProps;
+    habitatFieldSceneRef.current = habitatField;
     playerProCollectionSceneRef.current = playerProCollection;
     holeMarkersSceneRef.current = holeMarkers;
     mobilityEntitiesSceneRef.current = mobilityEntities;
@@ -4621,6 +4649,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (sceneSystemHostRef.current === host) sceneSystemHostRef.current = null;
       if (atmosphereSceneRef.current === atmosphere) atmosphereSceneRef.current = null;
       if (naturalPropsSceneRef.current === naturalProps) naturalPropsSceneRef.current = null;
+      if (habitatFieldSceneRef.current === habitatField) habitatFieldSceneRef.current = null;
       if (playerProCollectionSceneRef.current === playerProCollection) playerProCollectionSceneRef.current = null;
       if (holeMarkersSceneRef.current === holeMarkers) holeMarkersSceneRef.current = null;
       if (mobilityEntitiesSceneRef.current === mobilityEntities) mobilityEntitiesSceneRef.current = null;
@@ -4647,6 +4676,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
       if (renderedScenes.includes("naturalProps")) {
         stampAtlasGeneration(layers.objects, atlasRevision);
+      }
+      if (renderedScenes.includes("habitatField")) {
+        stampAtlasGeneration(layers.sceneDecals.naturalProps, atlasRevision);
       }
     }
   }, [appReady, atlasRevision, renderSnapshot]);
@@ -5156,6 +5188,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
       // otherwise.
       const pool = golferPoolRef.current;
       const list = liveActive && props.showGolfers !== false ? golfersRef?.current ?? [] : [];
+      const terrainPreview = terrainStrokePreviewRef.current;
+      habitatFieldSceneRef.current?.tick({
+        golfers: list,
+        editorPreviewPoints: [
+          draftTee,
+          draftGreen,
+          ...clickSplineDraftRef.current,
+          clickSplineHoverRef.current,
+          ...(terrainPreview?.previewKind === "surface-edit"
+            ? terrainPreview.tiles
+            : terrainPreview?.acceptedTiles ?? []),
+        ].filter((point): point is Point => point != null),
+      });
       const seen = new Set<number>();
       const golferById = new Map<number, GolferRenderData>();
       // Entity culling bounds (ZKU-160): golfers outside the viewport skip
@@ -5614,7 +5659,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     return () => {
       app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, props.colorVision, props.graphicsQuality, props.reducedMotion, props.seasonalVisualState, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, props.onFrameTime, clampCenter, surfaceHeightAt]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, draftGreen, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, props.colorVision, props.graphicsQuality, props.reducedMotion, props.seasonalVisualState, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, props.onFrameTime, clampCenter, surfaceHeightAt]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
