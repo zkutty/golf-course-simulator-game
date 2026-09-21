@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ringSignedArea } from "./landscapeGeometry";
 import {
   buildBunkerVisualRings,
+  buildHazardVisualRings,
   classifyBunkerVisualType,
 } from "./bunkerShapes";
 
@@ -121,5 +122,23 @@ describe("bunker silhouettes", () => {
     expect(Math.abs(ringSignedArea(fairway[0]))).toBeGreaterThan(
       Math.abs(ringSignedArea(greenside[0])),
     );
+  });
+
+  it("derives one deterministic organic contour authority for water and wetland", () => {
+    const stepped = [[
+      { x: 1, y: 1 }, { x: 5, y: 1 }, { x: 5, y: 2 },
+      { x: 4, y: 2 }, { x: 4, y: 4 }, { x: 2, y: 4 },
+      { x: 2, y: 3 }, { x: 1, y: 3 },
+    ]];
+    for (const terrain of ["water", "wetland"] as const) {
+      const first = buildHazardVisualRings(terrain, stepped, "joined-hazard", 14);
+      const second = buildHazardVisualRings(terrain, stepped, "joined-hazard", 14);
+      expect(first).toEqual(second);
+      expect(first).toHaveLength(1);
+      expect(first[0].length).toBeGreaterThan(stepped[0].length);
+      expect(first[0]).not.toEqual(stepped[0]);
+      expect(Math.abs(ringSignedArea(first[0]))).toBeLessThan(Math.abs(ringSignedArea(stepped[0])));
+      expect(first[0].every(({ x, y }) => Number.isFinite(x) && Number.isFinite(y))).toBe(true);
+    }
   });
 });

@@ -7,6 +7,7 @@ import {
   activeParklandComposableDiagnostics,
   isParklandComposableSemantic,
   parklandComposableUv,
+  parklandSemanticFieldStyle,
   suppressesLegacyComposableTurfContour,
   transformParklandCuePixels,
   usesParklandComposableMaterial,
@@ -83,7 +84,7 @@ describe("ZK-461 Parkland common-phase material contract", () => {
         if (semantic === "fairway") {
           expect(transformed.metrics.nonZeroAlphaFraction).toBeGreaterThan(0.35);
           expect(transformed.metrics.nonZeroAlphaFraction).toBeLessThan(0.45);
-          expect(transformed.metrics.maximumAlpha).toBe({ high: 12, medium: 10, low: 8 }[quality]);
+          expect(transformed.metrics.maximumAlpha).toBe({ high: 20, medium: 20, low: 16 }[quality]);
           let interiorPixels = 0;
           const alphaAt = (x: number, y: number) => transformed.pixels[(y * source.width + x) * 4 + 3];
           for (let y = 1; y < source.height - 1; y++) for (let x = 1; x < source.width - 1; x++) {
@@ -94,7 +95,10 @@ describe("ZK-461 Parkland common-phase material contract", () => {
         } else {
           expect(transformed.metrics.nonZeroAlphaFraction).toBeLessThan(0.23);
         }
-        expect(transformed.metrics.lowFrequencyPlateScore).toBeLessThan(0.04);
+        expect(
+          transformed.metrics.lowFrequencyPlateScore,
+          `${quality}:${semantic}`,
+        ).toBeLessThan(0.04);
         expect(transformed.metrics.tileBoundaryEdgeEnergy).toBeLessThan(0.025);
         expect(transformed.metrics.motifExpansionPixels).toBe(semantic === "green" ? 1 : 0);
         expect(Math.min(...transformed.pixels.filter((_, offset) => offset % 4 === 3))).toBe(0);
@@ -117,5 +121,31 @@ describe("ZK-461 Parkland common-phase material contract", () => {
     expect(low.metrics.pattern).toBe(high.metrics.pattern);
     expect(low.metrics.maximumAlpha).toBeLessThan(high.metrics.maximumAlpha);
     expect(low.metrics.lowFrequencyPlateScore).toBeLessThan(high.metrics.lowFrequencyPlateScore);
+  });
+
+  it("keeps connected maintained fields legible at Medium without outlining cells", () => {
+    const colors = {
+      fairway: 0x4fa64f,
+      rough: 0x4a8547,
+      deep_rough: 0x356d37,
+      green: 0x63bd5a,
+      tee: 0x70b65b,
+    } as const;
+    const field = Object.fromEntries(PARKLAND_COMPOSABLE_SEMANTICS.map((semantic) => [
+      semantic,
+      parklandSemanticFieldStyle("medium", semantic, colors[semantic]),
+    ]));
+    expect(field.rough.alpha).toBeLessThan(0.02);
+    expect(field.fairway.alpha).toBeGreaterThanOrEqual(0.2);
+    expect(field.green.alpha).toBeGreaterThan(field.fairway.alpha);
+    expect(field.tee.alpha).toBeGreaterThan(field.fairway.alpha);
+    expect(field.deep_rough.alpha).toBeGreaterThanOrEqual(0.4);
+    expect(field.fairway.blendMode).toBe("screen");
+    expect(field.green.blendMode).toBe("screen");
+    expect(field.tee.blendMode).toBe("screen");
+    expect(field.rough.blendMode).toBe("normal");
+    expect(field.deep_rough.blendMode).toBe("normal");
+    expect(new Set(Object.values(field).map(({ tint }) => tint)).size).toBe(5);
+    expect(PARKLAND_COMPOSABLE_LOW_CONTRACT.fullCellOutlines).toBe(false);
   });
 });

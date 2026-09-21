@@ -7,7 +7,11 @@ export interface LandformPresentationPlan {
 }
 
 export interface LandformShoulderPoint {
+  /** Exact authored level boundary shared by the two slope cues. */
+  boundary: SurfacePoint;
+  /** World-space sample on the upper plateau, away from the boundary. */
   upper: SurfacePoint;
+  /** World-space sample on the lower plateau, away from the boundary. */
   lower: SurfacePoint;
   upperHeight: number;
   lowerHeight: number;
@@ -88,7 +92,10 @@ export function buildLandformShoulders(
   }
 
   const runs: LandformShoulder[] = [];
-  const inset = 0.08;
+  // A broad top-surface run communicates the direction of grade without
+  // painting a vertical cliff wall. Both samples stay in world space, so the
+  // cue remains continuous and rotates with the authored landform.
+  const inset = 0.68;
   for (const [, group] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
     group.sort((a, b) => a.start - b.start);
     for (let first = 0; first < group.length;) {
@@ -103,6 +110,7 @@ export function buildLandformShoulders(
       const point = (at: number): LandformShoulderPoint => {
         const base = boundary(at);
         return {
+          boundary: base,
           upper: { x: base.x + edge.nx * inset, y: base.y + edge.ny * inset },
           lower: { x: base.x - edge.nx * inset, y: base.y - edge.ny * inset },
           upperHeight: edge.high,

@@ -146,6 +146,7 @@ import { buildLandscapeBoundaryRuns } from "../game/render/landscapeEdges";
 import { buildSignedContourRibbons, shouldProjectContourRibbon } from "../game/render/contourRibbons";
 import {
   buildBunkerVisualRings,
+  buildHazardVisualRings,
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
 import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
@@ -3414,6 +3415,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
       chunk.container.addChild(reliefBanks);
       const hillCaps = new PIXI.Graphics();
       const face = (x: number, y: number, d: Point, color: number) => {
+        // The connected Parkland scene owns one broad grade surface. Keeping
+        // the legacy per-level cliff quads underneath it exposes parallel dark
+        // rails through the tessellated top plane.
+        if (composableTurfOwnsTransitions) return;
         const e = elev(x, y);
         const nx = x + d.x;
         const ny = y + d.y;
@@ -3484,7 +3489,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
         });
       for (const { x, y } of order) {
         const terrain = visualTerrainAt(x, y);
-        const underlayTerrain = composableTurfOwnsTransitions && terrain === "sand" ? "rough" : terrain;
+        const lowOrganicHazard = props.graphicsQuality === "low"
+          && (terrain === "water" || terrain === "wetland" || terrain === "sand");
+        const underlayTerrain = composableTurfOwnsTransitions && (terrain === "sand" || lowOrganicHazard)
+          ? "rough"
+          : terrain;
         const material = getTerrainMaterial(course.theme, underlayTerrain);
         const e = elev(x, y);
         const groundPosition = worldToIso(x + 0.5, y, e, rotation);
@@ -3598,7 +3607,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         // Animated water registration (ZKU-150): shimmer phase from position
         // so neighboring tiles never pulse in sync; plus a foam lip along
         // every land edge (drawn on the water side).
-        if (terrain === "water" || terrain === "wetland") {
+        if (underlayTerrain === terrain && (terrain === "water" || terrain === "wetland")) {
           chunk.waterSprites.push({
             sprite,
             baseTint: sprite.tint,
@@ -3654,6 +3663,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         // rounded hill caps. Links intentionally carries the strongest cue.
         const capStrength = hillReliefStrength(course.theme);
         for (const direction of AUTOTILE_DIRECTIONS.filter((entry) => entry.dx === 0 || entry.dy === 0)) {
+          if (composableTurfOwnsTransitions) continue;
           const nx = x + direction.dx;
           const ny = y + direction.dy;
           if (nx < 0 || ny < 0 || nx >= w || ny >= h || elev(nx, ny) >= e) continue;
@@ -3972,6 +3982,129 @@ export function PixiStage(requestedProps: PixiStageProps) {
     // continues to own hazards, paths, and elevation; do not route those
     // categories through the connected Medium/High presentation.
     if (quality === "low" && composableActive) {
+      // Low retains the economical chunk path for hazards/elevation, but its
+      // cart route needs one joined top plane above the composable turf.
+      // Reusing the canonical path component here removes rotation-dependent
+      // isolated diamonds without opting Low into the connected-surface scene.
+      for (const pathComponent of sortedComponents.filter((component) => component.terrain === "path")) {
+        const pathMesh = composableRuntime!.createParklandComposableMesh(
+          textureFor("path", true),
+          pathComponent.cells,
+          course.width,
+          1,
+          (cell) => cell,
+          (_cell, x, y) => worldToIso(
+            x,
+            y,
+            sampleLandscapeSurfaceHeight(heightfield, pathComponent, x, y),
+            rotation,
+          ),
+          true,
+        );
+        if (!pathMesh) continue;
+        pathMesh.eventMode = "none";
+        pathMesh.label = `parkland-low-joined-route:${pathComponent.topologyKey}`;
+        presentationLayer.addChild(pathMesh);
+      }
+      // Low uses the same deterministic organic ring authority as the
+      // accepted Medium/High hazard floor. The chunk layer beneath has already
+      // been neutralized to rough for these cells, so no stepped diamond can
+      // remain outside the ring mask.
+      for (const hazardComponent of sortedComponents.filter((component) => (
+        component.terrain === "water" || component.terrain === "wetland" || component.terrain === "sand"
+      ))) {
+        const isSand = hazardComponent.terrain === "sand";
+        const visualType = isSand
+          ? classifyBunkerVisualType(
+            hazardComponent.cells,
+            presentationTiles,
+            course.width,
+            course.height,
+          )
+          : undefined;
+        const authoredRings = buildHazardVisualRings(
+          hazardComponent.terrain,
+          hazardComponent.rings,
+          hazardComponent.topologyKey,
+          hazardComponent.cells.length,
+          visualType,
+        );
+        const visualRings = authoredRings.map((ring) => {
+          // At overview resolution the canonical ring's small scallops alias
+          // back into its source cell staircase. Three bounded Chaikin passes
+          // retain the accepted ring inside its authored envelope while
+          // presenting one continuous lake/bunker silhouette.
+          let smoothed = ring.map((point) => ({ ...point }));
+          if (!isSand) for (let pass = 0; pass < 3 && smoothed.length >= 9; pass++) {
+            const source = smoothed;
+            smoothed = source.map((_point, index) => {
+              let x = 0;
+              let y = 0;
+              for (let offset = -4; offset <= 4; offset++) {
+                const sample = source[(index + offset + source.length) % source.length];
+                x += sample.x;
+                y += sample.y;
+              }
+              return { x: x / 9, y: y / 9 };
+            });
+          }
+          for (let pass = 0; pass < 2 && smoothed.length >= 3; pass++) {
+            smoothed = smoothed.flatMap((point, index) => {
+              const next = smoothed[(index + 1) % smoothed.length];
+              return [
+                { x: point.x * 0.75 + next.x * 0.25, y: point.y * 0.75 + next.y * 0.25 },
+                { x: point.x * 0.25 + next.x * 0.75, y: point.y * 0.25 + next.y * 0.75 },
+              ];
+            });
+          }
+          return smoothed;
+        });
+        const plans = visualRings.map((ring) => buildHazardBankFacePlan(
+          hazardComponent.terrain,
+          hazardComponent.cells.length,
+          ring,
+        ));
+        const hazardMesh = composableRuntime!.createParklandComposableMesh(
+          textureFor(hazardComponent.terrain),
+          hazardComponent.presentationCells,
+          course.width,
+          1,
+          (cell) => cell,
+          (_cell, x, y) => worldToIso(
+            x,
+            y,
+            sampleLandscapeSurfaceHeight(heightfield, hazardComponent, x, y),
+            rotation,
+          ),
+          true,
+        );
+        if (!hazardMesh) continue;
+        const mask = composableRuntime!.createLandscapeRingMask(
+          visualRings.map((ring, index) => plans[index]?.innerRing ?? ring),
+          project,
+        );
+        hazardMesh.eventMode = "none";
+        hazardMesh.label = `parkland-low-organic-hazard:${hazardComponent.terrain}:${hazardComponent.topologyKey}`;
+        hazardMesh.mask = mask;
+        presentationLayer.addChild(hazardMesh, mask);
+        const edge = new PIXI.Graphics();
+        edge.eventMode = "none";
+        for (const ring of visualRings) {
+          const points = ring.map(project);
+          if (points.length < 3) continue;
+          edge.moveTo(points[0].x, points[0].y);
+          for (let index = 1; index < points.length; index++) edge.lineTo(points[index].x, points[index].y);
+          edge.lineTo(points[0].x, points[0].y);
+        }
+        edge.stroke({
+          width: isSand ? 1 : 1.35,
+          color: isSand ? shade(themedColors.rough, 1.08) : 0x719da1,
+          alpha: isSand ? 0.62 : 0.7,
+          join: "round",
+          cap: "round",
+        });
+        presentationLayer.addChild(edge);
+      }
       const diagnostics = composableRuntime!.lowParklandPresentationDiagnostics(composableTrace, components);
       pathMaterialDiagnosticsRef.current = diagnostics.pathMaterial;
       parklandComposableDiagnosticsRef.current = diagnostics.composable;
@@ -4019,10 +4152,22 @@ export function PixiStage(requestedProps: PixiStageProps) {
           course.height,
         )
         : null;
-      // ZK-1200's shared rings are the sole final-scene mask authority. The
-      // presentation-cell halo above replaces the obsolete organic-mask
-      // underlay workaround without changing authoritative ownership.
-      const visualRings = component.rings;
+      // One deterministic organic contour is shared by the hazard floor,
+      // bank, lip, and boundary dressing. Gameplay/picking remain whole-cell.
+      const visualRings = bunkerVisualType != null
+        || component.terrain === "water"
+        || component.terrain === "wetland"
+        ? buildHazardVisualRings(
+          component.terrain,
+          component.rings,
+          component.topologyKey,
+          component.cells.length,
+          bunkerVisualType ?? undefined,
+        )
+        : component.rings;
+      const hazardPlans = visualRings.map((ring) => (
+        buildHazardBankFacePlan(component.terrain, component.cells.length, ring)
+      ));
       // The generic field's large square chips made the route read as a gray
       // speckled ribbon. The compositor's core uses the existing deterministic
       // fine-grain generator instead; it remains world-anchored and the whole
@@ -4030,9 +4175,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (mesh) {
         mesh.tint = seasonalByTerrain[presentationTerrain]?.textureTint ?? 0xffffff;
         mesh.eventMode = "none";
-        const mask = composableRuntime!.createLandscapeRingMask(isSand
-          ? visualRings.map((ring) => buildHazardBankFacePlan("sand", component.cells.length, ring)?.innerRing ?? ring)
-          : visualRings, project);
+        const maskRings = hazardPlans.some(Boolean)
+          ? visualRings.map((ring, index) => hazardPlans[index]?.innerRing ?? ring)
+          : visualRings;
+        const mask = composableRuntime!.createLandscapeRingMask(maskRings, project);
         mesh.mask = mask;
         layer.addChild(mesh, mask);
       }
@@ -4089,8 +4235,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
         // A bank is a single joined world-space skirt per canonical ring. The
         // strip shares its inner endpoints at every turn; a restrained neutral
         // material avoids screen-direction branches and edge-by-edge panels.
-        for (const ring of component.rings) {
-          const plan = buildHazardBankFacePlan(component.terrain, component.cells.length, ring);
+        for (let ringIndex = 0; ringIndex < visualRings.length; ringIndex++) {
+          const plan = hazardPlans[ringIndex];
           if (!plan || !depthProfile) continue;
           const positions: number[] = [];
           const uvs: number[] = [];
@@ -4148,8 +4294,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
             }),
             texture: PIXI.Texture.WHITE,
           });
-          bank.tint = isSand ? shade(themedColors.rough, 0.62) : shade(bankDark, 1.08);
-          bank.alpha = isSand ? 0.7 : 0.58;
+          bank.tint = isSand ? shade(themedColors.rough, 0.72) : shade(bankDark, 1.18);
+          bank.alpha = isSand ? 0.62 : 0.68;
           recessedLayer.addChild(bank);
 
           lip.stroke({
@@ -4160,11 +4306,27 @@ export function PixiStage(requestedProps: PixiStageProps) {
             join: isSand ? "miter" : "round",
           });
           recessedLayer.addChild(lip);
+          if (!isSand && lipPoints.length > 2) {
+            const shallow = new PIXI.Graphics();
+            shallow.moveTo(lipPoints[0].x, lipPoints[0].y);
+            for (let index = 1; index < lipPoints.length; index++) {
+              shallow.lineTo(lipPoints[index].x, lipPoints[index].y);
+            }
+            shallow.lineTo(lipPoints[0].x, lipPoints[0].y);
+            shallow.stroke({
+              width: component.terrain === "water" ? 2.2 : 1.6,
+              color: component.terrain === "water" ? 0x78b6b8 : 0x719781,
+              alpha: 0.64,
+              cap: "round",
+              join: "round",
+            });
+            recessedLayer.addChild(shallow);
+          }
         }
       }
 
       const boundaryRuns = buildLandscapeBoundaryRuns(
-        component.rings,
+        visualRings,
         component.terrain,
         presentationTiles,
         course.width,
@@ -4262,8 +4424,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     }
 
     // ZK-1207: crisp runs come from the actual multi-tile level boundary.
-    // Only the side facing the camera owns a face and crest; no closed contour,
-    // raster halo, or second parallel band is projected.
+    // They now shade the two adjoining top surfaces instead of filling a dark
+    // vertical wall, so authored steps read as connected rolling shoulders.
     const landformPlan = buildLandformPresentationPlan(
       heightfield,
       effectiveTiles,
@@ -4288,7 +4450,18 @@ export function PixiStage(requestedProps: PixiStageProps) {
       return lowA.y + lowB.y > highA.y + highB.y;
     });
     const selectedShoulders: typeof visibleShoulders = [];
-    for (const level of new Set(visibleShoulders.map((shoulder) => shoulder.level))) {
+    // The heightfield already contains every authored level. Presentation
+    // selects the one dominant connected grade instead of outlining every
+    // successive level as a parallel terrace rail.
+    const primaryLevel = [...new Set(visibleShoulders.map((shoulder) => shoulder.level))]
+      .map((level) => ({
+        level,
+        length: visibleShoulders
+          .filter((shoulder) => shoulder.level === level)
+          .reduce((sum, shoulder) => sum + shoulder.worldLength, 0),
+      }))
+      .sort((left, right) => right.length - left.length || left.level - right.level)[0]?.level;
+    for (const level of primaryLevel == null ? [] : [primaryLevel]) {
       const candidates = visibleShoulders.filter((shoulder) => shoulder.level === level);
       const seed = candidates.reduce((longest, shoulder) => shoulder.worldLength > longest.worldLength ? shoulder : longest);
       const connected = [seed];
@@ -4308,27 +4481,23 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const graphics = new PIXI.Graphics();
       graphics.eventMode = "none";
       const [current, next] = shoulder.points;
-      const boundary = (point: typeof current, height: number) => {
-        const edge = landformBoundary(point);
-        return worldToIso(edge.x, edge.y, height, rotation);
-      };
-      const upperA = boundary(current, current.upperHeight);
-      const upperB = boundary(next, next.upperHeight);
-      const lowerB = boundary(next, next.lowerHeight);
-      const lowerA = boundary(current, current.lowerHeight);
+      const upperA = worldToIso(current.upper.x, current.upper.y, current.upperHeight, rotation);
+      const upperB = worldToIso(next.upper.x, next.upper.y, next.upperHeight, rotation);
+      const lowerA = worldToIso(current.lower.x, current.lower.y, current.lowerHeight, rotation);
+      const lowerB = worldToIso(next.lower.x, next.lower.y, next.lowerHeight, rotation);
       graphics.poly([
         upperA.x, upperA.y,
         upperB.x, upperB.y,
         lowerB.x, lowerB.y,
         lowerA.x, lowerA.y,
       ]);
-      graphics.fill({ color: shade(themedColors.rough, 0.62), alpha: 0.66 });
+      graphics.fill({ color: shade(themedColors.rough, 0.82), alpha: 0.16 });
       graphics.moveTo(upperA.x, upperA.y);
       graphics.lineTo(upperB.x, upperB.y);
       graphics.stroke({
         width: 1,
         color: shade(themedColors.rough, 1.12),
-        alpha: 0.72,
+        alpha: 0.3,
         join: "miter",
         cap: "square",
       });

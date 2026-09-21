@@ -48,10 +48,49 @@ export const PARKLAND_COMPOSABLE_PATTERNS: Readonly<Record<ParklandComposableSem
 };
 
 const MOTIF_ALPHA_CAPS: Readonly<Record<AtlasQuality, Readonly<Record<ParklandComposableSemantic, number>>>> = {
-  high: { fairway: 12, rough: 58, deep_rough: 70, green: 72, tee: 76 },
-  medium: { fairway: 10, rough: 52, deep_rough: 64, green: 64, tee: 68 },
-  low: { fairway: 8, rough: 36, deep_rough: 45, green: 46, tee: 48 },
+  high: { fairway: 20, rough: 64, deep_rough: 74, green: 74, tee: 76 },
+  medium: { fairway: 20, rough: 58, deep_rough: 68, green: 68, tee: 72 },
+  low: { fairway: 16, rough: 44, deep_rough: 56, green: 56, tee: 60 },
 };
+
+const MOTIF_SIGNAL_GAINS: Readonly<Record<ParklandComposableSemantic, number>> = {
+  fairway: 1,
+  rough: 1,
+  deep_rough: 1,
+  green: 1,
+  tee: 1,
+};
+
+const SEMANTIC_FIELD_ALPHA: Readonly<Record<AtlasQuality, Readonly<Record<ParklandComposableSemantic, number>>>> = {
+  high: { fairway: 0.2, rough: 0.01, deep_rough: 0.4, green: 0.38, tee: 0.34 },
+  medium: { fairway: 0.23, rough: 0.012, deep_rough: 0.44, green: 0.42, tee: 0.38 },
+  low: { fairway: 0.16, rough: 0.008, deep_rough: 0.31, green: 0.29, tee: 0.26 },
+};
+
+const SEMANTIC_FIELD_TINT_MIX: Readonly<Record<ParklandComposableSemantic, number>> = {
+  fairway: 0.66,
+  rough: 0.12,
+  deep_rough: 0.84,
+  green: 0.7,
+  tee: 0.62,
+};
+
+export function parklandSemanticFieldStyle(
+  quality: AtlasQuality,
+  semantic: ParklandComposableSemantic,
+  color: number,
+): Readonly<{ tint: number; alpha: number; blendMode: "normal" | "screen" }> {
+  return {
+    tint: mixRgb(0xffffff, color, SEMANTIC_FIELD_TINT_MIX[semantic]),
+    alpha: SEMANTIC_FIELD_ALPHA[quality][semantic],
+    // Multiplicative tint alone can only darken the common undercoat. Cared-for
+    // turf instead uses a restrained screen blend of that same world-phase
+    // texture; rough/deep rough retain the ordinary value treatment.
+    blendMode: semantic === "fairway" || semantic === "green" || semantic === "tee"
+      ? "screen"
+      : "normal",
+  };
+}
 
 export interface ParklandMotifMetrics {
   readonly semantic: ParklandComposableSemantic;
@@ -121,7 +160,7 @@ export function transformParklandCuePixels(
     const residual = motifAlpha - alphaFloor;
     const signal = residual <= (quality === "low" ? 3 : 2)
       ? 0
-      : Math.min(cap, residual);
+      : Math.min(cap, Math.round(residual * MOTIF_SIGNAL_GAINS[semantic]));
     output[offset] = source[colorOffset];
     output[offset + 1] = source[colorOffset + 1];
     output[offset + 2] = source[colorOffset + 2];
@@ -484,6 +523,53 @@ export function appendParklandComposableCues(
   return drawn;
 }
 
+/**
+ * Gives every turf role a restrained continuous value field. Every mesh uses
+ * the same opaque undercoat source and canonical world UVs, so the treatment
+ * cannot restart at cells or components. The small alpha differences make the
+ * playable vocabulary readable while leaving motif ink and authored pair
+ * fringes responsible for local texture and transitions.
+ */
+export function appendParklandSemanticFields(
+  layer: PIXI.Container,
+  texture: PIXI.Texture,
+  quality: AtlasQuality,
+  components: readonly LandscapeComponent[],
+  courseWidth: number,
+  subdivisions: number,
+  heightfield: VisualHeightfield,
+  rotation: IsoRotation,
+  colors: Readonly<Record<ParklandComposableSemantic, number>>,
+): readonly ParklandComposableSemantic[] {
+  const drawn: ParklandComposableSemantic[] = [];
+  for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
+    const entries = components
+      .filter((component) => component.terrain === semantic)
+      .flatMap((component) => component.cells.map((cell) => ({ cell, component })));
+    const mesh = createParklandComposableMesh(
+      texture,
+      entries,
+      courseWidth,
+      subdivisions,
+      (entry) => entry.cell,
+      (entry, x, y) => worldToIso(
+        x, y, sampleLandscapeSurfaceHeight(heightfield, entry.component, x, y), rotation,
+      ),
+      false,
+    );
+    if (!mesh) continue;
+    mesh.eventMode = "none";
+    mesh.label = `parkland-common-phase:field:${semantic}`;
+    const style = parklandSemanticFieldStyle(quality, semantic, colors[semantic]);
+    mesh.tint = style.tint;
+    mesh.alpha = style.alpha;
+    mesh.blendMode = style.blendMode;
+    layer.addChild(mesh);
+    drawn.push(semantic);
+  }
+  return drawn;
+}
+
 function mixRgb(color: number, target: number, amount: number): number {
   const channel = (shift: number) => Math.round(
     ((color >> shift) & 0xff) * (1 - amount) + ((target >> shift) & 0xff) * amount,
@@ -526,6 +612,17 @@ export function appendParklandComposablePresentation(
     rotation,
     standardColorVision ? 0xffffff : mixRgb(0xffffff, colors.rough, 0.35),
   );
+  appendParklandSemanticFields(
+    presentationLayer,
+    sources.undercoat,
+    sources.quality,
+    components,
+    course.width,
+    subdivisions,
+    heightfield,
+    rotation,
+    colors,
+  );
   for (const semantic of appendParklandComposableCues(
     presentationLayer,
     sources.cues,
@@ -534,7 +631,13 @@ export function appendParklandComposablePresentation(
     subdivisions,
     heightfield,
     rotation,
-    (role) => standardColorVision ? 0xffffff : mixRgb(0xffffff, colors[role], 0.28),
+    // The cue remains motif-only, but its ink now carries a restrained role
+    // tint even in the standard mode. This restores a readable maintained /
+    // natural hierarchy without adding a broad role-colored mask or changing
+    // the shared x/8,y/8 material phase.
+    (role) => mixRgb(0xffffff, colors[role], standardColorVision
+      ? ({ fairway: 0.5, rough: 0.24, deep_rough: 0.52, green: 0.52, tee: 0.46 } as const)[role]
+      : 0.48),
   )) trace.recordSemantic(semantic);
   trace.recordPairFringes(appendParklandPairFringes(
     presentationLayer,
@@ -697,7 +800,9 @@ export function appendParklandPairFringes(
     height: course.height,
     blockedCells,
   });
-  const opacity = quality === "high" ? 0.5 : quality === "medium" ? 0.48 : 0.44;
+  // Fields establish role hierarchy; the authored fringe is now a transition
+  // accent rather than a dark outline network around every maintained patch.
+  const opacity = quality === "high" ? 0.38 : quality === "medium" ? 0.34 : 0.3;
   const emittedOwnerKeys = new Set<string>();
   const source = new Map<string, string>();
   const missingAssetSourceIds = new Set<string>();
