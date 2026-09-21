@@ -217,7 +217,7 @@ describe("natural props scene ownership", () => {
     expect(naturalPropFallbackBiome("unregistered_tree_probe")).toBeNull();
   });
 
-  it("rebuilds and tears down sprites, shadows, and habitats without destroying shared atlas textures", () => {
+  it("rebuilds and tears down Parkland sprites and shadows without ground pads or shared-texture destruction", () => {
     const objects = new FakeContainer();
     const decals = new FakeContainer();
     const atlasTexture = fakeTexture();
@@ -247,13 +247,13 @@ describe("natural props scene ownership", () => {
     expect(scene.rebuildCount()).toBe(1);
     expect(scene.contentCount()).toBe(1);
     expect(objects.children).toHaveLength(1);
-    expect(decals.children).toHaveLength(2);
+    expect(decals.children).toHaveLength(1);
+    expect(scene.legacyHabitatCount()).toBe(0);
 
     scene.update!(snapshot({ atlasRevision: 2 }));
     expect(scene.rebuildCount()).toBe(2);
     expect(sprites[0].destroy).toHaveBeenCalledTimes(1);
     expect(graphics[0].destroy).toHaveBeenCalledTimes(1);
-    expect(graphics[1].destroy).toHaveBeenCalledTimes(1);
     expect(atlasTexture.destroy).not.toHaveBeenCalled();
     expect(scene.contentCount()).toBe(1);
 
@@ -350,7 +350,7 @@ describe("natural props scene ownership", () => {
     expect(decals.children).toHaveLength(0);
   });
 
-  it("renders deterministic clustered understory above the surface and tears it down", () => {
+  it("suppresses every legacy Parkland habitat owner while retaining obstacle canopies and shadows", () => {
     const objects = new FakeContainer();
     const decals = new FakeContainer();
     const detailTexture = fakeTexture();
@@ -371,18 +371,6 @@ describe("natural props scene ownership", () => {
       theme: "parkland" as const,
     };
     const detailTextures = vi.fn(() => detailTexture);
-    const expectedHabitatDetails = deriveHabitatComposition({
-      course,
-      tiles: course.tiles,
-      obstacles: trees,
-      worldSeed: 42,
-      quality: "high",
-    }).length + deriveWetShoreComposition({
-      course,
-      tiles: course.tiles,
-      worldSeed: 42,
-      quality: "high",
-    }).length;
     const scene = createNaturalPropsSceneSystem(
       objects as unknown as PIXI.Container,
       decals as unknown as PIXI.Container,
@@ -403,19 +391,15 @@ describe("natural props scene ownership", () => {
       graphicsQuality: "high",
     }));
     expect(scene.contentCount()).toBe(3);
-    expect(scene.habitatDetailCount()).toBe(expectedHabitatDetails);
-    expect(detailTextures).toHaveBeenCalledTimes(expectedHabitatDetails);
+    expect(scene.habitatDetailCount()).toBe(0);
+    expect(scene.legacyHabitatCount()).toBe(0);
+    expect(detailTextures).not.toHaveBeenCalled();
     expect(decals.children.some((child) =>
       (child as { label?: string }).label?.startsWith("habitat-mass:"),
-    )).toBe(true);
-    // Each accepted mass owns exactly one tonal bed. There is no second
-    // terrain-level scatter: the two lobe layers are derived only from the
-    // existing accepted members in that mass.
-    const initialMasses = scene.habitatMassDiagnostics();
-    expect(habitatMassBeds(decals.children)).toHaveLength(initialMasses.length);
-    expect(initialMasses.every((mass) => mass.bedLayerCount === 2)).toBe(true);
-    expect(initialMasses.reduce((total, mass) => total + mass.bedLobeCount, 0))
-      .toBe(expectedHabitatDetails * 2);
+    )).toBe(false);
+    expect(habitatMassBeds(decals.children)).toEqual([]);
+    expect(scene.habitatMassDiagnostics()).toEqual([]);
+    expect(decals.children).toHaveLength(3);
 
     const firstPlan = habitatMemberSprites(decals.children);
     scene.update!(snapshot({
@@ -426,8 +410,7 @@ describe("natural props scene ownership", () => {
       rotation: 180,
       atlasRevision: 2,
     }));
-    const rotatedPlan = habitatMemberSprites(decals.children);
-    expect(rotatedPlan).toEqual(firstPlan);
+    expect(habitatMemberSprites(decals.children)).toEqual(firstPlan);
 
     scene.update!(snapshot({
       course,
@@ -436,15 +419,38 @@ describe("natural props scene ownership", () => {
       graphicsQuality: "low",
       atlasRevision: 3,
     }));
-    // Low has no detail-atlas sprites, but preserves the already accepted
-    // Medium mass topology as one graphics-only bed per mass so overview
-    // cannot collapse back to empty turf.
     expect(scene.habitatDetailCount()).toBe(0);
-    expect(habitatMassBeds(decals.children)).not.toHaveLength(0);
+    expect(scene.legacyHabitatCount()).toBe(0);
+    expect(habitatMassBeds(decals.children)).toHaveLength(0);
     expect(decals.children.some((child) =>
       (child as { label?: string }).label?.startsWith("habitat-mass:"),
-    )).toBe(true);
+    )).toBe(false);
     expect(habitatMemberSprites(decals.children)).toEqual([]);
+  });
+
+  it("preserves legacy per-tree habitat presentation outside Parkland", () => {
+    const objects = new FakeContainer();
+    const decals = new FakeContainer();
+    const course = {
+      ...DEFAULT_STATE.course,
+      theme: "links" as const,
+      obstacles: [{ x: 8, y: 9, type: "tree" as const }],
+    };
+    const scene = createNaturalPropsSceneSystem(
+      objects as unknown as PIXI.Container,
+      decals as unknown as PIXI.Container,
+      undefined,
+      {
+        getAtlasTexture: () => fakeTexture(),
+        createSprite: fakeSprite,
+        createGraphics: fakeGraphics,
+      },
+    );
+
+    scene.create!(snapshot({ course, obstacles: course.obstacles, effectiveTiles: course.tiles }));
+    expect(scene.contentCount()).toBe(1);
+    expect(scene.legacyHabitatCount()).toBeGreaterThan(0);
+    expect(decals.children).toHaveLength(2);
   });
 
   it("uses one rotation-invariant compositor per compact M19 mass without leaving member cells", () => {

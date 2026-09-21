@@ -91,6 +91,7 @@ export type RenderSceneId =
   | "playerProCollection"
   | "mobilityEntities"
   | "naturalProps"
+  | "habitatField"
   | "propertyAssets"
   | "holeMarkers"
   | "surfaceEditor"
@@ -101,7 +102,7 @@ export type RenderSceneId =
 
 type LegacyRenderSceneId = Exclude<
   RenderSceneId,
-  "holeMarkers" | "surfaceEditor" | "architectureOverlay" | "propertyAssets" | "mobilityEntities" | "openingPreview"
+  "holeMarkers" | "surfaceEditor" | "architectureOverlay" | "propertyAssets" | "mobilityEntities" | "openingPreview" | "habitatField"
 >;
 
 /** New bounded scenes stay optional for compatibility with older test fixtures. */
@@ -225,6 +226,19 @@ export interface MobilityEntitiesRevisionInput {
   readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
 }
 
+export interface HabitatFieldRevisionInput {
+  readonly atlasRevision: number;
+  readonly course: Course;
+  readonly effectiveTiles: readonly Terrain[];
+  readonly obstacles: readonly Obstacle[];
+  readonly holes: readonly Hole[];
+  readonly worldSeed: number;
+  readonly graphicsQuality: RenderSnapshot["graphicsQuality"];
+  readonly colorVision: ColorVisionMode;
+  readonly rotation: IsoRotation;
+  readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
+}
+
 export type SurfaceEditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 
 /** Exact persisted, preview, editor, and projection inputs read by the surface-editor scene. */
@@ -296,6 +310,24 @@ export function mobilityEntitiesRevisionDependencies(
     input.course.m51,
     input.course.buildings,
     input.course.activeCourseId ?? input.course.layouts?.[0]?.id ?? "course-primary",
+    input.rotation,
+    input.surfaceHeightAt,
+  ];
+}
+
+/** Exact plan, atlas, palette, and projection inputs consumed by habitatField. */
+export function habitatFieldRevisionDependencies(
+  input: HabitatFieldRevisionInput,
+): readonly unknown[] {
+  return [
+    input.atlasRevision,
+    input.course,
+    input.effectiveTiles,
+    input.obstacles,
+    input.holes,
+    input.worldSeed,
+    input.graphicsQuality,
+    input.colorVision,
     input.rotation,
     input.surfaceHeightAt,
   ];

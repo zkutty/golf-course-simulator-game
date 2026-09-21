@@ -5,6 +5,7 @@ import {
   architectureOverlayRevisionDependencies,
   changedRenderSystems,
   createRenderSnapshot,
+  habitatFieldRevisionDependencies,
   holeMarkersRevisionDependencies,
   mobilityEntitiesRevisionDependencies,
   playerProCollectionRevisionDependencies,
@@ -24,6 +25,52 @@ function snapshot(state: GameState, revisions: Partial<{
 }
 
 describe("RenderSnapshot invalidation contract", () => {
+  it("declares every plan, tier, palette, and projection dependency for habitatField", () => {
+    const course = DEFAULT_STATE.course;
+    const surfaceHeightAt = () => 0;
+    const input = {
+      atlasRevision: 7,
+      course,
+      effectiveTiles: course.tiles,
+      obstacles: course.obstacles,
+      holes: course.holes,
+      worldSeed: 1202,
+      graphicsQuality: "high" as const,
+      colorVision: "standard" as const,
+      rotation: 0 as const,
+      surfaceHeightAt,
+    };
+    expect(habitatFieldRevisionDependencies(input)).toEqual([
+      7,
+      course,
+      course.tiles,
+      course.obstacles,
+      course.holes,
+      1202,
+      "high",
+      "standard",
+      0,
+      surfaceHeightAt,
+    ]);
+    const tracker = new RenderRevisionTracker();
+    const required = {
+      atmosphere: [],
+      surfaceCare: [],
+      structuresProps: [],
+      playerProCollection: [],
+      naturalProps: [],
+      overlaysDiagnostics: [],
+      estateSurvey: [],
+    };
+    const first = tracker.update({ ...required, habitatField: habitatFieldRevisionDependencies(input) });
+    expect(tracker.update({ ...required, habitatField: habitatFieldRevisionDependencies(input) }).habitatField)
+      .toBe(first.habitatField);
+    expect(tracker.update({
+      ...required,
+      habitatField: habitatFieldRevisionDependencies({ ...input, colorVision: "tritanopia" }),
+    }).habitatField).toBe((first.habitatField ?? 0) + 1);
+  });
+
   it("starts every scene system once and keeps unrelated cash changes static", () => {
     const first = snapshot(DEFAULT_STATE);
     const cashOnly = snapshot({
