@@ -77,6 +77,11 @@ function fakeGraphics() {
     position: point(),
     eventMode: "auto",
     ellipse: vi.fn(),
+    poly: vi.fn(),
+    stroke: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    rect: vi.fn(),
     fill: vi.fn(),
     destroy: vi.fn(),
   } as unknown as PIXI.Graphics;
@@ -181,6 +186,29 @@ function fixture(overrides: {
 }
 
 describe("structures and authored props scene ownership", () => {
+  it.each([
+    ["parkland", "high", 0],
+    ["links", "medium", 90],
+    ["desert", "low", 270],
+  ] as const)("grounds multi-tile tiered buildings for %s/%s at rotation %i without sprite deformation", (theme, quality, rotation) => {
+    const authored = course(theme, []);
+    authored.buildings = [
+      { id: "club", type: "clubhouse", x: 4, y: 4, siteGrade: { version: 1, supportElevation: 0, cutSteps: 0, fillSteps: 0, earthworkCost: 0, foundationCost: 0, totalSiteCost: 0 } },
+      { id: "shop", type: "pro_shop", x: 9, y: 9, tier: 3, price: 35, siteGrade: { version: 1, supportElevation: 0, cutSteps: 1, fillSteps: 2, earthworkCost: 300, foundationCost: 200, totalSiteCost: 500 } },
+    ];
+    const scene = fixture();
+    scene.system.create!(snapshot(1, { course: authored, effectiveTiles: authored.tiles, graphicsQuality: quality, rotation }));
+    expect(scene.atlasCalls.slice(0, 2)).toEqual([
+      [theme, quality, `${theme}_clubhouse_t1`],
+      [theme, quality, `${theme}_pro_shop_t3`],
+    ]);
+    expect(scene.sprites.map((sprite) => sprite.width)).toEqual([3 * TILE_W, 2 * TILE_W]);
+    expect(scene.sprites.every((sprite) => sprite.anchor.x === 0.5 && sprite.anchor.y === 1)).toBe(true);
+    expect(scene.sprites.every((sprite) => sprite.scale.x === 1 && sprite.scale.y === 1)).toBe(true);
+    expect(scene.sprites.every((sprite) => sprite.eventMode === "none")).toBe(true);
+    expect(scene.decals.children).toHaveLength(4);
+  });
+
   it("preserves decoration atlas, anchor, footprint, rotation, depth, scale, and shadow presentation", () => {
     const scene = fixture();
     scene.system.create!(snapshot());

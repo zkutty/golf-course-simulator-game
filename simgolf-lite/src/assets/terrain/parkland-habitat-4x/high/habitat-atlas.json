@@ -1,0 +1,2187 @@
+{
+  "version": 1,
+  "schema": "ParklandHabitatFieldAtlasV1",
+  "tier": "high",
+  "image": "habitat-atlas.png",
+  "width": 2640,
+  "height": 1360,
+  "gutterPx": 4,
+  "frameCount": 95,
+  "frames": {
+    "woodland_floor--interior-0": {
+      "id": "woodland_floor--interior-0",
+      "family": "woodland_floor",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 4,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "15a91ad31daed03cb224bc53d29e2bc4c572ce87a9a009e45fa81c2c729bd3c1"
+    },
+    "woodland_floor--interior-1": {
+      "id": "woodland_floor--interior-1",
+      "family": "woodland_floor",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 1,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "f575ffd18e2783e72ab3a1168a0e13c360722b8dc8174243e623b22b57df67b3"
+    },
+    "woodland_floor--interior-2": {
+      "id": "woodland_floor--interior-2",
+      "family": "woodland_floor",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 2,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "a7da3c90ac9124566acaf5179aa3779446e06cd04c09a562b1c3b69900f53b24"
+    },
+    "woodland_floor--boundary-n": {
+      "id": "woodland_floor--boundary-n",
+      "family": "woodland_floor",
+      "topologyRole": "boundary",
+      "direction": "n",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "4b14bc5ab1e56c990cc89600981f5a7d8190799f23591d5c264bd1394f9a9acc"
+    },
+    "woodland_floor--boundary-e": {
+      "id": "woodland_floor--boundary-e",
+      "family": "woodland_floor",
+      "topologyRole": "boundary",
+      "direction": "e",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "e"
+      ],
+      "frame": {
+        "x": 1060,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "4b4c1f011e4ebcd1c24cbc760005edb78a3ab954000d8823eac80e62d45510eb"
+    },
+    "woodland_floor--boundary-s": {
+      "id": "woodland_floor--boundary-s",
+      "family": "woodland_floor",
+      "topologyRole": "boundary",
+      "direction": "s",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s"
+      ],
+      "frame": {
+        "x": 1324,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "57f99c14c323f35dc5debcf9968aade2315513ece97b26988241068c58cf4436"
+    },
+    "woodland_floor--boundary-w": {
+      "id": "woodland_floor--boundary-w",
+      "family": "woodland_floor",
+      "topologyRole": "boundary",
+      "direction": "w",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "w"
+      ],
+      "frame": {
+        "x": 1588,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "23d998ef504550ba1c7ea20fa1e34d174370c43203a91f2621447918d36e65a2"
+    },
+    "woodland_floor--convex-ne": {
+      "id": "woodland_floor--convex-ne",
+      "family": "woodland_floor",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "ne",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 1852,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "621b2ec9d4cb514de2978ff0dfa4d1bb995d73fcc713271c941cf9b3dac43ca1"
+    },
+    "woodland_floor--convex-se": {
+      "id": "woodland_floor--convex-se",
+      "family": "woodland_floor",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "se",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "e"
+      ],
+      "frame": {
+        "x": 2116,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "973736146631c884590a35ac58053c848b99b0d51057c7a607674ef9703d8042"
+    },
+    "woodland_floor--convex-sw": {
+      "id": "woodland_floor--convex-sw",
+      "family": "woodland_floor",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "sw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 2380,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "242e886063ad0ca2a0c48b15fb1dc1c55e936fd9ce7284934d1ecd6a0cefc261"
+    },
+    "woodland_floor--convex-nw": {
+      "id": "woodland_floor--convex-nw",
+      "family": "woodland_floor",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "nw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "w"
+      ],
+      "frame": {
+        "x": 4,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "6b958e2bcb3b75109b2ed6f2b0a34ff68341a98b56ec213749844d18fc60a680"
+    },
+    "woodland_floor--concave-ne": {
+      "id": "woodland_floor--concave-ne",
+      "family": "woodland_floor",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "ne",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "dbe76ded0a0e58acf51ec771c7df9b6a8b6359e1da31dc3cf708bbd007c10809"
+    },
+    "woodland_floor--concave-se": {
+      "id": "woodland_floor--concave-se",
+      "family": "woodland_floor",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "se",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "e"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "fe64b925dcca089286f6aaf9bbb55fc050521792ea1ed99330cfa62ebf97887e"
+    },
+    "woodland_floor--concave-sw": {
+      "id": "woodland_floor--concave-sw",
+      "family": "woodland_floor",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "sw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "8b1f79fcdc190d9d4ba06b1d68d5c32d562f0d56585141e2b1f3c1bd4231fc48"
+    },
+    "woodland_floor--concave-nw": {
+      "id": "woodland_floor--concave-nw",
+      "family": "woodland_floor",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "nw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "w"
+      ],
+      "frame": {
+        "x": 1060,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "70184953a14cb05473d88c1029914519c5a1b129684d4823e64da014c4a32b77"
+    },
+    "woodland_floor--termination-n": {
+      "id": "woodland_floor--termination-n",
+      "family": "woodland_floor",
+      "topologyRole": "termination",
+      "direction": "n",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n"
+      ],
+      "frame": {
+        "x": 1324,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "2453ffb3e864fd7434205c92caac8fb22e86c413f618a53766a2fe506de55167"
+    },
+    "woodland_floor--termination-e": {
+      "id": "woodland_floor--termination-e",
+      "family": "woodland_floor",
+      "topologyRole": "termination",
+      "direction": "e",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "e"
+      ],
+      "frame": {
+        "x": 1588,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "fbc068a34aee0c18b8266b6506053a9b9d072d3fea67e4883020d10cc7ad0392"
+    },
+    "woodland_floor--termination-s": {
+      "id": "woodland_floor--termination-s",
+      "family": "woodland_floor",
+      "topologyRole": "termination",
+      "direction": "s",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s"
+      ],
+      "frame": {
+        "x": 1852,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "d86cfe240af4797d7bb8e78a1db2ead7770100c90d582214468e371602553150"
+    },
+    "woodland_floor--termination-w": {
+      "id": "woodland_floor--termination-w",
+      "family": "woodland_floor",
+      "topologyRole": "termination",
+      "direction": "w",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "w"
+      ],
+      "frame": {
+        "x": 2116,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "668f6645f09054a590bc91f26a5e37e7add206c5889d6bc92483f7f3db13c6c0"
+    },
+    "understory_edge--interior-0": {
+      "id": "understory_edge--interior-0",
+      "family": "understory_edge",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 2380,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "f182b6c2435c617e1f4db3083bbea71f138dbf53eaa09f84bafc6bf3c029b7bf"
+    },
+    "understory_edge--interior-1": {
+      "id": "understory_edge--interior-1",
+      "family": "understory_edge",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 1,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 4,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "403a07df561588f9f1132765e4224d929a07214179da7f515df9b43229401d49"
+    },
+    "understory_edge--interior-2": {
+      "id": "understory_edge--interior-2",
+      "family": "understory_edge",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 2,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "a7a42a27d3bc74e601a3dc2d15a497c981baf7f445711b00fe73e37e7a82f784"
+    },
+    "understory_edge--boundary-n": {
+      "id": "understory_edge--boundary-n",
+      "family": "understory_edge",
+      "topologyRole": "boundary",
+      "direction": "n",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "4c87c2ef08d7cc826c8e833eaf52b3b1b0735ff992b95d0b4d79adce4db3b615"
+    },
+    "understory_edge--boundary-e": {
+      "id": "understory_edge--boundary-e",
+      "family": "understory_edge",
+      "topologyRole": "boundary",
+      "direction": "e",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "e"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "39376421167351928bffc165b0f1135e47038f40a2f6d2016bf5c3cd0ecbc355"
+    },
+    "understory_edge--boundary-s": {
+      "id": "understory_edge--boundary-s",
+      "family": "understory_edge",
+      "topologyRole": "boundary",
+      "direction": "s",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s"
+      ],
+      "frame": {
+        "x": 1060,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "cd9a1d24a8200fbe15e4d6e430732964e11732b059407e2f01cf4da3f79765fe"
+    },
+    "understory_edge--boundary-w": {
+      "id": "understory_edge--boundary-w",
+      "family": "understory_edge",
+      "topologyRole": "boundary",
+      "direction": "w",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "w"
+      ],
+      "frame": {
+        "x": 1324,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "ce5cf54235a4fdd919e98a3221a1a471db92213a974b5e7d659a2978bea3f248"
+    },
+    "understory_edge--convex-ne": {
+      "id": "understory_edge--convex-ne",
+      "family": "understory_edge",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "ne",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 1588,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "5b40d1342e4119abbd807742ec0a2a1041bcaec3c046519d3026d83978b9ccca"
+    },
+    "understory_edge--convex-se": {
+      "id": "understory_edge--convex-se",
+      "family": "understory_edge",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "se",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "e"
+      ],
+      "frame": {
+        "x": 1852,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "9c4cba989769d7d428aa3fa8793df335e73b48784e1b79d1bd8a6c0090adcf06"
+    },
+    "understory_edge--convex-sw": {
+      "id": "understory_edge--convex-sw",
+      "family": "understory_edge",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "sw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 2116,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "07a3c204f0f89f95891e059ea5426e5840fde2fd3d551490fecb6a33254baa50"
+    },
+    "understory_edge--convex-nw": {
+      "id": "understory_edge--convex-nw",
+      "family": "understory_edge",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "nw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "w"
+      ],
+      "frame": {
+        "x": 2380,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "0027ad1d67a2d8789a15c304eb770892c7ef2db67c95b8753937551ee0b4b87b"
+    },
+    "understory_edge--concave-ne": {
+      "id": "understory_edge--concave-ne",
+      "family": "understory_edge",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "ne",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 4,
+        "y": 412,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "cd640f7f06a56d5ec7a913f5130ac9e4e9f9b794c580bf422dd416dfbd7be0c3"
+    },
+    "understory_edge--concave-se": {
+      "id": "understory_edge--concave-se",
+      "family": "understory_edge",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "se",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "e"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 412,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "596b6d3d7aa3d8678234b9d6e180f57b8de7334a77242bda39ec51ff7c1e65d1"
+    },
+    "understory_edge--concave-sw": {
+      "id": "understory_edge--concave-sw",
+      "family": "understory_edge",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "sw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 412,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "95523febe6971a983d38061d4988ca17a058b65d4c863150f46a466b3f60b063"
+    },
+    "understory_edge--concave-nw": {
+      "id": "understory_edge--concave-nw",
+      "family": "understory_edge",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "nw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "w"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 412,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "a4e4aad01d7b27c91a3217bbec3e74a59f3c3a8ecbc809d3c517fad590224d4b"
+    },
+    "understory_edge--termination-n": {
+      "id": "understory_edge--termination-n",
+      "family": "understory_edge",
+      "topologyRole": "termination",
+      "direction": "n",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n"
+      ],
+      "frame": {
+        "x": 1060,
+        "y": 412,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "b064dd61f1f73a0c99d827fae8c48e1a344cb312b4321fcf196a9efe385af570"
+    },
+    "understory_edge--termination-e": {
+      "id": "understory_edge--termination-e",
+      "family": "understory_edge",
+      "topologyRole": "termination",
+      "direction": "e",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "e"
+      ],
+      "frame": {
+        "x": 1324,
+        "y": 412,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "c864370304006e47bdac125713094e9567d1f8347ef7a3e9ec70c3272d4fb36c"
+    },
+    "understory_edge--termination-s": {
+      "id": "understory_edge--termination-s",
+      "family": "understory_edge",
+      "topologyRole": "termination",
+      "direction": "s",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s"
+      ],
+      "frame": {
+        "x": 1588,
+        "y": 412,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "f844ca910039d94421088fd4b31b6299ed7e9a61839f60b16db4311214c7f620"
+    },
+    "understory_edge--termination-w": {
+      "id": "understory_edge--termination-w",
+      "family": "understory_edge",
+      "topologyRole": "termination",
+      "direction": "w",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "w"
+      ],
+      "frame": {
+        "x": 1852,
+        "y": 412,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "5a734aef0ed664845f56ce291062fde3f0f5f617dec66c3bf0ab9a22ee0ffa8a"
+    },
+    "meadow_deep_rough_margin--interior-0": {
+      "id": "meadow_deep_rough_margin--interior-0",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 2116,
+        "y": 412,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "6f21dce7230f15f95ac2de3c6358b9a8a26acbb77ebf5fecb71f39ac7294688a"
+    },
+    "meadow_deep_rough_margin--interior-1": {
+      "id": "meadow_deep_rough_margin--interior-1",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 1,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 2380,
+        "y": 412,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "979089e51ceb7b7539558e3b1d8ef15407c7fe9d3676c85a470a4d5219fe71b6"
+    },
+    "meadow_deep_rough_margin--interior-2": {
+      "id": "meadow_deep_rough_margin--interior-2",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 2,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 4,
+        "y": 548,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "3069037e13d07f1ca7fc5dfbcfa5aa9b79c6ce766b906efeca9323fbeeeef8fe"
+    },
+    "meadow_deep_rough_margin--boundary-n": {
+      "id": "meadow_deep_rough_margin--boundary-n",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "boundary",
+      "direction": "n",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 548,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "c331a736b64dac7a46c7065b49e2785e3ca96e115c4709c54fcd582d907138b9"
+    },
+    "meadow_deep_rough_margin--boundary-e": {
+      "id": "meadow_deep_rough_margin--boundary-e",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "boundary",
+      "direction": "e",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "e"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 548,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "18df6490bcbe3873896bad9d19a4ebb86553b7879d4bed440e97a0f1912f30ee"
+    },
+    "meadow_deep_rough_margin--boundary-s": {
+      "id": "meadow_deep_rough_margin--boundary-s",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "boundary",
+      "direction": "s",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 548,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "610432da9c5414430ef828406a2661994fe6cd3b1562af74959460388cf89258"
+    },
+    "meadow_deep_rough_margin--boundary-w": {
+      "id": "meadow_deep_rough_margin--boundary-w",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "boundary",
+      "direction": "w",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "w"
+      ],
+      "frame": {
+        "x": 1060,
+        "y": 548,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "2c81eaee2ddfab7c2f680847a4734ff56558ff4a3904945c0b58737eb9fe5267"
+    },
+    "meadow_deep_rough_margin--convex-ne": {
+      "id": "meadow_deep_rough_margin--convex-ne",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "ne",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 1324,
+        "y": 548,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "9c507e37ff98b05c033d6b47250cf4edb7965a99c7f120451181a4415e8f14f5"
+    },
+    "meadow_deep_rough_margin--convex-se": {
+      "id": "meadow_deep_rough_margin--convex-se",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "se",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "e"
+      ],
+      "frame": {
+        "x": 1588,
+        "y": 548,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "8c2cb6aff556d91b15e3cd457d623d9bb8b948c0f203ceba94cb5b887d64689f"
+    },
+    "meadow_deep_rough_margin--convex-sw": {
+      "id": "meadow_deep_rough_margin--convex-sw",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "sw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 1852,
+        "y": 548,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "04992ca36bef8bcee483d5802dc77ba4de51f0f634660c87b6ea27623a5cbdd8"
+    },
+    "meadow_deep_rough_margin--convex-nw": {
+      "id": "meadow_deep_rough_margin--convex-nw",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "nw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "w"
+      ],
+      "frame": {
+        "x": 2116,
+        "y": 548,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "55b3381ae5564b25b2df4ef3a0d1030372de88bb4006702a3fc553f7de4f2605"
+    },
+    "meadow_deep_rough_margin--concave-ne": {
+      "id": "meadow_deep_rough_margin--concave-ne",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "ne",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 2380,
+        "y": 548,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "8f0b554ecb5b5e4293c0b1800112ef77be6dc5c883202655be71c7c08207034b"
+    },
+    "meadow_deep_rough_margin--concave-se": {
+      "id": "meadow_deep_rough_margin--concave-se",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "se",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "e"
+      ],
+      "frame": {
+        "x": 4,
+        "y": 684,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "b92ee0ff703211b2fc583fa44c2fcb8a460e658cee23421a8847bb30d3aae056"
+    },
+    "meadow_deep_rough_margin--concave-sw": {
+      "id": "meadow_deep_rough_margin--concave-sw",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "sw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 684,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "a28e474dcdbc2cbb4eb283fdc0f89e1918dc2a8a42888bbe060f8499d1764b99"
+    },
+    "meadow_deep_rough_margin--concave-nw": {
+      "id": "meadow_deep_rough_margin--concave-nw",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "nw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "w"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 684,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "23d1787449af7f70159670f5481ad9bbdaba0f218e32665ec7f8749301852890"
+    },
+    "meadow_deep_rough_margin--termination-n": {
+      "id": "meadow_deep_rough_margin--termination-n",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "termination",
+      "direction": "n",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 684,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "47610954fcd0346e42a855912001bebdd6da48e658ac43ec57997817af4efdf0"
+    },
+    "meadow_deep_rough_margin--termination-e": {
+      "id": "meadow_deep_rough_margin--termination-e",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "termination",
+      "direction": "e",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "e"
+      ],
+      "frame": {
+        "x": 1060,
+        "y": 684,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "b502337972932e623def47fe31c81130e6eba9e7e650b64ac1db90b214058489"
+    },
+    "meadow_deep_rough_margin--termination-s": {
+      "id": "meadow_deep_rough_margin--termination-s",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "termination",
+      "direction": "s",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s"
+      ],
+      "frame": {
+        "x": 1324,
+        "y": 684,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "c3d4d59b7a2322b16a5cd0c55397a3813b2e593cc4901219173506a65efe47d0"
+    },
+    "meadow_deep_rough_margin--termination-w": {
+      "id": "meadow_deep_rough_margin--termination-w",
+      "family": "meadow_deep_rough_margin",
+      "topologyRole": "termination",
+      "direction": "w",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "w"
+      ],
+      "frame": {
+        "x": 1588,
+        "y": 684,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "aa4d2f032d78736296f29eb47a1019110c8163028b17a87ac53a1341595492aa"
+    },
+    "wet_shore--interior-0": {
+      "id": "wet_shore--interior-0",
+      "family": "wet_shore",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 1852,
+        "y": 684,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "470f13fb1c25a6f5a8a0b926052f0d3f078c09ed5c3e507846be7576c473d2b5"
+    },
+    "wet_shore--interior-1": {
+      "id": "wet_shore--interior-1",
+      "family": "wet_shore",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 1,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 2116,
+        "y": 684,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "7b895c4e2b7dc3e59e9de2d53c444a8c5bb0538a506ad59069f02e1e1572137e"
+    },
+    "wet_shore--interior-2": {
+      "id": "wet_shore--interior-2",
+      "family": "wet_shore",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 2,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 2380,
+        "y": 684,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "83389bbacb0766d0cb99eeb0a2c8f096a9440b975ca945aaa0f8efbd2201377f"
+    },
+    "wet_shore--boundary-n": {
+      "id": "wet_shore--boundary-n",
+      "family": "wet_shore",
+      "topologyRole": "boundary",
+      "direction": "n",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n"
+      ],
+      "frame": {
+        "x": 4,
+        "y": 820,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "1d7367ae6bd3d0c0f643490d74b42c45c5d7f5c7744a54ce3101788e00426274"
+    },
+    "wet_shore--boundary-e": {
+      "id": "wet_shore--boundary-e",
+      "family": "wet_shore",
+      "topologyRole": "boundary",
+      "direction": "e",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "e"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 820,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "0809ebc40167267076ad9bb3b9a9c62d4cafc2a4443889bd478c99b81e532545"
+    },
+    "wet_shore--boundary-s": {
+      "id": "wet_shore--boundary-s",
+      "family": "wet_shore",
+      "topologyRole": "boundary",
+      "direction": "s",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 820,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "2bb237ce6719e8ffca8dbd71a1fde0e9e31cd3fdc8ff416cadc75e624785a128"
+    },
+    "wet_shore--boundary-w": {
+      "id": "wet_shore--boundary-w",
+      "family": "wet_shore",
+      "topologyRole": "boundary",
+      "direction": "w",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "w"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 820,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "00a5a1dd6ee9125d53c1a4f9fea4358e8b11f55c352d3a14451d334bea22cb8a"
+    },
+    "wet_shore--convex-ne": {
+      "id": "wet_shore--convex-ne",
+      "family": "wet_shore",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "ne",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 1060,
+        "y": 820,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "e0701f22ba6e42fbf8d095a00e1dc4170d60fffdbda30efc93ecc823505307ff"
+    },
+    "wet_shore--convex-se": {
+      "id": "wet_shore--convex-se",
+      "family": "wet_shore",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "se",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "e"
+      ],
+      "frame": {
+        "x": 1324,
+        "y": 820,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "a7a47fd41bc21bbb87c39401d8765f0e73ee83ced539434496335cf84d973a49"
+    },
+    "wet_shore--convex-sw": {
+      "id": "wet_shore--convex-sw",
+      "family": "wet_shore",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "sw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 1588,
+        "y": 820,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "05d7a64892c59d82d842cf2e3f3a4f14cd10673d3f0ea46a5f20e3ccc073375c"
+    },
+    "wet_shore--convex-nw": {
+      "id": "wet_shore--convex-nw",
+      "family": "wet_shore",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "nw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "w"
+      ],
+      "frame": {
+        "x": 1852,
+        "y": 820,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "c6295be47b66b2f59f552d46a92f78ef7497c4cd4351d316a5235c10ac3cf5e2"
+    },
+    "wet_shore--concave-ne": {
+      "id": "wet_shore--concave-ne",
+      "family": "wet_shore",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "ne",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 2116,
+        "y": 820,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "f5b98bf82555715d31537157b5b3a2ae87f03b2fd4bcaf53ce35f33c446d20c4"
+    },
+    "wet_shore--concave-se": {
+      "id": "wet_shore--concave-se",
+      "family": "wet_shore",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "se",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "e"
+      ],
+      "frame": {
+        "x": 2380,
+        "y": 820,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "1858e7230d7a0bbfc44d1fc2f0fcc6939e7b9f3b4ed93f5795f8b032c7b68186"
+    },
+    "wet_shore--concave-sw": {
+      "id": "wet_shore--concave-sw",
+      "family": "wet_shore",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "sw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 4,
+        "y": 956,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "2b96a21084cd2f4c4ccaf4194cdee6a48d0392a33fcc86de0b04a9bdc6bd40d7"
+    },
+    "wet_shore--concave-nw": {
+      "id": "wet_shore--concave-nw",
+      "family": "wet_shore",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "nw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "w"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 956,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "9647879781b69d76c0444ac67249498543c12eea6af933e92b4e0edeccd820de"
+    },
+    "wet_shore--termination-n": {
+      "id": "wet_shore--termination-n",
+      "family": "wet_shore",
+      "topologyRole": "termination",
+      "direction": "n",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 956,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "d4435e9ebec729232695d104c87245742ee0f73edf0476b48442a91d65e580bf"
+    },
+    "wet_shore--termination-e": {
+      "id": "wet_shore--termination-e",
+      "family": "wet_shore",
+      "topologyRole": "termination",
+      "direction": "e",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "e"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 956,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "aa4721bd4c0d743adeb840eaa9c45c8a83bf2f9e74146029fc84453b3e34cb5a"
+    },
+    "wet_shore--termination-s": {
+      "id": "wet_shore--termination-s",
+      "family": "wet_shore",
+      "topologyRole": "termination",
+      "direction": "s",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s"
+      ],
+      "frame": {
+        "x": 1060,
+        "y": 956,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "a7bc98507a59e2149bec1c9e639b3b572f38f0754c811229baf9961d011c461d"
+    },
+    "wet_shore--termination-w": {
+      "id": "wet_shore--termination-w",
+      "family": "wet_shore",
+      "topologyRole": "termination",
+      "direction": "w",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "w"
+      ],
+      "frame": {
+        "x": 1324,
+        "y": 956,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "15d8d8a3a368c6a50dc5cbca9bbcbe693d7211c4c30f96de7e4534222a06d10d"
+    },
+    "rock_leaf_transition--interior-0": {
+      "id": "rock_leaf_transition--interior-0",
+      "family": "rock_leaf_transition",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 1588,
+        "y": 956,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "d503d67b303940429b903cc5db2fee9352e56ad0ba6cff83ccbfb867f8ac90b8"
+    },
+    "rock_leaf_transition--interior-1": {
+      "id": "rock_leaf_transition--interior-1",
+      "family": "rock_leaf_transition",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 1,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 1852,
+        "y": 956,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "87c6d6edbbba65ea4999814c07632a41f42c52f76709bb73d91c5c7045640724"
+    },
+    "rock_leaf_transition--interior-2": {
+      "id": "rock_leaf_transition--interior-2",
+      "family": "rock_leaf_transition",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 2,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 2116,
+        "y": 956,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "feb338de1e92a05bf611034a865b7b310d764cf1b5598d62531b5f038a4e7844"
+    },
+    "rock_leaf_transition--boundary-n": {
+      "id": "rock_leaf_transition--boundary-n",
+      "family": "rock_leaf_transition",
+      "topologyRole": "boundary",
+      "direction": "n",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n"
+      ],
+      "frame": {
+        "x": 2380,
+        "y": 956,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "23c9141916e674da8474fe76411926e00fe3a0b4ee701ff8a030e2c1b292bb88"
+    },
+    "rock_leaf_transition--boundary-e": {
+      "id": "rock_leaf_transition--boundary-e",
+      "family": "rock_leaf_transition",
+      "topologyRole": "boundary",
+      "direction": "e",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "e"
+      ],
+      "frame": {
+        "x": 4,
+        "y": 1092,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "663014bacb4267fb3f67f2973b0e749d91739e69dfdd0ac508b0561d51bae2a3"
+    },
+    "rock_leaf_transition--boundary-s": {
+      "id": "rock_leaf_transition--boundary-s",
+      "family": "rock_leaf_transition",
+      "topologyRole": "boundary",
+      "direction": "s",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 1092,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "b9f24505c25b5f05c440742519bf4a20cca2da83fbaeef5fb0872eee6da78f93"
+    },
+    "rock_leaf_transition--boundary-w": {
+      "id": "rock_leaf_transition--boundary-w",
+      "family": "rock_leaf_transition",
+      "topologyRole": "boundary",
+      "direction": "w",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "w"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 1092,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "3805597b54d3021926685cdbd60762cf2740619ac4c18f6659da4cc2b3691a74"
+    },
+    "rock_leaf_transition--convex-ne": {
+      "id": "rock_leaf_transition--convex-ne",
+      "family": "rock_leaf_transition",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "ne",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 1092,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "cdf7f51905a8bdbd68d18f33c20f856b46d24158dcc72eb187727344aceeeb57"
+    },
+    "rock_leaf_transition--convex-se": {
+      "id": "rock_leaf_transition--convex-se",
+      "family": "rock_leaf_transition",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "se",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "e"
+      ],
+      "frame": {
+        "x": 1060,
+        "y": 1092,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "beb3ec6ffcc6333360092819967f6a09cfcc88b31de3b2eae2dbc8b6a0ab3876"
+    },
+    "rock_leaf_transition--convex-sw": {
+      "id": "rock_leaf_transition--convex-sw",
+      "family": "rock_leaf_transition",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "sw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 1324,
+        "y": 1092,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "4d12bac76ee39938982b8aa9d1a7c161fcfad539078216c30c4e98814fd7f5c5"
+    },
+    "rock_leaf_transition--convex-nw": {
+      "id": "rock_leaf_transition--convex-nw",
+      "family": "rock_leaf_transition",
+      "topologyRole": "convex",
+      "direction": null,
+      "corner": "nw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "w"
+      ],
+      "frame": {
+        "x": 1588,
+        "y": 1092,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "081fbca19d1462afe3f72fdef394f6c433c5177176fc918703769fb4aaeec243"
+    },
+    "rock_leaf_transition--concave-ne": {
+      "id": "rock_leaf_transition--concave-ne",
+      "family": "rock_leaf_transition",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "ne",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 1852,
+        "y": 1092,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "97f48badd38f83ac8ecffd02423a8c562649d94262443db9036fa6c6e4de9376"
+    },
+    "rock_leaf_transition--concave-se": {
+      "id": "rock_leaf_transition--concave-se",
+      "family": "rock_leaf_transition",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "se",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "e"
+      ],
+      "frame": {
+        "x": 2116,
+        "y": 1092,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "89d37dbe06363c0f8e62a75fd03d777c39872657ef4eb731aede7771126ab831"
+    },
+    "rock_leaf_transition--concave-sw": {
+      "id": "rock_leaf_transition--concave-sw",
+      "family": "rock_leaf_transition",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "sw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 2380,
+        "y": 1092,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "03b36b5d92d06942311440c1f67fcdf1b6f50532f6d4bbe0b3cf8473b5973a51"
+    },
+    "rock_leaf_transition--concave-nw": {
+      "id": "rock_leaf_transition--concave-nw",
+      "family": "rock_leaf_transition",
+      "topologyRole": "concave",
+      "direction": null,
+      "corner": "nw",
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "w"
+      ],
+      "frame": {
+        "x": 4,
+        "y": 1228,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "9a5b1690c3d8717f28b267a622d54dd60e90d50aeea45255b53352eceac9f45d"
+    },
+    "rock_leaf_transition--termination-n": {
+      "id": "rock_leaf_transition--termination-n",
+      "family": "rock_leaf_transition",
+      "topologyRole": "termination",
+      "direction": "n",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 1228,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "47e7f6b72264e7ac10121dd59eb421e059915d499e3b6a99b9ea4c83a6e4bf22"
+    },
+    "rock_leaf_transition--termination-e": {
+      "id": "rock_leaf_transition--termination-e",
+      "family": "rock_leaf_transition",
+      "topologyRole": "termination",
+      "direction": "e",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "e"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 1228,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "d1c61921dc26bb83a7219947114d5e4b08e92d3770161cacab3236a2524f30a1"
+    },
+    "rock_leaf_transition--termination-s": {
+      "id": "rock_leaf_transition--termination-s",
+      "family": "rock_leaf_transition",
+      "topologyRole": "termination",
+      "direction": "s",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "s"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 1228,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "89ce1c93339620a90eec54107f6579878bd756e2507d33d00e822597fd27ef94"
+    },
+    "rock_leaf_transition--termination-w": {
+      "id": "rock_leaf_transition--termination-w",
+      "family": "rock_leaf_transition",
+      "topologyRole": "termination",
+      "direction": "w",
+      "corner": null,
+      "variant": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "w"
+      ],
+      "frame": {
+        "x": 1060,
+        "y": 1228,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "f42d0a81bbb62598769c2f68648c679f5486c065c26c49bb4a60a6d98d528576"
+    }
+  }
+}

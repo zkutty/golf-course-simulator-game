@@ -12,9 +12,10 @@ const TERRAIN_NAMES = [
 const EDGE_DIRECTIONS = ["n", "e", "s", "w"];
 const CORNER_DIRECTIONS = ["ne", "se", "sw", "nw"];
 const QUALITIES = ["high", "medium", "low"];
+const PATH_MATERIAL_ROLES = ["shoulder", "edge"];
 const DETAIL_KINDS = [
   "short_grass", "tall_grass", "fescue", "flowers", "leaf_litter",
-  "reeds", "shore_stones", "pebbles", "bunker_tuft", "scrub",
+  "reeds", "shore_stones", "pebbles", "bunker_tuft", "scrub", "worn_turf",
 ];
 const EXPECTED_KINDS = [
   ...Array.from({ length: 6 }, (_, index) => ["base", String(index)]),
@@ -41,18 +42,18 @@ function readJson(file, errors, label) {
 }
 
 function validateContract(contract, root, errors) {
-  assert(contract?.version === 2, "contract version must be 2", errors);
+  assert(contract?.version === 3, "contract version must be 3", errors);
   assert(contract?.id === "parkland-terrain-4x", "contract id must be parkland-terrain-4x", errors);
   assert(contract?.theme === "parkland", "contract theme must be parkland", errors);
   assert(contract?.source?.externalProvider === "none", "4x fallback must not depend on an external provider", errors);
   assert(contract?.source?.referencePixelsCopied === false, "reference pixels must not be copied", errors);
-  assert(contract?.source?.reviewStatus === "machine-contract-only", "4x source must remain machine-contract-only until human review", errors);
+  assert(contract?.source?.reviewStatus === "production-contract-adopted", "4x source must carry the production adoption review state", errors);
   assert(contract?.source?.authoredBy === "CourseCraft", "4x provenance must name CourseCraft as author", errors);
   assert(contract?.source?.generator === "scripts/gen-parkland-4x-fallback.mjs", "4x provenance must name its generator", errors);
   assert(contract?.source?.algorithm === "scripts/gen-terrain-materials.mjs", "4x provenance must name its deterministic algorithm", errors);
-  assert(contract?.source?.root?.startsWith("art/"), "4x source must stay in review-only art/ space", errors);
+  assert(contract?.source?.root === "src/assets/terrain/parkland-4x", "4x source must live in the approved runtime asset tree", errors);
   assert(contract?.determinism?.hashAlgorithm === "sha256", "4x source must use SHA-256 hashes", errors);
-  assert(contract?.determinism?.runtimeAdoption === "prohibited", "4x source must not be adopted by runtime", errors);
+  assert(contract?.determinism?.runtimeAdoption === "production-default", "4x source must be the production default", errors);
   assert(contract?.frame?.width === 256 && contract?.frame?.height === 128, "4x frame dimensions must be 256x128", errors);
   assert(contract?.frame?.presentationScale === 4 && contract?.frame?.tileSpan === 4, "4x presentation contract must be four tiles at 4x", errors);
   assert(contract?.frame?.baseVariants === 6, "4x contract must provide six base variants", errors);
@@ -62,6 +63,8 @@ function validateContract(contract, root, errors) {
   assert(contract?.atlas?.gutterPx >= 2, "atlas gutter must be at least two pixels", errors);
   assert(contract?.fallback?.root === "src/assets/terrain/materials", "runtime fallback root must remain the shipped 2x material source", errors);
   assert(contract?.fallback?.runtimeAsset === true, "only the shipped 2x fallback may be a runtime asset", errors);
+  assert(contract?.fallback?.mode === "legacy-2x", "2x fallback mode must remain explicit", errors);
+  assert(contract?.fallback?.environment === "COURSECRAFT_PARKLAND_TERRAIN_MODE=legacy-2x", "2x rollback environment is missing", errors);
   assert(existsSync(path.join(root, contract?.fallback?.root ?? "")), "shipped 2x fallback source is missing", errors);
   for (const budget of ["sourceBytesMax", "atlasBytesMax", "selectedTransferBytesMax", "criticalTransferBytesMax"]) {
     assert(contract?.budgets?.[budget] > 0, `4x ${budget} is required`, errors);
@@ -69,7 +72,7 @@ function validateContract(contract, root, errors) {
 }
 
 function validateSource(sourceRoot, contract, errors) {
-  if (!existsSync(sourceRoot)) return { status: "not-generated", files: 0, bytes: 0, duplicateHashes: [], hash: null };
+  if (!existsSync(sourceRoot)) return { status: "missing", files: 0, bytes: 0, duplicateHashes: [], hash: null };
   const expected = new Set(expectedNames());
   const actual = new Set(readdirSync(sourceRoot).filter((name) => name.endsWith(".png")));
   const missing = [...expected].filter((name) => !actual.has(name));
@@ -82,7 +85,10 @@ function validateSource(sourceRoot, contract, errors) {
   assert(Boolean(manifest), "4x source manifest is missing", errors);
   assert(manifest?.version === contract.determinism.manifestVersion, "4x source manifest version is invalid", errors);
   assert(manifest?.hashAlgorithm === contract.determinism.hashAlgorithm, "4x source manifest hash algorithm is invalid", errors);
-  assert(manifest?.generatedImagePolicy === "review-only-not-runtime", "4x generated source manifest must remain review-only", errors);
+  assert(manifest?.id === "parkland-terrain-4x-production-source", "4x source manifest id is invalid", errors);
+  assert(manifest?.generatedImagePolicy === "coursecraft-authored-production-runtime", "4x generated source must be approved for the runtime", errors);
+  assert(manifest?.provenance?.author === "CourseCraft", "4x source manifest must name CourseCraft provenance", errors);
+  assert(manifest?.provenance?.externalProvider === "none" && manifest?.provenance?.referencePixelsCopied === false, "4x source provenance must exclude external/reference pixels", errors);
 
   const hashes = new Map();
   const duplicateHashes = [];
@@ -119,8 +125,30 @@ function validateSource(sourceRoot, contract, errors) {
     }
   }
   assert(Object.keys(manifest?.files ?? {}).length === expected.size, "4x source manifest must hash exactly the required frames", errors);
+  const contactSheetPath = path.join(sourceRoot, contract.source.contactSheet);
+  assert(existsSync(contactSheetPath), "4x production contact sheet is missing", errors);
+  if (existsSync(contactSheetPath)) {
+    const contactSheet = readFileSync(contactSheetPath);
+    assert(manifest?.review?.contactSheet === contract.source.contactSheet, "contact-sheet path is stale", errors);
+    assert(manifest?.review?.contactSheetSha256 === hash(contactSheet), "contact-sheet SHA-256 is stale", errors);
+    assert(manifest?.review?.contactSheetBytes === contactSheet.length, "contact-sheet byte count is stale", errors);
+    try {
+      const image = PNG.sync.read(contactSheet);
+      assert(image.width >= 2048 && image.height >= 640, "contact sheet is not large enough for frame inspection", errors);
+    } catch (error) {
+      errors.push(`contact sheet is not a readable PNG: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   assert(bytes <= contract.budgets.sourceBytesMax, `4x source is ${bytesToMiB(bytes)} MiB; budget is ${bytesToMiB(contract.budgets.sourceBytesMax)} MiB`, errors);
-  return { status: "generated", files: actual.size, bytes, duplicateHashes, hash: hash(Buffer.from(JSON.stringify(manifest?.files ?? {}))) };
+  return {
+    status: "production",
+    files: actual.size,
+    bytes,
+    duplicateHashes,
+    hash: hash(Buffer.from(JSON.stringify(manifest?.files ?? {}))),
+    manifestSha256: existsSync(manifestPath) ? hash(readFileSync(manifestPath)) : null,
+    contactSheet: contract.source.contactSheet,
+  };
 }
 
 function validateFrameGutters(sheet, label, gutter, errors) {
@@ -166,6 +194,17 @@ function validateRuntimeBundles(root, contract, errors) {
     return null;
   }
   const manifest = readJson(manifestPath, errors, "runtime biome manifest");
+  assert(manifest?.version === contract.atlas.manifestVersion, "runtime biome manifest version is stale", errors);
+  const adoption = manifest?.assetContracts?.parklandTerrain;
+  const sourceManifestPath = path.join(root, contract.source.root, contract.source.manifest);
+  const sourceManifest = existsSync(sourceManifestPath) ? readJson(sourceManifestPath, errors, "4x source manifest") : null;
+  assert(adoption?.mode === "production-4x", "runtime biome manifest does not adopt production-4x", errors);
+  assert(adoption?.source === contract.source.root, "runtime biome manifest source path is stale", errors);
+  if (existsSync(sourceManifestPath)) {
+    assert(adoption?.sourceManifestSha256 === hash(readFileSync(sourceManifestPath)), "runtime source-manifest hash is stale", errors);
+    assert(adoption?.frameSetSha256 === hash(Buffer.from(JSON.stringify(sourceManifest?.files ?? {}))), "runtime frame-set hash is stale", errors);
+  }
+  assert(adoption?.rollback?.environment === contract.fallback.environment, "runtime manifest omits the explicit 2x rollback", errors);
   const parkland = manifest?.biomes?.parkland;
   assert(JSON.stringify(Object.keys(parkland ?? {}).sort()) === JSON.stringify([...QUALITIES].sort()), "Parkland must ship high, medium, and low quality bundles", errors);
   const expected = expectedNames().map((name) => name.slice(0, -4));
@@ -182,7 +221,7 @@ function validateRuntimeBundles(root, contract, errors) {
     for (const frame of expected) {
       const sourceFrame = terrain?.json?.frames?.[frame];
       assert(Boolean(sourceFrame), `parkland/${quality} lacks terrain frame ${frame}`, errors);
-      assert(sourceFrame?.sourceSize?.w === contract.fallback.width && sourceFrame?.sourceSize?.h === contract.fallback.height, `parkland/${quality} ${frame} dimensions no longer match the runtime fallback`, errors);
+      assert(sourceFrame?.sourceSize?.w === target.frameWidth && sourceFrame?.sourceSize?.h === target.frameHeight, `parkland/${quality} ${frame} dimensions are not the contracted ${target.frameWidth}x${target.frameHeight} LOD`, errors);
     }
     assert(detailFrames.length === target.detailFrames, `parkland/${quality} detail frame count is incomplete`, errors);
     if (quality === "high") for (const kind of DETAIL_KINDS) for (const variant of [0, 1]) {
@@ -194,6 +233,13 @@ function validateRuntimeBundles(root, contract, errors) {
     const fieldNames = Object.keys(bundle?.fields ?? {}).sort();
     assert(fieldNames.length === target.fields, `parkland/${quality} material-field coverage is incomplete`, errors);
     assert(JSON.stringify(fieldNames) === JSON.stringify(quality === "low" ? [] : [...TERRAIN_NAMES].sort()), `parkland/${quality} material fields must cover exactly the ten required materials`, errors);
+    const pathMaterialNames = Object.keys(bundle?.pathMaterials ?? {}).sort();
+    assert(
+      JSON.stringify(pathMaterialNames) === JSON.stringify(quality === "low" ? [] : [...PATH_MATERIAL_ROLES].sort()),
+      `parkland/${quality} path materials must be ${quality === "low" ? "omitted" : "shoulder + edge"}`,
+      errors,
+    );
+    assert(quality !== "low" || bundle?.pathMaterials === null, "parkland/low must retain the explicit path-material fallback", errors);
     assert(quality === "low" ? bundle?.details === null && bundle?.props === null : Boolean(bundle?.details && bundle?.props), `parkland/${quality} optional-art policy is incorrect`, errors);
     if (quality === "low") {
       assert(Object.keys(tier?.seasonal ?? {}).length === 0, "parkland/low must not ship seasonal overlay detail", errors);
@@ -203,10 +249,24 @@ function validateRuntimeBundles(root, contract, errors) {
     const selectedBytes = [bundle?.buildings, bundle?.terrain, bundle?.details, bundle?.props]
       .filter(Boolean).reduce((total, asset) => total + (asset.jsonBytes ?? 0) + (asset.imageBytes ?? 0), 0)
       + Object.values(bundle?.fields ?? {}).reduce((total, asset) => total + asset.bytes, 0);
+    const pathMaterialBytes = Object.values(bundle?.pathMaterials ?? {}).reduce((total, asset) => total + asset.bytes, 0);
     assert((terrain?.bytes ?? 0) <= contract.budgets.atlasBytesMax, `parkland/${quality} terrain atlas exceeds its budget`, errors);
-    assert(selectedBytes <= contract.budgets.selectedTransferBytesMax, `parkland/${quality} selected bundle exceeds its budget`, errors);
-    if (quality === "high") assert(selectedBytes <= contract.budgets.criticalTransferBytesMax, "Parkland default critical bundle exceeds its budget", errors);
-    report[quality] = { terrainFrames: terrainFrames.length, detailFrames: detailFrames.length, selectedBytes };
+    assert(terrain?.json?.meta?.scale === String(target.atlasScale), `parkland/${quality} atlas scale is not ${target.atlasScale}`, errors);
+    assert(terrain?.json?.meta?.size?.w <= contract.atlas.maxWidth && terrain?.json?.meta?.size?.h <= contract.atlas.maxHeight, `parkland/${quality} atlas dimensions exceed the contract`, errors);
+    assert(adoption?.lods?.[quality]?.mipDivisor === target.mipDivisor, `parkland/${quality} runtime mip divisor is stale`, errors);
+    const totalSelectedBytes = selectedBytes + pathMaterialBytes;
+    assert(totalSelectedBytes <= contract.budgets.selectedTransferBytesMax, `parkland/${quality} selected bundle exceeds its budget`, errors);
+    if (quality === "high") assert(totalSelectedBytes <= contract.budgets.criticalTransferBytesMax, "Parkland default critical bundle exceeds its budget", errors);
+    report[quality] = {
+      lod: target.lod,
+      frame: `${target.frameWidth}x${target.frameHeight}`,
+      scale: target.atlasScale,
+      terrainFrames: terrainFrames.length,
+      detailFrames: detailFrames.length,
+      selectedBytes: totalSelectedBytes,
+      pathMaterialBytes,
+      terrainAtlasBytes: terrain?.bytes ?? 0,
+    };
   }
   return report;
 }
@@ -230,7 +290,9 @@ function validateRendererAndAccessibility(root, contract, errors) {
   assert(accessibility.nonColorPatterns === true && palette.includes("terrainPattern"), "accessibility contract requires non-color terrain patterns", errors);
   const atlasBuilder = path.join(root, "scripts/build-atlas.mjs");
   const atlasSource = existsSync(atlasBuilder) ? readFileSync(atlasBuilder, "utf8") : "";
-  assert(!atlasSource.includes(contract.source.root), "review-only 4x source must not be included by the runtime atlas builder", errors);
+  assert(atlasSource.includes("PARKLAND_4X_SRC"), "runtime atlas builder does not include the approved 4x source", errors);
+  assert(atlasSource.includes("COURSECRAFT_PARKLAND_TERRAIN_MODE") && atlasSource.includes("legacy-2x"), "runtime atlas builder does not preserve the explicit 2x rollback", errors);
+  assert(atlasSource.includes("boxDownsample"), "runtime atlas builder lacks deterministic LOD downsampling", errors);
   for (const [name, requirement] of Object.entries(contract.offline)) {
     const source = path.join(root, requirement.file);
     assert(existsSync(source), `${name} offline source is missing`, errors);
@@ -257,7 +319,7 @@ export function auditParkland4x({ root = ROOT, sourceRoot } = {}) {
     runtime,
     errors,
   };
-  if (process.env.COURSECRAFT_PARKLAND_4X_REQUIRE_SOURCE === "1" && source.status !== "generated") {
+  if (process.env.COURSECRAFT_PARKLAND_4X_REQUIRE_SOURCE === "1" && source.status !== "production") {
     result.ok = false;
     result.errors.push("4x source is not generated; run npm run gen:terrain:parkland-4x before the required-source audit");
   }

@@ -175,6 +175,20 @@ function scrub(png, variant) {
   ellipse(png, centerX, 54, 14, 3, COLORS.sandDark, 120);
 }
 
+function wornTurf(png, variant) {
+  // Irregular divot/wear cluster used by Parkland tees, fairways, and path
+  // shoulders. The stable offsets keep the cluster deterministic while the two
+  // variants avoid an identical stamp along long contours.
+  for (let i = 0; i < 7; i++) {
+    const x = 14 + ((i * 11 + variant * 7) % 37);
+    const y = 41 + ((i * 5 + variant * 3) % 14);
+    const width = 2 + ((i + variant) % 4);
+    ellipse(png, x, y + 1, width + 1, 2, COLORS.darkGrass, 150);
+    ellipse(png, x, y, width, 1.5, i % 2 ? COLORS.straw : COLORS.sandDark, 225);
+    if (i % 3 === 0) line(png, x - width, y - 1, x + width, y - 2, COLORS.grassLight, 0);
+  }
+}
+
 function render(theme, kind, variant) {
   COLORS = PALETTES[theme];
   const png = new PNG({ width: SIZE, height: SIZE });
@@ -187,6 +201,7 @@ function render(theme, kind, variant) {
   else if (kind === "shore_stones") stones(png, variant, false);
   else if (kind === "pebbles") stones(png, variant, true);
   else if (kind === "bunker_tuft") bunkerTuft(png, variant);
+  else if (kind === "worn_turf") wornTurf(png, variant);
   else scrub(png, variant);
   writeFileSync(path.join(OUT, `${theme}_${kind}_${variant}.png`), PNG.sync.write(png));
 }
@@ -204,6 +219,7 @@ const kinds = [
   "scrub",
 ];
 for (const theme of Object.keys(PALETTES)) {
-  for (const kind of kinds) for (let variant = 0; variant < 2; variant++) render(theme, kind, variant);
+  const themeKinds = theme === "parkland" ? [...kinds, "worn_turf"] : kinds;
+  for (const kind of themeKinds) for (let variant = 0; variant < 2; variant++) render(theme, kind, variant);
 }
-console.log(`wrote ${Object.keys(PALETTES).length * kinds.length * 2} original @2x biome terrain-detail sources to ${OUT}`);
+console.log(`wrote deterministic @2x biome terrain-detail sources to ${OUT}`);

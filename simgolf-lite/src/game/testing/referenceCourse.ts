@@ -14,23 +14,26 @@ export function createParklandVisualReferenceCourse(): Course {
   const width = 48;
   const height = 36;
   const tiles = Array.from({ length: width * height }, () => "rough" as Terrain);
-  // A single broad clubhouse hill keeps the golf corridor seamless while
-  // still exercising authored elevation joins and exposed-earth faces.
+  // Broad, gently staggered terraces cross the playable route. The landing
+  // basin and the green occupy distinct shelves, so landform reads at hole
+  // scale as well as in the frozen pin-detail view.
   const elevations: number[] = Array.from({ length: width * height }, (_, index) => {
     const x = index % width;
     const y = Math.floor(index / width);
-    return x < 15 && y < 12 ? 2 : 1;
+    const stagger = y < 12 ? -1 : y < 24 ? 0 : 1;
+    return x < 12 + stagger ? 0 : x < 21 + stagger ? 1 : x < 32 + stagger ? 2 : 3;
   });
   const set = (x: number, y: number, terrain: Terrain) => {
     if (x >= 0 && y >= 0 && x < width && y < height) tiles[y * width + x] = terrain;
   };
 
-  // Curved maintained corridor: a soft dogleg whose width changes along the hole.
-  for (let x = 7; x <= 40; x++) {
-    const centerY = 18 + Math.round(Math.sin((x - 8) / 8) * 3);
-    const radius = x < 12 || x > 35 ? 2 : 3;
+  // One continuous dogleg widens into the landing basin, then tightens for
+  // the approach before meeting the separate green complex.
+  for (let x = 7; x <= 39; x++) {
+    const centerY = x < 18 ? 17 + Math.round((x - 8) / 10) : x < 29 ? 18 : 18 + Math.round((x - 29) / 8);
+    const radius = x < 12 ? 2 : x < 18 ? 3 : x < 29 ? 4 : x < 36 ? 3 : 2;
     for (let y = centerY - radius; y <= centerY + radius; y++) {
-      if (Math.abs(y - centerY) + ((x * 7 + y * 11) % 5 === 0 ? 1 : 0) <= radius) set(x, y, "fairway");
+      set(x, y, "fairway");
     }
   }
   for (let y = 15; y <= 19; y++) for (let x = 5; x <= 9; x++) set(x, y, "tee");
@@ -47,29 +50,64 @@ export function createParklandVisualReferenceCourse(): Course {
   }
   for (let y = 13; y <= 17; y++) for (let x = 29; x <= 34; x++) if ((x - 31.5) ** 2 / 10 + (y - 15) ** 2 / 5 <= 1) set(x, y, "sand");
   for (let y = 22; y <= 25; y++) for (let x = 37; x <= 41; x++) if ((x - 39) ** 2 / 7 + (y - 23.5) ** 2 / 3 <= 1) set(x, y, "sand");
+  let priorPathY: number | null = null;
   for (let x = 3; x <= 44; x++) {
     const y = 10 + Math.round(Math.sin(x / 6) * 2);
+    // The sinusoid can change rows between columns. Fill its deterministic
+    // cardinal bridge on the incoming column so the authored cart route is
+    // exactly one four-connected component without inventing a diagonal merge.
+    if (priorPathY != null) {
+      const direction = Math.sign(y - priorPathY);
+      for (let bridgeY: number = priorPathY; bridgeY !== y; bridgeY += direction || 1) set(x, bridgeY, "path");
+    }
     set(x, y, "path");
+    priorPathY = y;
   }
-  for (let y = 2; y < height - 2; y++) for (let x = 2; x < width - 2; x++) {
-    if (tiles[y * width + x] === "rough" && ((x * 41 + y * 67 + PARKLAND_VISUAL_SEED) % 79 < 4)) set(x, y, "deep_rough");
+  // Large connected wild margins frame both sides of the landing basin and
+  // the back of the green; isolated deep-rough confetti cannot survive here.
+  for (let y = 12; y <= 17; y++) for (let x = 10; x <= 27; x++) {
+    if (((x - 19) / 10) ** 2 + ((y - 14) / 4) ** 2 <= 1 && tiles[y * width + x] === "rough") set(x, y, "deep_rough");
+  }
+  for (let y = 22; y <= 33; y++) for (let x = 6; x <= 18; x++) {
+    if (((x - 12) / 7) ** 2 + ((y - 27) / 6) ** 2 <= 1 && tiles[y * width + x] === "rough") set(x, y, "deep_rough");
+  }
+  set(5, 23, "deep_rough");
+  set(5, 24, "deep_rough");
+  for (let y = 24; y <= 33; y++) for (let x = 32; x <= 46; x++) {
+    if (((x - 39) / 8) ** 2 + ((y - 28) / 5) ** 2 <= 1 && tiles[y * width + x] === "rough") set(x, y, "deep_rough");
   }
 
+  // Reposition the original 37 trees, 20 bushes, and 6 rocks into route-clear
+  // groves and edge understory. Every coordinate is real course authority.
+  const groveSites = [
+    ["tree", [10, 5, 12, 5, 14, 4, 16, 5, 18, 6, 11, 7, 13, 8, 15, 9, 18, 9,
+      8, 24, 10, 25, 12, 26, 14, 27, 16, 27, 9, 29, 11, 30, 13, 31, 16, 31,
+      23, 5, 25, 6, 27, 7, 29, 6, 31, 5, 33, 6, 35, 8, 37, 7, 39, 5,
+      43, 14, 45, 15, 46, 17, 45, 19, 46, 20, 45, 23, 43, 25, 45, 27, 46, 29, 41, 29]],
+    ["bush", [9, 14, 11, 13, 13, 13, 15, 12, 17, 12, 19, 13, 21, 13, 23, 13, 25, 13, 27, 12,
+      18, 30, 9, 23, 11, 23, 15, 24, 17, 25, 34, 24, 36, 26, 40, 27, 42, 27, 44, 30]],
+    ["rock", [20, 32, 23, 32, 27, 31, 31, 29, 34, 31, 43, 30]],
+  ] as const;
   const obstacles: Course["obstacles"] = [];
-  for (let y = 2; y < height - 2; y++) for (let x = 2; x < width - 2; x++) {
-    const terrain = tiles[y * width + x];
-    const value = (x * 73 + y * 101 + PARKLAND_VISUAL_SEED) % 113;
-    if ((terrain === "rough" || terrain === "deep_rough") && value < 7) {
-      obstacles.push({ x, y, type: value === 0 ? "rock" : value < 3 ? "bush" : "tree" });
-    }
+  for (const [type, coordinates] of groveSites) for (let index = 0; index < coordinates.length; index += 2) {
+    obstacles.push({ x: coordinates[index], y: coordinates[index + 1], type });
   }
+  obstacles.sort((left, right) => left.y - right.y || left.x - right.x);
 
   return {
     width,
     height,
     tiles,
     elevations,
-    holes: [{ tee: { x: 7, y: 17 }, green: { x: 40, y: 20 }, parMode: "MANUAL", parManual: 4, name: "Founder's Bend", holeIndex: 1 }],
+    holes: [{
+      tee: { x: 7, y: 17 },
+      waypoints: [{ x: 20, y: 18 }, { x: 31, y: 19 }],
+      green: { x: 40, y: 20 },
+      parMode: "MANUAL",
+      parManual: 4,
+      name: "Founder's Bend",
+      holeIndex: 1,
+    }],
     obstacles,
     buildings: [{ type: "clubhouse", x: 3, y: 4 }],
     yardsPerTile: 10,

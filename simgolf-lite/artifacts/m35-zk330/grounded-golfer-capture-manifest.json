@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "seed": "zk330-grounded-golfer-v1",
+  "fixture": "src/game/testing/zk330GroundingBrowserFixture.ts",
+  "traveller": { "id": 330, "start": [20, 20], "destination": [24, 20] },
+  "terrainSamples": [
+    [20, 20, "fairway", 0], [21, 20, "rough", 1], [22, 20, "fairway", 2],
+    [23, 20, "rough", 0], [24, 20, "green", 1]
+  ],
+  "bankCases": ["valid-bridge-crossing", "blocked-water-bank"],
+  "renderBudget": { "holdersPerGolfer": 1, "contactShadowsPerHolder": 1, "newWorldEffectsPerTick": 0 },
+  "browserEvidence": {
+    "test": "e2e/zk330-grounded-golfer.e2e.ts",
+    "captureRoot": "/private/tmp/zk330-browser-evidence",
+    "report": "/private/tmp/zk330-browser-evidence/zk330-browser-report.json",
+    "reportSha256": "a8da5f8b714b902007f39bc81c97188b2a0d8b58f1faab93ccf07b500deff692",
+    "inspected": ["r0-high-motion.png", "r90-medium-motion.png", "r180-low-reduced.png", "r270-high-reduced.png"],
+    "captures": [
+      { "rotation": 0, "quality": "high", "reducedMotion": false, "png": "r0-high-motion.png", "sha256": "5d6515f2a3c039d3dbbd2d58291ee67ce7a62baa904987f395f6630da3f454e0" },
+      { "rotation": 90, "quality": "medium", "reducedMotion": false, "png": "r90-medium-motion.png", "sha256": "ce9043d563bd6fd2c40354986b62223e3aa889d99c1a3dbb9b7f4de3941117cf" },
+      { "rotation": 180, "quality": "low", "reducedMotion": true, "png": "r180-low-reduced.png", "sha256": "e843283f8a8fb37fc285661f220fc0beeafa60596db64e6db8b2ae1378b7771a" },
+      { "rotation": 270, "quality": "high", "reducedMotion": true, "png": "r270-high-reduced.png", "sha256": "1e05a6bfe60efa82a4ffff0dafcdc98d33d79a63eb0044ded9878f4ef66153fc" }
+    ]
+  }
+}

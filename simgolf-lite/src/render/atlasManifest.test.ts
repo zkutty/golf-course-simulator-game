@@ -15,6 +15,10 @@ const base = {
   details: file("details"),
   props: file("props"),
   fields: { fairway: { image: "fairway.123456789abc.png" } },
+  pathMaterials: {
+    shoulder: { image: "path-shoulder.123456789abc.png" },
+    edge: { image: "path-edge.123456789abc.png" },
+  },
 };
 
 function manifest(version: 1 | 2 | 3) {
@@ -73,6 +77,25 @@ describe("atlas manifest schema and compatibility", () => {
     expect(autumn?.frames["natural-props"]?.json).toContain("autumn-props");
     expect(autumn?.frames.buildings?.json).toContain("autumn-buildings");
     expect(autumn?.frames.decorations).toBeUndefined();
+  });
+
+  it("keeps path cross-section fields typed, complete, and optional for Low fallback", () => {
+    const parsed = normalizeAtlasManifest(manifest(3), ["parkland"]);
+    expect(parsed.biomes.parkland.high.base.pathMaterials?.shoulder.image).toContain("path-shoulder");
+    expect(parsed.biomes.parkland.high.base.pathMaterials?.edge.image).toContain("path-edge");
+    const low = structuredClone(manifest(3));
+    (low.biomes.parkland.low as { base: { pathMaterials: unknown } }).base.pathMaterials = null;
+    expect(normalizeAtlasManifest(low, ["parkland"]).biomes.parkland.low.base.pathMaterials).toBeNull();
+
+    const missingEdge = structuredClone(manifest(3));
+    delete (missingEdge.biomes.parkland.high as { base: { pathMaterials: Record<string, unknown> } })
+      .base.pathMaterials.edge;
+    expect(() => normalizeAtlasManifest(missingEdge, ["parkland"])).toThrow(/edge is required/);
+
+    const unknownRole = structuredClone(manifest(3));
+    (unknownRole.biomes.parkland.high as { base: { pathMaterials: Record<string, unknown> } })
+      .base.pathMaterials.core = { image: "path-core.123456789abc.png" };
+    expect(() => normalizeAtlasManifest(unknownRole, ["parkland"])).toThrow(/unknown path material role/);
   });
 
   it("fails closed for unknown schemas, missing registered biomes, and bad asset references", () => {

@@ -1,9 +1,10 @@
 import * as PIXI from "pixi.js";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_STATE } from "../../../game/gameState";
+import type { Point } from "../../../game/models/types";
 import type { RenderSnapshot } from "../../../game/render/renderSnapshot";
 import { SceneSystemHost } from "../SceneSystemHost";
-import { createArchitectureOverlaySceneSystem } from "./architectureOverlayScene";
+import { createArchitectureOverlaySceneSystem, routeDestinationHierarchy } from "./architectureOverlayScene";
 
 function snapshot(revision: number, overrides: Partial<RenderSnapshot> = {}): RenderSnapshot {
   const course = DEFAULT_STATE.course;
@@ -44,21 +45,47 @@ function snapshot(revision: number, overrides: Partial<RenderSnapshot> = {}): Re
 }
 
 describe("Architecture overlay scene ownership", () => {
-  it("draws one marker per semantic target regardless of route sampling", () => {
+  it("prefers authored waypoints in stable deduped order and keeps the active pin terminal", () => {
+    const hole = {
+      ...DEFAULT_STATE.course.holes[0],
+      waypoints: [{ x: 4, y: 3 }, { x: 4, y: 3 }, { x: 7, y: 2 }],
+      pinPositions: { A: { x: 8, y: 2 }, B: { x: 9, y: 2 }, C: { x: 8, y: 3 } },
+    };
+
+    expect(routeDestinationHierarchy(hole, "B", [{ x: 99, y: 99 }])).toEqual([
+      { x: 4, y: 3 },
+      { x: 7, y: 2 },
+      { x: 9, y: 2 },
+    ]);
+  });
+
+  it("falls back to solver destinations only without authored waypoints and dedupes the active pin", () => {
+    const hole = {
+      ...DEFAULT_STATE.course.holes[0],
+      waypoints: [],
+      pinPositions: { A: { x: 8, y: 2 }, B: { x: 9, y: 2 }, C: { x: 8, y: 3 } },
+    };
+
+    expect(routeDestinationHierarchy(hole, "A", [
+      { x: 4, y: 3 },
+      { x: 4, y: 3 },
+      { x: 8, y: 2 },
+    ])).toEqual([{ x: 4, y: 3 }, { x: 8, y: 2 }]);
+  });
+
+  it("draws distinct source-backed landing, approach, and pin markers regardless of route sampling", () => {
     const layer = new PIXI.Container();
     const scene = createArchitectureOverlaySceneSystem(layer);
-    const targets = [{ x: 4, y: 3 }, { x: 8, y: 2 }];
+    const targets = [{ x: 4, y: 3 }, { x: 7, y: 2 }, { x: 8, y: 2 }];
     const markerCenters = () => {
-      const route = layer.children.find((child) => child.label === "route-overlay") as PIXI.Graphics;
-      return route.context.instructions
-        .filter((instruction) => instruction.action === "fill")
-        .flatMap((instruction) => "path" in instruction.data ? instruction.data.path.instructions : [])
-        .filter((instruction) => instruction.action === "circle")
-        .map((instruction) => instruction.data.slice(0, 2));
+      return layer.children.flatMap((child) => {
+        const marker = child as PIXI.Graphics & { __coursecraftShotDestination?: { point: Point; role: string } };
+        return marker.__coursecraftShotDestination ? [marker.__coursecraftShotDestination] : [];
+      });
     };
 
     scene.render?.(snapshot(1, {
-      activePath: [{ x: 0, y: 5 }, { x: 4, y: 3 }, { x: 8, y: 2 }],
+      activePath: [{ x: 0, y: 5 }, { x: 4, y: 3 }, { x: 7, y: 2 }, { x: 8, y: 2 }],
       activeShotDestinations: targets,
     }));
     const sparse = markerCenters();
@@ -67,8 +94,18 @@ describe("Architecture overlay scene ownership", () => {
       activeShotDestinations: targets,
     }));
 
-    expect(sparse).toHaveLength(2);
+    expect(sparse).toEqual([
+      { index: 0, point: targets[0], role: "landing" },
+      { index: 1, point: targets[1], role: "approach" },
+      { index: 2, point: targets[2], role: "pin" },
+    ]);
     expect(markerCenters()).toEqual(sparse);
+    const markerBounds = layer.children.flatMap((child) => {
+      const marker = child as PIXI.Graphics & { __coursecraftShotDestination?: unknown };
+      return marker.__coursecraftShotDestination ? [marker.getLocalBounds()] : [];
+    });
+    expect(markerBounds[0].width).toBeGreaterThan(markerBounds[2].width);
+    expect(markerBounds[1].height).toBeGreaterThan(markerBounds[2].height);
   });
 
   it("rebuilds only its labeled decals and preserves sibling order", () => {
@@ -110,7 +147,7 @@ describe("Architecture overlay scene ownership", () => {
         measurement: "2 tiles",
       }],
     }));
-    expect(layer.children.filter((child) => child.label === "route-overlay")).toHaveLength(2);
+    expect(layer.children.filter((child) => child.label === "route-overlay")).toHaveLength(3);
 
     scene.render?.(snapshot(2, { showMarkers: false }));
     expect(layer.children).toHaveLength(0);

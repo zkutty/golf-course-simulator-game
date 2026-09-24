@@ -632,6 +632,7 @@ export function HUD(props: {
       )}
 
       <div
+        className="cc-sidebar-scroll-region"
         style={{
           flex: 1,
           overflow: "auto",
@@ -1871,6 +1872,10 @@ export function HUD(props: {
         )}
       </div>
 
+      <div className="cc-sidebar-scroll-affordance" aria-hidden="true">
+        <span><T id="workspace.more" /> ↓</span>
+      </div>
+
       {editorMode === "HOLE_WIZARD" && (
         <div
           style={{
@@ -1935,6 +1940,7 @@ export function HUD(props: {
       )}
 
       <div
+        className="cc-sidebar-footer"
         style={{
           padding: 10,
           borderTop: "1px solid rgba(0,0,0,0.06)",
@@ -1943,6 +1949,9 @@ export function HUD(props: {
           opacity: isBankrupt ? 0.55 : 1,
         }}
       >
+        <div className="cc-sidebar-utilities">
+          <div id="cc-bug-report-dock" className="cc-bug-report-dock" />
+        </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <GameButton variant="secondary" size="md" onClick={onSave} style={{ flex: 1, borderRadius: 16 }}>
             <T id="auto.ui.hud.save" /></GameButton>

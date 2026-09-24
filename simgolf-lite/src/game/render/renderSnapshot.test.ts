@@ -5,6 +5,7 @@ import {
   architectureOverlayRevisionDependencies,
   changedRenderSystems,
   createRenderSnapshot,
+  habitatFieldRevisionDependencies,
   holeMarkersRevisionDependencies,
   mobilityEntitiesRevisionDependencies,
   playerProCollectionRevisionDependencies,
@@ -24,6 +25,52 @@ function snapshot(state: GameState, revisions: Partial<{
 }
 
 describe("RenderSnapshot invalidation contract", () => {
+  it("declares every plan, tier, palette, and projection dependency for habitatField", () => {
+    const course = DEFAULT_STATE.course;
+    const surfaceHeightAt = () => 0;
+    const input = {
+      atlasRevision: 7,
+      course,
+      effectiveTiles: course.tiles,
+      obstacles: course.obstacles,
+      holes: course.holes,
+      worldSeed: 1202,
+      graphicsQuality: "high" as const,
+      colorVision: "standard" as const,
+      rotation: 0 as const,
+      surfaceHeightAt,
+    };
+    expect(habitatFieldRevisionDependencies(input)).toEqual([
+      7,
+      course,
+      course.tiles,
+      course.obstacles,
+      course.holes,
+      1202,
+      "high",
+      "standard",
+      0,
+      surfaceHeightAt,
+    ]);
+    const tracker = new RenderRevisionTracker();
+    const required = {
+      atmosphere: [],
+      surfaceCare: [],
+      structuresProps: [],
+      playerProCollection: [],
+      naturalProps: [],
+      overlaysDiagnostics: [],
+      estateSurvey: [],
+    };
+    const first = tracker.update({ ...required, habitatField: habitatFieldRevisionDependencies(input) });
+    expect(tracker.update({ ...required, habitatField: habitatFieldRevisionDependencies(input) }).habitatField)
+      .toBe(first.habitatField);
+    expect(tracker.update({
+      ...required,
+      habitatField: habitatFieldRevisionDependencies({ ...input, colorVision: "tritanopia" }),
+    }).habitatField).toBe((first.habitatField ?? 0) + 1);
+  });
+
   it("starts every scene system once and keeps unrelated cash changes static", () => {
     const first = snapshot(DEFAULT_STATE);
     const cashOnly = snapshot({
@@ -78,6 +125,36 @@ describe("RenderSnapshot invalidation contract", () => {
       ...unrelated,
       decorations: [...(unrelated.decorations ?? [])],
     })).structuresProps).toBe(initial.structuresProps + 2);
+  });
+
+  it("invalidates engineered structures for grade/tier, elevation, rotation, and LOD inputs", () => {
+    const tracker = new RenderRevisionTracker();
+    const baseCourse = DEFAULT_STATE.course;
+    const dependencies = (
+      course: GameState["course"],
+      rotation: 0 | 90 | 180 | 270 = 0,
+      graphicsQuality: "high" | "medium" | "low" = "high",
+    ) => ({
+      atmosphere: [], surfaceCare: [], playerProCollection: [], naturalProps: [], overlaysDiagnostics: [], estateSurvey: [],
+      structuresProps: structuresPropsRevisionDependencies({
+        atlasRevision: 1,
+        course,
+        effectiveTiles: course.tiles,
+        graphicsQuality,
+        rotation,
+        seasonalPlantsSignature: "spring:full",
+      }),
+    });
+    const initial = tracker.update(dependencies(baseCourse)).structuresProps;
+    const buildingChanged = {
+      ...baseCourse,
+      buildings: [{ type: "pro_shop" as const, x: 4, y: 4, tier: 3 as const, price: 30 }],
+    };
+    expect(tracker.update(dependencies(buildingChanged)).structuresProps).toBe((initial ?? 0) + 1);
+    const gradeChanged = { ...buildingChanged, elevations: [...buildingChanged.elevations] };
+    expect(tracker.update(dependencies(gradeChanged)).structuresProps).toBe((initial ?? 0) + 2);
+    expect(tracker.update(dependencies(gradeChanged, 90)).structuresProps).toBe((initial ?? 0) + 3);
+    expect(tracker.update(dependencies(gradeChanged, 90, "low")).structuresProps).toBe((initial ?? 0) + 4);
   });
 
   it("invalidates Player Pro dressing only for visible display or physical scene inputs", () => {

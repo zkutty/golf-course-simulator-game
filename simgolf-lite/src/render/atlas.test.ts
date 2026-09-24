@@ -3,8 +3,29 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { assetsLoad } = vi.hoisted(() => ({ assetsLoad: vi.fn() }));
 vi.mock("pixi.js", () => ({
   Assets: { load: assetsLoad },
+  Rectangle: class {
+    readonly x;
+    readonly y;
+    readonly width;
+    readonly height;
+    constructor(x: number, y: number, width: number, height: number) {
+      this.x = x;
+      this.y = y;
+      this.width = width;
+      this.height = height;
+    }
+  },
   Spritesheet: class {},
-  Texture: class {},
+  Texture: class {
+    readonly source;
+    readonly frame;
+    readonly label;
+    constructor(options: { source: unknown; frame: unknown; label: string }) {
+      this.source = options.source;
+      this.frame = options.frame;
+      this.label = options.label;
+    }
+  },
 }));
 
 import {
@@ -13,6 +34,8 @@ import {
   atlasResidencySnapshot,
   atlasFallbackDiagnostics,
   getLandscapeMaterialField,
+  getParklandComposableField,
+  getPathMaterialField,
   getPropFrame,
   getSeasonalFrame,
   getTerrainDetailFrame,
@@ -36,6 +59,10 @@ function base(theme: string, quality: string) {
     props: quality === "low" ? null : sheet(`props-${theme}-${quality}`),
     fields: quality === "low" ? {} : {
       fairway: { image: `field-${theme}-${quality}-fairway.123456789abc.png` },
+    },
+    pathMaterials: quality === "low" ? null : {
+      shoulder: { image: `path-material-${theme}-${quality}-shoulder.123456789abc.png` },
+      edge: { image: `path-material-${theme}-${quality}-edge.123456789abc.png` },
     },
   };
 }
@@ -103,6 +130,12 @@ describe("incremental biome atlas loading", () => {
     expect(urls.some((url) => url.includes("parkland-high"))).toBe(true);
     expect(urls.some((url) => url.includes("autumn-"))).toBe(true);
     expect(urls.some((url) => url.includes("spring-"))).toBe(false);
+    expect(urls.some((url) => url.includes("path-material-parkland-high-shoulder"))).toBe(true);
+    expect(urls.some((url) => url.includes("path-material-parkland-high-edge"))).toBe(true);
+    // One undercoat + five cues + one pair atlas for the selected quality only.
+    expect(urls.filter((url) => url.includes("parkland-composable-v1/")).length).toBe(6);
+    expect(urls.filter((url) => url.includes("parkland-pair-atlas-v2/")).length).toBe(1);
+    expect(atlasResidencySnapshot().parklandComposableFields).toBe(86);
     expect(urls.some((url) => url.includes("links-") || url.includes("desert-"))).toBe(false);
   });
 
@@ -169,14 +202,45 @@ describe("incremental biome atlas loading", () => {
     expect(retried.some((url) => url.includes("buildings-parkland-high"))).toBe(false);
   });
 
-  it("keeps Low base-only and omits fields, details, props, and every overlay", async () => {
+  it("keeps Low base-only except for its bounded composable turf packet", async () => {
     await loadAtlases("parkland", "low", "autumn");
 
     const urls = assetsLoad.mock.calls.map(([url]) => String(url));
     expect(urls.some((url) => url.includes("field-parkland-low"))).toBe(false);
+    expect(urls.some((url) => url.includes("path-material-parkland-low"))).toBe(false);
     expect(urls.some((url) => url.includes("details-parkland-low"))).toBe(false);
     expect(urls.some((url) => url.includes("props-parkland-low"))).toBe(false);
     expect(urls.some((url) => url.includes("autumn-"))).toBe(false);
+    expect(urls.filter((url) => url.includes("parkland-composable-v1/")).length).toBe(6);
+    expect(urls.filter((url) => url.includes("parkland-pair-atlas-v2/")).length).toBe(1);
+    expect(atlasResidencySnapshot().parklandComposableFields).toBe(86);
+    const undercoat = getParklandComposableField("parkland", "low", "undercoat") as unknown as {
+      source: { style: { addressMode: string; scaleMode: string } };
+    };
+    const fairway = getParklandComposableField("parkland", "low", "fairway") as unknown as {
+      source: { style: { addressMode: string; scaleMode: string } };
+    };
+    expect(undercoat.source.style).toMatchObject({ addressMode: "repeat", scaleMode: "nearest" });
+    expect(fairway.source.style).toMatchObject({ addressMode: "repeat", scaleMode: "nearest" });
+    expect(getParklandComposableField("parkland", "low", "edge:fairway--rough:n")).not.toBeNull();
+    expect(getParklandComposableField("parkland", "medium", "edge:fairway--rough:n")).toBeNull();
+  });
+
+  it("loads repeat-safe path shoulder and edge fields only for supported qualities", async () => {
+    await loadAtlases("links", "medium");
+
+    const shoulder = getPathMaterialField("links", "shoulder", "medium") as unknown as {
+      source: { style: { addressMode: string; scaleMode: string } };
+    };
+    const edge = getPathMaterialField("links", "edge", "medium") as unknown as {
+      source: { style: { addressMode: string; scaleMode: string } };
+    };
+    expect(shoulder.source.style).toMatchObject({ addressMode: "repeat", scaleMode: "linear" });
+    expect(edge.source.style).toMatchObject({ addressMode: "repeat", scaleMode: "linear" });
+
+    await loadAtlases("links", "low");
+    expect(getPathMaterialField("links", "shoulder", "low")).toBeNull();
+    expect(getPathMaterialField("links", "edge", "low")).toBeNull();
   });
 
   it("does not let a late previous-season overlay replace the current season", async () => {

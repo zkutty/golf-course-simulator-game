@@ -21,12 +21,23 @@ export interface AtlasFieldFile {
   readonly height?: number;
 }
 
+/** Named, repeat-safe fields owned by the path cross-section compositor. */
+export const ATLAS_PATH_MATERIAL_ROLES = ["shoulder", "edge"] as const;
+export type AtlasPathMaterialRole = (typeof ATLAS_PATH_MATERIAL_ROLES)[number];
+
+export interface AtlasPathMaterials {
+  readonly shoulder: AtlasFieldFile;
+  readonly edge: AtlasFieldFile;
+}
+
 export interface AtlasBaseBundle {
   readonly buildings: AtlasBundleFile;
   readonly terrain: AtlasBundleFile;
   readonly details: AtlasBundleFile | null;
   readonly props: AtlasBundleFile | null;
   readonly fields: Partial<Record<Terrain, AtlasFieldFile>>;
+  /** High/medium only; Low intentionally keeps its procedural path fallback. */
+  readonly pathMaterials: AtlasPathMaterials | null;
 }
 
 export const ATLAS_SEASONAL_FRAME_FAMILIES = [
@@ -106,6 +117,26 @@ function fields(value: unknown, label: string): Partial<Record<Terrain, AtlasFie
   })) as Partial<Record<Terrain, AtlasFieldFile>>;
 }
 
+function pathMaterials(value: unknown, label: string): AtlasPathMaterials | null {
+  if (value == null) return null;
+  const source = object(value, label);
+  for (const role of ATLAS_PATH_MATERIAL_ROLES) {
+    if (!(role in source)) throw new Error(`${label}.${role} is required`);
+  }
+  for (const role of Object.keys(source)) {
+    if (!ATLAS_PATH_MATERIAL_ROLES.includes(role as AtlasPathMaterialRole)) {
+      throw new Error(`${label} has unknown path material role "${role}"`);
+    }
+  }
+  return Object.fromEntries(ATLAS_PATH_MATERIAL_ROLES.map((role) => {
+    const field = object(source[role], `${label}.${role}`);
+    return [role, {
+      ...field,
+      image: text(field.image, `${label}.${role}.image`),
+    }];
+  })) as unknown as AtlasPathMaterials;
+}
+
 function baseBundle(value: unknown, label: string): AtlasBaseBundle {
   const source = object(value, label);
   return {
@@ -114,6 +145,7 @@ function baseBundle(value: unknown, label: string): AtlasBaseBundle {
     details: optionalBundleFile(source.details, `${label}.details`),
     props: optionalBundleFile(source.props, `${label}.props`),
     fields: fields(source.fields, `${label}.fields`),
+    pathMaterials: pathMaterials(source.pathMaterials, `${label}.pathMaterials`),
   };
 }
 

@@ -20,6 +20,7 @@ import {
   __deleteSlotPayloadForTests,
   __omitSlotThemeForTests,
   autosave,
+  deleteSlot,
   loadSlot,
   mostRecentSlot,
   saveToSlot,
@@ -65,6 +66,7 @@ import { useAudio } from "./audio/audioContext";
 import { audioManager } from "./audio/AudioManager";
 const HoleInspector = lazy(() => import("./ui/HoleInspector").then((module) => ({ default: module.HoleInspector })));
 const HUD = lazy(() => import("./ui/HUD").then((module) => ({ default: module.HUD })));
+const HoleMinimap = lazy(() => import("./ui/HoleMinimap").then((module) => ({ default: module.HoleMinimap })));
 const holeEditorNavButtonStyle: CSSProperties = {
   padding: "8px 16px", borderRadius: 6, border: "1px solid #ddd", background: "#fff",
   fontWeight: 600, fontSize: 13, cursor: "pointer",
@@ -72,7 +74,6 @@ const holeEditorNavButtonStyle: CSSProperties = {
 import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState, IsoCameraSnapshot } from "./game/render/camera";
 import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
-import { HoleMinimap } from "./ui/HoleMinimap";
 import { createNewGame } from "./game/gen/newGame";
 import type { GameSetup } from "./game/models/setup";
 import { BIOME_KEYS, isLandTheme } from "./game/models/biomes";
@@ -105,6 +106,8 @@ import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import { createObjectiveState, type GoalDefinition, type RunOutcome } from "./game/models/objectives";
 import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createM26MultiCourseReferenceCourse, createM27ReleaseReferenceCourse, createParklandVisualReferenceCourse, createPlayerProReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
+import { createMacroLandformFixture } from "./game/testing/macroLandformFixture";
+import { createZk1202HabitatReferenceCourse } from "./game/testing/zk1202HabitatFixture";
 import {
   BIOME_REFERENCE_ROTATIONS,
   BIOME_REFERENCE_VIEWS,
@@ -115,6 +118,12 @@ import {
   type BiomeReferenceView,
 } from "./game/testing/biomeAuthoring";
 import { createM47CertificationCourse } from "./game/testing/m47Certification";
+import {
+  createZk330GroundingCourse,
+  createZk330GroundingLiveState,
+  createZk330GroundingPausedLiveState,
+  zk330BankEvidence,
+} from "./game/testing/zk330GroundingBrowserFixture";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { reservedMobilityFleetUnitIds } from "./game/m51/rentalBusiness";
 import { runLiveDaysHeadless } from "./game/live/headless";
@@ -131,7 +140,7 @@ import {
   BUILDING_SPECS,
   CONCESSION_TYPES,
   buildingAtTile,
-  canPlaceBuilding,
+  quoteBuildingPlacement,
 } from "./game/models/buildings";
 import {
   canPlaceDecoration,
@@ -512,7 +521,7 @@ export default function App() {
     const physicalEdit = new Set([
       "PAINT_TILES", "EDIT_SURFACE_FEATURE", "SCULPT_TILES", "SCULPT_GREEN", "PLACE_TEE", "MOVE_TEE", "PLACE_GREEN", "MOVE_GREEN",
       "SET_TEE_BOX", "REMOVE_TEE_BOX", "SET_PIN_POSITION", "REMOVE_PIN_POSITION", "ADD_WAYPOINT",
-      "UPDATE_WAYPOINT", "REMOVE_WAYPOINT", "PLACE_OBSTACLE", "REMOVE_OBSTACLE", "PLACE_BUILDING",
+      "UPDATE_WAYPOINT", "REMOVE_WAYPOINT", "PLACE_OBSTACLE", "REMOVE_OBSTACLE", "PLACE_BUILDING", "REPAIR_BUILDING_SITE",
       "REMOVE_BUILDING", "PLACE_DECORATION", "REMOVE_DECORATION", "ROTATE_DECORATION", "SET_COURSE_LAYOUTS",
     ]).has(action.type);
     if (editingLocked && physicalEdit) return;
@@ -585,6 +594,7 @@ export default function App() {
   const [decorationRotation, setDecorationRotation] = useState<DecorationRotation>(0);
   const [decorationSpan, setDecorationSpan] = useState(3);
   const [decorationAction, setDecorationAction] = useState<"place" | "rotate" | "remove">("place");
+  const zk470LastPointerCellRef = useRef<Point | null>(null);
 
   const activateTerrainEditing = useCallback((
     tool: TerrainAuthoringTool = terrainTool,
@@ -1763,6 +1773,8 @@ export default function App() {
     const fixtureParams = new URLSearchParams(window.location.search);
     const isPerfFixture = fixtureParams.get("perfFixture") === "1";
     const isM19Fixture = fixtureParams.get("m19Fixture") === "1";
+    const isMacroLandformFixture = fixtureParams.get("m35LandformFixture") === "1";
+    const isZk1202Fixture = fixtureParams.get("zk1202HabitatFixture") === "1";
     const isM20Fixture = fixtureParams.get("m20Fixture") === "1";
     const isM21Fixture = fixtureParams.get("m21Fixture") === "1";
     const isM22Fixture = fixtureParams.get("m22Fixture") === "1";
@@ -1789,7 +1801,7 @@ export default function App() {
       : 0;
     const isPropertyFixture = fixtureParams.get("propertyFixture") === "1";
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isM53Fixture && !isZk689Fixture && !isPropertyFixture) return;
+    if (!isPerfFixture && !isM19Fixture && !isMacroLandformFixture && !isZk1202Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isM53Fixture && !isZk689Fixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
     const m25SeedParam = fixtureParams.get("m25Seed");
     const parsedM25Seed = m25SeedParam == null ? Number.NaN : Number(m25SeedParam);
@@ -1798,7 +1810,11 @@ export default function App() {
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
     const requestedTheme = fixtureParams.get("m53Theme") ?? fixtureParams.get("m52Theme") ?? fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = isLandTheme(requestedTheme) ? requestedTheme : BIOME_KEYS[0];
-    let fixtureCourse = isPropertyFixture
+    let fixtureCourse = isMacroLandformFixture
+      ? createMacroLandformFixture()
+      : isZk1202Fixture
+      ? createZk1202HabitatReferenceCourse()
+      : isPropertyFixture
       ? { ...createReferenceCourse(), property: starterPropertyCourse() }
       : isM38Fixture
       ? createPlayerProReferenceCourse()
@@ -3421,7 +3437,49 @@ export default function App() {
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
+    type Zk470ActionClass = "terrain-stroke" | "tee" | "pin" | "prop" | "structure" | "occlusion-selection";
+    const configureZk470PlacementAction = (actionClass: Zk470ActionClass) => {
+      setPendingTeePlacement(null);
+      setSetupPlacement(null);
+      setPaintError(null);
+      if (actionClass === "terrain-stroke") {
+        setTerrainTool("curve");
+        setTerrainBrushWidth(1);
+        setSelected("rough");
+        setSelectedPlantId(null);
+        setSelectedDesignItemId("terrain:rough");
+        setEditorMode("PAINT");
+      } else if (actionClass === "tee") {
+        setActiveHoleIndex(0);
+        setSelectedTeeSet("member");
+        setSetupPlacement({ kind: "tee", key: "member" });
+        setEditorMode("HOLE_WIZARD");
+      } else if (actionClass === "pin") {
+        setActiveHoleIndex(0);
+        setSetupPlacement({ kind: "pin", key: "A" });
+        setEditorMode("HOLE_WIZARD");
+      } else if (actionClass === "prop") {
+        setObstacleType("tree");
+        setSelectedPlantId(null);
+        setSelectedDesignItemId("plant:parkland-oak");
+        setEditorMode("OBSTACLE");
+      } else {
+        setBuildingType("pro_shop");
+        setEditorMode("BUILDING");
+      }
+    };
     window.__coursecraftTest = {
+      enterNormalGameplayForTest: () => {
+        exitHoleEditMode();
+        selectWorkspace("operate");
+        setViewMode("COZY");
+      },
+      setPinRotationForTest: (pinRotation) => {
+        if (!(["A", "B", "C"] as const).includes(pinRotation)) {
+          throw new Error(`Unsupported pin rotation: ${pinRotation}`);
+        }
+        dispatch({ type: "SET_ACTIVE_PIN_ROTATION", pinRotation });
+      },
       setGraphicsQualityFixture: (quality) => {
         if (quality !== "high" && quality !== "medium" && quality !== "low") {
           throw new Error(`Unsupported renderer quality fixture: ${quality}`);
@@ -3594,6 +3652,109 @@ export default function App() {
       resetM35Metrics: resetM35Telemetry,
       setPaintCash: (cash: number) => {
         gameSession.update((current) => ({ ...current, world: { ...current.world, cash } }));
+      },
+      setZk470PlacementFixture: async (actionClass) => {
+        const { createZk470PlacementFixture, ZK470_TARGETS } = await import("./game/testing/zk470PlacementFixture");
+        const fixture = createZk470PlacementFixture();
+        const fixtureCourse = structuredClone(fixture.course);
+        const fixtureWorld = {
+          ...structuredClone(fixture.world),
+          cash: 1_000_000,
+          reputation: 100,
+          isBankrupt: false,
+        };
+        const hole = fixtureCourse.holes[0];
+        fixtureCourse.holes[0] = {
+          ...hole,
+          tee: { x: 8, y: 10 },
+          teeBoxes: { ...hole.teeBoxes, member: { x: 8, y: 10 } },
+          green: { x: 38, y: 20 },
+          pinPositions: { ...hole.pinPositions, A: { x: 38, y: 20 }, B: null, C: null },
+        };
+        fixtureCourse.tiles[20 * fixtureCourse.width + 38] = "green";
+        fixtureCourse.obstacles = fixtureCourse.obstacles.filter((obstacle) => !(obstacle.x === 45 && obstacle.y === 12));
+        fixtureCourse.buildings = fixtureCourse.buildings.filter((building) => building.id !== "zk470-engineering-ring");
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({
+          state: createLiveState(fixtureCourse, fixtureWorld, 0),
+          pendingCash: 0,
+          speed: "paused",
+          selectedGolferId: null,
+        }));
+        zk470LastPointerCellRef.current = null;
+        window.__coursecraftPixiTest?.resetTerrainStrokePointerDownCell();
+        configureZk470PlacementAction(actionClass);
+        const targetId: Record<Zk470ActionClass, string> = {
+          "terrain-stroke": "flat-center",
+          tee: "tee-forward",
+          pin: "pin-a",
+          prop: "prop-tree",
+          structure: "engineering-ring-valid",
+          "occlusion-selection": "occlusion-building",
+        };
+        const target = ZK470_TARGETS.find((candidate) => candidate.id === targetId[actionClass]);
+        if (!target) throw new Error(`Missing ZK-470 target for ${actionClass}`);
+        return structuredClone(target);
+      },
+      configureZk470PlacementAction,
+      zk470PlacementSnapshot: async (actionClass) => {
+        const { ZK470_TARGETS } = await import("./game/testing/zk470PlacementFixture");
+        const current = gameSession.getState();
+        const targetId: Record<Zk470ActionClass, string> = {
+          "terrain-stroke": "flat-center",
+          tee: "tee-forward",
+          pin: "pin-a",
+          prop: "prop-tree",
+          structure: "engineering-ring-valid",
+          "occlusion-selection": "occlusion-building",
+        };
+        const target = ZK470_TARGETS.find((candidate) => candidate.id === targetId[actionClass]);
+        if (!target) throw new Error(`Missing ZK-470 target for ${actionClass}`);
+        const same = (point: Point | null | undefined) => point?.x === target.point.x && point.y === target.point.y;
+        const index = target.point.y * current.course.width + target.point.x;
+        const committed = actionClass === "terrain-stroke"
+          ? current.course.tiles[index] === "rough"
+          : actionClass === "tee"
+            ? same(current.course.holes[0]?.tee)
+            : actionClass === "pin"
+              ? same(current.course.holes[0]?.green)
+              : actionClass === "prop"
+                ? current.course.obstacles.some((obstacle) => same(obstacle))
+                : current.course.buildings.some((building) => same(building));
+        return {
+          target: structuredClone(target),
+          selectedCell: zk470LastPointerCellRef.current ? { ...zk470LastPointerCellRef.current } : null,
+          handledPointerCell: actionClass === "terrain-stroke"
+            ? window.__coursecraftPixiTest?.terrainStrokePointerDownCell() ?? null
+            : zk470LastPointerCellRef.current ? { ...zk470LastPointerCellRef.current } : null,
+          committedCell: committed ? { ...target.point } : null,
+          courseHash: hashCanonicalValue(current.course),
+          worldHash: hashCanonicalValue(current.world),
+          authoritative: {
+            terrain: current.course.tiles[index],
+            tee: current.course.holes[0]?.tee ?? null,
+            pin: current.course.holes[0]?.green ?? null,
+            obstacle: current.course.obstacles.find((obstacle) => same(obstacle)) ?? null,
+            building: current.course.buildings.find((building) => same(building)) ?? null,
+          },
+        };
+      },
+      zk470Undo: () => undoTerrainEdit(),
+      zk470Redo: () => redoTerrainEdit(),
+      zk470PersistenceProbe: async (actionClass) => {
+        const { firstCanonicalDifference, ZK470_FIXTURE_SLOT } = await import("./game/testing/zk470PlacementFixture");
+        const current = gameSession.getState();
+        const payload: SavePayload = { course: current.course, world: current.world };
+        const id = `${ZK470_FIXTURE_SLOT}-${actionClass}`;
+        const beforeHash = hashCanonicalValue(payload);
+        await saveToSlot(id, "manual", `ZK-470 ${actionClass}`, payload);
+        const loaded = await loadSlot(id);
+        const afterHash = loaded ? hashCanonicalValue({ course: loaded.course, world: loaded.world }) : null;
+        const firstDifference = loaded
+          ? firstCanonicalDifference(payload, { course: loaded.course, world: loaded.world })
+          : { path: "$", before: "payload", after: null };
+        await deleteSlot(id);
+        return { id, beforeHash, afterHash, firstDifference, cleanedUp: !(await loadSlot(id)) };
       },
       advanceLiveClock: (realMs, speed) => {
         const previousSpeed = live.getSnapshot()?.speed ?? live.speed;
@@ -4015,6 +4176,60 @@ export default function App() {
           selectedGolferId: null,
         }));
       },
+      setZk330GroundingFixture: () => {
+        const current = gameSession.getState();
+        const fixtureCourse = createZk330GroundingCourse();
+        const fixtureWorld = {
+          ...current.world,
+          runSeed: 330_330,
+          cash: 250_000,
+          isBankrupt: false,
+          distressWeeks: 0,
+        };
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({
+          state: createZk330GroundingLiveState(fixtureCourse, fixtureWorld, 0),
+          pendingCash: 0,
+          speed: "paused",
+          selectedGolferId: 330,
+        }));
+      },
+      setZk330GroundingProgress: (progress) => {
+        const current = gameSession.getState();
+        if (current.course.name !== "ZK-330 Grounded Golfer Traverse") {
+          throw new Error("ZK-330 grounding fixture is not active");
+        }
+        live.restoreSnapshot(snapshotLiveSimulation({
+          state: createZk330GroundingLiveState(current.course, current.world, progress),
+          pendingCash: 0,
+          speed: "paused",
+          selectedGolferId: 330,
+        }));
+      },
+      setZk330GroundingPause: () => {
+        const current = gameSession.getState();
+        if (current.course.name !== "ZK-330 Grounded Golfer Traverse") {
+          throw new Error("ZK-330 grounding fixture is not active");
+        }
+        live.restoreSnapshot(snapshotLiveSimulation({
+          state: createZk330GroundingPausedLiveState(current.course, current.world),
+          pendingCash: 0,
+          speed: "paused",
+          selectedGolferId: 330,
+        }));
+      },
+      setZk330CaptureState: (rotation, quality) => {
+        setFixtureGraphicsQualityOverride(quality);
+        setM52ReferenceCamera({
+          id: `golfer-follow-r${rotation}` as BiomeCameraBookmark["id"],
+          view: "golfer-follow",
+          rotation,
+          center: { x: 22, y: 20 },
+          zoom: 2.2,
+          focus: "golfer",
+        });
+      },
+      zk330GroundingEvidence: () => zk330BankEvidence(gameSession.getState().course),
       setM52ReferenceBookmark: (view, rotation) => {
         const bookmark = biomeCameraBookmarks(gameSession.getState().course).find((candidate) =>
           candidate.view === view && candidate.rotation === rotation);
@@ -4292,7 +4507,7 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, gameSession, live, pendingLoadingContext, pendingWeekReport, runSeasonCommand, screen, setWorld, t, tutorialProgress]);
+  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, gameSession, live, pendingLoadingContext, pendingWeekReport, redoTerrainEdit, runSeasonCommand, screen, selectWorkspace, setWorld, t, tutorialProgress, undoTerrainEdit]);
 
   function newGameFromMenu() {
     void audio.unlock();
@@ -5001,6 +5216,7 @@ export default function App() {
   }
 
   function handleCanvasClick(x: number, y: number) {
+    if (import.meta.env.MODE === "e2e") zk470LastPointerCellRef.current = { x, y };
     if (world.isBankrupt) return;
     // Unlock audio on first canvas interaction
     void audio.unlock();
@@ -5142,17 +5358,17 @@ export default function App() {
         setPaintError(t("progression.locked", { reputation: concessionMinReputation(buildingType) }));
         return;
       }
-      const validation = canPlaceBuilding(course, buildingType, x, y);
-      if (!validation.ok) {
-        setPaintError(t("error.buildingPlacement", { building: BUILDING_SPECS[buildingType].name.toLowerCase(), reason: validation.reason ?? "unknown restriction" }));
+      const quote = quoteBuildingPlacement(course, buildingType, x, y, costMult);
+      if (!quote.ok) {
+        setPaintError(t("error.buildingPlacement", { building: BUILDING_SPECS[buildingType].name.toLowerCase(), reason: quote.reason ?? "unknown restriction" }));
         return;
       }
-      const cost = BUILDING_SPECS[buildingType].buildCost;
+      const cost = quote.totalCost;
       if (world.cash < cost) {
         setPaintError(t("error.insufficientFunds", { amount: formatCurrency(cost) }));
         return;
       }
-      dispatch({ type: "PLACE_BUILDING", buildingType, x, y });
+      dispatch({ type: "PLACE_BUILDING", buildingType, x, y, quotedTotal: quote.totalCost });
       setPaintError(null);
       void audio.playSfx("confirm");
       return;
@@ -6237,15 +6453,17 @@ export default function App() {
               </div>
             )}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
-            {!activeTutorial && <HoleMinimap
+            {!activeTutorial && <Suspense fallback={null}><HoleMinimap
+              key={viewMode}
               course={activeOperatingCourse}
+              closed={workspace === "operate" && viewMode === "COZY"}
               view={minimapView}
               golfersRef={live.golfersRef}
               onCenter={(center: Point) => {
                 if (holeEditCamera) setHoleEditCamera({ ...holeEditCamera, center });
                 else setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }));
               }}
-            />}
+            /></Suspense>}
             <LiveControls
               status={live.status}
               speed={live.speed}

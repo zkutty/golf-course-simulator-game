@@ -23,8 +23,15 @@ import {
   deriveTreeHabitat,
   type TreeHabitatPatch,
 } from "../../../game/render/treeHabitat";
+import {
+  deriveHabitatComposition,
+  type HabitatCompositionPlacement,
+} from "../../../game/render/habitatComposition";
 import { isWaterHazard } from "../../../game/models/terrainRules";
-import { getPropFrame } from "../../../render/atlas";
+import { worldToIso } from "../../../game/render/iso";
+import { getPropFrame, getTerrainDetailFrame } from "../../../render/atlas";
+import type { ResolvedGraphicsQuality } from "../../../game/render/graphicsQuality";
+import type { TerrainDetailFrame, TerrainDetailKind } from "../../../game/render/terrainDetails";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import type { RenderSceneSystem } from "../SceneSystemHost";
 
@@ -50,18 +57,377 @@ export interface NaturalPropsSceneSystem extends RenderSceneSystem {
   readonly id: "naturalProps";
   tick(input: NaturalPropsTickInput): void;
   contentCount(): number;
+  habitatDetailCount(): number;
+  habitatMassDiagnostics(): readonly HabitatMassDiagnostics[];
+  legacyHabitatCount(): number;
   fallbackTextureCount(): number;
   rebuildCount(): number;
 }
 
 export interface NaturalPropsSceneDependencies {
   readonly getAtlasTexture?: typeof getPropFrame;
+  readonly getHabitatAtlasTexture?: typeof getTerrainDetailFrame;
   readonly createFallbackTexture?: (
     type: Obstacle["type"],
     frame: NaturalPropFrame,
   ) => { readonly texture: PIXI.Texture; readonly owned: boolean };
   readonly createSprite?: (texture: PIXI.Texture) => PIXI.Sprite;
   readonly createGraphics?: () => PIXI.Graphics;
+  readonly createContainer?: () => PIXI.Container;
+}
+
+const WET_SHORE_CAPS: Readonly<Record<ResolvedGraphicsQuality, number>> = {
+  high: 42,
+  medium: 22,
+  low: 0,
+};
+
+type EcologyTier = "near" | "middle" | "far" | "shore";
+
+interface WetShorePlacement {
+  readonly id: string;
+  readonly clusterId: string;
+  readonly massId: string;
+  readonly role: "wet_shore";
+  readonly tier: "shore";
+  readonly tileX: number;
+  readonly tileY: number;
+  readonly worldX: number;
+  readonly worldY: number;
+  readonly frame: TerrainDetailFrame;
+  readonly kind: Extract<TerrainDetailKind, "reeds" | "shore_stones">;
+  readonly scale: number;
+  readonly rank: number;
+}
+
+type EcologyPlacement = HabitatCompositionPlacement | WetShorePlacement;
+
+interface EcologyPresentation {
+  readonly scale: number;
+  readonly alpha: number;
+  readonly verticalOffset: number;
+}
+
+export interface HabitatMassMemberPlan {
+  readonly id: string;
+  readonly order: number;
+  readonly tileX: number;
+  readonly tileY: number;
+  readonly worldX: number;
+  readonly worldY: number;
+  readonly scale: number;
+}
+
+export interface HabitatMassDiagnostics {
+  readonly massId: string;
+  readonly memberCount: number;
+  readonly retainedMemberCount: number;
+  /** Two tonal lobes per accepted interior member make one readable bed. */
+  readonly bedLobeCount: number;
+  /** A mass owns its bed; no cell is allowed to create one independently. */
+  readonly bedLayerCount: number;
+  /** World-space member coverage, independent of camera rotation. */
+  readonly bounds: Readonly<{ minX: number; minY: number; maxX: number; maxY: number }>;
+  /** Stable back-to-front member identities, never projection depth. */
+  readonly order: readonly string[];
+}
+
+interface HabitatMassPlan extends HabitatMassDiagnostics {
+  readonly centroid: Readonly<{ x: number; y: number }>;
+  readonly members: readonly (HabitatMassMemberPlan & { readonly detail: EcologyPlacement })[];
+  readonly rank: number;
+}
+
+interface HabitatMassRuntime {
+  readonly compositor: PIXI.Container;
+  readonly sprites: readonly PIXI.Sprite[];
+  readonly bed: PIXI.Graphics | null;
+}
+
+const TIER_PRESENTATION: Readonly<Record<EcologyTier, EcologyPresentation>> = {
+  // Medium/High habitat members are deliberately close in visual weight: a
+  // three-to-five cell mass should read as one bed at normal M19 zoom.
+  near: { scale: 1.28, alpha: 0.98, verticalOffset: 0.31 },
+  middle: { scale: 1.14, alpha: 0.94, verticalOffset: 0.29 },
+  far: { scale: 1.0, alpha: 0.88, verticalOffset: 0.26 },
+  shore: { scale: 0.88, alpha: 0.86, verticalOffset: 0.34 },
+};
+
+const ROLE_SCALE: Readonly<Record<EcologyPlacement["role"], number>> = {
+  woodland_floor: 0.9,
+  understory: 1,
+  rough_mass: 1.12,
+  rock_plant_cluster: 0.84,
+  wet_shore: 1,
+};
+
+const HABITAT_MEMBER_JITTER = 0.16;
+const HABITAT_CENTROID_PULL = 0.72;
+const HABITAT_MAX_PULL = 0.16;
+const HABITAT_BED_SCALE = 1.7;
+
+const HABITAT_BED_PALETTES: Readonly<Record<Exclude<EcologyPlacement["role"], "wet_shore">, readonly [number, number]>> = {
+  woodland_floor: [0x203f29, 0x4e733a],
+  understory: [0x294d2d, 0x5a813f],
+  rough_mass: [0x31542c, 0x6b8d43],
+  rock_plant_cluster: [0x3e5730, 0x748647],
+};
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Builds the sole presentation plan for each existing planner mass. The plan
+ * only moves a member inside its accepted cell's existing +/- 0.16 jitter
+ * envelope, then increases overlap through sprite scale. That keeps the
+ * composition clear of every surface and obstacle excluded by the planner.
+ */
+export function deriveHabitatMassPlans(
+  details: readonly EcologyPlacement[],
+): readonly HabitatMassPlan[] {
+  const byMass = new Map<string, EcologyPlacement[]>();
+  for (const detail of details) {
+    const members = byMass.get(detail.massId);
+    if (members) members.push(detail);
+    else byMass.set(detail.massId, [detail]);
+  }
+  return [...byMass.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([massId, source], rank) => {
+    const centroid = {
+      x: source.reduce((sum, detail) => sum + detail.worldX, 0) / source.length,
+      y: source.reduce((sum, detail) => sum + detail.worldY, 0) / source.length,
+    };
+    // This ordering remains constant across rotations. It also makes the
+    // silhouette read as a layered bed rather than a camera-sorted scatter.
+    const ordered = source.slice().sort((left, right) =>
+      left.worldY - right.worldY || left.worldX - right.worldX || left.id.localeCompare(right.id),
+    );
+    const members = ordered.map((detail, order) => {
+      const pullX = clamp((centroid.x - detail.worldX) * HABITAT_CENTROID_PULL, -HABITAT_MAX_PULL, HABITAT_MAX_PULL);
+      const pullY = clamp((centroid.y - detail.worldY) * HABITAT_CENTROID_PULL, -HABITAT_MAX_PULL, HABITAT_MAX_PULL);
+      return {
+        id: detail.id,
+        order,
+        tileX: detail.tileX,
+        tileY: detail.tileY,
+        // Do not permit the compositor to leave the member's accepted cell.
+        worldX: clamp(detail.worldX + pullX, detail.tileX + 0.5 - HABITAT_MEMBER_JITTER, detail.tileX + 0.5 + HABITAT_MEMBER_JITTER),
+        worldY: clamp(detail.worldY + pullY, detail.tileY + 0.5 - HABITAT_MEMBER_JITTER, detail.tileY + 0.5 + HABITAT_MEMBER_JITTER),
+        // Reeds and shoreline stones keep their owned bank treatment; only
+        // compact interior habitat receives the overlap that forms a bed.
+        scale: detail.scale * (detail.role === "wet_shore" ? 1 : HABITAT_BED_SCALE),
+        detail,
+      };
+    });
+    const bounds = {
+      minX: Math.min(...members.map((member) => member.worldX)),
+      minY: Math.min(...members.map((member) => member.worldY)),
+      maxX: Math.max(...members.map((member) => member.worldX)),
+      maxY: Math.max(...members.map((member) => member.worldY)),
+    };
+    const interiorMembers = members.filter((member) => member.detail.role !== "wet_shore");
+    return {
+      massId,
+      memberCount: source.length,
+      retainedMemberCount: members.length,
+      // This is deliberately derived from the existing member plan rather
+      // than an ecology sampling pass. A two-tone lobe pair turns the
+      // accepted cells into a single legible mass without creating a new
+      // placement, collider, or planner count.
+      bedLobeCount: interiorMembers.length * 2,
+      bedLayerCount: interiorMembers.length > 0 ? 2 : 0,
+      bounds,
+      order: members.map((member) => member.id),
+      centroid,
+      members,
+      rank,
+    };
+  });
+}
+
+/**
+ * Draws a single world-space understorey bed inside its owning mass
+ * compositor. Every lobe is anchored to an already accepted member, keeping
+ * the visual treatment out of gameplay, terrain, and planner ownership.
+ */
+function drawHabitatMassBed(
+  graphics: PIXI.Graphics,
+  plan: HabitatMassPlan,
+  snapshot: RenderSnapshot,
+  anchor: Readonly<{ x: number; y: number }>,
+): void {
+  for (const member of plan.members) {
+    if (member.detail.role === "wet_shore") continue;
+    const position = worldToIso(
+      member.worldX,
+      member.worldY,
+      snapshot.surfaceHeightAt(member.worldX, member.worldY),
+      snapshot.rotation,
+    );
+    const presentation = ecologyPresentation(member.detail);
+    const [shadow, foliage] = HABITAT_BED_PALETTES[member.detail.role];
+    const scale = member.scale * presentation.scale;
+    const x = position.x - anchor.x;
+    const y = position.y - anchor.y + TILE_H * (presentation.verticalOffset + 0.13);
+    // The lower lobe is deliberately broad enough to overlap adjacent
+    // members of the same accepted mass. The lighter upper lobe retains a
+    // planted, layered read instead of a flat turf decal.
+    graphics.ellipse(x, y, TILE_W * 0.25 * scale, TILE_H * 0.29 * scale);
+    graphics.fill({ color: shadow, alpha: 0.38 });
+    graphics.ellipse(x - TILE_W * 0.025 * scale, y - TILE_H * 0.12 * scale, TILE_W * 0.18 * scale, TILE_H * 0.19 * scale);
+    graphics.fill({ color: foliage, alpha: 0.46 });
+  }
+}
+
+function mix32(value: number): number {
+  value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
+  value = Math.imul(value ^ (value >>> 15), 0x846ca68b);
+  return (value ^ (value >>> 16)) >>> 0;
+}
+
+function ecologyHash(seed: number, x: number, y: number, salt: number): number {
+  return mix32(seed
+    ^ Math.imul(x + 17, 0x45d9f3b)
+    ^ Math.imul(y + 31, 0x119de1f3)
+    ^ salt);
+}
+
+function wetShoreTileKey(x: number, y: number): string {
+  return `${x},${y}`;
+}
+
+function wetShoreNeighbors(
+  course: RenderSnapshot["course"],
+  tiles: readonly Terrain[],
+  x: number,
+  y: number,
+): readonly { readonly x: number; readonly y: number }[] {
+  const points: { x: number; y: number }[] = [];
+  for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= course.width || ny >= course.height) continue;
+    if (isWaterHazard(tiles[ny * course.width + nx])) points.push({ x: nx, y: ny });
+  }
+  return points;
+}
+
+function isClearWetShoreTile(
+  course: RenderSnapshot["course"],
+  tiles: readonly Terrain[],
+  x: number,
+  y: number,
+): boolean {
+  const terrain = tiles[y * course.width + x];
+  if (terrain !== "rough" && terrain !== "wetland") return false;
+  if (wetShoreNeighbors(course, tiles, x, y).length === 0) return false;
+  // The ecology scene may dress banks, never a maintained playing surface,
+  // bunker, cart path, or the water/depth treatment itself.
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= course.width || ny >= course.height) continue;
+    const neighbor = tiles[ny * course.width + nx];
+    if (neighbor === "fairway" || neighbor === "green" || neighbor === "tee" || neighbor === "path" || neighbor === "sand" || neighbor === "waste_area") return false;
+  }
+  return true;
+}
+
+function wetShoreComponents(
+  course: RenderSnapshot["course"],
+  tiles: readonly Terrain[],
+): readonly (readonly { readonly x: number; readonly y: number }[])[] {
+  const candidates = new Map<string, { x: number; y: number }>();
+  for (let y = 0; y < course.height; y++) for (let x = 0; x < course.width; x++) {
+    if (isClearWetShoreTile(course, tiles, x, y)) candidates.set(wetShoreTileKey(x, y), { x, y });
+  }
+  const components: { x: number; y: number }[][] = [];
+  while (candidates.size > 0) {
+    const first = [...candidates.values()].sort((left, right) => left.y - right.y || left.x - right.x)[0];
+    candidates.delete(wetShoreTileKey(first.x, first.y));
+    const component = [first];
+    for (let cursor = 0; cursor < component.length; cursor++) {
+      const point = component[cursor];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const key = wetShoreTileKey(point.x + dx, point.y + dy);
+        const neighbor = candidates.get(key);
+        if (!neighbor) continue;
+        candidates.delete(key);
+        component.push(neighbor);
+      }
+    }
+    if (component.length >= 2) components.push(component.sort((left, right) => left.y - right.y || left.x - right.x));
+  }
+  return components.sort((left, right) => left[0].y - right[0].y || left[0].x - right[0].x);
+}
+
+/**
+ * Scene-owned wet-bank groups. They deliberately use reeds and shore stones
+ * only: water bodies, shelves, banks, and contour relief remain depth-scene
+ * responsibilities. The plan is world-space and never observes a camera.
+ */
+export function deriveWetShoreComposition(input: {
+  readonly course: RenderSnapshot["course"];
+  readonly tiles: readonly Terrain[];
+  readonly worldSeed: number;
+  readonly quality: ResolvedGraphicsQuality;
+}): readonly WetShorePlacement[] {
+  const cap = WET_SHORE_CAPS[input.quality];
+  if (cap === 0 || input.course.theme !== "parkland" || input.tiles.length !== input.course.width * input.course.height) return [];
+  const output: WetShorePlacement[] = [];
+  for (const component of wetShoreComponents(input.course, input.tiles)) {
+    const available = new Map(component.map((point) => [wetShoreTileKey(point.x, point.y), point]));
+    const clusterLimit = Math.min(3, Math.max(1, Math.floor(component.length / 3)));
+    for (let clusterIndex = 0; clusterIndex < clusterLimit && available.size > 0; clusterIndex++) {
+      const anchor = [...available.values()].sort((left, right) => {
+        const leftHash = ecologyHash(input.worldSeed, left.x, left.y, 0x6b41 + clusterIndex);
+        const rightHash = ecologyHash(input.worldSeed, right.x, right.y, 0x6b41 + clusterIndex);
+        return leftHash - rightHash || left.y - right.y || left.x - right.x;
+      })[0];
+      const clusterId = `wet-shore:${component[0].x},${component[0].y}:${clusterIndex}`;
+      const massId = `${clusterId}:bank`;
+      const members = [...available.values()].sort((left, right) => {
+        const leftDistance = (left.x - anchor.x) ** 2 + (left.y - anchor.y) ** 2;
+        const rightDistance = (right.x - anchor.x) ** 2 + (right.y - anchor.y) ** 2;
+        const leftHash = ecologyHash(input.worldSeed, left.x, left.y, 0x2c17 + clusterIndex);
+        const rightHash = ecologyHash(input.worldSeed, right.x, right.y, 0x2c17 + clusterIndex);
+        return leftDistance - rightDistance || leftHash - rightHash || left.y - right.y || left.x - right.x;
+      }).slice(0, Math.min(4, available.size));
+      for (const [member, point] of members.entries()) {
+        available.delete(wetShoreTileKey(point.x, point.y));
+        const h = ecologyHash(input.worldSeed, point.x, point.y, 0x4d21 + member);
+        const terrain = input.tiles[point.y * input.course.width + point.x];
+        const kind = terrain === "wetland" || member % 3 !== 2 ? "reeds" : "shore_stones";
+        const variant = input.quality === "medium" ? 0 : (h >>> 30) & 1;
+        output.push({
+          id: `${massId}:${member}`,
+          clusterId,
+          massId,
+          role: "wet_shore",
+          tier: "shore",
+          tileX: point.x,
+          tileY: point.y,
+          worldX: point.x + 0.5 + (((h >>> 8) & 0xff) / 0xff - 0.5) * 0.36,
+          worldY: point.y + 0.5 + (((h >>> 16) & 0xff) / 0xff - 0.5) * 0.3,
+          frame: `parkland_${kind}_${variant}` as TerrainDetailFrame,
+          kind,
+          scale: 0.86 + ((h >>> 24) & 0x3f) / 0x3f * 0.24,
+          rank: output.length,
+        });
+      }
+    }
+  }
+  return output.slice(0, cap);
+}
+
+function ecologyPresentation(detail: EcologyPlacement): EcologyPresentation {
+  const tier = TIER_PRESENTATION[detail.tier];
+  return {
+    scale: tier.scale * ROLE_SCALE[detail.role],
+    alpha: tier.alpha,
+    verticalOffset: tier.verticalOffset,
+  };
 }
 
 function darken(color: number, factor: number): number {
@@ -239,10 +605,15 @@ export function createNaturalPropsSceneSystem(
   dependencies: NaturalPropsSceneDependencies = {},
 ): NaturalPropsSceneSystem {
   const getAtlasTexture = dependencies.getAtlasTexture ?? getPropFrame;
+  const getHabitatAtlasTexture = dependencies.getHabitatAtlasTexture ?? getTerrainDetailFrame;
   const createFallbackTexture = dependencies.createFallbackTexture ?? createFallbackObstacleTexture;
   const createSprite = dependencies.createSprite ?? ((texture) => new PIXI.Sprite(texture));
   const createGraphics = dependencies.createGraphics ?? (() => new PIXI.Graphics());
+  const createContainer = dependencies.createContainer ?? (() => new PIXI.Container());
   const entries = new Map<string, NaturalPropSceneEntry>();
+  const habitatDetails: PIXI.Sprite[] = [];
+  const habitatMasses: HabitatMassRuntime[] = [];
+  let habitatMassDiagnostics: readonly HabitatMassDiagnostics[] = [];
   const fallbackTextures = new Map<string, { texture: PIXI.Texture; owned: boolean }>();
   let rebuilds = 0;
 
@@ -256,6 +627,19 @@ export function createNaturalPropsSceneSystem(
       entry.habitat?.destroy();
     }
     entries.clear();
+    for (const sprite of habitatDetails) {
+      sprite.parent?.removeChild(sprite);
+      sprite.destroy();
+    }
+    habitatDetails.length = 0;
+    for (const mass of habitatMasses) {
+      mass.bed?.parent?.removeChild(mass.bed);
+      mass.bed?.destroy();
+      mass.compositor.parent?.removeChild(mass.compositor);
+      mass.compositor.destroy({ children: false });
+    }
+    habitatMasses.length = 0;
+    habitatMassDiagnostics = [];
     for (const fallback of fallbackTextures.values()) {
       if (fallback.owned) fallback.texture.destroy(true);
     }
@@ -331,6 +715,100 @@ export function createNaturalPropsSceneSystem(
       .slice(0, habitatBudget)
       .map((entry) => `${entry.obstacle.x},${entry.obstacle.y}`));
 
+    // The verified habitatField scene exclusively owns Parkland habitat.
+    // Preserve this legacy composition path only for other themes.
+    const legacyHabitatEnabled = course.theme !== "parkland";
+    const compositionQuality = snapshot.graphicsQuality === "low" ? "medium" : snapshot.graphicsQuality;
+    const composition = legacyHabitatEnabled ? deriveHabitatComposition({
+      course,
+      tiles: snapshot.effectiveTiles,
+      obstacles: snapshot.obstacles,
+      worldSeed: snapshot.worldSeed,
+      quality: compositionQuality,
+    }) : [];
+    const wetShore = legacyHabitatEnabled ? deriveWetShoreComposition({
+      course,
+      tiles: snapshot.effectiveTiles,
+      worldSeed: snapshot.worldSeed,
+      quality: snapshot.graphicsQuality,
+    }) : [];
+    // Composition order is a semantic world-space contract. Do not sort by
+    // camera depth: rebuilding at another rotation must retain member order.
+    const ecology = [...composition, ...wetShore.map((detail) => ({
+      ...detail,
+      rank: composition.length + detail.rank,
+    }))];
+    const massPlans = deriveHabitatMassPlans(ecology);
+    const renderedDiagnostics: HabitatMassDiagnostics[] = [];
+    for (const plan of massPlans) {
+      const anchor = worldToIso(
+        plan.centroid.x,
+        plan.centroid.y,
+        snapshot.surfaceHeightAt(plan.centroid.x, plan.centroid.y),
+        snapshot.rotation,
+      );
+      // One container is the only habitat compositor for this mass. Members
+      // are positioned relative to the world-space centroid, never emitted as
+      // a second, independent terrain-decal scatter.
+      const compositor = createContainer();
+      compositor.label = `habitat-mass:${plan.massId}`;
+      compositor.eventMode = "none";
+      compositor.position.set(anchor.x, anchor.y);
+      compositor.zIndex = plan.rank;
+      compositor.sortableChildren = true;
+      terrainDecals.addChild(compositor);
+      const bed = plan.bedLobeCount > 0 ? createGraphics() : null;
+      if (bed) {
+        bed.label = `habitat-mass-bed:${plan.massId}`;
+        bed.eventMode = "none";
+        bed.zIndex = -1;
+        drawHabitatMassBed(bed, plan, snapshot, anchor);
+        compositor.addChild(bed);
+      }
+      const sprites: PIXI.Sprite[] = [];
+      for (const member of plan.members) {
+        // The overview contract is graphics-only. Its retained mass bed is
+        // intentionally not an additional low-LOD sprite scatter.
+        if (snapshot.graphicsQuality === "low") continue;
+        const detail = member.detail;
+        const texture = getHabitatAtlasTexture(course.theme, snapshot.graphicsQuality, detail.frame);
+        if (!texture) continue;
+        const presentation = ecologyPresentation(detail);
+        const position = worldToIso(
+          member.worldX,
+          member.worldY,
+          snapshot.surfaceHeightAt(member.worldX, member.worldY),
+          snapshot.rotation,
+        );
+        const sprite = createSprite(texture);
+        sprite.label = `habitat-composition:${detail.id}`;
+        sprite.eventMode = "none";
+        sprite.anchor.set(0.5, 1);
+        sprite.position.set(
+          position.x - anchor.x,
+          position.y - anchor.y + TILE_H * presentation.verticalOffset,
+        );
+        sprite.scale.set(member.scale * presentation.scale);
+        sprite.alpha = presentation.alpha;
+        sprite.zIndex = member.order;
+        compositor.addChild(sprite);
+        sprites.push(sprite);
+        habitatDetails.push(sprite);
+      }
+      compositor.sortChildren();
+      habitatMasses.push({ compositor, sprites, bed });
+      renderedDiagnostics.push({
+        massId: plan.massId,
+        memberCount: plan.memberCount,
+        retainedMemberCount: sprites.length,
+        bedLobeCount: plan.bedLobeCount,
+        bedLayerCount: plan.bedLayerCount,
+        bounds: plan.bounds,
+        order: plan.order,
+      });
+    }
+    habitatMassDiagnostics = renderedDiagnostics;
+
     for (const { obstacle, selected, seasonal, habitat } of prepared) {
       const key = `${obstacle.x},${obstacle.y}`;
       if (entries.has(key)) continue;
@@ -369,7 +847,10 @@ export function createNaturalPropsSceneSystem(
       sprite.zIndex = placement.zIndex;
       objects.addChild(sprite);
 
-      const habitatGraphic = selectedHabitat ? createGraphics() : null;
+      // Parkland habitat presentation is exclusively owned by habitatField.
+      // Keep selectedHabitat for the accepted obstacle-shadow treatment, but
+      // do not emit the former per-tree ground pad.
+      const habitatGraphic = legacyHabitatEnabled && selectedHabitat ? createGraphics() : null;
       if (habitatGraphic && selectedHabitat) {
         drawHabitat(habitatGraphic, selectedHabitat);
         habitatGraphic.position.set(placement.position.x, placement.position.y - TILE_H / 2 + 1);
@@ -441,6 +922,11 @@ export function createNaturalPropsSceneSystem(
       }
     },
     contentCount: () => entries.size,
+    habitatDetailCount: () => habitatDetails.length,
+    habitatMassDiagnostics: () => habitatMassDiagnostics,
+    legacyHabitatCount: () => habitatDetails.length
+      + habitatMasses.reduce((total, mass) => total + mass.sprites.length + (mass.bed ? 1 : 0), 0)
+      + [...entries.values()].filter((entry) => entry.habitat != null).length,
     fallbackTextureCount: () => fallbackTextures.size,
     rebuildCount: () => rebuilds,
   };

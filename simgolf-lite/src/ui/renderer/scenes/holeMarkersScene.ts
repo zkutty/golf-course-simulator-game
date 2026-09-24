@@ -112,17 +112,25 @@ export function createHoleMarkersSceneSystem(
 
   const drawFlag = (graphic: PIXI.Graphics, snapshot: RenderSnapshot, holeIndex: number, nowMs: number) => {
     const phase = snapshot.animationsEnabled ? nowMs / 160 + holeIndex * 1.3 : 0;
-    const waveOne = Math.sin(phase) * 2.2;
-    const waveTwo = Math.sin(phase + 0.9) * 3.2;
+    const waveOne = Math.sin(phase) * 2.8;
+    const waveTwo = Math.sin(phase + 0.9) * 4;
     const flagColor = snapshot.flagColor ?? "#d9534f";
     graphic.clear();
+    graphic.circle(0, 0, 4.5);
+    graphic.fill({ color: 0x173f31, alpha: 0.78 });
+    graphic.stroke({ width: 1.5, color: 0xfff4ba, alpha: 0.95 });
+    graphic.moveTo(0, 1);
+    graphic.lineTo(0, -46);
+    graphic.stroke({ width: 4, color: 0x173f31, alpha: 0.92 });
     graphic.moveTo(0, 0);
-    graphic.lineTo(0, -34);
-    graphic.stroke({ width: 1.5, color: 0xe9efe4 });
-    graphic.poly([0, -34, 13, -30.5 + waveOne, 0, -26]);
+    graphic.lineTo(0, -46);
+    graphic.stroke({ width: 2, color: 0xfff9dc, alpha: 1 });
+    graphic.poly([0, -46, 18, -40.5 + waveOne, 0, -33]);
     graphic.fill(flagColor);
-    graphic.poly([9, -31.5 + waveOne * 0.8, 13, -30.5 + waveOne, 15.5, -29.5 + waveTwo, 9, -29]);
+    graphic.stroke({ width: 1.5, color: 0x173f31, alpha: 0.9 });
+    graphic.poly([12, -42 + waveOne * 0.8, 18, -40.5 + waveOne, 22, -39 + waveTwo, 12, -37.5]);
     graphic.fill({ color: flagColor, alpha: 0.85 });
+    graphic.stroke({ width: 1.2, color: 0x173f31, alpha: 0.8 });
   };
 
   const render = (snapshot: RenderSnapshot) => {
@@ -153,7 +161,8 @@ export function createHoleMarkersSceneSystem(
 
     const liveHoles = new Set<number>();
     snapshot.holes.forEach((hole, holeIndex) => {
-      if (!hole.green) return;
+      const pin = getPinPosition(hole, snapshot.course.activePinRotation ?? "A") ?? getPinPosition(hole, "A");
+      if (!pin) return;
       liveHoles.add(holeIndex);
       let graphic = flags.get(holeIndex);
       if (!graphic) {
@@ -162,10 +171,10 @@ export function createHoleMarkersSceneSystem(
         flags.set(holeIndex, graphic);
         objects.addChild(graphic);
       }
-      const elevation = snapshot.surfaceHeightAt(hole.green.x + 0.5, hole.green.y + 0.5);
-      const center = tileCenterIso(hole.green.x, hole.green.y, elevation, snapshot.rotation);
+      const elevation = snapshot.surfaceHeightAt(pin.x + 0.5, pin.y + 0.5);
+      const center = tileCenterIso(pin.x, pin.y, elevation, snapshot.rotation);
       graphic.position.set(center.x, center.y);
-      graphic.zIndex = entityDepth(hole.green.x + 0.5, hole.green.y + 0.5, elevation, snapshot.rotation) + 0.05;
+      graphic.zIndex = entityDepth(pin.x + 0.5, pin.y + 0.5, elevation, snapshot.rotation) + 0.05;
       drawFlag(graphic, snapshot, holeIndex, performance.now());
     });
     for (const [holeIndex, graphic] of flags) {

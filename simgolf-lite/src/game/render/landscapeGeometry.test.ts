@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Course, Terrain } from "../models/types";
 import {
   buildLandscapeComponents,
+  buildHazardDepthSections,
+  buildRecessedLandformRibbon,
   buildVisualHeightfield,
   createLandscapeComponentCache,
   ringSignedArea,
@@ -80,6 +82,29 @@ describe("connected landscape geometry", () => {
       .toEqual(first.map((component) => component.topologyKey));
   });
 
+  it("keeps accepted path rings bit-for-bit while terrain uses shared contours", () => {
+    const options = { cornerRadius: 0.32, cornerSegments: 2 };
+    const path = buildLandscapeComponents(["path"], 1, 1, options)[0];
+    const accepted = roundLandscapeRing([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+    ], options.cornerRadius, options.cornerSegments);
+    expect(path.rings).toEqual([accepted]);
+    expect(path.presentationCells).toEqual(path.cells);
+  });
+
+  it("exposes a one-cell presentation halo without changing component cells", () => {
+    const fairway = buildLandscapeComponents([
+      "rough", "rough", "rough",
+      "rough", "fairway", "rough",
+      "rough", "rough", "rough",
+    ], 3, 3).find((component) => component.terrain === "fairway")!;
+    expect(fairway.cells).toEqual([4]);
+    expect(fairway.presentationCells).toEqual([1, 3, 4, 5, 7]);
+  });
+
   it("reuses unchanged component geometry and reports only dirty topology", () => {
     const cache = createLandscapeComponentCache();
     const first = cache.update([
@@ -112,6 +137,26 @@ describe("connected landscape geometry", () => {
     const medium = cache.update(["fairway"], 1, 1, { cornerRadius: 0.32, cornerSegments: 2 });
     expect(medium.stats).toEqual({ hits: 0, misses: 1, components: 1 });
     expect(medium.components[0]).not.toBe(high.components[0]);
+  });
+
+  it("keeps a stable component's canonical seam independent of diagonal context", () => {
+    const cache = createLandscapeComponentCache();
+    const first = cache.update([
+      "rough", "rough", "rough",
+      "rough", "fairway", "rough",
+      "rough", "rough", "rough",
+    ], 3, 3);
+    const firstFairway = first.components.find((component) => component.terrain === "fairway")!;
+    const repainted = cache.update([
+      "sand", "rough", "rough",
+      "rough", "fairway", "rough",
+      "rough", "rough", "rough",
+    ], 3, 3);
+    const nextFairway = repainted.components.find((component) => component.terrain === "fairway")!;
+    expect(nextFairway.cells).toEqual(firstFairway.cells);
+    expect(nextFairway).not.toBe(firstFairway);
+    expect(nextFairway.rings).toEqual(firstFairway.rings);
+    expect(nextFairway.presentationCells).toEqual(firstFairway.presentationCells);
   });
 });
 
@@ -193,8 +238,95 @@ describe("shared visual heightfield", () => {
     const centerBase = sampleVisualHeight(field, 1.5, 1.5);
     const center = sampleLandscapeSurfaceHeight(field, bunker, 1.5, 1.5);
     const edge = sampleLandscapeSurfaceHeight(field, bunker, 1.05, 1.5);
+    const rim = sampleLandscapeSurfaceHeight(field, bunker, 1, 1.5);
+    const rimBase = sampleVisualHeight(field, 1, 1.5);
+    const recession = [1, 1.08, 1.2, 1.34, 1.48]
+      .map((x) => sampleLandscapeSurfaceHeight(field, bunker, x, 1.5));
+    expect(rim).toBeCloseTo(rimBase, 7);
+    for (let index = 1; index < recession.length; index++) {
+      expect(recession[index]).toBeLessThanOrEqual(recession[index - 1] + 1e-7);
+    }
     expect(center).toBeLessThan(centerBase - 0.2);
     expect(center).toBeLessThan(edge - 0.1);
+  });
+
+  it("builds bounded continuous water and bunker bank ribbons", () => {
+    const course = courseWith(6, 4, [
+      "rough", "rough", "rough", "rough", "rough", "rough",
+      "rough", "water", "water", "sand", "sand", "rough",
+      "rough", "water", "water", "sand", "sand", "rough",
+      "rough", "rough", "rough", "rough", "rough", "rough",
+    ], new Array(24).fill(1));
+    const field = buildVisualHeightfield(course);
+    const components = buildLandscapeComponents(course.tiles, course.width, course.height);
+    for (const terrain of ["water", "sand"] as const) {
+      const component = components.find((candidate) => candidate.terrain === terrain)!;
+      const ribbon = buildRecessedLandformRibbon(field, component, component.rings[0]);
+      expect(ribbon).toHaveLength(component.rings[0].length);
+      const drops = ribbon.map((point) => point.topHeight - point.bottomHeight);
+      expect(Math.min(...drops)).toBeGreaterThan(terrain === "water" ? 0.519 : 0.379);
+      expect(Math.max(...drops)).toBeLessThan(1.5);
+      expect(ribbon.every((point) => Number.isFinite(point.topHeight + point.bottomHeight))).toBe(true);
+    }
+  });
+
+  it("builds ordered edge-local hazard sections without fins or inverted strips", () => {
+    const course = courseWith(9, 6, [
+      "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough",
+      "rough", "water", "water", "water", "rough", "sand", "sand", "sand", "rough",
+      "rough", "water", "water", "water", "rough", "sand", "sand", "sand", "rough",
+      "rough", "water", "water", "water", "rough", "sand", "sand", "sand", "rough",
+      "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough",
+      "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough",
+    ], new Array(54).fill(2));
+    const field = buildVisualHeightfield(course);
+    const components = buildLandscapeComponents(course.tiles, course.width, course.height);
+    const quadArea = (points: Array<{ x: number; y: number }>) => points.reduce((area, point, index) => {
+      const next = points[(index + 1) % points.length];
+      return area + point.x * next.y - next.x * point.y;
+    }, 0) / 2;
+
+    for (const terrain of ["water", "sand"] as const) {
+      const component = components.find((candidate) => candidate.terrain === terrain)!;
+      const sections = buildHazardDepthSections(field, component, component.rings[0]);
+      expect(sections.length).toBe(component.rings[0].length);
+      for (const section of sections) {
+        const values = Object.values(section).flatMap((point) => [point.x, point.y, point.height]);
+        expect(values.every(Number.isFinite)).toBe(true);
+        expect(section.boundaryA.height - section.bankInnerA.height)
+          .toBeGreaterThan(terrain === "water" ? 0.559 : 0.339);
+        const strips = [
+          [section.shelfOuterA, section.shelfOuterB, section.boundaryB, section.boundaryA],
+          [section.boundaryA, section.boundaryB, section.bankInnerB, section.bankInnerA],
+          [section.bankInnerA, section.bankInnerB, section.contactInnerB, section.contactInnerA],
+          [section.contactInnerA, section.contactInnerB, section.shallowInnerB, section.shallowInnerA],
+          [section.shallowInnerA, section.shallowInnerB, section.deepInnerB, section.deepInnerA],
+        ];
+        const areas = strips.map(quadArea);
+        expect(areas.every((area) => Math.abs(area) > 1e-8)).toBe(true);
+        expect(areas.every((area) => Math.sign(area) === Math.sign(areas[0]))).toBe(true);
+        expect(Math.hypot(
+          section.deepInnerA.x - section.boundaryA.x,
+          section.deepInnerA.y - section.boundaryA.y,
+        )).toBeLessThanOrEqual(0.721);
+      }
+    }
+  });
+
+  it("keeps hazard section geometry rotation-independent", () => {
+    const course = courseWith(4, 4, [
+      "rough", "rough", "rough", "rough",
+      "rough", "water", "water", "rough",
+      "rough", "water", "water", "rough",
+      "rough", "rough", "rough", "rough",
+    ], new Array(16).fill(1));
+    const field = buildVisualHeightfield(course);
+    const water = buildLandscapeComponents(course.tiles, 4, 4)
+      .find((component) => component.terrain === "water")!;
+    const signature = JSON.stringify(buildHazardDepthSections(field, water, water.rings[0]));
+    for (const _rotation of [0, 90, 180, 270]) {
+      expect(JSON.stringify(buildHazardDepthSections(field, water, water.rings[0]))).toBe(signature);
+    }
   });
 
   it("is deterministic presentation data and leaves the complete course contract intact", () => {

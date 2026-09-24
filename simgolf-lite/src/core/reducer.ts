@@ -7,11 +7,15 @@ import { hitsLiquidityTrap } from "../game/sim/runState";
 import { economicPressureForWorld, terrainCostMult } from "../game/balance/experience";
 import {
   BUILDING_SPECS,
+  applyBuildingSiteGrade,
+  buildingSiteGradeRecord,
   buildingTiles,
   buildingAtTile,
-  canPlaceBuilding,
   isConcessionType,
+  quoteBuildingPlacement,
+  quoteBuildingSiteRepair,
 } from "../game/models/buildings";
+import { planBuildingSiteGrade } from "../game/models/buildingSiteGrade";
 import { getEffectiveBalance } from "../game/balance/experience";
 import { createLoan } from "../game/sim/loans";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
@@ -384,22 +388,51 @@ export function applyAction(state: GameState, action: Action): GameState {
       // directions cost the same).
       const prevElev = state.course.elevations ?? new Array(state.course.width * state.course.height).fill(0);
       const newElevations = prevElev.slice();
-      let cashDelta = 0;
+      const protectedFootprint = new Set<number>();
+      for (const building of state.course.buildings ?? []) {
+        for (const tile of buildingTiles(building)) {
+          if (tile.x >= 0 && tile.y >= 0 && tile.x < state.course.width && tile.y < state.course.height) {
+            protectedFootprint.add(tile.y * state.course.width + tile.x);
+          }
+        }
+      }
+      const changed = new Set<number>();
 
       for (const { x, y, delta } of action.deltas) {
         if (x < 0 || y < 0 || x >= state.course.width || y >= state.course.height) continue;
         if (!isOwnedTile(state.course, x, y)) continue;
         const idx = y * state.course.width + x;
+        if (protectedFootprint.has(idx)) continue;
         const prev = newElevations[idx] ?? 0;
         const next = clampElevation(prev + delta);
-        const applied = next - prev;
-        if (applied !== 0) {
-          cashDelta += computeElevationChangeCost(applied, costMult, state.course.theme).net;
-          newElevations[idx] = next;
-        }
+        if (next === prev) continue;
+        newElevations[idx] = next;
+        changed.add(idx);
       }
 
-      if (cashDelta === 0) break; // nothing applied — no state churn
+      if (changed.size === 0) break;
+
+      // A sculpt stroke may touch a site's shoulder, but never its occupied
+      // pad. Rebuild each affected one-cell transition deterministically so a
+      // later terrain edit cannot leave a structure floating or buried.
+      let workingCourse = { ...state.course, elevations: newElevations };
+      for (const building of state.course.buildings ?? []) {
+        const plan = planBuildingSiteGrade(workingCourse, building, { costMult });
+        if (!plan.transitionRing.some((cell) => changed.has(cell.index))) continue;
+        for (const mutation of plan.transitionRing) {
+          if (mutation.delta === 0 || protectedFootprint.has(mutation.index)) continue;
+          newElevations[mutation.index] = mutation.after;
+          changed.add(mutation.index);
+        }
+        workingCourse = { ...workingCourse, elevations: newElevations };
+      }
+
+      const appliedSteps = [...changed].reduce((total, index) => (
+        total + Math.abs((newElevations[index] ?? 0) - (prevElev[index] ?? 0))
+      ), 0);
+      if (appliedSteps === 0) break;
+      const cashDelta = computeElevationChangeCost(appliedSteps, costMult, state.course.theme).net;
+      if (cashDelta > state.world.cash) break;
 
       newState = {
         ...newState,
@@ -811,25 +844,52 @@ export function applyAction(state: GameState, action: Action): GameState {
     }
 
     case "PLACE_BUILDING": {
-      const footprint = buildingTiles({ type: action.buildingType, x: action.x, y: action.y });
-      if (footprint.some((tile) => !isOwnedTile(state.course, tile.x, tile.y))) break;
-      const validation = canPlaceBuilding(state.course, action.buildingType, action.x, action.y);
-      if (!validation.ok) break;
+      const quote = quoteBuildingPlacement(state.course, action.buildingType, action.x, action.y, costMult);
+      if (!quote.ok || !quote.grade) break;
+      if (action.quotedTotal !== undefined && action.quotedTotal !== quote.totalCost) break;
       const spec = BUILDING_SPECS[action.buildingType];
-      if (state.world.cash < spec.buildCost) break;
+      if (state.world.cash < quote.totalCost) break;
       const building = {
         id: `building-${action.buildingType}-${action.x}-${action.y}`,
         type: action.buildingType,
         x: action.x,
         y: action.y,
+        siteGrade: buildingSiteGradeRecord(quote),
         ...(isConcessionType(action.buildingType)
           ? { tier: 1 as const, price: spec.defaultPrice }
           : {}),
       };
-      const cash = state.world.cash - spec.buildCost;
+      const gradedCourse = applyBuildingSiteGrade(state.course, quote.grade);
+      const cash = state.world.cash - quote.totalCost;
       newState = {
         ...newState,
-        course: { ...state.course, buildings: [...(state.course.buildings ?? []), building] },
+        course: { ...gradedCourse, buildings: [...(state.course.buildings ?? []), building] },
+        world: {
+          ...state.world,
+          cash,
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash),
+        },
+      };
+      terrainVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "REPAIR_BUILDING_SITE": {
+      const target = buildingAtTile(state.course, action.x, action.y);
+      if (!target) break;
+      const quote = quoteBuildingSiteRepair(state.course, target, costMult);
+      if (!quote.ok || !quote.grade || quote.grade.mutations.length === 0) break;
+      if (action.quotedTotal !== undefined && action.quotedTotal !== quote.totalCost) break;
+      if (state.world.cash < quote.totalCost) break;
+      const gradedCourse = applyBuildingSiteGrade(state.course, quote.grade);
+      const buildings = state.course.buildings.map((building) => building === target
+        ? { ...building, siteGrade: buildingSiteGradeRecord(quote) }
+        : building);
+      const cash = state.world.cash - quote.totalCost;
+      newState = {
+        ...newState,
+        course: { ...gradedCourse, buildings },
         world: {
           ...state.world,
           cash,
@@ -845,7 +905,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       const target = buildingAtTile(state.course, action.x, action.y);
       if (!target || target.type === "clubhouse") break;
       if (buildingTiles(target).some((tile) => !isOwnedTile(state.course, tile.x, tile.y))) break;
-      const salvage = Math.round(BUILDING_SPECS[target.type].buildCost * 0.35);
+      const salvage = Math.round((BUILDING_SPECS[target.type].buildCost + (target.siteGrade?.foundationCost ?? 0)) * 0.35);
       newState = {
         ...newState,
         course: {

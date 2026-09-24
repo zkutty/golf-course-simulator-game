@@ -1,5 +1,12 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-1141 opening-release production candidate — 2026-09-17
+
+- Built the candidate from exact production `origin/main` `640ae1636ec17184381bb856e7c01e456b4806c7` by applying only the final 29-file opening delta retained on `origin/develop`; later ZK-1152/ZK-772/ZK-1155/ZK-1156/ZK-1184/ZK-1157/ZK-1154 development commits are not replayed.
+- Focused validation passes: 8 Vitest files / 72 tests; TypeScript; lint and i18n with zero errors and the existing nine Hook warnings; production build and all unchanged asset, startup, and delivery budgets.
+- Retries-disabled browser evidence passes the one-hole invited-preview flow 1/1 and the dedicated ZK-1113 Pixi flight/impact flow 1/1. The bundled web-game client completed two gameplay iterations with matching in-game text state and no error artifact; its inspected capture is preserved at `/private/tmp/zk1141-opening-release-client/shot-0.png`.
+- Next: independent Sol scope/semantics review, then the parent workflow owns any push, deployment, production monitoring, and Linear reconciliation.
+
 ## ZK-1110/ZK-1111 retained opening playback and frozen comparison — 2026-09-09
 
 - Started in `/private/tmp/golf-sim-zk1110-zk1111-sep09` on `codex/zk1110-zk1111-preview-sep09` at exact production SHA `43e1c557e6776255774e0f9ac1f6495898016c0e`; the user's main checkout and its Playwright artifacts remain untouched.
@@ -2278,3 +2285,163 @@ classic course-builder references.
   destination for the guided Par 3. NEXT: freeze the scoped commit, verify it on
   development, promote the exact main-based patch, and monitor production before
   reconciling ZK-1154; ZK-1114/ZK-1115 and milestone M69 remain open.
+
+## ZK-461 common-phase Parkland renderer — attempt 2/3 — 2026-09-20
+
+- Replaced the rejected role-wide alpha films with deterministic motif-only
+  transforms of the approved ZK-463 Parkland cues. Source alpha floors are
+  removed; fairway uses narrow authored mowing transitions, rough/deep rough/tee
+  retain sparse authored marks, and green care specks receive a bounded one-source-
+  pixel cross expansion. Direct tests cap low-frequency plate score, tile-boundary
+  energy, coverage, alpha, and motif expansion for all three quality tiers.
+- Medium/High draw one exact authoritative turf-union undercoat plus at most one
+  mesh per semantic role. Low uses the same union and reduced-density motifs, then
+  leaves water, sand, paths, and elevation on their existing renderer paths.
+  Gameplay cells, collision, selection, persistence, and pair-edge/corner work are
+  unchanged.
+- Native review accepted all eight preflight frames and all 13 final frames. The
+  full matrix, repeat, and post-budget-split matrix pass; every screenshot hash,
+  renderer diagnostic, scene-ownership count, and gameplay-authority hash is
+  identical between deterministic runs. Evidence is under
+  `/private/tmp/zk461-common-phase-attempt2-evidence`.
+- Gates pass: TypeScript; focused renderer/M35/Parkland tests (51/51); Parkland
+  composable and 4x contracts (10/10); residency (4/4); delivery evidence (3/3);
+  M35/ZK-1200/ZK-473 browser regressions (3/3); lint/i18n with zero errors and 10
+  existing Hook warnings; production build and audits; and full CI (258 files,
+  2,036 passed, one intentional skip, plus 5/5 audio audits). Initial JavaScript
+  is 1,608,674 bytes, 45 bytes under the fixed 1,608,719-byte budget.
+- NEXT: independent visual/scope review owns acceptance. This worktree remains
+  uncommitted; do not integrate, push, deploy, promote, or mutate Linear here.
+
+## ZK-459 pair-preserving Parkland fringes — attempt 1/3 — 2026-09-20
+
+- Added a pure canonical planner over the approved ZK-461 common material field.
+  The authoritative M19 fixture reconciles 289 differing turf adjacencies into
+  28 elevation omissions, 157 explicit rough/deep-rough same-presentation
+  omissions, and exactly 104 emitted half-edges. The six supported emitted pair
+  counts are 4 fairway/deep-rough, 8 fairway/green, 57 fairway/rough,
+  6 fairway/tee, 15 rough/green, and 14 rough/tee; direction counts are
+  north 30, east 20, south 31, and west 23. Sixteen same-pair corner patches
+  are planned without bridging excluded or mixed-pair joins.
+- Rendering consumes the approved ZK-463 transparent pair-addressable sources
+  with exact pair identity, canonical once-only ownership, shared heightfield
+  clipping, and no full-cell or generic contour sprites. Diagnostics expose
+  authoritative/planned/emitted counts, owner keys, pair/direction/corner
+  counts, forbidden zero counters, source hashes, quality/rotation mappings,
+  and unchanged tile/elevation authority hashes. Hazard banks, paths,
+  buildings/exclusions, cliffs/elevation, gameplay authority, and the ZK-461
+  common phase remain unchanged.
+- Deterministic quality-specific runtime atlases are generated outside the
+  immutable `parkland-composable-v1` source root. The generator verifies every
+  source SHA before packing, and tests prove byte-for-byte atlas-frame identity
+  plus exhaustive provenance coverage for all 240 H/M/L fringe and corner
+  assets. Only the selected quality atlas is loaded through the existing
+  deferred composable path.
+- Native review passed the required 13-frame standard/accessibility matrix and
+  an independent repeat. All frames were directly inspected with no internal
+  same-turf lines, cracks/double edges, disconnected joins, full diamonds,
+  plates/halos, blur, fringe-weight regression, green identity regression, Low
+  style swap, or hazard/path/elevation regression. The post-relocation matrix
+  exactly matches the pre-move run for all screenshot hashes, diagnostics, and
+  course authority hashes. Evidence is under
+  `/private/tmp/zk459-pair-fringe-attempt1-evidence`.
+- Gates pass: TypeScript; focused planner/renderer/loader tests (25/25);
+  Parkland composable and 4x contracts (10/10); residency (4/4); M35,
+  ZK-1200, and ZK-473 browser regressions (3/3); lint/i18n with zero errors and
+  11 existing Hook warnings; production build and chained audits; and full CI
+  (259 files, 2,044 passed, one intentional skip, plus 5/5 audio audits). The
+  immutable composable audit remains exactly 270 source files. Initial JavaScript
+  is 1,608,683 bytes, 36 bytes below its fixed budget; total dist retains 84,150
+  bytes of headroom.
+- Independent visual review rejected attempt 1: the packed ZK-463 source pixels
+  remained an imperceptible hairline/corner dot at gameplay zoom, despite the
+  ownership and provenance gates passing. The packet was preserved separately;
+  its visual acceptance claim is superseded by attempt 2 below.
+
+## ZK-459 pair-preserving Parkland fringes — attempt 2/3 — 2026-09-20
+
+- Retained the proven attempt-1 canonical planner, exact pair ownership,
+  deferred quality-specific packing, diagnostics, and authority invariants.
+  Replaced only the rejected runtime art with deterministic H/M/L derived
+  atlases synthesized from the immutable ZK-463 seam/color guides and ZK-461
+  owner semantic fields. Each strip has three quantized inward material bands
+  with bounded nonzero texture modulation; corners are compatible incident-band
+  wedges rather than source dots.
+- Quantitative tests verify guide and semantic provenance, byte-repeatable atlas
+  and per-frame hashes, three nonempty bands, exact strip coverage, bounded
+  corner area/overlap/continuity, nonzero-but-bounded modulation, no alpha holes,
+  and zero outside/opposite-side spill. The authoritative M19 reconciliation is
+  unchanged: 289 differing joins = 104 emitted strips + 157 explicit
+  rough/deep-rough same-presentation omissions + 28 elevation omissions, with
+  exactly 16 same-pair corner patches and no blocked or mixed-pair bridge.
+- Native review passed the purpose-built 24-frame all-six-pair close-up proof
+  across High, Medium, Low, and Medium deuteranopia. The complete 13-view M19
+  matrix and independent repeat also passed; every screenshot SHA-256,
+  diagnostic object, and course authority hash matched exactly. Inspection
+  found readable restrained inward material, connected wedges, unchanged green
+  identity, and no cracks/doubles, internal same-turf lines, full diamonds,
+  plates/halos, blur, Low style swap, or hazard/path/elevation regression.
+- Gates pass: TypeScript; focused renderer/planner/loader tests (25/25);
+  Parkland composable and 4x contracts (10/10); residency (4/4); delivery
+  evidence (3/3); M35/ZK-1200/ZK-473 browser regressions (3/3); the required
+  bundled gameplay client; lint/i18n with zero errors and 11 existing Hook
+  warnings; production build and chained audits; and full CI (259 files, 2,044
+  passed, one intentional skip, plus 5/5 audio audits).
+- Final production budgets pass without raising ceilings: initial JavaScript is
+  1,608,683 bytes (36 bytes headroom), initial critical transfer is 3,785,465
+  bytes, selected-biome maximum is 3,534,481 bytes, and total dist is
+  116,930,937 bytes (45,074 bytes headroom).
+- NEXT: independent visual and scope review owns acceptance. This attempt-2
+  worktree remains uncommitted; do not integrate, push, deploy, promote, or
+  mutate Linear here.
+
+## 2026-09-20 — ZK-1200 dependency-complete renderer cycle 1
+
+- Added an exhaustive visual-only terrain presentation policy and deterministic
+  Parkland projection. Canonical M19 maps exactly 49 singleton
+  `deep_rough` cells to `rough` and the isolated rough cell `(16,18)` to
+  `fairway`; authoritative terrain remains byte-identical and the restored
+  final fixture hash is `92ce1852`.
+- Common turf composition, semantic/detail consumers, and both sides of the
+  pair-boundary planner now consume the same presentation projection. Medium
+  and High create zero connected tile-surface masks; Low uses the common turf
+  phase outside the connected-surface layer and reports `connectedSurfaces=0`.
+  Hazard meshes/banks, path cross-sections, elevation shoulders, shared
+  heightfields, habitat, care/seasonal layers, objects, picking, saves, and
+  gameplay authority remain on their accepted paths.
+- ZK-459 ownership is exact after projection: 108 differing joins, 104
+  same-elevation strips, four elevation omissions, and 16 true pair corners.
+  Diagnostics report zero missing/double/overlap/mixed/full-cell owners and
+  zero same-presentation emitters. Authoritative join diagnostics remain
+  separately visible at 289/261/28/157, with before/after authority and
+  presentation hashes unchanged.
+- The final native 1440x900 matrix contains 13 captures: the required ten
+  standard quality/zoom/rotation views plus three accessibility palettes.
+  Manual inspection found coherent grid-following turf, continuous routes,
+  retained recessed hazards and habitat, and no singleton diamonds,
+  same-presentation seams, missing/doubled joins, broad turf plates, haze, or
+  blur. Evidence is in
+  `/private/tmp/zk1200-dependency-complete-cycle1-evidence`.
+- Exact-base control evidence confirms the existing save/load normalization
+  changes the live state hash from `92ce1852` to `80465197` while preserving
+  terrain bytes/counts; the implementation restores the fixture and reasserts
+  `92ce1852` for the final captures.
+- Gates pass: focused renderer tests (41/41), TypeScript, M35/ZK-1200/ZK-459/
+  ZK-473 browser regressions, the post-refactor 13-shot deterministic matrix,
+  the official bundled web-game client, full lint/i18n with zero errors and 11
+  inherited Hook warnings, full CI (260 files, 2,048 passed, one intentional
+  skip, plus 5/5 audio audits), and the complete production build/audit chain.
+  The immutable initial-JavaScript budget passes at 1,608,715 bytes against
+  1,608,719 — a deliberately recorded razor-thin four-byte headroom.
+- NEXT: independent visual and scope review owns acceptance. This worktree is
+  uncommitted; do not push, deploy, promote, or mutate Linear from this packet.
+
+## 2026-09-20 — ZK-1203 dependency-complete correction cycle 1
+
+- Exact failing-before layer isolation attributed the repeated pale maintained-turf strips to the fairway-only alpha-gradient branch in `transformParklandCuePixels`; common undercoat, rough, macro shadow/highlight, landform shoulders, and ZK-459 ownership were excluded by direct A/B captures.
+- The fairway cue now retains the frozen world-phase source as a broad residual-alpha mowing swath capped at High/Medium/Low 12/10/8 instead of converting swath boundaries into bright edge-only strips. Frozen assets/hashes and all authority remain unchanged.
+- The material contract now proves a 35–45% broad fairway signal, exact quality caps, and more than 28% five-neighbour interior coverage, while all other motif-ink density and plate-energy bounds remain intact.
+- Fresh M19 visual review supports provisional material continuity 3/5 and terrain vocabulary 3/5. Remaining faint tile-snap lines are the approved ZK-459 differing-presentation joins (104 strips/16 corners), not same-presentation resets. ZK-1207/ZK-1201 capture gates pass but their visual issues remain separately owned; bunker relief was not modified.
+- Focused ZK-1203 material tests pass 10/10 and focused render tests pass 207/207. TypeScript, lint/i18n (zero errors; 11 inherited Hook warnings), ZK-1200, both ZK-459 gates, ZK-1207, ZK-1201, ZK-473, full build/audits/budgets, and full `test:ci` all pass. Full suite: 260 files / 2,048 passed / one intentional skip; audio audit 5/5. Initial JavaScript remains 1,608,715 bytes, four bytes below cap.
+- Official client loop completed three M19 iterations with no error artifact; minimap captures were inspected, with full course pixels covered by the direct browser matrices. External evidence: `/private/tmp/zk1203-dependency-complete-cycle1-evidence`.
+- No commit, push, deploy, promotion, or Linear mutation. Ready for fresh independent visual review after generated build/test drift is cleaned.

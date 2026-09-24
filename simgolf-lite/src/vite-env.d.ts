@@ -18,10 +18,26 @@ interface Window {
   advanceTime?: (ms: number) => void;
   __coursecraftPixiTest?: {
     fitWholeCourse(): void;
+    fitDefaultView(): void;
+    sceneComposition(): import("./game/render/courseSceneComposition").CourseSceneCompositionPlanV1 | null;
+    normalFrame(): import("./game/render/courseSceneCamera").CourseSceneCameraFrame | null;
+    activeFlagGeometry(): {
+      anchor: { x: number; y: number };
+      bounds: { x: number; y: number; width: number; height: number };
+    } | null;
+    activeShotDestinationGeometry(): Array<{
+      index: number;
+      point: { x: number; y: number };
+      role: "landing" | "approach" | "pin";
+      bounds: { x: number; y: number; width: number; height: number };
+    }>;
     viewport(): { width: number; height: number } | null;
     tileToScreen(x: number, y: number): { x: number; y: number } | null;
     openingPreview(): { targetIds: number[]; outlineCount: number } | null;
     screenToTile(x: number, y: number): { x: number; y: number } | null;
+    screenToWorld(x: number, y: number): { x: number; y: number } | null;
+    terrainStrokePointerDownCell(): { x: number; y: number } | null;
+    resetTerrainStrokePointerDownCell(): void;
     surfaceCareLayer(): {
       children: number;
       workers: number;
@@ -65,23 +81,74 @@ interface Window {
       residency: import("./render/atlas").AtlasResidencySnapshot;
       fallbacks: readonly import("./render/atlas").AtlasFallbackDiagnostic[];
       camera: { zoom: number; targetZoom: number; groundCoverTier: 0 | 1 | 2 };
+      parklandComposable: import("./game/render/parklandComposable").ParklandComposableDiagnostics & {
+        camera: { rotation: number; zoom: number; targetZoom: number };
+      };
+      sharedContours: {
+        authoritativeSingletonDeepRough: number;
+        distinctSingletonDeepRoughFields: number;
+        distinctSingletonDeepRoughBands: number;
+        coalescedSingletonDeepRough: number;
+        enclosedSingletonRoughToFairway: number;
+        policy: {
+          classification: typeof import("./game/render/terrainPresentationPolicy").TERRAIN_PRESENTATION_POLICY;
+          tileSurface: readonly import("./game/models/types").Terrain[];
+          organicHazard: readonly import("./game/models/types").Terrain[];
+          route: readonly import("./game/models/types").Terrain[];
+        };
+        mappings: readonly import("./game/render/terrainPresentationPolicy").TerrainPresentationMapping[];
+        authoritativeBytes: string;
+        presentationBytes: string;
+        authoritativeCellCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        presentationCellCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        authoritativeComponentCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        presentationComponentCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        authoritativeRingCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        presentationRingCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        tileSurfaceConnectedMasks: number;
+      };
       layers: Record<string, number | null> | null;
       counts: {
         terrainChunks: number;
         terrainRebuilds: number;
         connectedSurfaces: number;
         structuresAndProps: number;
+        naturalProps: {
+          content: number;
+          rebuilds: number;
+          fallbackTextures: number;
+          habitatMasses: number;
+          habitatBedLayers: number;
+        };
         dressing: number;
       } | null;
     };
     unrelatedObjectCountProbe(): { before: number; after: number };
     setZoomForTest(zoom: number): void;
     focusTileForTest(x: number, y: number, zoom: number): void;
+    golferGrounding(id: number): {
+      golfer: { x: number; y: number; segKind: string | null; segT: number };
+      sample: { x: number; y: number; elevation: number };
+      expected: { x: number; y: number; depth: number };
+      holder: { x: number; y: number; depth: number; visible: boolean };
+      feet: { x: number; y: number; anchorY: number } | null;
+      shadow: { label: string; x: number; y: number; alpha: number } | null;
+      sprite: { walkPhase: number; frame: string } | null;
+      poolCount: number;
+      activeEffects: number;
+    } | null;
   };
   __coursecraftTest?: {
+    enterNormalGameplayForTest(): void;
+    setPinRotationForTest(rotation: import("./game/models/types").PinRotation): void;
     setGraphicsQualityFixture(quality: "high" | "medium" | "low"): void;
     setRendererThemeFixture(theme: import("./game/models/types").LandTheme): void;
     setRendererSeasonFixture(season: import("./game/seasons/types").SeasonName): void;
+    setZk330GroundingFixture(): void;
+    setZk330GroundingProgress(progress: number): void;
+    setZk330GroundingPause(): void;
+    setZk330CaptureState(rotation: 0 | 1 | 2 | 3, quality: "high" | "medium" | "low"): void;
+    zk330GroundingEvidence(): { validBridgeCrossing: boolean; blockedWaterBank: boolean };
     state(): {
       screen: string;
       screenBase: "title" | "setup-wizard" | "loading" | "in-game";
@@ -143,6 +210,32 @@ interface Window {
     m35Metrics(): import("./game/render/m35Telemetry").M35TelemetrySnapshot;
     resetM35Metrics(): void;
     setPaintCash(cash: number): void;
+    setZk470PlacementFixture(actionClass: "terrain-stroke" | "tee" | "pin" | "prop" | "structure" | "occlusion-selection"): Promise<import("./game/testing/zk470PlacementFixture").Zk470PlacementTarget>;
+    configureZk470PlacementAction(actionClass: "terrain-stroke" | "tee" | "pin" | "prop" | "structure" | "occlusion-selection"): void;
+    zk470PlacementSnapshot(actionClass: "terrain-stroke" | "tee" | "pin" | "prop" | "structure" | "occlusion-selection"): Promise<{
+      target: import("./game/testing/zk470PlacementFixture").Zk470PlacementTarget;
+      selectedCell: { x: number; y: number } | null;
+      handledPointerCell: { x: number; y: number } | null;
+      committedCell: { x: number; y: number } | null;
+      courseHash: string;
+      worldHash: string;
+      authoritative: {
+        terrain: import("./game/models/types").Terrain;
+        tee: { x: number; y: number } | null;
+        pin: { x: number; y: number } | null;
+        obstacle: import("./game/models/types").Obstacle | null;
+        building: import("./game/models/types").Building | null;
+      };
+    }>;
+    zk470Undo(): void;
+    zk470Redo(): void;
+    zk470PersistenceProbe(actionClass: "terrain-stroke" | "tee" | "pin" | "prop" | "structure" | "occlusion-selection"): Promise<{
+      id: string;
+      beforeHash: string;
+      afterHash: string | null;
+      firstDifference: { path: string; before: unknown; after: unknown } | null;
+      cleanedUp: boolean;
+    }>;
     advanceLiveClock(realMs: number, speed: "1x" | "2x" | "4x"): {
       dayMinute: number;
       speed: "paused" | "1x" | "2x" | "4x";

@@ -24,17 +24,17 @@ const SURFACE_INSET_PX: Record<Terrain, number> = {
 
 const BANK_COLORS: Record<LandTheme, Record<"sand" | "wetland" | "water", [number, number]>> = {
   parkland: {
-    sand: [0xb89b60, 0x80633a],
+    sand: [0xb89b60, 0x3e823f],
     wetland: [0x4e7053, 0x2d493a],
     water: [0x54756c, 0x2b493f],
   },
   links: {
-    sand: [0xc6b67c, 0x8a7449],
+    sand: [0xc6b67c, 0x668348],
     wetland: [0x66785a, 0x3b5041],
     water: [0x71877a, 0x3c5148],
   },
   desert: {
-    sand: [0xc99d5c, 0x8f6235],
+    sand: [0xc99d5c, 0x9b8052],
     wetland: [0x617652, 0x384b37],
     water: [0x6d8978, 0x3c5548],
   },

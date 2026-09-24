@@ -1,7 +1,7 @@
 .cc-bug-report-launcher {
   position: fixed;
   right: 18px;
-  bottom: 18px;
+  bottom: 82px;
   z-index: 100040;
   min-height: 36px;
   border: 2px outset #e8cf8d;
@@ -16,7 +16,7 @@
 .cc-bug-report-load-error {
   position: fixed;
   right: 18px;
-  bottom: 64px;
+  bottom: 128px;
   z-index: 100041;
   display: flex;
   align-items: center;
@@ -26,6 +26,13 @@
   background: #fff0e8;
   color: #762b21;
   padding: 9px 11px;
+}
+
+.cc-bug-report-dock .cc-bug-report-launcher {
+  position: static;
+  min-height: 32px;
+  padding: 5px 10px;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, .22);
 }
 
 @media (prefers-reduced-motion: reduce) {

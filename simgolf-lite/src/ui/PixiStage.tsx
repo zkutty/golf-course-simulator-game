@@ -31,6 +31,9 @@ import {
   atlasResidencySnapshot,
   getGolferFrame,
   getLandscapeMaterialField,
+  getParklandComposableField,
+  getParklandComposableRuntime,
+  getPathMaterialField,
   getPropFrame,
   getTerrainDetailFrame,
   getTerrainFrame,
@@ -54,6 +57,11 @@ import type { MessageKey } from "../i18n/catalog";
 import { useI18n } from "../i18n/useI18n";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 import { entityDepth } from "../game/render/objectPlacement";
+import {
+  GOLFER_CONTACT_SHADOW,
+  advanceGroundedWalkPhase,
+  groundedGolferFrame,
+} from "../game/render/golferGrounding";
 import {
   GOLFER_DISPLAY_W,
   GOLFER_FEET_Y,
@@ -91,6 +99,7 @@ import { bindingFromEvent, type BindingAction, type Keybindings } from "../acces
 import { FLYOVER_DURATION_MS, buildFlyoverKeys, sampleFlyover, type FlyoverKey } from "../game/render/flyover";
 import { PerfWindow } from "../game/render/perfStats";
 import { recordM35Metric } from "../game/render/m35Telemetry";
+import type { CourseSceneCompositionPlanV1 } from "../game/render/courseSceneComposition";
 import {
   MAX_ACTIVE_IMPACTS,
   MAX_ACTIVE_RIPPLES,
@@ -114,31 +123,39 @@ import {
   waterShimmerPhase,
 } from "../game/render/terrainMaterials";
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
+import type { ParklandComposableDiagnostics } from "../game/render/parklandComposable";
 import { deriveTerrainDetail } from "../game/render/terrainDetails";
 import {
   seasonalTerrainTreatment,
   type SeasonalTerrainTreatment,
 } from "../game/render/seasonalTerrainPresentation";
-import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from "../game/render/terrainRelief";
+import {
+  hillReliefStrength,
+  terrainReliefStyle,
+  terrainSurfaceInsetPx,
+} from "../game/render/terrainRelief";
 import {
   buildLandscapeComponents,
   buildVisualHeightfield,
   createLandscapeComponentCache,
-  pointInLandscapeRing,
-  ringSignedArea,
   sampleLandscapeSurfaceHeight,
   sampleVisualHeight,
   type LandscapeComponent,
 } from "../game/render/landscapeGeometry";
-import {
-  buildLandscapeBoundaryRuns,
-  buildShoreRockPlacements,
-  landscapeEdgeStyle,
-} from "../game/render/landscapeEdges";
+import { buildHazardBankFacePlan, hazardDepthProfile } from "../game/render/hazardDepth";
+import { buildLandscapeBoundaryRuns } from "../game/render/landscapeEdges";
+import { buildSignedContourRibbons, shouldProjectContourRibbon } from "../game/render/contourRibbons";
 import {
   buildBunkerVisualRings,
+  buildHazardVisualRings,
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
+import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
+import type { TerrainPresentationDiagnostics } from "../game/render/terrainPresentationPolicy";
+import {
+  buildPathMaterialScenePlan,
+  pathMaterialStripMesh,
+} from "./renderer/scenes/pathMaterialScene";
 import {
   pickNaturalProp,
 } from "../game/render/naturalProps";
@@ -178,6 +195,7 @@ import {
 import {
   RenderRevisionTracker,
   architectureOverlayRevisionDependencies,
+  habitatFieldRevisionDependencies,
   holeMarkersRevisionDependencies,
   mobilityEntitiesRevisionDependencies,
   playerProCollectionRevisionDependencies,
@@ -198,11 +216,12 @@ import {
 } from "./renderer/scenes/surfaceCareScene";
 import type { StableSceneDecalLayers } from "./renderer/scenes/structuresPropsScene";
 import type { NaturalPropsSceneSystem } from "./renderer/scenes/naturalPropsScene";
+import type { HabitatFieldSceneSystem } from "./renderer/scenes/habitatFieldScene";
 import type { PlayerProCollectionSceneSystem } from "./renderer/scenes/playerProCollectionScene";
 import type { HoleMarkersSceneSystem } from "./renderer/scenes/holeMarkersScene";
 import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
-import { createArchitectureOverlaySceneSystem } from "./renderer/scenes/architectureOverlayScene";
+import { createArchitectureOverlaySceneSystem, routeDestinationHierarchy } from "./renderer/scenes/architectureOverlayScene";
 import { createPropertyAssetsSceneSystem } from "./renderer/scenes/propertyAssetsScene";
 import { createSurfaceEditorSceneSystem } from "./renderer/scenes/surfaceEditorScene";
 import {
@@ -211,6 +230,8 @@ import {
 } from "./renderer/scenes/mobilityEntitiesScene";
 
 type DeferredWorldScenes = typeof import("./renderer/scenes/deferredWorldScenes");
+type DeriveCourseSceneComposition = typeof import("../game/render/courseSceneComposition")["deriveCourseSceneComposition"];
+type DeriveCourseSceneCamera = typeof import("../game/render/courseSceneCamera")["deriveCourseSceneCamera"];
 
 const TERRAIN_LABEL_KEYS: Record<Terrain, MessageKey> = {
   fairway: "designDock.terrain.fairway",
@@ -346,6 +367,14 @@ function shade(color: number, factor: number): number {
   return (lerp(r) << 16) | (lerp(g) << 8) | lerp(b);
 }
 
+function mixColor(color: number, target: number, amount: number): number {
+  const t = Math.max(0, Math.min(1, amount));
+  const mix = (shift: number) => Math.round(
+    ((color >> shift) & 0xff) * (1 - t) + ((target >> shift) & 0xff) * t,
+  );
+  return (mix(16) << 16) | (mix(8) << 8) | mix(0);
+}
+
 const colorCss = (color: number, alpha = 1) => {
   const r = (color >> 16) & 0xff;
   const g = (color >> 8) & 0xff;
@@ -370,10 +399,10 @@ function terrainMaterialSeed(terrain: Terrain, color: number): number {
 function createLandscapeMaterialTexture(
   terrain: Terrain,
   baseColor: number,
-  quality: "high" | "medium",
+  quality: "high" | "medium" | "low",
   showPattern: boolean,
 ): PIXI.Texture {
-  const size = quality === "high" ? 512 : 256;
+  const size = quality === "high" ? 512 : quality === "medium" ? 256 : 128;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -395,7 +424,7 @@ function createLandscapeMaterialTexture(
     }
   };
 
-  const organicCount = quality === "high" ? 92 : 52;
+  const organicCount = quality === "high" ? 92 : quality === "medium" ? 52 : 24;
   for (let index = 0; index < organicCount; index++) {
     const x = random() * size;
     const y = random() * size;
@@ -428,7 +457,7 @@ function createLandscapeMaterialTexture(
       context.stroke();
     }
   } else {
-    const flecks = quality === "high" ? 260 : 120;
+    const flecks = quality === "high" ? 260 : quality === "medium" ? 120 : 48;
     for (let index = 0; index < flecks; index++) {
       const x = random() * size;
       const y = random() * size;
@@ -468,6 +497,119 @@ function createLandscapeMaterialTexture(
         context.fill();
       }
     }
+  }
+
+  const texture = PIXI.Texture.from(canvas);
+  texture.source.style.addressMode = "repeat";
+  texture.source.style.scaleMode = "linear";
+  return texture;
+}
+
+/**
+ * Fine, repeat-safe mineral grain for the path core. This intentionally skips
+ * the broad organic ellipses used by landscape fields: compacted aggregate
+ * should read as dense dust and irregular small stones, never as panels.
+ */
+function createCompactedPathCoreTexture(
+  baseColor: number,
+  quality: "high" | "medium" | "low",
+): PIXI.Texture {
+  const size = quality === "high" ? 512 : quality === "medium" ? 256 : 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) return PIXI.Texture.WHITE;
+
+  const compactedBase = mixColor(baseColor, 0x9f957f, 0.1);
+  let state = (terrainMaterialSeed("path", compactedBase) ^ 0xc0a5e71d) >>> 0;
+  const nextRandom = () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return state >>> 0;
+  };
+  const random = () => nextRandom() / 0x1_0000_0000;
+
+  // A bounded per-pixel mineral noise floor prevents broad flat plateaus.
+  // Linear texture sampling blends it into dust rather than square pixels.
+  const pixels = context.createImageData(size, size);
+  const baseRed = (compactedBase >> 16) & 0xff;
+  const baseGreen = (compactedBase >> 8) & 0xff;
+  const baseBlue = compactedBase & 0xff;
+  const clampChannel = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
+  for (let offset = 0; offset < pixels.data.length; offset += 4) {
+    const sample = nextRandom();
+    const grain = ((sample & 0xff) / 255 - 0.5) * 14;
+    const warmth = (((sample >>> 8) & 0xff) / 255 - 0.5) * 3;
+    pixels.data[offset] = clampChannel(baseRed + grain + warmth);
+    pixels.data[offset + 1] = clampChannel(baseGreen + grain + warmth * 0.35);
+    pixels.data[offset + 2] = clampChannel(baseBlue + grain - warmth);
+    pixels.data[offset + 3] = 255;
+  }
+  context.putImageData(pixels, 0, 0);
+  const repeatShape = (
+    x: number,
+    y: number,
+    margin: number,
+    draw: (dx: number, dy: number) => void,
+  ) => {
+    const offsetsX = [0, ...(x < margin ? [size] : []), ...(x > size - margin ? [-size] : [])];
+    const offsetsY = [0, ...(y < margin ? [size] : []), ...(y > size - margin ? [-size] : [])];
+    for (const ox of offsetsX) for (const oy of offsetsY) {
+      draw(x + ox, y + oy);
+    }
+  };
+
+  // Low-contrast dust clumps give the core body without creating large blobs.
+  const dustCount = quality === "high" ? 950 : 520;
+  for (let index = 0; index < dustCount; index++) {
+    const x = random() * size;
+    const y = random() * size;
+    const radius = (quality === "high" ? 1.2 : 0.8) + random() * (quality === "high" ? 3.8 : 2.7);
+    const warm = random() > 0.42;
+    const color = mixColor(compactedBase, warm ? 0xc8b98f : 0x5f625f, 0.2 + random() * 0.16);
+    const alpha = 0.12 + random() * 0.11;
+    const stretch = 0.55 + random() * 0.75;
+    const angle = random() * Math.PI;
+    context.fillStyle = colorCss(color, alpha);
+    repeatShape(x, y, radius * 1.35, (dx, dy) => {
+      context.beginPath();
+      context.ellipse(dx, dy, radius, radius * stretch, angle, 0, Math.PI * 2);
+      context.fill();
+    });
+  }
+
+  // Dense sub-tile grains stay legible at 1x and 2.25x while their irregular
+  // silhouettes avoid square chips, aligned seams, and per-cell repetition.
+  const aggregateCount = quality === "high" ? 1800 : 1100;
+  for (let index = 0; index < aggregateCount; index++) {
+    const x = random() * size;
+    const y = random() * size;
+    const radius = (quality === "high" ? 0.65 : 0.5) + random() * (quality === "high" ? 1.7 : 1.3);
+    const colorRoll = random();
+    const color = mixColor(
+      compactedBase,
+      colorRoll < 0.4 ? 0xd8ceb4 : colorRoll < 0.77 ? 0x6b6961 : 0xa98e62,
+      0.38 + random() * 0.32,
+    );
+    const alpha = 0.36 + random() * 0.3;
+    const vertices = 3 + Math.floor(random() * 3);
+    const rotation = random() * Math.PI * 2;
+    const radii = Array.from({ length: vertices }, () => radius * (0.65 + random() * 0.55));
+    context.fillStyle = colorCss(color, alpha);
+    repeatShape(x, y, radius * 1.25, (dx, dy) => {
+      context.beginPath();
+      for (let vertex = 0; vertex < vertices; vertex++) {
+        const angle = rotation + vertex / vertices * Math.PI * 2;
+        const px = dx + Math.cos(angle) * radii[vertex];
+        const py = dy + Math.sin(angle) * radii[vertex];
+        if (vertex === 0) context.moveTo(px, py);
+        else context.lineTo(px, py);
+      }
+      context.closePath();
+      context.fill();
+    });
   }
 
   const texture = PIXI.Texture.from(canvas);
@@ -826,6 +968,32 @@ interface Layers {
   screenOverlay: PIXI.Container;
 }
 
+interface PathMaterialRenderDiagnostics {
+  active: boolean;
+  mode: "legacy" | "cross-section";
+  quality: "high" | "medium" | "low";
+  componentCount: number;
+  stripCount: number;
+  roles: readonly ("shoulder" | "edge" | "core")[];
+  textureIds: readonly string[];
+  widths: { shoulder: number; edge: number };
+  ownership: readonly string[];
+}
+
+type SharedContourRenderDiagnostics = TerrainPresentationDiagnostics;
+
+const EMPTY_SHARED_CONTOUR_DIAGNOSTICS = {
+  authoritativeSingletonDeepRough: 0,
+  distinctSingletonDeepRoughFields: 0,
+  distinctSingletonDeepRoughBands: 0,
+  coalescedSingletonDeepRough: 0,
+} as SharedContourRenderDiagnostics;
+
+function landscapeOptionsForQuality(quality: "high" | "medium" | "low") {
+  const high = quality === "high";
+  return { cornerRadius: high ? 0.4 : 0.32, cornerSegments: high ? 4 : 2 };
+}
+
 function effectiveSurfaceTilesForRenderer(
   tiles: Course["tiles"],
   width: number,
@@ -1017,6 +1185,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
       ? requestedProps.course
       : { ...requestedProps.course, theme: atlasContext.biome }
   ), [atlasContext.biome, requestedProps.course]);
+  const initialCameraCompositionInputRef = useRef<readonly [Course, number]>([
+    renderedCourse,
+    requestedProps.worldSeed,
+  ]);
   // All scene effects consume the last completely activated atlas context.
   // Requested adaptive-quality changes stay off-screen while their bundle is
   // loading, so Pixi never combines a new fallback terrain tier with objects
@@ -1035,10 +1207,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const sceneSystemHostRef = useRef<SceneSystemHost | null>(null);
   const atmosphereSceneRef = useRef<AtmosphereSceneSystem | null>(null);
   const naturalPropsSceneRef = useRef<NaturalPropsSceneSystem | null>(null);
+  const habitatFieldSceneRef = useRef<HabitatFieldSceneSystem | null>(null);
   const playerProCollectionSceneRef = useRef<PlayerProCollectionSceneSystem | null>(null);
   const holeMarkersSceneRef = useRef<HoleMarkersSceneSystem | null>(null);
   const mobilityEntitiesSceneRef = useRef<MobilityEntitiesSceneSystem | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
+  const sceneCameraDeriversRef = useRef<readonly [DeriveCourseSceneComposition, DeriveCourseSceneCamera] | null>(null);
+  const [courseSceneCompositionEntry, setCourseSceneCompositionEntry] = useState<readonly [
+    Course,
+    number,
+    CourseSceneCompositionPlanV1,
+  ] | null>(null);
   const renderRevisionTrackerRef = useRef(new RenderRevisionTracker());
   const [appReady, setAppReady] = useState(false);
   const atlasRevision = atlasContext.generation;
@@ -1051,7 +1230,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
   const diamondTextureRef = useRef<PIXI.Texture | null>(null);
   const chunksRef = useRef<TerrainChunk[]>([]);
-  const prevTilesRef = useRef<Terrain[] | null>(null);
+  const prevTilesRef = useRef<readonly Terrain[] | null>(null);
   const prevCareVisualSignaturesRef = useRef<string[] | null>(null);
   const prevElevationsRef = useRef<number[] | null>(null);
   const builtRotationRef = useRef<IsoRotation | null>(null);
@@ -1059,6 +1238,24 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const builtAtlasGenerationRef = useRef<number | null>(null);
   const chunkRebuildsRef = useRef(0);
   const landscapeMaterialTexturesRef = useRef<Map<string, PIXI.Texture>>(new Map());
+  const lowParklandPresentationLayerRef = useRef<PIXI.Container | null>(null);
+  const pathMaterialDiagnosticsRef = useRef<PathMaterialRenderDiagnostics>({
+    active: false,
+    mode: "legacy",
+    quality: initialRendererConfigRef.current.graphicsQuality,
+    componentCount: 0,
+    stripCount: 0,
+    roles: ["core"],
+    textureIds: ["legacy:path"],
+    widths: { shoulder: 0, edge: 0 },
+    ownership: [],
+  });
+  const sharedContourDiagnosticsRef = useRef<SharedContourRenderDiagnostics>(
+    EMPTY_SHARED_CONTOUR_DIAGNOSTICS,
+  );
+  const parklandComposableDiagnosticsRef = useRef<ParklandComposableDiagnostics>(
+    null as unknown as ParklandComposableDiagnostics,
+  );
   const structureSpriteCountRef = useRef(0);
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
@@ -1133,6 +1330,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     points: Point[];
     last: Point;
   } | null>(null);
+  const terrainStrokePointerDownCellRef = useRef<Point | null>(null);
   const [fineGreenStrokePreview, setFineGreenStrokePreview] = useState<FineGreenSculptPreview | null>(null);
   const fineGreenStrokeRef = useRef<{
     pointerId: number;
@@ -1194,7 +1392,21 @@ export function PixiStage(requestedProps: PixiStageProps) {
     liveActive,
     onPickGolfer,
     onViewChange,
+    onCameraCenter,
+    selectedTeeSet,
+    showGridOverlays,
+    worldSeed,
   } = props;
+  const courseSceneComposition = courseSceneCompositionEntry?.[0] === course
+    && courseSceneCompositionEntry[1] === worldSeed
+    ? courseSceneCompositionEntry[2]
+    : null;
+  useEffect(() => {
+    if (!appReady || courseSceneComposition) return;
+    const derivePlan = sceneCameraDeriversRef.current?.[0];
+    if (!derivePlan) return;
+    setCourseSceneCompositionEntry([course, worldSeed, derivePlan({ course, seed: worldSeed })]);
+  }, [appReady, course, courseSceneComposition, worldSeed]);
   const effectiveTiles = useMemo(() => effectiveSurfaceTilesForRenderer(
     course.tiles,
     course.width,
@@ -1210,10 +1422,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
     course.tiles,
     course.width,
   ]);
-  const effectiveRenderCourse = useMemo(
-    () => effectiveTiles === course.tiles ? course : { ...course, tiles: effectiveTiles },
-    [course, effectiveTiles],
+  const presentationRuntime = getParklandComposableRuntime();
+  const terrainPresentation = presentationRuntime?.buildTerrainPresentationMap(
+    effectiveTiles,
+    course.width,
+    course.height,
+    course.theme,
   );
+  const presentationTiles = terrainPresentation?.presentationTiles ?? effectiveTiles;
   const careVisualSignatures = useMemo(
     () => surfaceCareVisualSignatures(course),
     [course],
@@ -1288,11 +1504,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
   ]);
   const landscapeComponentCacheRef = useRef(createLandscapeComponentCache());
   const landscapeComponents = useMemo(() => {
-    if (props.graphicsQuality === "low") return [];
-    const options = {
-      cornerRadius: props.graphicsQuality === "high" ? 0.4 : 0.32,
-      cornerSegments: props.graphicsQuality === "high" ? 4 : 2,
-    };
+    const composableLow = props.graphicsQuality === "low"
+      && (course.theme ?? "parkland") === "parkland";
+    if (props.graphicsQuality === "low" && !composableLow) return [];
+    const options = landscapeOptionsForQuality(props.graphicsQuality);
     const snapshot = landscapeComponentCacheRef.current.update(
       effectiveTiles,
       course.width,
@@ -1302,6 +1517,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     return snapshot.components;
   }, [
     course.height,
+    course.theme,
     effectiveTiles,
     course.width,
     props.graphicsQuality,
@@ -1377,6 +1593,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
     surfaceHeightAt,
     terrainTool,
   ]);
+  const activeRouteDestinations = useMemo(() => {
+    const hole = holes[activeHoleIndex];
+    return routeDestinationHierarchy(hole, course.activePinRotation ?? "A", activeShotRoute?.destinations);
+  }, [activeHoleIndex, activeShotRoute?.destinations, course.activePinRotation, holes]);
   const renderRevisions = renderRevisionTrackerRef.current.update({
     atmosphere: [
       atlasRevision,
@@ -1447,6 +1667,18 @@ export function PixiStage(requestedProps: PixiStageProps) {
       seasonalPlantsSignature,
       surfaceHeightAt,
     ],
+    habitatField: habitatFieldRevisionDependencies({
+      atlasRevision,
+      course,
+      effectiveTiles,
+      obstacles,
+      holes,
+      worldSeed: props.worldSeed,
+      graphicsQuality: props.graphicsQuality,
+      colorVision: props.colorVision,
+      rotation,
+      surfaceHeightAt,
+    }),
     propertyAssets: propertyAssetsRevisionDependencies({
       course,
       hasResortServicePressure,
@@ -1469,7 +1701,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     surfaceEditor: surfaceEditorRevisionDependencies(surfaceEditorSnapshot),
     architectureOverlay: architectureOverlayRevisionDependencies({
       activePath: activeShotRoute?.geometry,
-      activeShotDestinations: activeShotRoute?.destinations,
+      activeShotDestinations: activeRouteDestinations,
       activePinRotation: course.activePinRotation,
       failingCorridorSegments,
       holes,
@@ -1518,7 +1750,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     selectedTeeSet: props.selectedTeeSet,
     flagColor: props.flagColor,
     activePath: activeShotRoute?.geometry,
-    activeShotDestinations: activeShotRoute?.destinations,
+    activeShotDestinations: activeRouteDestinations,
     architectureWarnings: props.architectureWarnings,
     architectureOverlay: props.architectureOverlay,
     paceBottlenecks: props.paceBottlenecks,
@@ -1562,6 +1794,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.selectedTeeSet,
     props.flagColor,
     activeShotRoute,
+    activeRouteDestinations,
     props.architectureWarnings,
     props.architectureOverlay,
     props.paceBottlenecks,
@@ -1676,23 +1909,38 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const fitWholeCourse = useCallback(
     (snap: boolean) => {
       const app = appRef.current;
-      if (!app) return;
+      const deriveCamera = sceneCameraDeriversRef.current?.[1];
+      if (!app || !courseSceneComposition || !deriveCamera) return;
       const cam = camRef.current;
-      cam.tcx = course.width / 2;
-      cam.tcy = course.height / 2;
-      cam.tzoom = fitZoomForTileBounds(
-        0, 0, course.width - 1, course.height - 1,
-        app.screen.width, app.screen.height, rotation
-      );
+      const frame = deriveCamera({
+        course,
+        composition: courseSceneComposition,
+        activeHoleIndex,
+        teeSet: selectedTeeSet,
+        viewport: { width: app.screen.width, height: app.screen.height },
+        rotation,
+        mode: "overview",
+      });
+      cam.tcx = frame.center.x;
+      cam.tcy = frame.center.y;
+      cam.tzoom = frame.zoom;
       if (snap) {
         cam.cx = cam.tcx;
         cam.cy = cam.tcy;
         cam.zoom = cam.tzoom;
       }
       applyCamera();
-      props.onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
+      onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
     },
-    [course.width, course.height, rotation, applyCamera, props.onCameraCenter]
+    [
+      activeHoleIndex,
+      applyCamera,
+      course,
+      courseSceneComposition,
+      onCameraCenter,
+      selectedTeeSet,
+      rotation,
+    ]
   );
 
   /**
@@ -1701,50 +1949,26 @@ export function PixiStage(requestedProps: PixiStageProps) {
    */
   const fitDefaultView = useCallback(
     (snap: boolean) => {
-      if (props.showGridOverlays) {
+      if (showGridOverlays) {
         fitWholeCourse(snap);
         return;
       }
       const app = appRef.current;
-      if (!app) return;
-      const completeHole = holes[activeHoleIndex]?.tee && holes[activeHoleIndex]?.green
-        ? holes[activeHoleIndex]
-        : holes.find((hole) => hole.tee && hole.green);
+      const deriveCamera = sceneCameraDeriversRef.current?.[1];
+      if (!app || !courseSceneComposition || !deriveCamera) return;
       const cam = camRef.current;
-      if (completeHole?.tee && completeHole.green) {
-        const padding = 4;
-        const minX = Math.max(0, Math.min(completeHole.tee.x, completeHole.green.x) - padding);
-        const minY = Math.max(0, Math.min(completeHole.tee.y, completeHole.green.y) - padding);
-        const maxX = Math.min(course.width - 1, Math.max(completeHole.tee.x, completeHole.green.x) + padding);
-        const maxY = Math.min(course.height - 1, Math.max(completeHole.tee.y, completeHole.green.y) + padding);
-        cam.tcx = (minX + maxX + 1) / 2;
-        cam.tcy = (minY + maxY + 1) / 2;
-        cam.tzoom = Math.min(MAX_ZOOM, Math.max(
-          minimumZoom(),
-          fitZoomForTileBounds(
-            minX,
-            minY,
-            maxX,
-            maxY,
-            app.screen.width,
-            app.screen.height,
-            rotation,
-          ) * 1.08,
-        ));
-      } else {
-        cam.tcx = course.width / 2;
-        cam.tcy = course.height / 2;
-        const overview = fitZoomForTileBounds(
-          0,
-          0,
-          course.width - 1,
-          course.height - 1,
-          app.screen.width,
-          app.screen.height,
-          rotation,
-        );
-        cam.tzoom = Math.min(MAX_ZOOM, Math.max(minimumZoom(), overview * 1.42));
-      }
+      const frame = deriveCamera({
+        course,
+        composition: courseSceneComposition,
+        activeHoleIndex,
+        teeSet: selectedTeeSet,
+        viewport: { width: app.screen.width, height: app.screen.height },
+        rotation,
+        mode: "normal",
+      });
+      cam.tcx = frame.center.x;
+      cam.tcy = frame.center.y;
+      cam.tzoom = Math.min(MAX_ZOOM, Math.max(minimumZoom(), frame.zoom));
       const centered = clampCenter(cam.tcx, cam.tcy, cam.tzoom);
       cam.tcx = centered.x;
       cam.tcy = centered.y;
@@ -1754,19 +1978,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
         cam.zoom = cam.tzoom;
       }
       applyCamera();
-      props.onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
+      onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
     },
     [
       activeHoleIndex,
       applyCamera,
       clampCenter,
-      course.height,
-      course.width,
+      course,
+      courseSceneComposition,
       fitWholeCourse,
-      holes,
       minimumZoom,
-      props.onCameraCenter,
-      props.showGridOverlays,
+      onCameraCenter,
+      selectedTeeSet,
+      showGridOverlays,
       rotation,
     ],
   );
@@ -1970,6 +2194,22 @@ export function PixiStage(requestedProps: PixiStageProps) {
     if (import.meta.env.MODE !== "e2e" || !appReady) return;
     const api = {
       fitWholeCourse: () => fitWholeCourse(true),
+      fitDefaultView: () => fitDefaultView(true),
+      sceneComposition: () => courseSceneComposition ?? null,
+      normalFrame: () => {
+        const app = appRef.current;
+        const deriveCamera = sceneCameraDeriversRef.current?.[1];
+        if (!app || !courseSceneComposition || !deriveCamera) return null;
+        return deriveCamera({
+          course,
+          composition: courseSceneComposition,
+          activeHoleIndex,
+          teeSet: selectedTeeSet,
+          viewport: { width: app.screen.width, height: app.screen.height },
+          rotation,
+          mode: "normal",
+        });
+      },
       viewport: (): { width: number; height: number } | null => {
         const app = appRef.current;
         return app ? { width: app.screen.width, height: app.screen.height } : null;
@@ -1982,6 +2222,31 @@ export function PixiStage(requestedProps: PixiStageProps) {
           getElevation(course, Math.floor(x), Math.floor(y)),
         );
       },
+      activeFlagGeometry: () => {
+        const flag = layersRef.current?.objects.children.find((child) => child.label === "hole-pin-flag");
+        if (!flag) return null;
+        const bounds = flag.getBounds();
+        const anchor = flag.getGlobalPosition();
+        return {
+          anchor: { x: anchor.x, y: anchor.y },
+          bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+        };
+      },
+      activeShotDestinationGeometry: () => layersRef.current?.terrainDecals.children.flatMap((child) => {
+        const marker = child as PIXI.Container & {
+          __coursecraftShotDestination?: {
+            index: number;
+            point: { x: number; y: number };
+            role: "landing" | "approach" | "pin";
+          };
+        };
+        if (!marker.__coursecraftShotDestination) return [];
+        const bounds = marker.getBounds();
+        return [{
+          ...marker.__coursecraftShotDestination,
+          bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+        }];
+      }) ?? [],
       openingPreview: (): { targetIds: number[]; outlineCount: number } | null => {
         const graphic = layersRef.current?.fx.children.find((child) => child.label === "opening-preview-markers") as (PIXI.Graphics & {
           __coursecraftOpeningPreview?: { targetIds: number[]; outlineCount: number };
@@ -2061,6 +2326,30 @@ export function PixiStage(requestedProps: PixiStageProps) {
             targetZoom: camRef.current.tzoom,
             groundCoverTier: coverTier,
           },
+          pathMaterialCrossSection: {
+            ...pathMaterialDiagnosticsRef.current,
+            commit: __COMMIT_SHA__,
+            camera: {
+              rotation,
+              zoom: camRef.current.zoom,
+              targetZoom: camRef.current.tzoom,
+            },
+          },
+          parklandComposable: {
+            ...parklandComposableDiagnosticsRef.current,
+            camera: {
+              rotation,
+              zoom: camRef.current.zoom,
+              targetZoom: camRef.current.tzoom,
+            },
+          },
+          habitatField: {
+            ...(habitatFieldSceneRef.current?.diagnostics() ?? null),
+            legacyParklandHabitatCount: course.theme === "parkland"
+              ? naturalPropsSceneRef.current?.legacyHabitatCount() ?? 0
+              : 0,
+          },
+          sharedContours: { ...sharedContourDiagnosticsRef.current },
           layers: layers ? {
             surround: stampedAtlasGeneration(layers.surround),
             terrain: stampedAtlasGeneration(layers.terrain),
@@ -2071,7 +2360,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
             objects: stampedAtlasGeneration(layers.objects),
           } : null,
           counts: layers ? {
-            terrainChunks: layers.terrain.children.length,
+            terrainChunks: chunksRef.current.length,
             terrainRebuilds: chunkRebuildsRef.current,
             connectedSurfaces: layers.smoothSurfaces.children.length,
             structuresAndProps: structureSpriteCountRef.current
@@ -2080,6 +2369,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
               content: naturalPropsSceneRef.current?.contentCount() ?? 0,
               rebuilds: naturalPropsSceneRef.current?.rebuildCount() ?? 0,
               fallbackTextures: naturalPropsSceneRef.current?.fallbackTextureCount() ?? 0,
+              habitatMasses: naturalPropsSceneRef.current?.habitatMassDiagnostics().length ?? 0,
+              habitatBedLayers: naturalPropsSceneRef.current?.habitatMassDiagnostics()
+                .reduce((total, mass) => total + mass.bedLayerCount, 0) ?? 0,
+              legacyHabitat: naturalPropsSceneRef.current?.legacyHabitatCount() ?? 0,
             },
             dressing: layers.seasonalTerrain.children.length + layers.surfaceCare.children.length,
           } : null,
@@ -2098,6 +2391,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
         unrelated.destroy();
         return { before, after };
       },
+      setPathMaterialVisibilityForTest: (visible: boolean) => {
+        const layer = layersRef.current?.smoothSurfaces.children.find(
+          (child) => child.label === "path-material-cross-section",
+        );
+        if (!layer) return false;
+        layer.visible = visible;
+        appRef.current?.render();
+        return true;
+      },
       setZoomForTest: (zoom: number) => {
         const next = Math.max(minimumZoom(), Math.min(MAX_ZOOM, zoom));
         camRef.current.zoom = next;
@@ -2112,7 +2414,34 @@ export function PixiStage(requestedProps: PixiStageProps) {
         camRef.current.initialized = true;
         applyCamera();
       },
+      golferGrounding: (id: number) => {
+        const golfer = golfersRef?.current?.find((candidate) => candidate.id === id);
+        const entry = golferPoolRef.current.get(id);
+        if (!golfer || !entry) return null;
+        const frame = groundedGolferFrame(golfer.x, golfer.y, rotation, surfaceHeightAt);
+        const shadow = entry.sprite?.shadow;
+        return {
+          golfer: { x: golfer.x, y: golfer.y, segKind: golfer.segKind, segT: golfer.segT },
+          sample: { x: golfer.x + .5, y: golfer.y + .5, elevation: frame.elevation },
+          expected: { x: frame.screen.x, y: frame.screen.y, depth: frame.depth },
+          holder: { x: entry.holder.position.x, y: entry.holder.position.y, depth: entry.holder.zIndex, visible: entry.holder.visible },
+          feet: entry.sprite ? { x: entry.sprite.base.position.x, y: entry.sprite.base.position.y, anchorY: entry.sprite.base.anchor.y } : null,
+          shadow: shadow ? { label: shadow.label, x: shadow.position.x, y: shadow.position.y, alpha: shadow.alpha } : null,
+          sprite: entry.sprite ? { walkPhase: entry.sprite.walkPhase, frame: entry.sprite.lastFrame } : null,
+          poolCount: golferPoolRef.current.size,
+          activeEffects: impactsRef.current.length + ripplesRef.current.length,
+        };
+      },
       screenToTile,
+      screenToWorld: screenToWorldPoint,
+      terrainStrokePointerDownCell: () => (
+        terrainStrokePointerDownCellRef.current
+          ? { ...terrainStrokePointerDownCellRef.current }
+          : null
+      ),
+      resetTerrainStrokePointerDownCell: () => {
+        terrainStrokePointerDownCellRef.current = null;
+      },
     };
     window.__coursecraftPixiTest = api;
     return () => {
@@ -2124,6 +2453,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
     applyCamera,
     atlasContext,
     course,
+    courseSceneComposition,
+    activeHoleIndex,
+    selectedTeeSet,
+    fitDefaultView,
     fitWholeCourse,
     minimumZoom,
     requestedProps.course.theme,
@@ -2132,8 +2465,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
     requestedProps.season,
     requestedProps.seasonalVisualState,
     renderContext.resolutionScale,
+    rotation,
     seasonalPlantsSignature,
     screenToTile,
+    screenToWorldPoint,
+    surfaceHeightAt,
     worldPointToScreen,
   ]);
 
@@ -2169,7 +2505,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
         app.destroy(true, { children: true, texture: true });
         return;
       }
-      const deferredWorldScenes = await import("./renderer/scenes/deferredWorldScenes");
+      const [deferredWorldScenes, compositionModule, cameraModule] = await Promise.all([
+        import("./renderer/scenes/deferredWorldScenes"),
+        import("../game/render/courseSceneComposition"),
+        import("../game/render/courseSceneCamera"),
+      ]);
       if (cancelled) {
         app.destroy(true, { children: true, texture: true });
         return;
@@ -2185,6 +2525,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
         return;
       }
       deferredWorldScenesRef.current = deferredWorldScenes;
+      sceneCameraDeriversRef.current = [
+        compositionModule.deriveCourseSceneComposition,
+        cameraModule.deriveCourseSceneCamera,
+      ];
+      const initialCompositionInput = initialCameraCompositionInputRef.current;
+      setCourseSceneCompositionEntry([
+        initialCompositionInput[0],
+        initialCompositionInput[1],
+        compositionModule.deriveCourseSceneComposition({
+          course: initialCompositionInput[0],
+          seed: initialCompositionInput[1],
+        }),
+      ]);
 
       app.canvas.style.display = "block";
       app.canvas.style.position = "absolute";
@@ -2243,6 +2596,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
       console.error("[PixiStage] Course renderer initialization failed", error);
       deferredWorldScenesRef.current = null;
+      sceneCameraDeriversRef.current = null;
       setRendererError(true);
       try { app.destroy(true, { children: true, texture: true }); } catch { /* partially initialized */ }
     });
@@ -2257,6 +2611,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       sceneSystemHostRef.current = null;
       atmosphereSceneRef.current = null;
       naturalPropsSceneRef.current = null;
+      habitatFieldSceneRef.current = null;
       playerProCollectionSceneRef.current = null;
       holeMarkersSceneRef.current = null;
       mobilityEntitiesSceneRef.current = null;
@@ -2420,31 +2775,30 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
   // One-time camera init: snap to the selected normal/overview framing.
   useEffect(() => {
-    if (!appReady) return;
+    if (!appReady || !courseSceneComposition) return;
     const cam = camRef.current;
     if (!cam.initialized) {
       cam.initialized = true;
       fitDefaultView(true);
     }
-  }, [appReady, fitDefaultView]);
+  }, [appReady, courseSceneComposition, fitDefaultView]);
 
   // Loading another fixture/save can replace a 220×140 course with a much
   // smaller one after Pixi has initialized. Refit once per course/view
   // signature so the new estate cannot appear as a tiny object off-center.
   useEffect(() => {
-    if (!appReady || cameraState || props.referenceCamera) return;
-    const completeHole = holes[activeHoleIndex]?.tee && holes[activeHoleIndex]?.green
-      ? holes[activeHoleIndex]
-      : holes.find((hole) => hole.tee && hole.green);
+    if (!appReady || !courseSceneComposition || cameraState || props.referenceCamera) return;
     const signature = [
       course.name,
       course.width,
       course.height,
-      props.showGridOverlays ? "overview" : "normal",
-      completeHole?.tee?.x ?? "-",
-      completeHole?.tee?.y ?? "-",
-      completeHole?.green?.x ?? "-",
-      completeHole?.green?.y ?? "-",
+      activeHoleIndex,
+      course.activePinRotation ?? "A",
+      selectedTeeSet ?? "member",
+      courseSceneComposition.courseHash,
+      courseSceneComposition.obstacleHash,
+      courseSceneComposition.semanticSeed,
+      showGridOverlays ? "overview" : "normal",
     ].join(":");
     if (lastAutoFitSignatureRef.current === signature) return;
     lastAutoFitSignatureRef.current = signature;
@@ -2453,12 +2807,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
     activeHoleIndex,
     appReady,
     cameraState,
+    course.activePinRotation,
     course.height,
     course.name,
     course.width,
+    courseSceneComposition,
     fitDefaultView,
-    holes,
-    props.showGridOverlays,
+    selectedTeeSet,
+    showGridOverlays,
     props.referenceCamera,
   ]);
 
@@ -3090,6 +3446,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const layers = layersRef.current;
     const diamond = diamondTextureRef.current;
     if (!layers || !diamond) return;
+    const presentationRenderCourse = { ...course, tiles: presentationTiles };
 
     const w = course.width;
     const h = course.height;
@@ -3099,10 +3456,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
     // Whole-tile terrain is the visual source of truth. Surface intent is
     // retained for editor history and backwards-compatible saves, but it no
     // longer substitutes an underlay or clips a second terrain layer.
-    const underlayTiles = effectiveTiles;
+    const composableRuntime = presentationRuntime;
+    // Composable assets are installed as one atomic bundle, so one field's
+    // presence is also the failure-safe readiness signal for its turf cues.
+    const composableTurfOwnsTransitions = Boolean(
+      getParklandComposableField(course.theme, props.graphicsQuality, "tee"),
+    );
     const visualTerrainAt = (x: number, y: number): Terrain => {
       const index = y * w + x;
-      return underlayTiles[index];
+      return presentationTiles[index];
     };
     const careTopology = surfaceCareTopology(course);
     const careState = normalizeSurfaceCareState(course.surfaceCare, course);
@@ -3163,6 +3525,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
       chunk.container.addChild(reliefBanks);
       const hillCaps = new PIXI.Graphics();
       const face = (x: number, y: number, d: Point, color: number) => {
+        // The connected Parkland scene owns one broad grade surface. Keeping
+        // the legacy per-level cliff quads underneath it exposes parallel dark
+        // rails through the tessellated top plane.
+        if (composableTurfOwnsTransitions) return;
         const e = elev(x, y);
         const nx = x + d.x;
         const ny = y + d.y;
@@ -3180,6 +3546,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       };
       const recessedFace = (x: number, y: number, d: Point) => {
         const terrain = visualTerrainAt(x, y);
+        if (composableTurfOwnsTransitions && terrain === "sand") return;
         const style = terrainReliefStyle(course.theme, terrain);
         if (!style) return;
         const nx = x + d.x;
@@ -3232,7 +3599,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
         });
       for (const { x, y } of order) {
         const terrain = visualTerrainAt(x, y);
-        const material = getTerrainMaterial(course.theme, terrain);
+        const lowOrganicHazard = props.graphicsQuality === "low"
+          && (terrain === "water" || terrain === "wetland" || terrain === "sand");
+        const underlayTerrain = composableTurfOwnsTransitions && (terrain === "sand" || lowOrganicHazard)
+          ? "rough"
+          : terrain;
+        const material = getTerrainMaterial(course.theme, underlayTerrain);
         const e = elev(x, y);
         const groundPosition = worldToIso(x + 0.5, y, e, rotation);
         const surfaceInset = terrainSurfaceInsetPx(terrain);
@@ -3247,9 +3619,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
         ) {
           slopeShade *= mowingShadeAt(x, y, holeAxes);
         }
-        const seasonal = seasonalByTerrain[terrain];
+        const seasonal = seasonalByTerrain[underlayTerrain];
         const legacyTint = shade(
-          darken(seasonal?.color ?? THEMED_COLORS[terrain], EDGE_DARKEN),
+          darken(seasonal?.color ?? THEMED_COLORS[underlayTerrain], EDGE_DARKEN),
           slopeShade,
         );
 
@@ -3291,7 +3663,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         }
 
         const terrainDetail = deriveTerrainDetail(
-          effectiveRenderCourse,
+          presentationRenderCourse,
           props.worldSeed,
           x,
           y,
@@ -3312,7 +3684,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           chunk.groundCoverSprites.push({ display: detail, tier: terrainDetail.detailTier });
         } else {
           const cover = deriveGroundCover(
-            effectiveRenderCourse,
+            presentationRenderCourse,
             props.worldSeed,
             x,
             y,
@@ -3345,7 +3717,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         // Animated water registration (ZKU-150): shimmer phase from position
         // so neighboring tiles never pulse in sync; plus a foam lip along
         // every land edge (drawn on the water side).
-        if (terrain === "water" || terrain === "wetland") {
+        if (underlayTerrain === terrain && (terrain === "water" || terrain === "wetland")) {
           chunk.waterSprites.push({
             sprite,
             baseTint: sprite.tint,
@@ -3366,13 +3738,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
           const ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
           const nTerrain = visualTerrainAt(nx, ny);
+          if (
+            composableTurfOwnsTransitions
+            && composableRuntime!.isParklandComposableTransition(terrain, nTerrain)
+          ) continue;
           const boundary = terrainBoundaryFor(terrain, nTerrain);
           if (!boundary || boundary.owner !== terrain) continue;
           if (elev(nx, ny) !== e) continue;
           boundaryMask |= 1 << index;
         }
         const features = autotileFeatures(rotateAutotileMask(boundaryMask, rotation));
-        for (const feature of features) {
+        for (const feature of underlayTerrain === terrain ? features : []) {
           const transitionTexture = material.source === "atlas-2x"
             ? getTerrainFrame(course.theme, props.graphicsQuality, terrainTransitionFrame(material, feature))
             : null;
@@ -3397,6 +3773,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         // rounded hill caps. Links intentionally carries the strongest cue.
         const capStrength = hillReliefStrength(course.theme);
         for (const direction of AUTOTILE_DIRECTIONS.filter((entry) => entry.dx === 0 || entry.dy === 0)) {
+          if (composableTurfOwnsTransitions) continue;
           const nx = x + direction.dx;
           const ny = y + direction.dy;
           if (nx < 0 || ny < 0 || nx >= w || ny >= h || elev(nx, ny) >= e) continue;
@@ -3450,7 +3827,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       builtAtlasGenerationRef.current !== atlasRevision ||
       builtSeasonalTerrainSignatureRef.current !== seasonalTerrainSignature ||
       !prevTiles ||
-      prevTiles.length !== effectiveTiles.length ||
+      prevTiles.length !== presentationTiles.length ||
       !prevCareVisualSignatures ||
       prevCareVisualSignatures.length !== careVisualSignatures.length;
 
@@ -3489,9 +3866,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       // Incremental: diff tiles+elevations, mark touched chunks (expanded by
       // one tile — shading and cliff faces read neighboring tiles).
       const dirty = new Set<number>();
-      for (let i = 0; i < effectiveTiles.length; i++) {
+      for (let i = 0; i < presentationTiles.length; i++) {
         if (
-          effectiveTiles[i] === prevTiles[i] &&
+          presentationTiles[i] === prevTiles[i] &&
           careVisualSignatures[i] === prevCareVisualSignatures[i] &&
           (course.elevations?.[i] ?? 0) === (prevElevations?.[i] ?? 0)
         ) {
@@ -3511,7 +3888,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (dirty.size > 0) devLog(`rebuilt ${dirty.size} dirty chunk(s), total rebuilds ${chunkRebuildsRef.current}`);
     }
 
-    prevTilesRef.current = effectiveTiles;
+    prevTilesRef.current = presentationTiles;
     prevCareVisualSignaturesRef.current = careVisualSignatures;
     prevElevationsRef.current = course.elevations;
     cullChunks();
@@ -3521,8 +3898,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     atlasRevision,
     course,
     careVisualSignatures,
-    effectiveRenderCourse,
-    effectiveTiles,
+    presentationTiles,
     rotation,
     cullChunks,
     props.colorVision,
@@ -3531,27 +3907,60 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.seasonalVisualState,
     props.terrainPatterns,
     props.worldSeed,
+    presentationRuntime,
   ]);
 
-  // Connected landscape presentation. Gameplay remains whole-tile and the
-  // original chunk renderer stays underneath as the Low/failure fallback.
+  // Connected landscape presentation. Gameplay remains whole-tile. The
+  // original chunk renderer remains the failure fallback, while Low receives
+  // the same common turf field without creating connected-surface owners.
   // Medium/High replace the visible top plane with rounded component masks,
   // a shared visual heightfield, and world-anchored repeating materials.
   useEffect(() => {
     if (!appReady) return;
     const rebuildStartedAt = performance.now();
-    const layer = layersRef.current?.smoothSurfaces;
-    if (!layer) return;
+    const rendererLayers = layersRef.current;
+    const layer = rendererLayers?.smoothSurfaces;
+    if (!layer || !rendererLayers) return;
     layer.removeChildren().forEach((child) => child.destroy({ children: true }));
     surfaceWaterSpritesRef.current = [];
-    if (props.graphicsQuality === "low") {
+    const quality = props.graphicsQuality;
+    const composableRuntime = presentationRuntime;
+    lowParklandPresentationLayerRef.current = composableRuntime
+      ? composableRuntime.destroyParklandPresentationLayer(lowParklandPresentationLayerRef.current)
+      : null;
+    const composableSources = composableRuntime?.resolveParklandComposableSources(
+      course.theme,
+      quality,
+      (role) => getParklandComposableField(course.theme, quality, role),
+    ) ?? null;
+    const composableActive = Boolean(composableSources);
+    if (composableRuntime) {
+      parklandComposableDiagnosticsRef.current = composableRuntime.inactiveParklandComposableDiagnostics(quality);
+    }
+    if (quality === "low" && !composableActive) {
+      pathMaterialDiagnosticsRef.current = {
+        active: false,
+        mode: "legacy",
+        quality: "low",
+        componentCount: 0,
+        stripCount: 0,
+        roles: ["core"],
+        textureIds: ["legacy:path"],
+        widths: { shoulder: 0, edge: 0 },
+        ownership: [],
+      };
+      sharedContourDiagnosticsRef.current = EMPTY_SHARED_CONTOUR_DIAGNOSTICS;
       stampAtlasGeneration(layer, atlasRevision);
       return;
     }
 
-    const quality = props.graphicsQuality;
-    const subdivisions = quality === "high" ? 4 : 2;
-    const components = landscapeComponents;
+    const subdivisions = quality === "high" ? 4 : quality === "medium" ? 2 : 1;
+    const components = landscapeComponentCacheRef.current.update(
+      presentationTiles,
+      course.width,
+      course.height,
+      landscapeOptionsForQuality(quality),
+    ).components;
     const heightfield = visualHeightfield;
     const project = (point: Point) => worldToIso(
       point.x,
@@ -3576,42 +3985,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
         : null,
     ])) as Record<Terrain, SeasonalTerrainTreatment | null>;
 
-    const buildMask = (rings: readonly (readonly Point[])[]) => {
-      const mask = new PIXI.Graphics();
-      mask.eventMode = "none";
-      const nodes = rings
-        .filter((ring) => ring.length >= 3)
-        .map((ring) => ({ ring, area: Math.abs(ringSignedArea(ring)), parent: -1, depth: 0 }))
-        .sort((a, b) => b.area - a.area);
-      for (let index = 0; index < nodes.length; index++) {
-        const point = nodes[index].ring[0];
-        for (let parent = index - 1; parent >= 0; parent--) {
-          if (!pointInLandscapeRing(nodes[parent].ring, point)) continue;
-          nodes[index].parent = parent;
-          nodes[index].depth = nodes[parent].depth + 1;
-          break;
-        }
-      }
-      for (let index = 0; index < nodes.length; index++) {
-        const node = nodes[index];
-        if (node.depth % 2 !== 0) continue;
-        const outer = node.ring.map(project);
-        mask.poly(outer.flatMap((point) => [point.x, point.y]));
-        mask.fill(0xffffff);
-        for (let holeIndex = 0; holeIndex < nodes.length; holeIndex++) {
-          const hole = nodes[holeIndex];
-          if (hole.parent !== index || hole.depth % 2 !== 1) continue;
-          const points = hole.ring.map(project);
-          mask.poly(points.flatMap((point) => [point.x, point.y]));
-          mask.cut();
-        }
-      }
-      return mask;
-    };
-
-    const textureFor = (terrain: Terrain) => {
+    const textureFor = (terrain: Terrain, finePathCore = false) => {
       const baseColor = themedColors[terrain];
-      const authored = props.colorVision === "standard" && !props.terrainPatterns
+      const authored = quality !== "low" && !finePathCore && props.colorVision === "standard" && !props.terrainPatterns
         ? getLandscapeMaterialField(course.theme, terrain, quality)
         : null;
       if (authored && !authored.destroyed) return authored;
@@ -3621,16 +3997,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
         quality,
         props.colorVision,
         props.terrainPatterns ? "pattern" : "plain",
+        finePathCore ? "fine-compacted-core" : "standard",
         baseColor.toString(16),
       ].join(":");
       let texture = landscapeMaterialTexturesRef.current.get(key);
       if (!texture || texture.destroyed) {
-        texture = createLandscapeMaterialTexture(
-          terrain,
-          baseColor,
-          quality,
-          props.terrainPatterns,
-        );
+        texture = finePathCore
+          ? createCompactedPathCoreTexture(baseColor, quality)
+          : createLandscapeMaterialTexture(terrain, baseColor, quality, props.terrainPatterns);
         landscapeMaterialTexturesRef.current.set(key, texture);
       }
       return texture;
@@ -3658,190 +4032,620 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const bandLayer = new PIXI.Container();
     bandLayer.eventMode = "none";
     bandLayer.sortableChildren = true;
-    let remainingShoreRocks = quality === "high" ? 280 : 180;
-    let remainingWaterComponents = components.filter(
-      (component) => component.terrain === "water",
-    ).length;
+    const pathMaterialLayer = new PIXI.Container();
+    pathMaterialLayer.eventMode = "none";
+    pathMaterialLayer.label = "path-material-cross-section";
+    const recessedLayer = new PIXI.Container();
+    recessedLayer.eventMode = "none";
+    const landformLayer = new PIXI.Container();
+    landformLayer.eventMode = "none";
+    // Boundary motifs are globally bounded. Habitat composition owns only
+    // interior clearings, so shoreline reeds/stones have one renderer owner.
+    let remainingContourDetails = quality === "high" ? 440 : quality === "medium" ? 220 : 0;
+    const pathShoulderTexture = props.colorVision === "standard" && !props.terrainPatterns
+      ? getPathMaterialField(course.theme, "shoulder", quality)
+      : null;
+    const pathEdgeTexture = props.colorVision === "standard" && !props.terrainPatterns
+      ? getPathMaterialField(course.theme, "edge", quality)
+      : null;
+    const hasPathMaterialTextures = Boolean(
+      pathShoulderTexture && !pathShoulderTexture.destroyed && pathEdgeTexture && !pathEdgeTexture.destroyed,
+    );
+    let pathComponentCount = 0;
+    let pathStripCount = 0;
+    let pathShoulderWidth = 0;
+    let pathEdgeWidth = 0;
+    const pathOwnership = new Set<string>();
+    const sharedContourDiagnostics = composableRuntime!.buildTerrainPresentationDiagnostics(
+      terrainPresentation!,
+      landscapeComponents,
+      components,
+    );
     const sortedComponents = [...components].sort((a, b) => componentDepth(a) - componentDepth(b));
+    const composableTrace = composableRuntime!.createParklandComposableTrace(
+      course.theme,
+      quality,
+      composableSources?.cues,
+    );
+
+    // One opaque undercoat spans the exact presentation turf-cell union. The
+    // source phase is canonical world x/8,y/8 and therefore never restarts at
+    // a cell, component, chunk, camera rotation, or reload boundary.
+    const presentationLayer = composableSources
+      ? composableRuntime!.appendParklandComposablePresentation(
+        quality === "low" ? rendererLayers.terrain : layer,
+        composableSources,
+        sortedComponents,
+        course,
+        presentationTiles,
+        effectiveTiles,
+        subdivisions,
+        heightfield,
+        rotation,
+        props.colorVision === "standard",
+        themedColors,
+        composableTrace,
+      )
+      : layer;
+    if (presentationLayer !== layer) lowParklandPresentationLayerRef.current = presentationLayer;
+    // Low owns only the composable turf overlay. Existing chunk rendering
+    // continues to own hazards, paths, and elevation; do not route those
+    // categories through the connected Medium/High presentation.
+    if (quality === "low" && composableActive) {
+      // Low retains the economical chunk path for hazards/elevation, but its
+      // cart route needs one joined top plane above the composable turf.
+      // Reusing the canonical path component here removes rotation-dependent
+      // isolated diamonds without opting Low into the connected-surface scene.
+      for (const pathComponent of sortedComponents.filter((component) => component.terrain === "path")) {
+        const pathMesh = composableRuntime!.createParklandComposableMesh(
+          textureFor("path", true),
+          pathComponent.cells,
+          course.width,
+          1,
+          (cell) => cell,
+          (_cell, x, y) => worldToIso(
+            x,
+            y,
+            sampleLandscapeSurfaceHeight(heightfield, pathComponent, x, y),
+            rotation,
+          ),
+          true,
+        );
+        if (!pathMesh) continue;
+        pathMesh.eventMode = "none";
+        pathMesh.label = `parkland-low-joined-route:${pathComponent.topologyKey}`;
+        presentationLayer.addChild(pathMesh);
+      }
+      // Low uses the same deterministic organic ring authority as the
+      // accepted Medium/High hazard floor. The chunk layer beneath has already
+      // been neutralized to rough for these cells, so no stepped diamond can
+      // remain outside the ring mask.
+      for (const hazardComponent of sortedComponents.filter((component) => (
+        component.terrain === "water" || component.terrain === "wetland" || component.terrain === "sand"
+      ))) {
+        const isSand = hazardComponent.terrain === "sand";
+        const visualType = isSand
+          ? classifyBunkerVisualType(
+            hazardComponent.cells,
+            presentationTiles,
+            course.width,
+            course.height,
+          )
+          : undefined;
+        const authoredRings = buildHazardVisualRings(
+          hazardComponent.terrain,
+          hazardComponent.rings,
+          hazardComponent.topologyKey,
+          hazardComponent.cells.length,
+          visualType,
+        );
+        const visualRings = authoredRings.map((ring) => {
+          // At overview resolution the canonical ring's small scallops alias
+          // back into its source cell staircase. Three bounded Chaikin passes
+          // retain the accepted ring inside its authored envelope while
+          // presenting one continuous lake/bunker silhouette.
+          let smoothed = ring.map((point) => ({ ...point }));
+          if (!isSand) for (let pass = 0; pass < 3 && smoothed.length >= 9; pass++) {
+            const source = smoothed;
+            smoothed = source.map((_point, index) => {
+              let x = 0;
+              let y = 0;
+              for (let offset = -4; offset <= 4; offset++) {
+                const sample = source[(index + offset + source.length) % source.length];
+                x += sample.x;
+                y += sample.y;
+              }
+              return { x: x / 9, y: y / 9 };
+            });
+          }
+          for (let pass = 0; pass < 2 && smoothed.length >= 3; pass++) {
+            smoothed = smoothed.flatMap((point, index) => {
+              const next = smoothed[(index + 1) % smoothed.length];
+              return [
+                { x: point.x * 0.75 + next.x * 0.25, y: point.y * 0.75 + next.y * 0.25 },
+                { x: point.x * 0.25 + next.x * 0.75, y: point.y * 0.25 + next.y * 0.75 },
+              ];
+            });
+          }
+          return smoothed;
+        });
+        const plans = visualRings.map((ring) => buildHazardBankFacePlan(
+          hazardComponent.terrain,
+          hazardComponent.cells.length,
+          ring,
+        ));
+        const hazardMesh = composableRuntime!.createParklandComposableMesh(
+          textureFor(hazardComponent.terrain),
+          hazardComponent.presentationCells,
+          course.width,
+          1,
+          (cell) => cell,
+          (_cell, x, y) => worldToIso(
+            x,
+            y,
+            sampleLandscapeSurfaceHeight(heightfield, hazardComponent, x, y),
+            rotation,
+          ),
+          true,
+        );
+        if (!hazardMesh) continue;
+        const mask = composableRuntime!.createLandscapeRingMask(
+          visualRings.map((ring, index) => plans[index]?.innerRing ?? ring),
+          project,
+        );
+        hazardMesh.eventMode = "none";
+        hazardMesh.label = `parkland-low-organic-hazard:${hazardComponent.terrain}:${hazardComponent.topologyKey}`;
+        hazardMesh.mask = mask;
+        presentationLayer.addChild(hazardMesh, mask);
+        const edge = new PIXI.Graphics();
+        edge.eventMode = "none";
+        for (const ring of visualRings) {
+          const points = ring.map(project);
+          if (points.length < 3) continue;
+          edge.moveTo(points[0].x, points[0].y);
+          for (let index = 1; index < points.length; index++) edge.lineTo(points[index].x, points[index].y);
+          edge.lineTo(points[0].x, points[0].y);
+        }
+        edge.stroke({
+          width: isSand ? 1 : 1.35,
+          color: isSand ? shade(themedColors.rough, 1.08) : 0x719da1,
+          alpha: isSand ? 0.62 : 0.7,
+          join: "round",
+          cap: "round",
+        });
+        presentationLayer.addChild(edge);
+      }
+      const diagnostics = composableRuntime!.lowParklandPresentationDiagnostics(composableTrace, components);
+      pathMaterialDiagnosticsRef.current = diagnostics.pathMaterial;
+      parklandComposableDiagnosticsRef.current = diagnostics.composable;
+      sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
+      stampAtlasGeneration(presentationLayer, atlasRevision);
+      recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
+      return;
+    }
     for (const component of sortedComponents) {
-      const positions: number[] = [];
-      const uvs: number[] = [];
-      const indices: number[] = [];
-      const vertexIndexes = new Map<number, number>();
-      const subWidth = course.width * subdivisions + 1;
-      const vertexAt = (sx: number, sy: number) => {
-        const key = sy * subWidth + sx;
-        const cached = vertexIndexes.get(key);
-        if (cached != null) return cached;
-        const x = sx / subdivisions;
-        const y = sy / subdivisions;
-        const point = worldToIso(
+      const presentationTerrain = component.terrain;
+      // Canonical seams may displace slightly beyond authoritative ownership.
+      // The render-only halo guarantees that the accepted mask always has
+      // source geometry beneath it; paths intentionally expose no halo.
+      const exactComposableCue = composableActive
+        && composableRuntime!.isParklandComposableSemantic(component.terrain);
+      const pathMaterialPlan = buildPathMaterialScenePlan(
+        component,
+        presentationTiles,
+        course.width,
+        course.height,
+        quality,
+      );
+      const pathCompositorActive = pathMaterialPlan.mode === "cross-section" && hasPathMaterialTextures;
+      const mesh = exactComposableCue ? null : composableRuntime!.createParklandComposableMesh(
+        textureFor(presentationTerrain, pathCompositorActive),
+        component.presentationCells,
+        course.width,
+        subdivisions,
+        (cell) => cell,
+        (_cell, x, y) => worldToIso(
           x,
           y,
           sampleLandscapeSurfaceHeight(heightfield, component, x, y),
           rotation,
-        );
-        const index = positions.length / 2;
-        positions.push(point.x, point.y);
-        // Eight-tile period, anchored to unrotated world coordinates.
-        uvs.push(x / 8, y / 8);
-        vertexIndexes.set(key, index);
-        return index;
-      };
-      for (const cell of component.cells) {
-        const x = cell % course.width;
-        const y = Math.floor(cell / course.width);
-        for (let dy = 0; dy < subdivisions; dy++) for (let dx = 0; dx < subdivisions; dx++) {
-          const sx = x * subdivisions + dx;
-          const sy = y * subdivisions + dy;
-          const topLeft = vertexAt(sx, sy);
-          const topRight = vertexAt(sx + 1, sy);
-          const bottomRight = vertexAt(sx + 1, sy + 1);
-          const bottomLeft = vertexAt(sx, sy + 1);
-          indices.push(topLeft, topRight, bottomRight, topLeft, bottomRight, bottomLeft);
-        }
-      }
-      if (indices.length === 0) continue;
-      const geometry = new PIXI.MeshGeometry({
-        positions: new Float32Array(positions),
-        uvs: new Float32Array(uvs),
-        indices: new Uint32Array(indices),
-      });
-      const bunkerVisualType = component.terrain === "sand"
+        ),
+        true,
+      );
+      if (!exactComposableCue && !mesh) continue;
+      const isSand = component.terrain === "sand";
+      const bunkerVisualType = isSand
         ? classifyBunkerVisualType(
           component.cells,
-          effectiveTiles,
+          presentationTiles,
           course.width,
           course.height,
         )
         : null;
-      const visualRings = bunkerVisualType
-        ? buildBunkerVisualRings(
+      // One deterministic organic contour is shared by the hazard floor,
+      // bank, lip, and boundary dressing. Gameplay/picking remain whole-cell.
+      const visualRings = bunkerVisualType != null
+        || component.terrain === "water"
+        || component.terrain === "wetland"
+        ? buildHazardVisualRings(
+          component.terrain,
           component.rings,
           component.topologyKey,
           component.cells.length,
-          bunkerVisualType,
+          bunkerVisualType ?? undefined,
         )
         : component.rings;
-      if (component.terrain === "sand") {
-        // The authoritative sand cells stay whole for gameplay. Visually,
-        // replace their square base with world-anchored rough, then reveal
-        // sand through the organic bunker mask below.
-        const roughUnderlay = new PIXI.Mesh({
-          geometry,
-          texture: textureFor("rough"),
-        });
-        roughUnderlay.tint = seasonalByTerrain.rough?.textureTint ?? 0xffffff;
-        roughUnderlay.eventMode = "none";
-        layer.addChild(roughUnderlay);
+      const hazardPlans = visualRings.map((ring) => (
+        buildHazardBankFacePlan(component.terrain, component.cells.length, ring)
+      ));
+      // The generic field's large square chips made the route read as a gray
+      // speckled ribbon. The compositor's core uses the existing deterministic
+      // fine-grain generator instead; it remains world-anchored and the whole
+      // connected mesh remains the gameplay/picking authority.
+      if (mesh) {
+        mesh.tint = seasonalByTerrain[presentationTerrain]?.textureTint ?? 0xffffff;
+        mesh.eventMode = "none";
+        const maskRings = hazardPlans.some(Boolean)
+          ? visualRings.map((ring, index) => hazardPlans[index]?.innerRing ?? ring)
+          : visualRings;
+        const mask = composableRuntime!.createLandscapeRingMask(maskRings, project);
+        mesh.mask = mask;
+        layer.addChild(mesh, mask);
       }
-      const mesh = new PIXI.Mesh({ geometry, texture: textureFor(component.terrain) });
-      mesh.tint = seasonalByTerrain[component.terrain]?.textureTint ?? 0xffffff;
-      mesh.eventMode = "none";
-      const mask = buildMask(visualRings);
-      mesh.mask = mask;
-      layer.addChild(mesh, mask);
+      if (pathCompositorActive) {
+        pathComponentCount++;
+        pathShoulderWidth = pathMaterialPlan.shoulderWidth;
+        pathEdgeWidth = pathMaterialPlan.edgeWidth;
+        for (const strip of pathMaterialPlan.strips) {
+          const data = pathMaterialStripMesh(strip, (point) => worldToIso(
+            point.x,
+            point.y,
+            sampleVisualHeight(heightfield, point.x, point.y),
+            rotation,
+          ));
+          if (data.indices.length === 0) continue;
+          const stripMesh = new PIXI.Mesh({
+            geometry: new PIXI.MeshGeometry({
+              positions: data.positions,
+              uvs: data.uvs,
+              indices: data.indices,
+            }),
+            texture: data.role === "shoulder" ? pathShoulderTexture! : pathEdgeTexture!,
+          });
+          stripMesh.eventMode = "none";
+          stripMesh.label = `path-material:${data.role}:${component.topologyKey}`;
+          pathMaterialLayer.addChild(stripMesh);
+          pathStripCount++;
+          pathOwnership.add(`path>${strip.outsideTerrain}`);
+        }
+      }
       if (component.terrain === "water" || component.terrain === "wetland") {
         const firstCell = component.cells[0];
         const gx = firstCell % course.width;
         const gy = Math.floor(firstCell / course.width);
         surfaceWaterSpritesRef.current.push({
-          sprite: mesh,
-          baseTint: mesh.tint,
+          sprite: mesh!,
+          baseTint: mesh!.tint,
           phase: waterShimmerPhase(gx, gy),
           gx,
           gy,
         });
       }
 
+      const reliefStyle = terrainReliefStyle(course.theme, component.terrain);
+      if (reliefStyle) {
+        const { bankLight, bankDark } = reliefStyle;
+        const projectDepthPoint = (point: { x: number; y: number; height: number }) => worldToIso(
+          point.x,
+          point.y,
+          point.height,
+          rotation,
+        );
+        const depthProfile = hazardDepthProfile(component.terrain, component.cells.length);
+        // A bank is a single joined world-space skirt per canonical ring. The
+        // strip shares its inner endpoints at every turn; a restrained neutral
+        // material avoids screen-direction branches and edge-by-edge panels.
+        for (let ringIndex = 0; ringIndex < visualRings.length; ringIndex++) {
+          const plan = hazardPlans[ringIndex];
+          if (!plan || !depthProfile) continue;
+          const positions: number[] = [];
+          const uvs: number[] = [];
+          const indices = isSand ? [] : [...plan.stripIndices];
+          const lipPoints: Point[] = [];
+          const lip = new PIXI.Graphics();
+          for (let index = 0; index < plan.outerRing.length; index++) {
+            const outer = plan.outerRing[index];
+            const inner = plan.innerRing[index];
+            const inwardLength = Math.hypot(inner.x - outer.x, inner.y - outer.y);
+            if (inwardLength <= 1e-6) continue;
+            const bounded = (point: Point) => ({
+              x: Math.max(0, Math.min(course.width, point.x)),
+              y: Math.max(0, Math.min(course.height, point.y)),
+            });
+            const gradeSample = bounded({
+              x: outer.x - (inner.x - outer.x) / inwardLength * Math.min(inwardLength, depthProfile.bankWidth),
+              y: outer.y - (inner.y - outer.y) / inwardLength * Math.min(inwardLength, depthProfile.bankWidth),
+            });
+            const gradeHeight = sampleVisualHeight(heightfield, gradeSample.x, gradeSample.y);
+            const floorHeight = Math.min(
+              sampleLandscapeSurfaceHeight(heightfield, component, inner.x, inner.y),
+              gradeHeight - depthProfile.minimumBankDrop,
+            );
+            const grade = projectDepthPoint({ ...outer, height: gradeHeight });
+            const floor = projectDepthPoint({ ...inner, height: floorHeight });
+            positions.push(grade.x, grade.y, floor.x, floor.y);
+            uvs.push(0, 0, 1, 1);
+            lipPoints.push(floor);
+          }
+          if (isSand) {
+            // The grade edge owns a sparse, camera-facing turf occlusion.
+            // No tan wall or closed lip is emitted around the inset floor.
+            for (let index = 0; index < plan.outerRing.length; index++) {
+              const next = (index + 1) % plan.outerRing.length;
+              if (
+                positions[index * 4 + 3] + positions[next * 4 + 3]
+                < positions[index * 4 + 1] + positions[next * 4 + 1]
+              ) {
+                indices.push(...plan.stripIndices.slice(index * 6, index * 6 + 6));
+                lip.moveTo(positions[index * 4], positions[index * 4 + 1]);
+                lip.lineTo(positions[next * 4], positions[next * 4 + 1]);
+              }
+            }
+          } else {
+            lip.moveTo(lipPoints[0].x, lipPoints[0].y);
+            for (let index = 1; index < lipPoints.length; index++) lip.lineTo(lipPoints[index].x, lipPoints[index].y);
+            lip.lineTo(lipPoints[0].x, lipPoints[0].y);
+          }
+          const bank = new PIXI.Mesh({
+            geometry: new PIXI.MeshGeometry({
+              positions: new Float32Array(positions),
+              uvs: new Float32Array(uvs),
+              indices: new Uint32Array(indices),
+            }),
+            texture: PIXI.Texture.WHITE,
+          });
+          bank.tint = isSand ? shade(themedColors.rough, 0.72) : shade(bankDark, 1.18);
+          bank.alpha = isSand ? 0.62 : 0.68;
+          recessedLayer.addChild(bank);
+
+          lip.stroke({
+            width: isSand ? 1.35 : plan.lip.width,
+            color: isSand ? shade(themedColors.rough, 1.08) : bankLight,
+            alpha: isSand ? 0.8 : plan.lip.alpha,
+            cap: isSand ? "square" : "round",
+            join: isSand ? "miter" : "round",
+          });
+          recessedLayer.addChild(lip);
+          if (!isSand && lipPoints.length > 2) {
+            const shallow = new PIXI.Graphics();
+            shallow.moveTo(lipPoints[0].x, lipPoints[0].y);
+            for (let index = 1; index < lipPoints.length; index++) {
+              shallow.lineTo(lipPoints[index].x, lipPoints[index].y);
+            }
+            shallow.lineTo(lipPoints[0].x, lipPoints[0].y);
+            shallow.stroke({
+              width: component.terrain === "water" ? 2.2 : 1.6,
+              color: component.terrain === "water" ? 0x78b6b8 : 0x719781,
+              alpha: 0.64,
+              cap: "round",
+              join: "round",
+            });
+            recessedLayer.addChild(shallow);
+          }
+        }
+      }
+
       const boundaryRuns = buildLandscapeBoundaryRuns(
         visualRings,
         component.terrain,
-        effectiveTiles,
+        presentationTiles,
         course.width,
         course.height,
       );
-      let hasOwnedRockyShore = false;
+      if (pathCompositorActive) continue;
       for (const run of boundaryRuns) {
-        const edgeStyle = landscapeEdgeStyle(
+        // ZK-459 will own authored pair edges. Until then, two composable turf
+        // cues meet directly on their shared tile-snapped boundary; retaining
+        // the legacy ribbons here creates dark rounded plates and a second
+        // same-presentation seam owner. Hazard/path transitions are unchanged.
+        if (composableActive && composableTrace.suppressLegacyContour(component.terrain, run.outsideTerrain)) continue;
+        const ribbons = buildSignedContourRibbons(
           component.terrain,
           run.outsideTerrain,
-          bunkerVisualType ?? "greenside",
+          run.points,
+          {
+            theme: getBiomeDefinition(course.theme).key,
+            colorVision: props.colorVision,
+            profile: quality,
+          },
         );
-        if (!edgeStyle) continue;
-        hasOwnedRockyShore ||= Boolean(edgeStyle.shoreRocks);
-        // Draw broad-to-narrow semantic bands only on the pair-owned run so
-        // adjacent components cannot double-stroke the same boundary.
-        for (let strokeIndex = 0; strokeIndex < edgeStyle.bands.length; strokeIndex++) {
-          const stroke = edgeStyle.bands[strokeIndex];
-          const color = "color" in stroke.color
-            ? stroke.color.color
-            : shade(themedColors[stroke.color.terrain], stroke.color.shade);
+        // `buildSignedContourRibbons` returns no result unless the profile's
+        // semantic owner is this component. That is the single seam authority:
+        // the adjacent component never gets a second chance to paint it.
+        for (const ribbon of ribbons) {
+          // Classified bunker rings are the one continuous presentation owner
+          // for sand floor/lip/bank. Suppress the redundant signed quads and
+          // their motifs here: they create acute turn fins on organic bunker
+          // silhouettes without adding a material read.
+          if (!shouldProjectContourRibbon(ribbon, bunkerVisualType != null)) continue;
           const graphics = new PIXI.Graphics();
           graphics.eventMode = "none";
-          graphics.zIndex = edgeStyle.priority + strokeIndex / 100;
-          const points = run.points.map(project);
-          if (points.length < 2) continue;
-          graphics.moveTo(points[0].x, points[0].y);
-          for (let index = 1; index < points.length; index++) {
-            graphics.lineTo(points[index].x, points[index].y);
+          const projectRibbon = (point: Point) => worldToIso(
+            point.x,
+            point.y,
+            // The current shared heightfield (and its macro geometry) owns
+            // every ribbon vertex. Band depth is a restrained visual recess,
+            // not an elevation edit or a second terrain mesh.
+            sampleVisualHeight(heightfield, point.x, point.y) - ribbon.band.depth * 0.045,
+            rotation,
+          );
+          for (let index = 0; index + 1 < ribbon.outer.length; index++) {
+            const outerA = projectRibbon(ribbon.outer[index]);
+            const outerB = projectRibbon(ribbon.outer[index + 1]);
+            const innerB = projectRibbon(ribbon.inner[index + 1]);
+            const innerA = projectRibbon(ribbon.inner[index]);
+            graphics.poly([
+              outerA.x, outerA.y,
+              outerB.x, outerB.y,
+              innerB.x, innerB.y,
+              innerA.x, innerA.y,
+            ]);
+            graphics.fill({ color: ribbon.band.color, alpha: ribbon.band.alpha });
           }
-          graphics.stroke({
-            width: stroke.width,
-            color,
-            alpha: stroke.alpha,
-            join: "round",
-            cap: "round",
-          });
           bandLayer.addChild(graphics);
-        }
-      }
-      if (hasOwnedRockyShore && remainingShoreRocks > 0) {
-        const componentBudget = Math.ceil(
-          remainingShoreRocks / Math.max(1, remainingWaterComponents),
-        );
-        remainingWaterComponents--;
-        const placements = buildShoreRockPlacements(
-          component.rings,
-          component.topologyKey,
-          componentBudget,
-        );
-        remainingShoreRocks -= placements.length;
-        if (placements.length > 0) {
-          const rocks = new PIXI.Graphics();
-          rocks.eventMode = "none";
-          rocks.zIndex = 71;
-          const rockTones = [0x70736a, 0x89877a, 0x9f9986] as const;
-          for (const placement of placements) {
-            const point = project(placement);
-            rocks.ellipse(
-              point.x,
-              point.y + placement.ry * 0.12,
-              placement.rx + 0.9,
-              placement.ry + 0.55,
-            );
-            rocks.fill({ color: 0x3d443e, alpha: 0.78 });
-            rocks.ellipse(point.x, point.y, placement.rx, placement.ry);
-            rocks.fill({ color: rockTones[placement.tone], alpha: 0.94 });
-            rocks.ellipse(
-              point.x - placement.rx * 0.2,
-              point.y - placement.ry * 0.28,
-              placement.rx * 0.38,
-              placement.ry * 0.3,
-            );
-            rocks.fill({ color: 0xc8c1a7, alpha: 0.44 });
+
+          if (ribbon.details.length > 0 && remainingContourDetails > 0) {
+            const motifs = new PIXI.Graphics();
+            motifs.eventMode = "none";
+            const selected = ribbon.details.slice(0, remainingContourDetails);
+            remainingContourDetails -= selected.length;
+            for (const detail of selected) {
+              const point = projectRibbon({
+                x: detail.x + detail.nx * (ribbon.band.offset + ribbon.band.width * 0.5),
+                y: detail.y + detail.ny * (ribbon.band.offset + ribbon.band.width * 0.5),
+              });
+              const scale = detail.scale;
+              if (ribbon.band.detail === "reeds" || ribbon.band.detail === "tufts" || ribbon.band.detail === "blades") {
+                const strokes = ribbon.band.detail === "reeds" ? 2 : 3;
+                for (let stroke = 0; stroke < strokes; stroke++) {
+                  const spread = (stroke - (strokes - 1) / 2) * 1.7;
+                  motifs.moveTo(point.x + spread, point.y + 1.2);
+                  motifs.lineTo(point.x + spread + detail.lean * 5, point.y - (ribbon.band.detail === "reeds" ? 5.5 : 3.5) * scale);
+                  motifs.stroke({
+                    width: ribbon.band.detail === "reeds" ? 1.2 : 0.9,
+                    color: ribbon.band.detail === "reeds" ? 0x65753d : ribbon.band.color,
+                    alpha: 0.72,
+                    cap: "round",
+                  });
+                }
+              } else {
+                const radius = ribbon.band.detail === "stones" ? 2.4 : 1.55;
+                motifs.ellipse(point.x, point.y, radius * scale, radius * 0.62 * scale);
+                motifs.fill({
+                  color: ribbon.band.detail === "stones" ? 0x777064 : ribbon.band.color,
+                  alpha: 0.78,
+                });
+              }
+            }
+            bandLayer.addChild(motifs);
           }
-          bandLayer.addChild(rocks);
         }
       }
     }
+
+    // ZK-1207: crisp runs come from the actual multi-tile level boundary.
+    // They now shade the two adjoining top surfaces instead of filling a dark
+    // vertical wall, so authored steps read as connected rolling shoulders.
+    const landformPlan = buildLandformPresentationPlan(
+      heightfield,
+      effectiveTiles,
+      course.elevations,
+      course.theme,
+      1,
+    );
+    const landformBoundary = (point: (typeof landformPlan.shoulders)[number]["points"][number]) => ({
+      x: (point.upper.x + point.lower.x) / 2,
+      y: (point.upper.y + point.lower.y) / 2,
+    });
+    const boundaryKey = (point: (typeof landformPlan.shoulders)[number]["points"][number]) => {
+      const boundary = landformBoundary(point);
+      return `${boundary.x}:${boundary.y}`;
+    };
+    const visibleShoulders = landformPlan.shoulders.filter((shoulder) => {
+      const [current, next] = shoulder.points;
+      const highA = worldToIso(current.upper.x, current.upper.y, current.lowerHeight, rotation);
+      const highB = worldToIso(next.upper.x, next.upper.y, next.lowerHeight, rotation);
+      const lowA = worldToIso(current.lower.x, current.lower.y, current.lowerHeight, rotation);
+      const lowB = worldToIso(next.lower.x, next.lower.y, next.lowerHeight, rotation);
+      return lowA.y + lowB.y > highA.y + highB.y;
+    });
+    const selectedShoulders: typeof visibleShoulders = [];
+    // The heightfield already contains every authored level. Presentation
+    // selects the one dominant connected grade instead of outlining every
+    // successive level as a parallel terrace rail.
+    const primaryLevel = [...new Set(visibleShoulders.map((shoulder) => shoulder.level))]
+      .map((level) => ({
+        level,
+        length: visibleShoulders
+          .filter((shoulder) => shoulder.level === level)
+          .reduce((sum, shoulder) => sum + shoulder.worldLength, 0),
+      }))
+      .sort((left, right) => right.length - left.length || left.level - right.level)[0]?.level;
+    for (const level of primaryLevel == null ? [] : [primaryLevel]) {
+      const candidates = visibleShoulders.filter((shoulder) => shoulder.level === level);
+      const seed = candidates.reduce((longest, shoulder) => shoulder.worldLength > longest.worldLength ? shoulder : longest);
+      const connected = [seed];
+      const keys = new Set(seed.points.map(boundaryKey));
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const shoulder of candidates) {
+          if (connected.includes(shoulder) || !shoulder.points.some((point) => keys.has(boundaryKey(point)))) continue;
+          connected.push(shoulder);
+          for (const point of shoulder.points) keys.add(boundaryKey(point));
+          changed = true;
+        }
+      }
+      selectedShoulders.push(...connected);
+    }
+    for (const shoulder of selectedShoulders) {
+      const graphics = new PIXI.Graphics();
+      graphics.eventMode = "none";
+      const [current, next] = shoulder.points;
+      const upperA = worldToIso(current.upper.x, current.upper.y, current.upperHeight, rotation);
+      const upperB = worldToIso(next.upper.x, next.upper.y, next.upperHeight, rotation);
+      const lowerA = worldToIso(current.lower.x, current.lower.y, current.lowerHeight, rotation);
+      const lowerB = worldToIso(next.lower.x, next.lower.y, next.lowerHeight, rotation);
+      graphics.poly([
+        upperA.x, upperA.y,
+        upperB.x, upperB.y,
+        lowerB.x, lowerB.y,
+        lowerA.x, lowerA.y,
+      ]);
+      graphics.fill({ color: shade(themedColors.rough, 0.82), alpha: 0.16 });
+      graphics.moveTo(upperA.x, upperA.y);
+      graphics.lineTo(upperB.x, upperB.y);
+      graphics.stroke({
+        width: 1,
+        color: shade(themedColors.rough, 1.12),
+        alpha: 0.3,
+        join: "miter",
+        cap: "square",
+      });
+      landformLayer.addChild(graphics);
+    }
+    layer.addChild(landformLayer);
+    layer.addChild(recessedLayer);
+    layer.addChild(pathMaterialLayer);
     layer.addChild(bandLayer);
+    const pathActive = pathComponentCount > 0 && pathStripCount > 0;
+    pathMaterialDiagnosticsRef.current = {
+      active: pathActive,
+      mode: pathActive ? "cross-section" : "legacy",
+      quality,
+      componentCount: pathComponentCount,
+      stripCount: pathStripCount,
+      roles: pathActive ? ["shoulder", "edge", "core"] : ["core"],
+      textureIds: pathActive
+        ? [
+          `${getBiomeDefinition(course.theme).key}:${quality}:path-shoulder`,
+          `${getBiomeDefinition(course.theme).key}:${quality}:path-edge`,
+          `${getBiomeDefinition(course.theme).key}:${quality}:path-core:fine-compacted`,
+        ]
+        : ["legacy:path"],
+      widths: { shoulder: pathShoulderWidth, edge: pathEdgeWidth },
+      ownership: [...pathOwnership].sort(),
+    };
+    if (composableActive) {
+      parklandComposableDiagnosticsRef.current = composableTrace.diagnostics(landformLayer.children.length);
+    }
+    sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
     stampAtlasGeneration(layer, atlasRevision);
     recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
   }, [
     appReady,
     atlasRevision,
     effectiveTiles,
+    course.buildings,
     course.elevations,
     course.width,
     course.height,
@@ -3849,12 +4653,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
     course.surfaceIntent,
     course.theme,
     landscapeComponents,
+    presentationTiles,
     props.colorVision,
     props.graphicsQuality,
     props.reducedMotion,
     props.seasonalVisualState,
     props.terrainPatterns,
+    presentationRuntime,
     rotation,
+    terrainPresentation,
     visualHeightfield,
   ]);
 
@@ -3882,6 +4689,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     });
     const naturalProps = deferredWorldScenes.createNaturalPropsSceneSystem(
       layers.objects,
+      layers.sceneDecals.naturalProps,
+    );
+    const habitatField = deferredWorldScenes.createHabitatFieldSceneSystem(
       layers.sceneDecals.naturalProps,
     );
     const playerProCollection = deferredWorldScenes.createPlayerProCollectionSceneSystem(layers.objects);
@@ -3912,10 +4722,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
       // Keep host lifecycle order; fixed decal sublayers separately preserve
       // the legacy estate -> natural -> authored-decoration compositing order.
       naturalProps,
+      habitatField,
       createPropertyAssetsSceneSystem(layers.objects),
     ]);
     atmosphereSceneRef.current = atmosphere;
     naturalPropsSceneRef.current = naturalProps;
+    habitatFieldSceneRef.current = habitatField;
     playerProCollectionSceneRef.current = playerProCollection;
     holeMarkersSceneRef.current = holeMarkers;
     mobilityEntitiesSceneRef.current = mobilityEntities;
@@ -3924,6 +4736,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (sceneSystemHostRef.current === host) sceneSystemHostRef.current = null;
       if (atmosphereSceneRef.current === atmosphere) atmosphereSceneRef.current = null;
       if (naturalPropsSceneRef.current === naturalProps) naturalPropsSceneRef.current = null;
+      if (habitatFieldSceneRef.current === habitatField) habitatFieldSceneRef.current = null;
       if (playerProCollectionSceneRef.current === playerProCollection) playerProCollectionSceneRef.current = null;
       if (holeMarkersSceneRef.current === holeMarkers) holeMarkersSceneRef.current = null;
       if (mobilityEntitiesSceneRef.current === mobilityEntities) mobilityEntitiesSceneRef.current = null;
@@ -3950,6 +4763,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
       if (renderedScenes.includes("naturalProps")) {
         stampAtlasGeneration(layers.objects, atlasRevision);
+      }
+      if (renderedScenes.includes("habitatField")) {
+        stampAtlasGeneration(layers.sceneDecals.naturalProps, atlasRevision);
       }
     }
   }, [appReady, atlasRevision, renderSnapshot]);
@@ -4202,10 +5018,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
                   localTiles,
                   localWidth,
                   localHeight,
-                  {
-                    cornerRadius: props.graphicsQuality === "high" ? 0.4 : 0.32,
-                    cornerSegments: props.graphicsQuality === "high" ? 4 : 2,
-                  },
+                  landscapeOptionsForQuality(props.graphicsQuality),
                 ).filter((component) => (
                   component.terrain === selectedTerrain &&
                   component.cells.some((index) => {
@@ -4462,6 +5275,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
       // otherwise.
       const pool = golferPoolRef.current;
       const list = liveActive && props.showGolfers !== false ? golfersRef?.current ?? [] : [];
+      const terrainPreview = terrainStrokePreviewRef.current;
+      habitatFieldSceneRef.current?.tick({
+        golfers: list,
+        editorPreviewPoints: [
+          draftTee,
+          draftGreen,
+          ...clickSplineDraftRef.current,
+          clickSplineHoverRef.current,
+          ...(terrainPreview?.previewKind === "surface-edit"
+            ? terrainPreview.tiles
+            : terrainPreview?.acceptedTiles ?? []),
+        ].filter((point): point is Point => point != null),
+      });
       const seen = new Set<number>();
       const golferById = new Map<number, GolferRenderData>();
       // Entity culling bounds (ZKU-160): golfers outside the viewport skip
@@ -4521,8 +5347,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
               // Drop shadow at the feet, then selection ring, then the two
               // sprite layers (base colors + tinted grayscale clothing).
               const shadow = new PIXI.Graphics();
-              shadow.ellipse(1.5, 0.8, 8, 3.4);
-              shadow.fill({ color: 0x000000, alpha: 0.18 });
+              shadow.label = "golfer-contact-shadow";
+              shadow.position.set(GOLFER_CONTACT_SHADOW.x, GOLFER_CONTACT_SHADOW.y);
+              shadow.ellipse(0, 0, GOLFER_CONTACT_SHADOW.radiusX, GOLFER_CONTACT_SHADOW.radiusY);
+              shadow.fill({ color: 0x000000, alpha: GOLFER_CONTACT_SHADOW.alpha });
               const ring = new PIXI.Graphics();
               ring.visible = false;
               const scale = GOLFER_DISPLAY_W / GOLFER_FRAME_W;
@@ -4597,16 +5425,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
           // Position + entity culling first: an offscreen golfer keeps its
           // trigger bookkeeping (above) but skips all visual work.
-          const ge = surfaceHeightAt(golfer.x + 0.5, golfer.y + 0.5);
-          const c = tileCenterIso(golfer.x, golfer.y, ge, rotation);
+          const grounded = groundedGolferFrame(golfer.x, golfer.y, rotation, surfaceHeightAt);
+          const { screen: c } = grounded;
           entry.holder.position.set(c.x, c.y);
           const offscreen = c.x < cullL || c.x > cullR || c.y < cullT || c.y > cullB;
           entry.holder.visible = !offscreen;
           if (!offscreen) {
             // Quantize the depth key so the container only re-sorts when the
             // golfer crosses a meaningful slice of a tile row, not per frame.
-            const z = Math.round(entityDepth(golfer.x, golfer.y, ge, rotation) * 10) / 10;
-            if (entry.holder.zIndex !== z) entry.holder.zIndex = z;
+            if (entry.holder.zIndex !== grounded.depth) entry.holder.zIndex = grounded.depth;
           }
 
           if (!offscreen && entry.sprite) {
@@ -4623,11 +5450,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
             if (sp.reaction && nowMs >= sp.reactionUntil) sp.reaction = null;
             // Stride phase advances with actual ground covered, so the walk
             // cycle tracks every sim speed for free.
-            if (golfer.segKind === "walk" && sp.lastPos) {
-              sp.walkPhase +=
-                Math.hypot(golfer.x - sp.lastPos.x, golfer.y - sp.lastPos.y) *
-                WALK_STRIDES_PER_TILE;
-            }
+            sp.walkPhase = advanceGroundedWalkPhase(
+              sp.walkPhase,
+              sp.lastPos,
+              golfer,
+              golfer.segKind,
+              WALK_STRIDES_PER_TILE,
+            );
             sp.lastPos = { x: golfer.x, y: golfer.y };
             // Keep the last real facing through pauses; stored in world space
             // so camera rotation re-resolves it naturally.
@@ -4917,7 +5746,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     return () => {
       app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, props.colorVision, props.graphicsQuality, props.reducedMotion, props.seasonalVisualState, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, props.onFrameTime, clampCenter, surfaceHeightAt]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, draftGreen, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, props.colorVision, props.graphicsQuality, props.reducedMotion, props.seasonalVisualState, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, props.onFrameTime, clampCenter, surfaceHeightAt]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
@@ -4956,6 +5785,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
     const beginTerrainStroke = (point: Point, pointerId: number) => {
       if (!onPreviewTerrainStroke) return;
+      if (import.meta.env.MODE === "e2e") {
+        terrainStrokePointerDownCellRef.current = {
+          x: Math.floor(point.x),
+          y: Math.floor(point.y),
+        };
+      }
       const points = [point];
       terrainStrokeRef.current = {
         pointerId,

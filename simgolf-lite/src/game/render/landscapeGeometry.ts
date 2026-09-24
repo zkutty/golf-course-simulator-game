@@ -3,6 +3,13 @@ import type { Course, LandTheme, SurfacePoint, Terrain } from "../models/types";
 import { getBiomeDefinition } from "../models/biomes";
 import { terrainSurfaceInsetPx } from "./terrainRelief";
 import { ELEVATION_STEP_PX } from "./iso";
+import { buildSharedBoundaryContours } from "./sharedBoundaryContours";
+import { buildLandscapeMeshCellSet } from "./landscapeMeshGeometry";
+import {
+  hazardDepthOffsets,
+  hazardDepthProfile,
+  hazardInteriorDropAt,
+} from "./hazardDepth";
 
 export interface LandscapeBounds {
   minX: number;
@@ -15,6 +22,8 @@ export interface LandscapeComponent {
   terrain: Terrain;
   /** Sorted row-major authoritative cells in this connected component. */
   cells: number[];
+  /** Render-only one-cell halo for canonical displaced non-path seams. */
+  presentationCells: readonly number[];
   /** Rounded outer and hole rings in world tile coordinates. */
   rings: SurfacePoint[][];
   bounds: LandscapeBounds;
@@ -60,6 +69,32 @@ export interface VisualHeightfield {
   height: number;
   /** Row-major shared vertices, `(width + 1) * (height + 1)` entries. */
   vertices: Float32Array;
+}
+
+export interface RecessedLandformRibbonPoint {
+  top: SurfacePoint;
+  bottom: SurfacePoint;
+  topHeight: number;
+  bottomHeight: number;
+}
+
+export interface HazardDepthSectionPoint extends SurfacePoint {
+  height: number;
+}
+
+export interface HazardDepthSectionSegment {
+  shelfOuterA: HazardDepthSectionPoint;
+  shelfOuterB: HazardDepthSectionPoint;
+  boundaryA: HazardDepthSectionPoint;
+  boundaryB: HazardDepthSectionPoint;
+  bankInnerA: HazardDepthSectionPoint;
+  bankInnerB: HazardDepthSectionPoint;
+  contactInnerA: HazardDepthSectionPoint;
+  contactInnerB: HazardDepthSectionPoint;
+  shallowInnerA: HazardDepthSectionPoint;
+  shallowInnerB: HazardDepthSectionPoint;
+  deepInnerA: HazardDepthSectionPoint;
+  deepInnerB: HazardDepthSectionPoint;
 }
 
 interface DirectedEdge {
@@ -274,6 +309,8 @@ interface LandscapeComponentSkeleton {
   cells: number[];
   bounds: LandscapeBounds;
   topologyKey: string;
+  /** Presentation geometry also depends on the immediate terrain halo. */
+  boundaryContextKey: string;
 }
 
 function buildLandscapeComponentSkeletons(
@@ -323,7 +360,28 @@ function buildLandscapeComponentSkeletons(
       cells,
       bounds: { minX, minY, maxX, maxY },
       topologyKey: `${terrain}-${fnv1a(`${width}x${height}:${cells.join(",")}`)}`,
+      boundaryContextKey: "",
     });
+  }
+  for (const component of components) {
+    const owned = new Set(component.cells);
+    const halo = new Set<number>();
+    for (const index of component.cells) {
+      const x = index % width;
+      const y = Math.floor(index / width);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbor = ny * width + nx;
+        if (!owned.has(neighbor)) halo.add(neighbor);
+      }
+    }
+    component.boundaryContextKey = fnv1a([...halo]
+      .sort((a, b) => a - b)
+      .map((index) => `${index}:${tiles[index]}`)
+      .join("|"));
   }
   return components;
 }
@@ -333,16 +391,51 @@ function materializeLandscapeComponent(
   width: number,
   height: number,
   options: LandscapeOptions,
+  sharedRings?: readonly (readonly SurfacePoint[])[],
 ): LandscapeComponent {
-  const exactRings = traceComponentRings(skeleton.cells, width, height);
-  const rings = exactRings
-    .map((ring) => roundLandscapeRing(
-      ring,
-      options.cornerRadius ?? 0.36,
-      options.cornerSegments ?? 3,
-    ))
+  // The path compositor consumes the accepted ring verbatim. Other materials
+  // use the grid-wide shared boundary contract so the two sides of a seam can
+  // never expose independently rounded cell tips.
+  const rings = (skeleton.terrain === "path" || !sharedRings
+    ? traceComponentRings(skeleton.cells, width, height).map((ring) => roundLandscapeRing(
+        ring,
+        options.cornerRadius ?? 0.36,
+        options.cornerSegments ?? 3,
+      ))
+    : sharedRings.map((ring) => ring.map((point) => ({ ...point }))))
     .sort((a, b) => Math.abs(ringSignedArea(b)) - Math.abs(ringSignedArea(a)));
-  return { ...skeleton, rings };
+  return {
+    terrain: skeleton.terrain,
+    cells: skeleton.cells,
+    presentationCells: buildLandscapeMeshCellSet(
+      skeleton.cells,
+      skeleton.terrain,
+      width,
+      height,
+    ).presentationCells,
+    bounds: skeleton.bounds,
+    topologyKey: skeleton.topologyKey,
+    rings,
+  };
+}
+
+function sharedRingsForSkeletons(
+  tiles: readonly Terrain[],
+  width: number,
+  height: number,
+  skeletons: readonly LandscapeComponentSkeleton[],
+  options: LandscapeOptions,
+): ReadonlyMap<number, SurfacePoint[][]> {
+  return buildSharedBoundaryContours(
+    tiles,
+    width,
+    height,
+    skeletons.map((skeleton, id) => ({ id, terrain: skeleton.terrain, cells: skeleton.cells })),
+    {
+      cornerRadius: options.cornerRadius ?? 0.36,
+      cornerSegments: options.cornerSegments ?? 3,
+    },
+  ).ringsByComponent;
 }
 
 export function buildLandscapeComponents(
@@ -351,8 +444,15 @@ export function buildLandscapeComponents(
   height: number,
   options: LandscapeOptions = {},
 ): LandscapeComponent[] {
-  return buildLandscapeComponentSkeletons(tiles, width, height)
-    .map((skeleton) => materializeLandscapeComponent(skeleton, width, height, options));
+  const skeletons = buildLandscapeComponentSkeletons(tiles, width, height);
+  const sharedRings = sharedRingsForSkeletons(tiles, width, height, skeletons, options);
+  return skeletons.map((skeleton, index) => materializeLandscapeComponent(
+    skeleton,
+    width,
+    height,
+    options,
+    sharedRings.get(index),
+  ));
 }
 
 /**
@@ -368,19 +468,27 @@ export function createLandscapeComponentCache(): LandscapeComponentCache {
     update(tiles, width, height, options = {}) {
       const styleKey = `${width}x${height}:${options.cornerRadius ?? 0.36}:${options.cornerSegments ?? 3}`;
       const skeletons = buildLandscapeComponentSkeletons(tiles, width, height);
+      const sharedRings = sharedRingsForSkeletons(tiles, width, height, skeletons, options);
       const components: LandscapeComponent[] = [];
       const changed: LandscapeComponent[] = [];
       let hits = 0;
       const next = new Map<string, LandscapeComponent>();
-      for (const skeleton of skeletons) {
-        const key = `${styleKey}:${skeleton.topologyKey}`;
+      for (let index = 0; index < skeletons.length; index++) {
+        const skeleton = skeletons[index];
+        const key = `${styleKey}:${skeleton.topologyKey}:${skeleton.boundaryContextKey}`;
         const cached = previous.get(key);
         if (cached) {
           hits++;
           components.push(cached);
           next.set(key, cached);
         } else {
-          const component = materializeLandscapeComponent(skeleton, width, height, options);
+          const component = materializeLandscapeComponent(
+            skeleton,
+            width,
+            height,
+            options,
+            sharedRings.get(index),
+          );
           changed.push(component);
           components.push(component);
           next.set(key, component);
@@ -650,12 +758,145 @@ export function sampleLandscapeSurfaceHeight(
   if (!pointInLandscapeComponent(component, point)) return base;
   const boundaryDistance = distanceToLandscapeBoundary(component, point);
   if (!Number.isFinite(boundaryDistance) || boundaryDistance <= 0) return base;
-  const t = Math.max(0, Math.min(1, boundaryDistance / 0.42));
-  const eased = t * t * (3 - 2 * t);
-  const maximumDrop = component.cells.length === 1
-    ? 0.34
-    : component.cells.length <= 4
-      ? 0.29
-      : 0.24;
-  return base - eased * maximumDrop;
+  const profile = hazardDepthProfile(component.terrain, component.cells.length);
+  return profile ? base - hazardInteriorDropAt(profile, boundaryDistance) : base;
+}
+
+const boundedPoint = (
+  field: VisualHeightfield,
+  point: SurfacePoint,
+): SurfacePoint => ({
+  x: Math.max(0, Math.min(field.width, point.x)),
+  y: Math.max(0, Math.min(field.height, point.y)),
+});
+
+/**
+ * Edge-local hazard sections consume the accepted shared contour verbatim.
+ * Each contour edge receives its own parallel offsets, so concave turns cannot
+ * create mitres, fins, or inverted quads. The result contains no camera or
+ * ecology state and is therefore identical under every view rotation.
+ */
+export function buildHazardDepthSections(
+  field: VisualHeightfield,
+  component: LandscapeComponent,
+  ring: readonly SurfacePoint[],
+): HazardDepthSectionSegment[] {
+  const profile = hazardDepthProfile(component.terrain, component.cells.length);
+  if (!profile || ring.length < 3) return [];
+  const sections: HazardDepthSectionSegment[] = [];
+  const atOffset = (
+    point: SurfacePoint,
+    inward: SurfacePoint,
+    offset: number,
+    height: number,
+  ): HazardDepthSectionPoint => ({
+    ...boundedPoint(field, {
+      x: point.x + inward.x * offset,
+      y: point.y + inward.y * offset,
+    }),
+    height,
+  });
+
+  for (let index = 0; index < ring.length; index++) {
+    const a = ring[index];
+    const b = ring[(index + 1) % ring.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const edgeLength = Math.hypot(dx, dy);
+    if (!Number.isFinite(edgeLength) || edgeLength <= 1e-6) continue;
+    const candidate = { x: -dy / edgeLength, y: dx / edgeLength };
+    const midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const probe = { x: midpoint.x + candidate.x * 0.04, y: midpoint.y + candidate.y * 0.04 };
+    const inward = pointInLandscapeComponent(component, probe)
+      ? candidate
+      : { x: -candidate.x, y: -candidate.y };
+    const offsets = hazardDepthOffsets(profile, edgeLength);
+    const shelfSampleA = boundedPoint(field, {
+      x: a.x + inward.x * offsets.shelfOuter,
+      y: a.y + inward.y * offsets.shelfOuter,
+    });
+    const shelfSampleB = boundedPoint(field, {
+      x: b.x + inward.x * offsets.shelfOuter,
+      y: b.y + inward.y * offsets.shelfOuter,
+    });
+    const shelfHeightA = sampleVisualHeight(field, shelfSampleA.x, shelfSampleA.y);
+    const shelfHeightB = sampleVisualHeight(field, shelfSampleB.x, shelfSampleB.y);
+    const floorSampleA = boundedPoint(field, {
+      x: a.x + inward.x * offsets.deepInner,
+      y: a.y + inward.y * offsets.deepInner,
+    });
+    const floorSampleB = boundedPoint(field, {
+      x: b.x + inward.x * offsets.deepInner,
+      y: b.y + inward.y * offsets.deepInner,
+    });
+    const sampledFloorA = sampleLandscapeSurfaceHeight(field, component, floorSampleA.x, floorSampleA.y);
+    const sampledFloorB = sampleLandscapeSurfaceHeight(field, component, floorSampleB.x, floorSampleB.y);
+    const floorHeightA = Math.min(sampledFloorA, shelfHeightA - profile.minimumBankDrop);
+    const floorHeightB = Math.min(sampledFloorB, shelfHeightB - profile.minimumBankDrop);
+    sections.push({
+      shelfOuterA: atOffset(a, inward, offsets.shelfOuter, shelfHeightA),
+      shelfOuterB: atOffset(b, inward, offsets.shelfOuter, shelfHeightB),
+      boundaryA: atOffset(a, inward, offsets.boundary, shelfHeightA),
+      boundaryB: atOffset(b, inward, offsets.boundary, shelfHeightB),
+      bankInnerA: atOffset(a, inward, offsets.bankInner, floorHeightA),
+      bankInnerB: atOffset(b, inward, offsets.bankInner, floorHeightB),
+      contactInnerA: atOffset(a, inward, offsets.contactInner, floorHeightA),
+      contactInnerB: atOffset(b, inward, offsets.contactInner, floorHeightB),
+      shallowInnerA: atOffset(a, inward, offsets.shallowInner, floorHeightA),
+      shallowInnerB: atOffset(b, inward, offsets.shallowInner, floorHeightB),
+      deepInnerA: atOffset(a, inward, offsets.deepInner, floorHeightA),
+      deepInnerB: atOffset(b, inward, offsets.deepInner, floorHeightB),
+    });
+  }
+  return sections;
+}
+
+/**
+ * Builds a continuous shoulder-to-floor ribbon around a recessed material.
+ * Normals are derived from the rounded component ring, not tile adjacency,
+ * and heights come from the shared field. The result is rotation-agnostic
+ * world geometry suitable for one connected bank/lip mesh.
+ */
+export function buildRecessedLandformRibbon(
+  field: VisualHeightfield,
+  component: LandscapeComponent,
+  ring: readonly SurfacePoint[],
+): RecessedLandformRibbonPoint[] {
+  if (ring.length < 3 || (component.terrain !== "water" && component.terrain !== "wetland" && component.terrain !== "sand")) return [];
+  const topWidth = component.terrain === "sand" ? 0.16 : 0.38;
+  const bottomWidth = component.terrain === "sand" ? 0.34 : 0.12;
+  const minimumDrop = component.terrain === "sand" ? 0.38 : 0.52;
+  const points: RecessedLandformRibbonPoint[] = [];
+
+  for (let index = 0; index < ring.length; index++) {
+    const previous = ring[(index - 1 + ring.length) % ring.length];
+    const point = ring[index];
+    const next = ring[(index + 1) % ring.length];
+    const tangentX = next.x - previous.x;
+    const tangentY = next.y - previous.y;
+    const tangentLength = Math.max(1e-6, Math.hypot(tangentX, tangentY));
+    const candidate = { x: tangentY / tangentLength, y: -tangentX / tangentLength };
+    const probe = { x: point.x + candidate.x * 0.08, y: point.y + candidate.y * 0.08 };
+    const candidateIsInside = pointInLandscapeComponent(component, probe);
+    const outward = candidateIsInside
+      ? { x: -candidate.x, y: -candidate.y }
+      : candidate;
+    const top = {
+      x: Math.max(0, Math.min(field.width, point.x + outward.x * topWidth)),
+      y: Math.max(0, Math.min(field.height, point.y + outward.y * topWidth)),
+    };
+    const bottom = {
+      x: Math.max(0, Math.min(field.width, point.x - outward.x * bottomWidth)),
+      y: Math.max(0, Math.min(field.height, point.y - outward.y * bottomWidth)),
+    };
+    const sampledBottom = sampleLandscapeSurfaceHeight(field, component, bottom.x, bottom.y);
+    const sampledTop = sampleVisualHeight(field, top.x, top.y);
+    points.push({
+      top,
+      bottom,
+      topHeight: Math.max(sampledTop, sampledBottom + minimumDrop),
+      bottomHeight: sampledBottom,
+    });
+  }
+  return points;
 }

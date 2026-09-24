@@ -2,9 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type * as PIXI from "pixi.js";
 import { DEFAULT_STATE } from "../../../game/gameState";
 import { BIOME_KEYS } from "../../../game/models/biomes";
+import type { Terrain } from "../../../game/models/types";
+import { deriveHabitatComposition } from "../../../game/render/habitatComposition";
+import { createParklandVisualReferenceCourse } from "../../../game/testing/referenceCourse";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import {
   createNaturalPropsSceneSystem,
+  deriveHabitatMassPlans,
+  deriveWetShoreComposition,
   naturalPropFallbackBiome,
 } from "./naturalPropsScene";
 
@@ -50,6 +55,7 @@ function fakeSprite(texture: PIXI.Texture) {
     label: "",
     anchor: point(),
     position: point(),
+    scale: point(),
     skew: point(),
     width: 0,
     height: 0,
@@ -73,6 +79,47 @@ function fakeGraphics() {
     destroy: vi.fn(),
   };
   return graphics as unknown as PIXI.Graphics;
+}
+
+function fakeHabitatContainer() {
+  const container = new FakeContainer() as FakeContainer & {
+    label: string;
+    eventMode: string;
+    position: ReturnType<typeof point>;
+    zIndex: number;
+    sortableChildren: boolean;
+    sortChildren: ReturnType<typeof vi.fn>;
+    destroy: ReturnType<typeof vi.fn>;
+  };
+  Object.assign(container, {
+    label: "",
+    eventMode: "none",
+    position: point(),
+    zIndex: 0,
+    sortableChildren: false,
+    sortChildren: vi.fn(),
+    destroy: vi.fn(),
+  });
+  return container as unknown as PIXI.Container;
+}
+
+function habitatMemberSprites(children: readonly unknown[]): readonly { label: string; zIndex: number }[] {
+  return children.flatMap((child) => {
+    const mass = child as { label?: string; children?: readonly { label?: string; zIndex?: number }[] };
+    if (!mass.label?.startsWith("habitat-mass:")) return [];
+    return (mass.children ?? [])
+      .filter((member) => member.label?.startsWith("habitat-composition:"))
+      .map((member) => ({ label: member.label ?? "", zIndex: member.zIndex ?? 0 }));
+  });
+}
+
+function habitatMassBeds(children: readonly unknown[]): readonly string[] {
+  return children.flatMap((child) => {
+    const mass = child as { children?: readonly { label?: string }[] };
+    return (mass.children ?? [])
+      .map((member) => member.label ?? "")
+      .filter((label) => label.startsWith("habitat-mass-bed:"));
+  });
 }
 
 function snapshot(overrides: Partial<RenderSnapshot> = {}): RenderSnapshot {
@@ -111,6 +158,58 @@ function snapshot(overrides: Partial<RenderSnapshot> = {}): RenderSnapshot {
 }
 
 describe("natural props scene ownership", () => {
+  it("groups Parkland wet-bank reeds and stones without entering course surfaces", () => {
+    const width = 24;
+    const height = 24;
+    const tiles: Terrain[] = Array.from({ length: width * height }, () => "rough" as const);
+    for (let y = 8; y <= 14; y++) for (let x = 8; x <= 14; x++) tiles[y * width + x] = "water";
+    // A maintained route adjacent to the south bank must remain undressed.
+    for (let x = 8; x <= 14; x++) tiles[16 * width + x] = "fairway";
+    const course = {
+      ...DEFAULT_STATE.course,
+      width,
+      height,
+      tiles,
+      elevations: Array.from({ length: width * height }, () => 0),
+      obstacles: [],
+      buildings: [],
+      holes: [],
+      theme: "parkland" as const,
+    };
+    const input = { course, tiles, worldSeed: 1202, quality: "high" as const };
+    const high = deriveWetShoreComposition(input);
+    const medium = deriveWetShoreComposition({ ...input, quality: "medium" });
+
+    expect(high).toEqual(deriveWetShoreComposition(input));
+    expect(high).not.toHaveLength(0);
+    expect(new Set(high.map((detail) => detail.kind))).toEqual(new Set(["reeds", "shore_stones"]));
+    expect(high.every((detail) => tiles[detail.tileY * width + detail.tileX] === "rough")).toBe(true);
+    expect(high.every((detail) => {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const terrain = tiles[(detail.tileY + dy) * width + detail.tileX + dx];
+        if (["fairway", "green", "tee", "path", "sand", "waste_area"].includes(terrain)) return false;
+      }
+      return true;
+    })).toBe(true);
+    expect([...new Map(high.map((detail) => [detail.massId, detail])).keys()].length).toBeGreaterThan(0);
+    expect(medium.map(({ frame: _frame, ...detail }) => detail))
+      .toEqual(high.slice(0, medium.length).map(({ frame: _frame, ...detail }) => detail));
+    expect(medium.every((detail) => detail.frame.endsWith("_0"))).toBe(true);
+    expect(deriveWetShoreComposition({ ...input, quality: "low" })).toEqual([]);
+  });
+
+  it("keeps fixed M19 wet-shore detail counts at normal and detail quality", () => {
+    const course = createParklandVisualReferenceCourse();
+    const high = deriveWetShoreComposition({ course, tiles: course.tiles, worldSeed: 12_160, quality: "high" });
+    const medium = deriveWetShoreComposition({ course, tiles: course.tiles, worldSeed: 12_160, quality: "medium" });
+    expect({ rendered: medium.length, masses: new Set(medium.map((detail) => detail.massId)).size })
+      .toEqual({ rendered: 12, masses: 3 });
+    expect({ rendered: high.length, masses: new Set(high.map((detail) => detail.massId)).size })
+      .toEqual({ rendered: 12, masses: 3 });
+    expect(medium.map(({ frame: _frame, ...detail }) => detail))
+      .toEqual(high.slice(0, medium.length).map(({ frame: _frame, ...detail }) => detail));
+  });
+
   it("derives procedural fallback ownership from every registered biome", () => {
     for (const biome of BIOME_KEYS) {
       expect(naturalPropFallbackBiome(`${biome}_tree_registry_probe`)).toBe(biome);
@@ -118,7 +217,7 @@ describe("natural props scene ownership", () => {
     expect(naturalPropFallbackBiome("unregistered_tree_probe")).toBeNull();
   });
 
-  it("rebuilds and tears down sprites, shadows, and habitats without destroying shared atlas textures", () => {
+  it("rebuilds and tears down Parkland sprites and shadows without ground pads or shared-texture destruction", () => {
     const objects = new FakeContainer();
     const decals = new FakeContainer();
     const atlasTexture = fakeTexture();
@@ -148,13 +247,13 @@ describe("natural props scene ownership", () => {
     expect(scene.rebuildCount()).toBe(1);
     expect(scene.contentCount()).toBe(1);
     expect(objects.children).toHaveLength(1);
-    expect(decals.children).toHaveLength(2);
+    expect(decals.children).toHaveLength(1);
+    expect(scene.legacyHabitatCount()).toBe(0);
 
     scene.update!(snapshot({ atlasRevision: 2 }));
     expect(scene.rebuildCount()).toBe(2);
     expect(sprites[0].destroy).toHaveBeenCalledTimes(1);
     expect(graphics[0].destroy).toHaveBeenCalledTimes(1);
-    expect(graphics[1].destroy).toHaveBeenCalledTimes(1);
     expect(atlasTexture.destroy).not.toHaveBeenCalled();
     expect(scene.contentCount()).toBe(1);
 
@@ -249,5 +348,150 @@ describe("natural props scene ownership", () => {
     expect(scene.contentCount()).toBe(0);
     expect(objects.children).toHaveLength(0);
     expect(decals.children).toHaveLength(0);
+  });
+
+  it("suppresses every legacy Parkland habitat owner while retaining obstacle canopies and shadows", () => {
+    const objects = new FakeContainer();
+    const decals = new FakeContainer();
+    const detailTexture = fakeTexture();
+    const trees = [
+      { x: 6, y: 6, type: "tree" as const },
+      { x: 9, y: 6, type: "tree" as const },
+      { x: 7, y: 9, type: "tree" as const },
+    ];
+    const course = {
+      ...DEFAULT_STATE.course,
+      width: 16,
+      height: 16,
+      tiles: Array.from({ length: 16 * 16 }, () => "rough" as const),
+      elevations: Array.from({ length: 16 * 16 }, () => 0),
+      obstacles: trees,
+      buildings: [],
+      holes: [],
+      theme: "parkland" as const,
+    };
+    const detailTextures = vi.fn(() => detailTexture);
+    const scene = createNaturalPropsSceneSystem(
+      objects as unknown as PIXI.Container,
+      decals as unknown as PIXI.Container,
+      undefined,
+      {
+        getAtlasTexture: () => fakeTexture(),
+        getHabitatAtlasTexture: detailTextures,
+        createSprite: fakeSprite,
+        createGraphics: fakeGraphics,
+        createContainer: fakeHabitatContainer,
+      },
+    );
+
+    scene.create!(snapshot({
+      course,
+      obstacles: trees,
+      effectiveTiles: course.tiles,
+      graphicsQuality: "high",
+    }));
+    expect(scene.contentCount()).toBe(3);
+    expect(scene.habitatDetailCount()).toBe(0);
+    expect(scene.legacyHabitatCount()).toBe(0);
+    expect(detailTextures).not.toHaveBeenCalled();
+    expect(decals.children.some((child) =>
+      (child as { label?: string }).label?.startsWith("habitat-mass:"),
+    )).toBe(false);
+    expect(habitatMassBeds(decals.children)).toEqual([]);
+    expect(scene.habitatMassDiagnostics()).toEqual([]);
+    expect(decals.children).toHaveLength(3);
+
+    const firstPlan = habitatMemberSprites(decals.children);
+    scene.update!(snapshot({
+      course,
+      obstacles: trees,
+      effectiveTiles: course.tiles,
+      graphicsQuality: "high",
+      rotation: 180,
+      atlasRevision: 2,
+    }));
+    expect(habitatMemberSprites(decals.children)).toEqual(firstPlan);
+
+    scene.update!(snapshot({
+      course,
+      obstacles: trees,
+      effectiveTiles: course.tiles,
+      graphicsQuality: "low",
+      atlasRevision: 3,
+    }));
+    expect(scene.habitatDetailCount()).toBe(0);
+    expect(scene.legacyHabitatCount()).toBe(0);
+    expect(habitatMassBeds(decals.children)).toHaveLength(0);
+    expect(decals.children.some((child) =>
+      (child as { label?: string }).label?.startsWith("habitat-mass:"),
+    )).toBe(false);
+    expect(habitatMemberSprites(decals.children)).toEqual([]);
+  });
+
+  it("preserves legacy per-tree habitat presentation outside Parkland", () => {
+    const objects = new FakeContainer();
+    const decals = new FakeContainer();
+    const course = {
+      ...DEFAULT_STATE.course,
+      theme: "links" as const,
+      obstacles: [{ x: 8, y: 9, type: "tree" as const }],
+    };
+    const scene = createNaturalPropsSceneSystem(
+      objects as unknown as PIXI.Container,
+      decals as unknown as PIXI.Container,
+      undefined,
+      {
+        getAtlasTexture: () => fakeTexture(),
+        createSprite: fakeSprite,
+        createGraphics: fakeGraphics,
+      },
+    );
+
+    scene.create!(snapshot({ course, obstacles: course.obstacles, effectiveTiles: course.tiles }));
+    expect(scene.contentCount()).toBe(1);
+    expect(scene.legacyHabitatCount()).toBeGreaterThan(0);
+    expect(decals.children).toHaveLength(2);
+  });
+
+  it("uses one rotation-invariant compositor per compact M19 mass without leaving member cells", () => {
+    const course = createParklandVisualReferenceCourse();
+    const medium = deriveHabitatComposition({ course, worldSeed: 12_160, quality: "medium" });
+    const high = deriveHabitatComposition({ course, worldSeed: 12_160, quality: "high" });
+    const low = deriveHabitatComposition({ course, worldSeed: 12_160, quality: "low" });
+    const compact = (plans: ReturnType<typeof deriveHabitatMassPlans>) => plans.filter((plan) => plan.memberCount >= 3);
+    const mediumPlans = deriveHabitatMassPlans(medium);
+    const highPlans = deriveHabitatMassPlans(high);
+
+    expect({ members: medium.length, compactMasses: compact(mediumPlans).length })
+      .toEqual({ members: 84, compactMasses: 22 });
+    expect({ members: high.length, compactMasses: compact(highPlans).length })
+      .toEqual({ members: 136, compactMasses: 35 });
+    expect(deriveHabitatMassPlans(low)).toEqual([]);
+    expect(deriveHabitatMassPlans(medium)).toEqual(mediumPlans);
+    expect(mediumPlans.reduce((total, plan) => total + plan.bedLobeCount, 0)).toBe(168);
+    expect(highPlans.reduce((total, plan) => total + plan.bedLobeCount, 0)).toBe(272);
+    for (const plan of [...compact(mediumPlans), ...compact(highPlans)]) {
+      expect(plan.retainedMemberCount).toBeGreaterThanOrEqual(3);
+      expect(plan.bedLayerCount).toBe(2);
+      expect(plan.bedLobeCount).toBe(plan.memberCount * 2);
+      expect(plan.order).toHaveLength(plan.memberCount);
+      for (const member of plan.members) {
+        expect(member.worldX).toBeGreaterThanOrEqual(member.tileX + 0.34);
+        expect(member.worldX).toBeLessThanOrEqual(member.tileX + 0.66);
+        expect(member.worldY).toBeGreaterThanOrEqual(member.tileY + 0.34);
+        expect(member.worldY).toBeLessThanOrEqual(member.tileY + 0.66);
+      }
+      const reached = new Set([0]);
+      while (reached.size < plan.members.length) {
+        const before = reached.size;
+        for (const index of [...reached]) for (let candidate = 0; candidate < plan.members.length; candidate++) {
+          const left = plan.members[index];
+          const right = plan.members[candidate];
+          if (Math.abs(left.tileX - right.tileX) <= 1 && Math.abs(left.tileY - right.tileY) <= 1) reached.add(candidate);
+        }
+        if (reached.size === before) break;
+      }
+      expect(reached.size).toBe(plan.members.length);
+    }
   });
 });

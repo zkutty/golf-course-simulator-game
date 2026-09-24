@@ -1,4 +1,5 @@
 import { Component, useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { BugReportSource } from '../bug-reporting/contracts'
 import { BUG_REPORT_OPEN_EVENT } from '../bug-reporting/events'
 import { isBugReportingEnabled, resolveBugReportingEnabled } from '../bug-reporting/feature'
@@ -31,6 +32,16 @@ export function BugReportLauncher() {
   const [source, setSource] = useState<BugReportSource>('manual')
   const [Dialog, setDialog] = useState<LoadedBugReportDialog>()
   const [loadFailed, setLoadFailed] = useState(false)
+  const [dock, setDock] = useState<HTMLElement | null>(null)
+
+  useEffect(() => {
+    const syncDock = () => setDock(document.getElementById?.('cc-bug-report-dock') ?? null)
+    syncDock()
+    if (typeof MutationObserver === 'undefined' || !document.body) return
+    const observer = new MutationObserver(syncDock)
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -80,7 +91,7 @@ export function BugReportLauncher() {
     <button onClick={() => window.location.reload()} type="button">{t('auto.ui.apperrorboundary.reload')}</button>
   </div>
 
-  return <>
+  const content = <>
     <button aria-keyshortcuts="Alt+Shift+B" className="cc-bug-report-launcher" data-testid="bug-report-launcher" onClick={() => {
       setSource('manual')
       setOpen(true)
@@ -89,4 +100,5 @@ export function BugReportLauncher() {
       <Dialog initialSource={source} onClose={() => setOpen(false)} open />
     </DeferredSurfaceErrorBoundary> : null)}
   </>
+  return dock ? createPortal(content, dock) : content
 }
