@@ -84,6 +84,13 @@ describe("ZK-564 deterministic biome authoring fixtures", () => {
 
   it("passes every registered biome against the deployed manifest and authored frames", () => {
     const manifest = realManifest();
+    for (const biome of BIOME_KEYS) {
+      const tiers = manifest.biomes[biome];
+      expect(tiers.medium.base.buildings).toEqual(tiers.high.base.buildings);
+      expect(tiers.low.base.buildings).toEqual(tiers.high.base.buildings);
+      expect(tiers.medium.base.props).toEqual(tiers.high.base.props);
+      expect(tiers.low.base.props).toBeNull();
+    }
     const report = auditBiomeAuthoring({ manifest, inventory: realInventory(manifest) });
     expect(report.pass, JSON.stringify(report.findings.filter((item) => item.category === "required"), null, 2)).toBe(true);
     expect(report.counts.required).toBe(0);

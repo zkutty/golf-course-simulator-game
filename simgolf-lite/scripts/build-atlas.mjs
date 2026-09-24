@@ -344,16 +344,27 @@ function buildSeasonalOverlays(theme, quality) {
 
 for (const theme of themes) {
   manifest.biomes[theme] = {};
+  // Buildings are authored at one scale for every quality tier, and natural
+  // props are identical between High and Medium. Reuse the content-addressed
+  // bundles instead of shipping byte-identical copies under tiered names.
+  const sharedBuildings = buildAtlas(
+    BUILDING_SRC,
+    `buildings-decor-${theme}-high`,
+    (name) => new RegExp(
+      `^(clubhouse|pro_shop|snack_bar|cart_rental|${theme}_(?:clubhouse|pro_shop|snack_bar|cart_rental)_t[123]|${theme}_(?:fence|bench|tee_sign|lamp|bin|parked_cart|flower_bed|planter|ornamental_feature|bridge|boardwalk|bridge_approach))\\.png$`,
+    ).test(name),
+    "1",
+    { hashed: true, outDir: BIOME_OUT_DIR },
+  );
+  const sharedProps = buildAtlas(
+    NATURAL_SRC,
+    `natural-props-${theme}-high`,
+    (name) => name.startsWith(`${theme}_`),
+    "1",
+    { hashed: true, outDir: BIOME_OUT_DIR },
+  );
   for (const quality of qualities) {
-    const buildings = buildAtlas(
-      BUILDING_SRC,
-      `buildings-decor-${theme}-${quality}`,
-      (name) => new RegExp(
-        `^(clubhouse|pro_shop|snack_bar|cart_rental|${theme}_(?:clubhouse|pro_shop|snack_bar|cart_rental)_t[123]|${theme}_(?:fence|bench|tee_sign|lamp|bin|parked_cart|flower_bed|planter|ornamental_feature|bridge|boardwalk|bridge_approach))\\.png$`,
-      ).test(name),
-      "1",
-      { hashed: true, outDir: BIOME_OUT_DIR },
-    );
+    const buildings = sharedBuildings;
     const productionParkland = theme === "parkland" && PARKLAND_TERRAIN_MODE === "production-4x";
     const terrainSource = productionParkland ? PARKLAND_4X_SRC : TERRAIN_SRC;
     const mipDivisor = productionParkland ? ({ high: 1, medium: 2, low: 4 })[quality] : 1;
@@ -384,13 +395,7 @@ for (const theme of themes) {
       );
     const props = quality === "low"
       ? null
-      : buildAtlas(
-        NATURAL_SRC,
-        `natural-props-${theme}-${quality}`,
-        (name) => name.startsWith(`${theme}_`),
-        "1",
-        { hashed: true, outDir: BIOME_OUT_DIR },
-      );
+      : sharedProps;
     const fields = quality === "low"
       ? {}
       : Object.fromEntries(
