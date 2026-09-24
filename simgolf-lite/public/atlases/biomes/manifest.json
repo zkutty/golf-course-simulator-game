@@ -175,9 +175,9 @@
       "medium": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-parkland-medium.908e9dd88de1.json",
-            "image": "buildings-decor-parkland-medium.bc2b7a340d96.png",
-            "jsonBytes": 8259,
+            "json": "buildings-decor-parkland-high.291bca113f4e.json",
+            "image": "buildings-decor-parkland-high.bc2b7a340d96.png",
+            "jsonBytes": 8257,
             "imageBytes": 1169073,
             "frames": 23,
             "width": 1010,
@@ -208,9 +208,9 @@
             "mipDivisor": 1
           },
           "props": {
-            "json": "natural-props-parkland-medium.818ed6a0b873.json",
-            "image": "natural-props-parkland-medium.5f53ac5c0850.png",
-            "jsonBytes": 4429,
+            "json": "natural-props-parkland-high.63c1c05b9bab.json",
+            "image": "natural-props-parkland-high.5f53ac5c0850.png",
+            "jsonBytes": 4427,
             "imageBytes": 395258,
             "frames": 12,
             "width": 912,
@@ -300,9 +300,9 @@
       "low": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-parkland-low.8be0befed026.json",
-            "image": "buildings-decor-parkland-low.bc2b7a340d96.png",
-            "jsonBytes": 8256,
+            "json": "buildings-decor-parkland-high.291bca113f4e.json",
+            "image": "buildings-decor-parkland-high.bc2b7a340d96.png",
+            "jsonBytes": 8257,
             "imageBytes": 1169073,
             "frames": 23,
             "width": 1010,
@@ -458,9 +458,9 @@
       "medium": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-links-medium.7ca984f187fc.json",
-            "image": "buildings-decor-links-medium.8c0014a6e7d2.png",
-            "jsonBytes": 8190,
+            "json": "buildings-decor-links-high.9249a187daa8.json",
+            "image": "buildings-decor-links-high.8c0014a6e7d2.png",
+            "jsonBytes": 8188,
             "imageBytes": 1174975,
             "frames": 23,
             "width": 1010,
@@ -491,9 +491,9 @@
             "mipDivisor": 1
           },
           "props": {
-            "json": "natural-props-links-medium.068c0ed75a63.json",
-            "image": "natural-props-links-medium.cf989f55b359.png",
-            "jsonBytes": 4413,
+            "json": "natural-props-links-high.1a3ca393f2c7.json",
+            "image": "natural-props-links-high.cf989f55b359.png",
+            "jsonBytes": 4411,
             "imageBytes": 325687,
             "frames": 12,
             "width": 912,
@@ -583,9 +583,9 @@
       "low": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-links-low.a16fda0df09f.json",
-            "image": "buildings-decor-links-low.8c0014a6e7d2.png",
-            "jsonBytes": 8187,
+            "json": "buildings-decor-links-high.9249a187daa8.json",
+            "image": "buildings-decor-links-high.8c0014a6e7d2.png",
+            "jsonBytes": 8188,
             "imageBytes": 1174975,
             "frames": 23,
             "width": 1010,
@@ -741,9 +741,9 @@
       "medium": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-desert-medium.adeee417a566.json",
-            "image": "buildings-decor-desert-medium.c39e277c1b6e.png",
-            "jsonBytes": 8213,
+            "json": "buildings-decor-desert-high.ae1b0dc467b2.json",
+            "image": "buildings-decor-desert-high.c39e277c1b6e.png",
+            "jsonBytes": 8211,
             "imageBytes": 1169105,
             "frames": 23,
             "width": 1010,
@@ -774,9 +774,9 @@
             "mipDivisor": 1
           },
           "props": {
-            "json": "natural-props-desert-medium.148f932bb775.json",
-            "image": "natural-props-desert-medium.467a4916294e.png",
-            "jsonBytes": 4429,
+            "json": "natural-props-desert-high.e52bf0b92023.json",
+            "image": "natural-props-desert-high.467a4916294e.png",
+            "jsonBytes": 4427,
             "imageBytes": 335618,
             "frames": 12,
             "width": 912,
@@ -866,9 +866,9 @@
       "low": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-desert-low.de51061ef1f4.json",
-            "image": "buildings-decor-desert-low.c39e277c1b6e.png",
-            "jsonBytes": 8210,
+            "json": "buildings-decor-desert-high.ae1b0dc467b2.json",
+            "image": "buildings-decor-desert-high.c39e277c1b6e.png",
+            "jsonBytes": 8211,
             "imageBytes": 1169105,
             "frames": 23,
             "width": 1010,
