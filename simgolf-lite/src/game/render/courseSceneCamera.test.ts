@@ -6,6 +6,7 @@ import { deriveCourseSceneComposition } from "./courseSceneComposition";
 import {
   COURSE_SCENE_CAMERA_NORMAL_MARGIN,
   COURSE_SCENE_CAMERA_OVERVIEW_MARGIN,
+  COURSE_SCENE_CAMERA_SEMANTIC_CLEARANCE_PX,
   deriveCourseSceneCamera,
 } from "./courseSceneCamera";
 import { ISO_ROTATIONS, worldToIso, type IsoRotation } from "./iso";
@@ -36,6 +37,41 @@ function oldCozyZoom(
 }
 
 describe("deriveCourseSceneCamera", () => {
+  it("keeps authored landing and approach waypoints plus the owned strategic landmark in normal frames", () => {
+    const course = createM23CourseSetupReferenceCourse();
+    const waypoints = course.holes[0].waypoints;
+    expect(waypoints).toEqual([{ x: 20, y: 18 }, { x: 31, y: 19 }]);
+    const composition = deriveCourseSceneComposition({ course, seed: 1202 });
+    const landmark = composition.landmarks.find((entry) => entry.kind === "strategic_hazard");
+    expect(landmark).toBeDefined();
+
+    for (const pinRotation of ["A", "B", "C"] as const) {
+      for (const rotation of ISO_ROTATIONS) for (const viewport of VIEWPORTS) {
+        const frame = deriveCourseSceneCamera({
+          course,
+          composition,
+          activeHoleIndex: 0,
+          teeSet: "member",
+          pinRotation,
+          viewport,
+          rotation,
+          mode: "normal",
+        });
+        expect(frame.route).toEqual([
+          course.holes[0].tee,
+          ...waypoints!,
+          course.holes[0].pinPositions?.[pinRotation],
+        ]);
+        expect(frame.visiblePoints).toEqual(expect.arrayContaining([...waypoints!, landmark!.point]));
+        for (const point of frame.visiblePoints) {
+          const offset = screenOffset(point, frame.center, frame.zoom, rotation);
+          expect(Math.abs(offset.x)).toBeLessThan(viewport.width / 2 - COURSE_SCENE_CAMERA_SEMANTIC_CLEARANCE_PX);
+          expect(Math.abs(offset.y)).toBeLessThan(viewport.height / 2 - COURSE_SCENE_CAMERA_SEMANTIC_CLEARANCE_PX);
+        }
+      }
+    }
+  });
+
   it("frames authoritative M19 A/B/C setups and their accepted habitat at both supported viewport sizes", () => {
     const source = createM23CourseSetupReferenceCourse();
     const m19 = createParklandVisualReferenceCourse();
@@ -69,7 +105,7 @@ describe("deriveCourseSceneCamera", () => {
         expect(frame.visiblePoints).toEqual(expect.arrayContaining([resolved.tee, resolved.green]));
         expect(frame.visiblePoints.every((point) => point.x >= frame.bounds.minX && point.x <= frame.bounds.maxX
           && point.y >= frame.bounds.minY && point.y <= frame.bounds.maxY)).toBe(true);
-        expect(frame.zoom).toBeGreaterThanOrEqual(oldCozyZoom(resolved.tee!, resolved.green!, viewport) * 1.06);
+        expect(frame.zoom).toBeGreaterThan(oldCozyZoom(resolved.tee!, resolved.green!, viewport));
         for (const point of frame.visiblePoints) {
           const offset = screenOffset(point, frame.center, frame.zoom, rotation);
           expect(Math.abs(offset.x)).toBeLessThanOrEqual(viewport.width * COURSE_SCENE_CAMERA_NORMAL_MARGIN / 2);

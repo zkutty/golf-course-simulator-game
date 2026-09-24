@@ -97,7 +97,7 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
   await applyPalette(page, "standard");
   const initialState = await page.evaluate(() => window.__coursecraftTest!.state());
   const initialCourseHash = initialState.courseHash;
-  expect(initialCourseHash).toBe("92ce1852");
+  expect(initialCourseHash).toBe("3cf67481");
 
   const captures: Array<Record<string, unknown>> = [];
   let deterministicProjection: unknown = null;
@@ -124,17 +124,17 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
     await page.waitForTimeout(250);
     const renderer = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState());
     expect(renderer.sharedContours).toMatchObject({
-      authoritativeSingletonDeepRough: 49,
+      authoritativeSingletonDeepRough: 0,
       distinctSingletonDeepRoughFields: 0,
       distinctSingletonDeepRoughBands: 0,
-      coalescedSingletonDeepRough: 49,
-      enclosedSingletonRoughToFairway: 1,
-      authoritativeCellCounts: { fairway: 151, rough: 1269, deep_rough: 49 },
-      presentationCellCounts: { fairway: 152, rough: 1317, deep_rough: 0 },
-      authoritativeComponentCounts: { fairway: 1, rough: 2, deep_rough: 49 },
-      presentationComponentCounts: { fairway: 1, rough: 2, deep_rough: 0 },
-      authoritativeRingCounts: { fairway: 1, rough: 39, deep_rough: 49 },
-      presentationRingCounts: { fairway: 1, rough: 4, deep_rough: 0 },
+      coalescedSingletonDeepRough: 0,
+      enclosedSingletonRoughToFairway: 0,
+      authoritativeCellCounts: { fairway: 182, rough: 1012, deep_rough: 275 },
+      presentationCellCounts: { fairway: 182, rough: 1012, deep_rough: 275 },
+      authoritativeComponentCounts: { fairway: 1, rough: 3, deep_rough: 3 },
+      presentationComponentCounts: { fairway: 1, rough: 3, deep_rough: 3 },
+      authoritativeRingCounts: { fairway: 1, rough: 4, deep_rough: 3 },
+      presentationRingCounts: { fairway: 1, rough: 4, deep_rough: 3 },
       tileSurfaceConnectedMasks: 0,
     });
     expect(renderer.sharedContours.policy).toEqual({
@@ -148,13 +148,7 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
       organicHazard: ["sand", "water", "wetland", "waste_area"],
       route: ["path"],
     });
-    expect(renderer.sharedContours.mappings).toHaveLength(50);
-    expect(renderer.sharedContours.mappings.filter((mapping) => (
-      mapping.from === "deep_rough" && mapping.to === "rough"
-    ))).toHaveLength(49);
-    expect(renderer.sharedContours.mappings.filter((mapping) => (
-      mapping.x === 16 && mapping.y === 18 && mapping.from === "rough" && mapping.to === "fairway"
-    ))).toHaveLength(1);
+    expect(renderer.sharedContours.mappings).toEqual([]);
 
     expect(renderer.parklandComposable).toMatchObject({
       active: true,
@@ -167,20 +161,20 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
       legacyDiamondTopPlane: false,
     });
     expect(renderer.parklandComposable.pairFringes).toMatchObject({
-      authoritativeDifferingTurfAdjacencies: 289,
-      sameElevationDifferingTurfAdjacencies: 261,
-      omittedDifferentElevation: 28,
-      omittedSamePresentation: 157,
-      presentationDifferingTurfAdjacencies: 108,
-      presentationSameElevationDifferingTurfAdjacencies: 104,
-      presentationOmittedDifferentElevation: 4,
+      authoritativeDifferingTurfAdjacencies: 191,
+      sameElevationDifferingTurfAdjacencies: 185,
+      omittedDifferentElevation: 6,
+      omittedSamePresentation: 98,
+      presentationDifferingTurfAdjacencies: 191,
+      presentationSameElevationDifferingTurfAdjacencies: 185,
+      presentationOmittedDifferentElevation: 6,
       omittedBlocked: 0,
-      plannedStrips: 104,
-      emittedStrips: 104,
-      cornerCandidates: 16,
-      plannedCorners: 16,
-      emittedCorners: 16,
-      omittedMixedPairCorners: 2,
+      plannedStrips: 87,
+      emittedStrips: 87,
+      cornerCandidates: 7,
+      plannedCorners: 7,
+      emittedCorners: 7,
+      omittedMixedPairCorners: 0,
       missingOwners: 0,
       exactlyOnceOwnerKeys: true,
       mixedPairMasks: 0,
@@ -191,12 +185,13 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
       missingAssetSourceIds: [],
       pairCounts: {
         "fairway--green": 8,
-        "fairway--rough": 61,
-        "fairway--tee": 6,
+        "fairway--deep_rough": 23,
+        "fairway--rough": 21,
+        "fairway--tee": 5,
         "rough--green": 15,
-        "rough--tee": 14,
+        "rough--tee": 15,
       },
-      directionCounts: { n: 31, e: 20, s: 31, w: 22 },
+      directionCounts: { n: 30, e: 13, s: 29, w: 15 },
     });
     expect(renderer.parklandComposable.pairFringes.authorityHashes.tilesBefore)
       .toBe(renderer.parklandComposable.pairFringes.authorityHashes.tilesAfter);

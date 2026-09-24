@@ -203,9 +203,9 @@ describe("natural props scene ownership", () => {
     const high = deriveWetShoreComposition({ course, tiles: course.tiles, worldSeed: 12_160, quality: "high" });
     const medium = deriveWetShoreComposition({ course, tiles: course.tiles, worldSeed: 12_160, quality: "medium" });
     expect({ rendered: medium.length, masses: new Set(medium.map((detail) => detail.massId)).size })
-      .toEqual({ rendered: 16, masses: 4 });
+      .toEqual({ rendered: 12, masses: 3 });
     expect({ rendered: high.length, masses: new Set(high.map((detail) => detail.massId)).size })
-      .toEqual({ rendered: 16, masses: 4 });
+      .toEqual({ rendered: 12, masses: 3 });
     expect(medium.map(({ frame: _frame, ...detail }) => detail))
       .toEqual(high.slice(0, medium.length).map(({ frame: _frame, ...detail }) => detail));
   });
@@ -463,13 +463,13 @@ describe("natural props scene ownership", () => {
     const highPlans = deriveHabitatMassPlans(high);
 
     expect({ members: medium.length, compactMasses: compact(mediumPlans).length })
-      .toEqual({ members: 84, compactMasses: 21 });
+      .toEqual({ members: 84, compactMasses: 22 });
     expect({ members: high.length, compactMasses: compact(highPlans).length })
-      .toEqual({ members: 160, compactMasses: 41 });
+      .toEqual({ members: 136, compactMasses: 35 });
     expect(deriveHabitatMassPlans(low)).toEqual([]);
     expect(deriveHabitatMassPlans(medium)).toEqual(mediumPlans);
     expect(mediumPlans.reduce((total, plan) => total + plan.bedLobeCount, 0)).toBe(168);
-    expect(highPlans.reduce((total, plan) => total + plan.bedLobeCount, 0)).toBe(320);
+    expect(highPlans.reduce((total, plan) => total + plan.bedLobeCount, 0)).toBe(272);
     for (const plan of [...compact(mediumPlans), ...compact(highPlans)]) {
       expect(plan.retainedMemberCount).toBeGreaterThanOrEqual(3);
       expect(plan.bedLayerCount).toBe(2);

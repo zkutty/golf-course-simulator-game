@@ -1129,6 +1129,7 @@ export const en = {
   "workspace.action.content": "Content",
   "workspace.action.photo": "Photo",
   "workspace.more": "More",
+  "workspace.moreNavigation": "More navigation",
   "workspace.alert": "New activity",
   "workspace.action.inspect": "Inspect",
   "inspector.aria": "Contextual inspector",

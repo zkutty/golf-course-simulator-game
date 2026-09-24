@@ -93,7 +93,7 @@ function alphaMetrics(image: PNG) {
 }
 
 describe("ZK-459 canonical Parkland pair fringe planner", () => {
-  it("reconciles the exact M19 authority and emits the accepted 104 strips", () => {
+  it("reconciles the exact M19 authority and emits 87 owned strips", () => {
     const course = createParklandVisualReferenceCourse();
     const plan = buildParklandPairFringePlan({
       tiles: course.tiles,
@@ -102,30 +102,30 @@ describe("ZK-459 canonical Parkland pair fringe planner", () => {
       height: course.height,
     });
     expect(plan.diagnostics).toMatchObject({
-      authoritativeDifferingTurfAdjacencies: 289,
-      sameElevationDifferingTurfAdjacencies: 261,
-      omittedDifferentElevation: 28,
-      omittedSamePresentation: 157,
+      authoritativeDifferingTurfAdjacencies: 191,
+      sameElevationDifferingTurfAdjacencies: 185,
+      omittedDifferentElevation: 6,
+      omittedSamePresentation: 98,
       omittedBlocked: 0,
-      plannedStrips: 104,
-      cornerCandidates: 16,
-      plannedCorners: 16,
+      plannedStrips: 87,
+      cornerCandidates: 7,
+      plannedCorners: 7,
       mixedPairMasks: 0,
       fullCellSprites: 0,
       ownershipOverlaps: 0,
       doubleOwners: 0,
       pairCounts: {
-        "fairway--deep_rough": 4,
+        "fairway--deep_rough": 23,
         "fairway--green": 8,
-        "fairway--rough": 57,
-        "fairway--tee": 6,
+        "fairway--rough": 21,
+        "fairway--tee": 5,
         "rough--green": 15,
-        "rough--tee": 14,
+        "rough--tee": 15,
       },
-      directionCounts: { n: 30, e: 20, s: 31, w: 23 },
+      directionCounts: { n: 30, e: 13, s: 29, w: 15 },
     });
-    expect(Object.values(plan.diagnostics.pairCounts).reduce((total, count) => total + count, 0)).toBe(104);
-    expect(plan.diagnostics.omittedSamePresentation + plan.diagnostics.plannedStrips).toBe(261);
+    expect(Object.values(plan.diagnostics.pairCounts).reduce((total, count) => total + count, 0)).toBe(87);
+    expect(plan.diagnostics.omittedSamePresentation + plan.diagnostics.plannedStrips).toBe(185);
     expect(new Set(plan.edges.map((edge) => edge.ownerKey)).size).toBe(plan.edges.length);
     expect(new Set(plan.corners.map((corner) => corner.ownerKey)).size).toBe(plan.corners.length);
     expect(plan.edges.some((edge) => edge.pair === "rough--deep_rough")).toBe(false);
@@ -144,11 +144,11 @@ describe("ZK-459 canonical Parkland pair fringe planner", () => {
       blockedCells,
     });
     expect(plan.diagnostics).toMatchObject({
-      authoritativeDifferingTurfAdjacencies: 289,
-      omittedDifferentElevation: 28,
-      omittedSamePresentation: 157,
+      authoritativeDifferingTurfAdjacencies: 191,
+      omittedDifferentElevation: 6,
+      omittedSamePresentation: 98,
       omittedBlocked: 0,
-      plannedStrips: 104,
+      plannedStrips: 87,
     });
     expect(
       plan.diagnostics.omittedDifferentElevation

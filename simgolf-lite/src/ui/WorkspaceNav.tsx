@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { IconUi, type UiIconName } from "../assets/icons";
 import { useI18n } from "../i18n/useI18n";
 
@@ -60,9 +60,11 @@ export function WorkspaceNav(props: {
 }) {
   const { t } = useI18n();
   const [advanced, setAdvanced] = useState(false);
+  const stripRef = useRef<HTMLDivElement>(null);
   const actions = (Object.keys(ACTION_WORKSPACE) as WorkspaceActionId[]).filter((id) => ACTION_WORKSPACE[id] === props.workspace);
   return (
     <nav className="cc-workspace-nav" aria-label={t("workspace.nav")}>
+      <div className="cc-workspace-nav-strip" ref={stripRef}>
       <div className="cc-workspace-tabs">
         {(["design", "operate", "legacy"] as WorkspaceId[]).map((id) => (
           <button
@@ -119,6 +121,13 @@ export function WorkspaceNav(props: {
           </div>
         )}
       </div>
+      </div>
+      <button
+        className="cc-workspace-scroll-cue"
+        aria-label={t("workspace.moreNavigation")}
+        onClick={() => stripRef.current?.scrollBy({ left: Math.max(180, stripRef.current.clientWidth * 0.7), behavior: "smooth" })}
+        type="button"
+      >{t("workspace.more")} <span aria-hidden="true">→</span></button>
     </nav>
   );
 }

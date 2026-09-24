@@ -1,10 +1,40 @@
 import * as PIXI from "pixi.js";
 import { getPinPosition } from "../../../game/models/courseSetup";
-import type { Point } from "../../../game/models/types";
+import type { Hole, PinRotation, Point } from "../../../game/models/types";
 import { TILE_H, TILE_W, tileCenterIso, worldToIso } from "../../../game/render/iso";
 import type { RenderSceneSystem } from "../SceneSystemHost";
 
 const ROUTE_LABEL = "route-overlay";
+
+export type ShotDestinationRole = "landing" | "approach" | "pin";
+export interface ShotDestinationMarkerGeometry {
+  index: number;
+  point: Point;
+  role: ShotDestinationRole;
+}
+
+type ShotDestinationGraphic = PIXI.Graphics & {
+  __coursecraftShotDestination?: ShotDestinationMarkerGeometry;
+};
+
+export function routeDestinationHierarchy(
+  hole: Hole | undefined,
+  activePinRotation: PinRotation,
+  solverDestinations: readonly Point[] | undefined,
+): readonly Point[] {
+  const pin = hole && (getPinPosition(hole, activePinRotation) ?? getPinPosition(hole, "A"));
+  const source = hole?.waypoints?.length ? hole.waypoints : solverDestinations ?? [];
+  const seen = new Set<string>();
+  const hierarchy: Point[] = [];
+  for (const point of source) {
+    const key = `${point.x}:${point.y}`;
+    if (pin && point.x === pin.x && point.y === pin.y || seen.has(key)) continue;
+    seen.add(key);
+    hierarchy.push({ ...point });
+  }
+  if (pin) hierarchy.push({ ...pin });
+  return hierarchy;
+}
 
 export type ArchitectureOverlayTestLayer = "all" | "traces" | "points" | "none";
 export interface ArchitectureOverlayTestState {
@@ -201,17 +231,46 @@ export function createArchitectureOverlaySceneSystem(
           graphics.lineTo(projected.x, projected.y);
         }
         graphics.stroke({ width: 3, color: 0xf7cf62, alpha: 1 });
-        // The smooth line is sampled geometry, while markers remain one-per
-        // solver-selected full-shot destination. Never infer a shot from a
-        // draw sample: sampling density is a visual implementation detail.
-        for (const point of snapshot.activeShotDestinations ?? []) {
-          const projected = project(point);
-          graphics.circle(projected.x, projected.y, 4);
-          graphics.fill({ color: 0xfff4ba, alpha: 1 });
-          graphics.stroke({ width: 2, color: 0x173f31, alpha: 1 });
-        }
         graphics.label = ROUTE_LABEL;
         layer.addChild(graphics);
+        // The smooth line is sampled geometry, while these markers remain
+        // one-per solver-selected full-shot destination. Their presentation
+        // follows semantic order rather than sampling density: the first
+        // target is the landing, intermediate targets are approaches, and the
+        // final target is the pin already reinforced by the live flag.
+        const destinations = snapshot.activeShotDestinations ?? [];
+        destinations.forEach((point, index) => {
+          const projected = project(point);
+          const role: ShotDestinationRole = index === destinations.length - 1
+            ? "pin"
+            : index === 0 ? "landing" : "approach";
+          const marker = new PIXI.Graphics() as ShotDestinationGraphic;
+          marker.label = ROUTE_LABEL;
+          marker.__coursecraftShotDestination = { index, point, role };
+          if (role === "landing") {
+            marker.circle(projected.x, projected.y, 13);
+            marker.fill({ color: 0x173f31, alpha: 0.82 });
+            marker.stroke({ width: 3, color: 0xffe27a, alpha: 1 });
+            marker.circle(projected.x, projected.y, 5);
+            marker.fill({ color: 0xfff4ba, alpha: 1 });
+          } else if (role === "approach") {
+            marker.poly([
+              projected.x, projected.y - 12,
+              projected.x + 12, projected.y,
+              projected.x, projected.y + 12,
+              projected.x - 12, projected.y,
+            ]);
+            marker.fill({ color: 0xffe27a, alpha: 0.94 });
+            marker.stroke({ width: 3, color: 0x173f31, alpha: 1 });
+            marker.circle(projected.x, projected.y, 3);
+            marker.fill({ color: 0x173f31, alpha: 1 });
+          } else {
+            marker.circle(projected.x, projected.y, 7);
+            marker.fill({ color: 0xfff4ba, alpha: 0.72 });
+            marker.stroke({ width: 2.5, color: 0x173f31, alpha: 1 });
+          }
+          layer.addChild(marker);
+        });
       }
 
       if (import.meta.env.DEV && referenceLayerGraphics && typeof window !== "undefined") {

@@ -221,7 +221,7 @@ import type { PlayerProCollectionSceneSystem } from "./renderer/scenes/playerPro
 import type { HoleMarkersSceneSystem } from "./renderer/scenes/holeMarkersScene";
 import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
-import { createArchitectureOverlaySceneSystem } from "./renderer/scenes/architectureOverlayScene";
+import { createArchitectureOverlaySceneSystem, routeDestinationHierarchy } from "./renderer/scenes/architectureOverlayScene";
 import { createPropertyAssetsSceneSystem } from "./renderer/scenes/propertyAssetsScene";
 import { createSurfaceEditorSceneSystem } from "./renderer/scenes/surfaceEditorScene";
 import {
@@ -1593,6 +1593,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
     surfaceHeightAt,
     terrainTool,
   ]);
+  const activeRouteDestinations = useMemo(() => {
+    const hole = holes[activeHoleIndex];
+    return routeDestinationHierarchy(hole, course.activePinRotation ?? "A", activeShotRoute?.destinations);
+  }, [activeHoleIndex, activeShotRoute?.destinations, course.activePinRotation, holes]);
   const renderRevisions = renderRevisionTrackerRef.current.update({
     atmosphere: [
       atlasRevision,
@@ -1697,7 +1701,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     surfaceEditor: surfaceEditorRevisionDependencies(surfaceEditorSnapshot),
     architectureOverlay: architectureOverlayRevisionDependencies({
       activePath: activeShotRoute?.geometry,
-      activeShotDestinations: activeShotRoute?.destinations,
+      activeShotDestinations: activeRouteDestinations,
       activePinRotation: course.activePinRotation,
       failingCorridorSegments,
       holes,
@@ -1746,7 +1750,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     selectedTeeSet: props.selectedTeeSet,
     flagColor: props.flagColor,
     activePath: activeShotRoute?.geometry,
-    activeShotDestinations: activeShotRoute?.destinations,
+    activeShotDestinations: activeRouteDestinations,
     architectureWarnings: props.architectureWarnings,
     architectureOverlay: props.architectureOverlay,
     paceBottlenecks: props.paceBottlenecks,
@@ -1790,6 +1794,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.selectedTeeSet,
     props.flagColor,
     activeShotRoute,
+    activeRouteDestinations,
     props.architectureWarnings,
     props.architectureOverlay,
     props.paceBottlenecks,
@@ -2189,6 +2194,22 @@ export function PixiStage(requestedProps: PixiStageProps) {
     if (import.meta.env.MODE !== "e2e" || !appReady) return;
     const api = {
       fitWholeCourse: () => fitWholeCourse(true),
+      fitDefaultView: () => fitDefaultView(true),
+      sceneComposition: () => courseSceneComposition ?? null,
+      normalFrame: () => {
+        const app = appRef.current;
+        const deriveCamera = sceneCameraDeriversRef.current?.[1];
+        if (!app || !courseSceneComposition || !deriveCamera) return null;
+        return deriveCamera({
+          course,
+          composition: courseSceneComposition,
+          activeHoleIndex,
+          teeSet: selectedTeeSet,
+          viewport: { width: app.screen.width, height: app.screen.height },
+          rotation,
+          mode: "normal",
+        });
+      },
       viewport: (): { width: number; height: number } | null => {
         const app = appRef.current;
         return app ? { width: app.screen.width, height: app.screen.height } : null;
@@ -2201,6 +2222,31 @@ export function PixiStage(requestedProps: PixiStageProps) {
           getElevation(course, Math.floor(x), Math.floor(y)),
         );
       },
+      activeFlagGeometry: () => {
+        const flag = layersRef.current?.objects.children.find((child) => child.label === "hole-pin-flag");
+        if (!flag) return null;
+        const bounds = flag.getBounds();
+        const anchor = flag.getGlobalPosition();
+        return {
+          anchor: { x: anchor.x, y: anchor.y },
+          bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+        };
+      },
+      activeShotDestinationGeometry: () => layersRef.current?.terrainDecals.children.flatMap((child) => {
+        const marker = child as PIXI.Container & {
+          __coursecraftShotDestination?: {
+            index: number;
+            point: { x: number; y: number };
+            role: "landing" | "approach" | "pin";
+          };
+        };
+        if (!marker.__coursecraftShotDestination) return [];
+        const bounds = marker.getBounds();
+        return [{
+          ...marker.__coursecraftShotDestination,
+          bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+        }];
+      }) ?? [],
       openingPreview: (): { targetIds: number[]; outlineCount: number } | null => {
         const graphic = layersRef.current?.fx.children.find((child) => child.label === "opening-preview-markers") as (PIXI.Graphics & {
           __coursecraftOpeningPreview?: { targetIds: number[]; outlineCount: number };
@@ -2407,6 +2453,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
     applyCamera,
     atlasContext,
     course,
+    courseSceneComposition,
+    activeHoleIndex,
+    selectedTeeSet,
+    fitDefaultView,
     fitWholeCourse,
     minimumZoom,
     requestedProps.course.theme,
