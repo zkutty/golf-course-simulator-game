@@ -294,7 +294,7 @@ describe("shared presentation boundary graph", () => {
     }
   });
 
-  it("keeps M19's 49 authoritative singleton deep-rough cells while densifying their seams", () => {
+  it("keeps M19's three connected deep-rough masses while densifying their seams", () => {
     const course = createParklandVisualReferenceCourse();
     const input = fixture(Array.from({ length: course.height }, (_, y) => course.tiles
       .slice(y * course.width, (y + 1) * course.width)
@@ -303,10 +303,10 @@ describe("shared presentation boundary graph", () => {
         green: "G", tee: "T", deep_rough: "D",
       } as Partial<Record<Terrain, string>>)[terrain] ?? "R")
       .join("")));
-    const singletonDeepRough = input.components.filter((component) => (
-      component.terrain === "deep_rough" && component.cells.length === 1
+    const wildMargins = input.components.filter((component) => (
+      component.terrain === "deep_rough"
     ));
-    expect(singletonDeepRough).toHaveLength(49);
+    expect(wildMargins.map((component) => component.cells.length)).toEqual([38, 125, 112]);
     const result = buildSharedBoundaryContours(
       input.tiles,
       input.width,
@@ -314,7 +314,7 @@ describe("shared presentation boundary graph", () => {
       input.components,
       { cornerRadius: 0.4, cornerSegments: 4 },
     );
-    for (const component of singletonDeepRough) {
+    for (const component of wildMargins) {
       const ring = result.ringsByComponent.get(component.id)![0];
       expect(ring.length).toBeGreaterThan(4);
       expect(maximumSegmentLength(ring, true)).toBeLessThanOrEqual(

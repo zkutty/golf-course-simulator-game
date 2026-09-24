@@ -55,7 +55,8 @@ describe("habitat composition", () => {
       worldSeed: ZK1202_HABITAT_SEED,
       quality: "high",
     }));
-    expect(high).toHaveLength(HABITAT_COMPOSITION_CAPS.high);
+    expect(high).toHaveLength(122);
+    expect(high.length).toBeLessThanOrEqual(HABITAT_COMPOSITION_CAPS.high);
     expect(medium).toHaveLength(HABITAT_COMPOSITION_CAPS.medium);
     expect(low).toEqual([]);
     expect(high.slice(0, medium.length).map(({ frame: _frame, ...placement }) => placement))
@@ -139,11 +140,11 @@ describe("habitat composition", () => {
 
     // These values are a world-space contract for the real M19 fixture, not
     // the dedicated secondary ecology fixture used by the earlier packet.
-    expect(summary(medium)).toEqual({ rendered: 84, compactMasses: 21, roles: {
-      woodland_floor: 28, understory: 27, rough_mass: 21, rock_plant_cluster: 8,
+    expect(summary(medium)).toEqual({ rendered: 84, compactMasses: 22, roles: {
+      woodland_floor: 27, understory: 26, rough_mass: 23, rock_plant_cluster: 8,
     } });
-    expect(summary(high)).toEqual({ rendered: 160, compactMasses: 41, roles: {
-      woodland_floor: 58, understory: 43, rough_mass: 42, rock_plant_cluster: 17,
+    expect(summary(high)).toEqual({ rendered: 136, compactMasses: 35, roles: {
+      woodland_floor: 37, understory: 36, rough_mass: 45, rock_plant_cluster: 18,
     } });
     expect(medium.map(({ frame: _frame, ...placement }) => placement))
       .toEqual(high.slice(0, medium.length).map(({ frame: _frame, ...placement }) => placement));

@@ -21,30 +21,23 @@ describe("ZK-1200 terrain presentation policy", () => {
     ]);
   });
 
-  it("maps exactly M19's 49 deep-rough singletons and enclosed rough island", () => {
+  it("retains M19's connected wild margins without singleton remaps", () => {
     const course = createParklandVisualReferenceCourse();
     const before = [...course.tiles];
     const result = buildTerrainPresentationMap(course.tiles, course.width, course.height, course.theme);
     const deepRough = result.mappings.filter((mapping) => mapping.reason === "singleton-deep-rough");
     const rough = result.mappings.filter((mapping) => mapping.reason === "enclosed-singleton-rough");
 
-    expect(deepRough).toHaveLength(49);
+    expect(deepRough).toHaveLength(0);
     expect(deepRough.every((mapping) => mapping.from === "deep_rough" && mapping.to === "rough")).toBe(true);
-    expect(rough).toEqual([{
-      cell: 18 * course.width + 16,
-      x: 16,
-      y: 18,
-      from: "rough",
-      to: "fairway",
-      reason: "enclosed-singleton-rough",
-    }]);
+    expect(rough).toEqual([]);
     expect(course.tiles).toEqual(before);
     expect(result.authoritativeTiles).toBe(course.tiles);
     expect(terrainCellCounts(result.authoritativeTiles)).toMatchObject({
-      fairway: 151, rough: 1269, deep_rough: 49,
+      fairway: 182, rough: 1012, deep_rough: 275,
     });
     expect(terrainCellCounts(result.presentationTiles)).toMatchObject({
-      fairway: 152, rough: 1317, deep_rough: 0,
+      fairway: 182, rough: 1012, deep_rough: 275,
     });
   });
 
@@ -53,7 +46,7 @@ describe("ZK-1200 terrain presentation policy", () => {
     const first = buildTerrainPresentationMap(course.tiles, course.width, course.height, course.theme);
     const second = buildTerrainPresentationMap(course.tiles, course.width, course.height, course.theme);
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
-    expect(first.authoritativeBytes).not.toBe(first.presentationBytes);
+    expect(first.authoritativeBytes).toBe(first.presentationBytes);
 
     const links = buildTerrainPresentationMap(course.tiles, course.width, course.height, "links");
     expect(links.mappings).toEqual([]);
@@ -61,7 +54,7 @@ describe("ZK-1200 terrain presentation policy", () => {
     expect(links.authoritativeBytes).toBe(links.presentationBytes);
   });
 
-  it("feeds both presentation sides to the pair planner without changing 104/16 ownership", () => {
+  it("feeds both presentation sides to the pair planner with exact 87/7 ownership", () => {
     const course = createParklandVisualReferenceCourse();
     const presentation = buildTerrainPresentationMap(
       course.tiles, course.width, course.height, course.theme,
@@ -74,29 +67,30 @@ describe("ZK-1200 terrain presentation policy", () => {
       height: course.height,
     });
     expect(plan.diagnostics).toMatchObject({
-      authoritativeDifferingTurfAdjacencies: 108,
-      sameElevationDifferingTurfAdjacencies: 104,
-      omittedDifferentElevation: 4,
-      omittedSamePresentation: 0,
+      authoritativeDifferingTurfAdjacencies: 191,
+      sameElevationDifferingTurfAdjacencies: 185,
+      omittedDifferentElevation: 6,
+      omittedSamePresentation: 98,
       omittedBlocked: 0,
-      plannedStrips: 104,
-      cornerCandidates: 16,
-      plannedCorners: 16,
-      omittedMixedPairCorners: 2,
+      plannedStrips: 87,
+      cornerCandidates: 7,
+      plannedCorners: 7,
+      omittedMixedPairCorners: 0,
       mixedPairMasks: 0,
       fullCellSprites: 0,
       ownershipOverlaps: 0,
       doubleOwners: 0,
       pairCounts: {
+        "fairway--deep_rough": 23,
         "fairway--green": 8,
-        "fairway--rough": 61,
-        "fairway--tee": 6,
+        "fairway--rough": 21,
+        "fairway--tee": 5,
         "rough--green": 15,
-        "rough--tee": 14,
+        "rough--tee": 15,
       },
-      directionCounts: { n: 31, e: 20, s: 31, w: 22 },
+      directionCounts: { n: 30, e: 13, s: 29, w: 15 },
     });
-    expect(new Set(plan.edges.map((edge) => edge.ownerKey)).size).toBe(104);
-    expect(new Set(plan.corners.map((corner) => corner.ownerKey)).size).toBe(16);
+    expect(new Set(plan.edges.map((edge) => edge.ownerKey)).size).toBe(87);
+    expect(new Set(plan.corners.map((corner) => corner.ownerKey)).size).toBe(7);
   });
 });

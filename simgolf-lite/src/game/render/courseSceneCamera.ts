@@ -11,6 +11,8 @@ export const COURSE_SCENE_CAMERA_MIN_ZOOM = 0.15;
 export const COURSE_SCENE_CAMERA_MAX_ZOOM = 8;
 export const COURSE_SCENE_CAMERA_NORMAL_MARGIN = 0.98;
 export const COURSE_SCENE_CAMERA_OVERVIEW_MARGIN = 0.95;
+/** Minimum screen clearance for semantic markers around a normal hole frame. */
+export const COURSE_SCENE_CAMERA_SEMANTIC_CLEARANCE_PX = 18;
 
 const PLAYABLE_MARGIN_TILES = 1;
 const HABITAT_RELEVANCE_TILES = 5;
@@ -61,6 +63,7 @@ function projectedFitZoom(
   viewport: CourseSceneCameraInput["viewport"],
   rotation: IsoRotation,
   margin: number,
+  clearancePx = 0,
 ): number {
   const corners = [
     worldToIso(bounds.minX, bounds.minY, 0, rotation),
@@ -71,7 +74,10 @@ function projectedFitZoom(
   const width = Math.max(...corners.map((point) => point.x)) - Math.min(...corners.map((point) => point.x));
   const height = Math.max(...corners.map((point) => point.y)) - Math.min(...corners.map((point) => point.y));
   if (width <= 0 || height <= 0 || viewport.width <= 0 || viewport.height <= 0) return 1;
-  const fitted = Math.min((viewport.width * margin) / width, (viewport.height * margin) / height);
+  const fitted = Math.min(
+    Math.max(0, viewport.width * margin - 2 * clearancePx) / width,
+    Math.max(0, viewport.height * margin - 2 * clearancePx) / height,
+  );
   return Math.max(COURSE_SCENE_CAMERA_MIN_ZOOM, Math.min(COURSE_SCENE_CAMERA_MAX_ZOOM, fitted));
 }
 
@@ -94,6 +100,7 @@ function frameForBounds(
       input.viewport,
       input.rotation,
       mode === "overview" ? COURSE_SCENE_CAMERA_OVERVIEW_MARGIN : COURSE_SCENE_CAMERA_NORMAL_MARGIN,
+      mode === "overview" ? 0 : COURSE_SCENE_CAMERA_SEMANTIC_CLEARANCE_PX,
     ),
     bounds: { ...bounds },
     holeId: details.holeId,

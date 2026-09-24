@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type * as PIXI from "pixi.js";
 import { DEFAULT_STATE } from "../../../game/gameState";
+import { getPinPosition } from "../../../game/models/courseSetup";
 import type { Hole } from "../../../game/models/types";
+import { deriveCourseSceneCamera } from "../../../game/render/courseSceneCamera";
+import { deriveCourseSceneComposition } from "../../../game/render/courseSceneComposition";
+import { tileCenterIso } from "../../../game/render/iso";
+import { entityDepth } from "../../../game/render/objectPlacement";
+import { createM23CourseSetupReferenceCourse } from "../../../game/testing/referenceCourse";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import { createHoleMarkersSceneSystem } from "./holeMarkersScene";
 
@@ -116,6 +122,50 @@ function snapshot(overrides: Partial<RenderSnapshot> = {}): RenderSnapshot {
 }
 
 describe("hole marker scene ownership", () => {
+  it("keeps the B/C live flag, active cup, and normal route on the same authored pin", () => {
+    const decals = container();
+    const objects = container();
+    const scene = createHoleMarkersSceneSystem(
+      decals as unknown as PIXI.Container,
+      objects as unknown as PIXI.Container,
+      { createGraphics: () => graphics() as unknown as PIXI.Graphics },
+    );
+    const source = createM23CourseSetupReferenceCourse();
+    const composition = deriveCourseSceneComposition({ course: source, seed: 1202 });
+    for (const activePinRotation of ["B", "C"] as const) {
+      vi.clearAllMocks();
+      const course = { ...source, activePinRotation };
+      const render = snapshot({
+        course,
+        holes: course.holes,
+        draftTee: null,
+        draftGreen: null,
+        rotation: 90,
+        surfaceHeightAt: () => 2,
+      });
+      scene.update?.(render);
+      const pin = getPinPosition(course.holes[0], activePinRotation)!;
+      const center = tileCenterIso(pin.x, pin.y, 2, render.rotation);
+      const flag = objects.children[0] as ReturnType<typeof graphics>;
+      expect(flag.position.set).toHaveBeenCalledWith(center.x, center.y);
+      expect(flag.zIndex).toBeCloseTo(entityDepth(pin.x + 0.5, pin.y + 0.5, 2, render.rotation) + 0.05);
+
+      const activeCup = (decals.children as ReturnType<typeof graphics>[]).find((marker) => marker.fill.mock.calls
+        .some(([fill]) => typeof fill === "object" && fill.color === 0x1c2b1c && fill.alpha === 1));
+      expect(activeCup).toBeDefined();
+      expect(activeCup!.ellipse).toHaveBeenCalledWith(center.x, center.y, 4.5, 2.2);
+      const frame = deriveCourseSceneCamera({
+        course,
+        composition,
+        activeHoleIndex: 0,
+        viewport: { width: 800, height: 500 },
+        rotation: 90,
+        mode: "normal",
+      });
+      expect(frame.route.at(-1)).toEqual(pin);
+    }
+  });
+
   it("pools marker graphics, retains flags, and removes stale holes", () => {
     const decals = container();
     const objects = container();
@@ -173,6 +223,9 @@ describe("hole marker scene ownership", () => {
     expect(scene.markerCount()).toBe(0);
     expect(scene.flagCount()).toBe(1);
     const flag = created.at(-1)!;
+    expect(flag.circle).toHaveBeenCalledWith(0, 0, 4.5);
+    expect(flag.lineTo).toHaveBeenCalledWith(0, -46);
+    expect(flag.poly).toHaveBeenCalledWith(expect.arrayContaining([18, expect.any(Number), 22]));
     scene.tick(2_000);
     expect(flag.clear).toHaveBeenCalledTimes(2);
 

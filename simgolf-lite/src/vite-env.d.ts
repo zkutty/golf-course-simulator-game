@@ -18,6 +18,19 @@ interface Window {
   advanceTime?: (ms: number) => void;
   __coursecraftPixiTest?: {
     fitWholeCourse(): void;
+    fitDefaultView(): void;
+    sceneComposition(): import("./game/render/courseSceneComposition").CourseSceneCompositionPlanV1 | null;
+    normalFrame(): import("./game/render/courseSceneCamera").CourseSceneCameraFrame | null;
+    activeFlagGeometry(): {
+      anchor: { x: number; y: number };
+      bounds: { x: number; y: number; width: number; height: number };
+    } | null;
+    activeShotDestinationGeometry(): Array<{
+      index: number;
+      point: { x: number; y: number };
+      role: "landing" | "approach" | "pin";
+      bounds: { x: number; y: number; width: number; height: number };
+    }>;
     viewport(): { width: number; height: number } | null;
     tileToScreen(x: number, y: number): { x: number; y: number } | null;
     openingPreview(): { targetIds: number[]; outlineCount: number } | null;
@@ -126,6 +139,8 @@ interface Window {
     } | null;
   };
   __coursecraftTest?: {
+    enterNormalGameplayForTest(): void;
+    setPinRotationForTest(rotation: import("./game/models/types").PinRotation): void;
     setGraphicsQualityFixture(quality: "high" | "medium" | "low"): void;
     setRendererThemeFixture(theme: import("./game/models/types").LandTheme): void;
     setRendererSeasonFixture(season: import("./game/seasons/types").SeasonName): void;

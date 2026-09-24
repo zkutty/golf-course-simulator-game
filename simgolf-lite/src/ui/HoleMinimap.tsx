@@ -30,6 +30,8 @@ interface HoleMinimapProps {
   golfersRef?: React.RefObject<GolferRenderData[]>;
   onCenter?: (center: Point) => void;
   thumbnail?: boolean;
+  /** Normal gameplay may opt into the compact affordance without changing editor/overview defaults. */
+  closed?: boolean;
 }
 
 function boundsFor(course: Course, hole?: Hole, holeIndex = 0): BoundingBox {
@@ -65,11 +67,11 @@ function strokeDiamond(ctx: CanvasRenderingContext2D, center: Point, scale: numb
 }
 
 /** North-up isometric course overview and reusable per-hole thumbnail. */
-export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onCenter, thumbnail = false }: HoleMinimapProps) {
+export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onCenter, thumbnail = false, closed = false }: HoleMinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const baseRef = useRef<HTMLCanvasElement | null>(null);
   const transformRef = useRef<MinimapTransform | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(closed);
   const [renderState, setRenderState] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
@@ -187,7 +189,7 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
     return () => window.clearInterval(interval);
   }, [collapsed, course, golfersRef, renderState, thumbnail, view]);
 
-  if (collapsed && !thumbnail) {
+  if (collapsed) {
     return <button className="cc-minimap-toggle" onClick={() => setCollapsed(false)} aria-label={translateCurrent("minimap.open")}>◇</button>;
   }
 

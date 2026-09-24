@@ -66,6 +66,7 @@ import { useAudio } from "./audio/audioContext";
 import { audioManager } from "./audio/AudioManager";
 const HoleInspector = lazy(() => import("./ui/HoleInspector").then((module) => ({ default: module.HoleInspector })));
 const HUD = lazy(() => import("./ui/HUD").then((module) => ({ default: module.HUD })));
+const HoleMinimap = lazy(() => import("./ui/HoleMinimap").then((module) => ({ default: module.HoleMinimap })));
 const holeEditorNavButtonStyle: CSSProperties = {
   padding: "8px 16px", borderRadius: 6, border: "1px solid #ddd", background: "#fff",
   fontWeight: 600, fontSize: 13, cursor: "pointer",
@@ -73,7 +74,6 @@ const holeEditorNavButtonStyle: CSSProperties = {
 import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState, IsoCameraSnapshot } from "./game/render/camera";
 import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
-import { HoleMinimap } from "./ui/HoleMinimap";
 import { createNewGame } from "./game/gen/newGame";
 import type { GameSetup } from "./game/models/setup";
 import { BIOME_KEYS, isLandTheme } from "./game/models/biomes";
@@ -3469,6 +3469,17 @@ export default function App() {
       }
     };
     window.__coursecraftTest = {
+      enterNormalGameplayForTest: () => {
+        exitHoleEditMode();
+        selectWorkspace("operate");
+        setViewMode("COZY");
+      },
+      setPinRotationForTest: (pinRotation) => {
+        if (!(["A", "B", "C"] as const).includes(pinRotation)) {
+          throw new Error(`Unsupported pin rotation: ${pinRotation}`);
+        }
+        dispatch({ type: "SET_ACTIVE_PIN_ROTATION", pinRotation });
+      },
       setGraphicsQualityFixture: (quality) => {
         if (quality !== "high" && quality !== "medium" && quality !== "low") {
           throw new Error(`Unsupported renderer quality fixture: ${quality}`);
@@ -4496,7 +4507,7 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, gameSession, live, pendingLoadingContext, pendingWeekReport, redoTerrainEdit, runSeasonCommand, screen, setWorld, t, tutorialProgress, undoTerrainEdit]);
+  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, gameSession, live, pendingLoadingContext, pendingWeekReport, redoTerrainEdit, runSeasonCommand, screen, selectWorkspace, setWorld, t, tutorialProgress, undoTerrainEdit]);
 
   function newGameFromMenu() {
     void audio.unlock();
@@ -6442,15 +6453,17 @@ export default function App() {
               </div>
             )}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
-            {!activeTutorial && <HoleMinimap
+            {!activeTutorial && <Suspense fallback={null}><HoleMinimap
+              key={viewMode}
               course={activeOperatingCourse}
+              closed={workspace === "operate" && viewMode === "COZY"}
               view={minimapView}
               golfersRef={live.golfersRef}
               onCenter={(center: Point) => {
                 if (holeEditCamera) setHoleEditCamera({ ...holeEditCamera, center });
                 else setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }));
               }}
-            />}
+            /></Suspense>}
             <LiveControls
               status={live.status}
               speed={live.speed}
