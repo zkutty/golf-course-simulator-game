@@ -7,7 +7,7 @@
   "verdict": "machine-pass/HOLD_FOR_HUMAN_VALIDATION",
   "sourceBindings": {
     "e2e/zk813-profile-certification.e2e.ts": "1bddd877eeca74b03664b109a46865384fa606fef2eb5fdab4b679194735a561",
-    "src/game/testing/zk813ProfileCertification.test.ts": "0cacbbc11e78e8ca09a0dccb7e0c7a903e8ff04f29d652d8b8c305b9c273c240",
+    "src/game/testing/zk813ProfileCertification.test.ts": "8063f378e39012d551c4c872f7e4bcdaabc0e1384290d58d7bcb083083cf4ecd",
     "src/game/testing/zk813ProfileCertification.ts": "d4d395da2e6f44abe6db4dac5f846f527a96dd8c0e13b95ad68a04fd0868deb7"
   },
   "evidence": [
@@ -38,7 +38,7 @@
         },
         {
           "path": "src/game/testing/zk813ProfileCertification.test.ts",
-          "sha256": "0cacbbc11e78e8ca09a0dccb7e0c7a903e8ff04f29d652d8b8c305b9c273c240"
+          "sha256": "8063f378e39012d551c4c872f7e4bcdaabc0e1384290d58d7bcb083083cf4ecd"
         }
       ],
       "observed": {
@@ -71,8 +71,8 @@
         "exactGraduationRows": 9,
         "campaignReceipts": 6,
         "deterministicReplay": true,
-        "determinismHash": "25e6c333",
-        "observationDigest": "252959e66b297b08f9ac0acf6edb49395b85aa206504765bf27433ce17ed29bf"
+        "determinismHash": "37b1eb1d",
+        "observationDigest": "40835c7b3f281e20751765f735a732d4d8bc2b59694dafef4ee2b38145363eba"
       },
       "scope": "Observed semantic assertions cover exact legacy axes and policies, exact monotonic graduation edges, exact campaign receipts, canonical save-carrier hashes, and multi-week replay."
     },
@@ -136,7 +136,7 @@
         },
         {
           "path": "src/game/testing/zk813ProfileCertification.test.ts",
-          "sha256": "0cacbbc11e78e8ca09a0dccb7e0c7a903e8ff04f29d652d8b8c305b9c273c240"
+          "sha256": "8063f378e39012d551c4c872f7e4bcdaabc0e1384290d58d7bcb083083cf4ecd"
         }
       ],
       "observed": {
@@ -183,5 +183,5 @@
     "Campaign fixture assignments and receipt persistence are structural evidence; they are not fabricated proof of real phase mastery, finale completion, or a 12–18 hour player journey.",
     "Browser automation and native-shaped in-memory canonical-hash equality do not replace packaged-desktop or real filesystem validation."
   ],
-  "reportDigest": "bb71a9d479cc04fae5b2afd7304965490c08796a2f82fd355a655267c7d1a7d4"
+  "reportDigest": "9bed350fed303339ab673019e9a5f58eaf3fbf537b5ec2196331b3b9a97380d5"
 }
