@@ -85,7 +85,7 @@ function structuredPassingResults() {
     rows,
     campaign: { chapterCount: 6, phaseEvidenceCount: 18, serializedReceipts: 6, receipts: structuredClone(receipts) },
     longSession: { days: 8, courses: 2, weatherKinds: 2, uninterruptedHash: "cafebabe", resumedHash: "cafebabe" },
-    determinismHash: "25e6c333",
+    determinismHash: "37b1eb1d",
   };
   const titles = manifest.evidenceExpectations.find((entry) => entry.class === "browser").expected.caseTitles;
   const playwright = {
