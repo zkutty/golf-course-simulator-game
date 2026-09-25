@@ -21,6 +21,19 @@ interface Window {
     fitDefaultView(): void;
     sceneComposition(): import("./game/render/courseSceneComposition").CourseSceneCompositionPlanV1 | null;
     normalFrame(): import("./game/render/courseSceneCamera").CourseSceneCameraFrame | null;
+    cameraTransform(): {
+      world: {
+        position: { x: number; y: number };
+        pivot: { x: number; y: number };
+        scale: { x: number; y: number };
+      };
+      camera: {
+        center: { x: number; y: number };
+        targetCenter: { x: number; y: number };
+        zoom: number;
+        targetZoom: number;
+      };
+    } | null;
     activeFlagGeometry(): {
       anchor: { x: number; y: number };
       bounds: { x: number; y: number; width: number; height: number };
