@@ -289,7 +289,7 @@ test("ZK-473 captures settled actual normal gameplay frames at Medium and High",
     captureContract: {
       flow: "Established enterNormalGameplayForTest reducer/UI transition (exit Hole Edit, Operate workspace, Cozy view); no Pixi focus/zoom/fit helper is called by this test.",
       tiers: "Each cardinal actual normal frame is captured once at Medium/normal LOD and once at High/detail LOD without changing its frame or transform.",
-      transientUi: "Only existing visible achievement-toast dismissal and pointer-gutter behavior from the normal-frame E2E suite are used.",
+      transientUi: "Only existing visible achievement-toast dismissal and pointer-gutter behavior from the normal-frame E2E suite are used. The persistent Event Feed/status strip is product UI; no established test-only mechanism clears it, so it remains visible rather than being hidden for evidence.",
     },
     runtimeErrors,
     terrainState: await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState()),
