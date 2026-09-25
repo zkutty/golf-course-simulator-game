@@ -1,17 +1,98 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import {
   PARKLAND_COMPOSABLE_LOW_CONTRACT,
   PARKLAND_COMPOSABLE_SEMANTICS,
+  PARKLAND_MATERIAL_FIELD_SOURCE_HASHES,
   activeParklandComposableDiagnostics,
   isParklandComposableSemantic,
   parklandComposableUv,
+  parklandCueTint,
   parklandSemanticFieldStyle,
+  resolveParklandSemanticFieldSources,
   suppressesLegacyComposableTurfContour,
   transformParklandCuePixels,
   usesParklandComposableMaterial,
 } from "./parklandComposable";
+
+const TEST_COLORS = {
+  fairway: 0x4fa64f,
+  rough: 0x4a8547,
+  deep_rough: 0x356d37,
+  green: 0x63bd5a,
+  tee: 0x70b65b,
+} as const;
+
+function finalSurfaceMetrics(
+  quality: "high" | "medium",
+  semantic: typeof PARKLAND_COMPOSABLE_SEMANTICS[number],
+  useAuthoritativeField: boolean,
+) {
+  const field = PNG.sync.read(readFileSync(new URL(
+    `../../assets/terrain/fields/parkland/${quality}/${semantic}.png`,
+    import.meta.url,
+  )));
+  const undercoat = PNG.sync.read(readFileSync(new URL(
+    `../../assets/terrain/parkland-composable-v1/${quality}/undercoat.png`,
+    import.meta.url,
+  )));
+  const cue = PNG.sync.read(readFileSync(new URL(
+    `../../assets/terrain/parkland-composable-v1/${quality}/semantic-${semantic}.png`,
+    import.meta.url,
+  )));
+  const transformed = transformParklandCuePixels(cue.data, cue.width, cue.height, semantic, quality);
+  const tint = parklandCueTint(semantic, TEST_COLORS[semantic], true);
+  const tintChannels = [(tint >> 16) & 0xff, (tint >> 8) & 0xff, tint & 0xff] as const;
+  const pixels = new Uint8ClampedArray(field.width * field.height * 4);
+  const source = useAuthoritativeField ? field : undercoat;
+  for (let y = 0; y < field.height; y++) for (let x = 0; x < field.width; x++) {
+    const offset = (y * field.width + x) * 4;
+    const sourceX = Math.floor(x * source.width / field.width) % source.width;
+    const sourceY = Math.floor(y * source.height / field.height) % source.height;
+    const sourceOffset = (sourceY * source.width + sourceX) * 4;
+    const cueX = Math.floor(x * cue.width / field.width) % cue.width;
+    const cueY = Math.floor(y * cue.height / field.height) % cue.height;
+    const cueOffset = (cueY * cue.width + cueX) * 4;
+    const alpha = transformed.pixels[cueOffset + 3] / 255;
+    for (let channel = 0; channel < 3; channel++) {
+      const ink = transformed.pixels[cueOffset + channel] * tintChannels[channel] / 255;
+      pixels[offset + channel] = Math.round(
+        ink * alpha + source.data[sourceOffset + channel] * (1 - alpha),
+      );
+    }
+    pixels[offset + 3] = 255;
+  }
+  const luminance = (x: number, y: number) => {
+    const offset = (y * field.width + x) * 4;
+    return pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722;
+  };
+  let total = 0;
+  let squaredTotal = 0;
+  let gradientTotal = 0;
+  let gradientSamples = 0;
+  for (let y = 0; y < field.height; y++) for (let x = 0; x < field.width; x++) {
+    const value = luminance(x, y);
+    total += value;
+    squaredTotal += value ** 2;
+    if (x + 1 < field.width) {
+      gradientTotal += Math.abs(value - luminance(x + 1, y));
+      gradientSamples++;
+    }
+    if (y + 1 < field.height) {
+      gradientTotal += Math.abs(value - luminance(x, y + 1));
+      gradientSamples++;
+    }
+  }
+  const count = field.width * field.height;
+  const mean = total / count;
+  return {
+    mean,
+    rmsContrast: Math.sqrt(squaredTotal / count - mean ** 2),
+    gradientEnergy: gradientTotal / gradientSamples,
+  };
+}
 
 describe("ZK-461 Parkland common-phase material contract", () => {
   it("activates only for Parkland while covering every approved quality", () => {
@@ -35,12 +116,83 @@ describe("ZK-461 Parkland common-phase material contract", () => {
     expect(isParklandComposableSemantic("path")).toBe(false);
   });
 
+  it("selects complete authoritative fields only for Standard High/Medium", () => {
+    const fields = Object.fromEntries(PARKLAND_COMPOSABLE_SEMANTICS.map((semantic) => [
+      semantic,
+      { semantic, destroyed: false },
+    ]));
+    const lookup = (semantic: typeof PARKLAND_COMPOSABLE_SEMANTICS[number]) => fields[semantic];
+    const selected = resolveParklandSemanticFieldSources("medium", true, false, lookup);
+    expect(selected).not.toBeNull();
+    for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
+      expect(selected?.[semantic]).toBe(fields[semantic]);
+    }
+    expect(resolveParklandSemanticFieldSources("low", true, false, lookup)).toBeNull();
+    expect(resolveParklandSemanticFieldSources("high", false, false, lookup)).toBeNull();
+    expect(resolveParklandSemanticFieldSources("high", true, true, lookup)).toBeNull();
+    expect(resolveParklandSemanticFieldSources("high", true, false, (semantic) => (
+      semantic === "rough" ? { semantic, destroyed: true } : fields[semantic]
+    ))).toBeNull();
+  });
+
+  it("composites deterministic ZK-1203 material energy and rejects the undercoat negative", () => {
+    for (const quality of ["high", "medium"] as const) {
+      const final = Object.fromEntries(PARKLAND_COMPOSABLE_SEMANTICS.map((semantic) => [
+        semantic,
+        finalSurfaceMetrics(quality, semantic, true),
+      ]));
+      const negative = Object.fromEntries(PARKLAND_COMPOSABLE_SEMANTICS.map((semantic) => [
+        semantic,
+        finalSurfaceMetrics(quality, semantic, false),
+      ]));
+      const finalMeans = PARKLAND_COMPOSABLE_SEMANTICS.map((semantic) => final[semantic].mean);
+      const negativeMeans = PARKLAND_COMPOSABLE_SEMANTICS.map((semantic) => negative[semantic].mean);
+      expect(Math.max(...finalMeans) - Math.min(...finalMeans), `${quality}:field family separation`)
+        .toBeGreaterThan(65);
+      expect(Math.max(...negativeMeans) - Math.min(...negativeMeans), `${quality}:negative separation`)
+        .toBeLessThan(3);
+      for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
+        expect(final[semantic].rmsContrast, `${quality}:${semantic}:final contrast`).toBeGreaterThan(4);
+        expect(final[semantic].gradientEnergy, `${quality}:${semantic}:final detail`).toBeGreaterThan(0.2);
+      }
+    }
+  });
+
+  it("pins the exact authoritative material-field source bytes in diagnostics", () => {
+    for (const quality of ["high", "medium"] as const) for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
+      const bytes = readFileSync(new URL(
+        `../../assets/terrain/fields/parkland/${quality}/${semantic}.png`,
+        import.meta.url,
+      ));
+      expect(createHash("sha256").update(bytes).digest("hex"))
+        .toBe(PARKLAND_MATERIAL_FIELD_SOURCE_HASHES[quality][semantic]);
+    }
+    const diagnostics = activeParklandComposableDiagnostics(
+      "medium",
+      PARKLAND_COMPOSABLE_SEMANTICS,
+      5,
+      [],
+      undefined,
+      null,
+      PARKLAND_COMPOSABLE_SEMANTICS,
+    );
+    expect(diagnostics).toMatchObject({
+      semanticFieldDraws: 5,
+      semanticComposition: "zk1203-material-fields-with-motif-detail",
+      motifOnly: false,
+    });
+    expect(diagnostics.materialFieldSourceIds).toHaveLength(5);
+    expect(diagnostics.materialFieldSourceHashes).toHaveLength(5);
+    expect(new Set(diagnostics.materialFieldSourceHashes).size).toBe(5);
+  });
+
   it("reports one undercoat, bounded semantic cues, and an outline-free Low path", () => {
     const diagnostics = activeParklandComposableDiagnostics("low", ["tee", "rough", "fairway", "rough"]);
     expect(diagnostics).toMatchObject({
       active: true,
       source: "approved-zk463-assets",
       undercoatDraws: 1,
+      semanticFieldDraws: 0,
       semanticCueDraws: 3,
       semantics: ["fairway", "rough", "tee"],
       independentPerCellPhase: false,

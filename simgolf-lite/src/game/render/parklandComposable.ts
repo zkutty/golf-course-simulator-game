@@ -75,6 +75,49 @@ const SEMANTIC_FIELD_TINT_MIX: Readonly<Record<ParklandComposableSemantic, numbe
   tee: 0.62,
 };
 
+export type ParklandSemanticFieldSources<T> = Readonly<Record<ParklandComposableSemantic, T>>;
+
+export const PARKLAND_MATERIAL_FIELD_SOURCE_HASHES: Readonly<
+  Record<Exclude<AtlasQuality, "low">, Readonly<Record<ParklandComposableSemantic, string>>>
+> = {
+  high: {
+    fairway: "bb07a2ce6a5693eeb6a90792f4d2a633d0b6da5e6f8825f5610977b1a2ed0134",
+    rough: "86728926b40efb2e2407227c9bd9ae877bf3b6840d23b5f0e802fcfb38c075f7",
+    deep_rough: "258643c67ef7d809804677523bc1c53d8c0f61947b21d483d7ede042bf2cdc23",
+    green: "0e28f0bfc4bc74618cda1cf20bbf9903105b8bff44fb62633aa5e091e708d14b",
+    tee: "d9845326ced788fea37d1cdf2358d59f5794be71f0f1aa4bdd431c892ee553ea",
+  },
+  medium: {
+    fairway: "6c1057c1ea49b3feb832852f5fa7388b02b677d70827ce4faf24703e9a8c85ab",
+    rough: "b89c06a1c402ee1eea20a9ac136a386a9e0d5407efbae58c9bbcd720583baa11",
+    deep_rough: "4406d7295d5645fdfdddb651822f2793a5fc0414152902a8c3b620701c746e38",
+    green: "427446443998772b5f1fcfe86ff3f722ad16d6813db60c6ed4c8309f69cdf360",
+    tee: "1d87e0792ecee23aec6d4f1139925ddd4592e4782463a00c0c5e21a2a1e3e382",
+  },
+};
+
+/**
+ * Selects the authored continuous material fields only for the presentation
+ * modes whose source colors are authoritative. Accessible palettes and
+ * terrain-pattern modes retain their existing deterministic recolored path.
+ */
+export function resolveParklandSemanticFieldSources<T extends { readonly destroyed?: boolean }>(
+  quality: AtlasQuality,
+  standardColorVision: boolean,
+  terrainPatterns: boolean,
+  lookup: (semantic: ParklandComposableSemantic) => T | null,
+): ParklandSemanticFieldSources<T> | null {
+  if (quality === "low" || !standardColorVision || terrainPatterns) return null;
+  const fields = Object.fromEntries(PARKLAND_COMPOSABLE_SEMANTICS.map((semantic) => [
+    semantic,
+    lookup(semantic),
+  ])) as Record<ParklandComposableSemantic, T | null>;
+  if (PARKLAND_COMPOSABLE_SEMANTICS.some((semantic) => (
+    !fields[semantic] || fields[semantic]?.destroyed
+  ))) return null;
+  return fields as Record<ParklandComposableSemantic, T>;
+}
+
 export function parklandSemanticFieldStyle(
   quality: AtlasQuality,
   semantic: ParklandComposableSemantic,
@@ -524,15 +567,15 @@ export function appendParklandComposableCues(
 }
 
 /**
- * Gives every turf role a restrained continuous value field. Every mesh uses
- * the same opaque undercoat source and canonical world UVs, so the treatment
- * cannot restart at cells or components. The small alpha differences make the
- * playable vocabulary readable while leaving motif ink and authored pair
- * fringes responsible for local texture and transitions.
+ * Gives every turf role a continuous world-periodic surface. Standard
+ * High/Medium consume the opaque ZK-1203 material fields; Low and accessible
+ * pattern modes retain the prior tinted-undercoat fallback. Both paths use the
+ * same canonical UVs, so material phase cannot restart at cells/components.
  */
 export function appendParklandSemanticFields(
   layer: PIXI.Container,
-  texture: PIXI.Texture,
+  undercoat: PIXI.Texture,
+  semanticFields: ParklandSemanticFieldSources<PIXI.Texture> | null,
   quality: AtlasQuality,
   components: readonly LandscapeComponent[],
   courseWidth: number,
@@ -547,7 +590,7 @@ export function appendParklandSemanticFields(
       .filter((component) => component.terrain === semantic)
       .flatMap((component) => component.cells.map((cell) => ({ cell, component })));
     const mesh = createParklandComposableMesh(
-      texture,
+      semanticFields?.[semantic] ?? undercoat,
       entries,
       courseWidth,
       subdivisions,
@@ -559,11 +602,23 @@ export function appendParklandSemanticFields(
     );
     if (!mesh) continue;
     mesh.eventMode = "none";
-    mesh.label = `parkland-common-phase:field:${semantic}`;
-    const style = parklandSemanticFieldStyle(quality, semantic, colors[semantic]);
-    mesh.tint = style.tint;
-    mesh.alpha = style.alpha;
-    mesh.blendMode = style.blendMode;
+    mesh.label = semanticFields
+      ? `parkland-authoritative-material-field:${semantic}`
+      : `parkland-common-phase:field:${semantic}`;
+    if (semanticFields) {
+      // The ZK-1203 fields are opaque full-color sources. They are the primary
+      // semantic identity in Standard High/Medium and borrow their atlas
+      // texture lifetime from the loader. The common undercoat beneath them is
+      // retained solely as an atomic/fallback backing surface.
+      mesh.tint = 0xffffff;
+      mesh.alpha = 1;
+      mesh.blendMode = "normal";
+    } else {
+      const style = parklandSemanticFieldStyle(quality, semantic, colors[semantic]);
+      mesh.tint = style.tint;
+      mesh.alpha = style.alpha;
+      mesh.blendMode = style.blendMode;
+    }
     layer.addChild(mesh);
     drawn.push(semantic);
   }
@@ -577,9 +632,20 @@ function mixRgb(color: number, target: number, amount: number): number {
   return (channel(16) << 16) | (channel(8) << 8) | channel(0);
 }
 
+export function parklandCueTint(
+  semantic: ParklandComposableSemantic,
+  color: number,
+  standardColorVision: boolean,
+): number {
+  return mixRgb(0xffffff, color, standardColorVision
+    ? ({ fairway: 0.5, rough: 0.24, deep_rough: 0.52, green: 0.52, tee: 0.46 } as const)[semantic]
+    : 0.48);
+}
+
 export function appendParklandComposablePresentation(
   layer: PIXI.Container,
   sources: ReturnType<typeof resolveParklandComposableSources<PIXI.Texture>> & {},
+  semanticFields: ParklandSemanticFieldSources<PIXI.Texture> | null,
   components: readonly LandscapeComponent[],
   course: {
     readonly width: number;
@@ -594,7 +660,10 @@ export function appendParklandComposablePresentation(
   rotation: IsoRotation,
   standardColorVision: boolean,
   colors: Readonly<Record<ParklandComposableSemantic, number>>,
-  trace: Pick<ReturnType<typeof createParklandComposableTrace>, "recordSemantic" | "recordPairFringes">,
+  trace: Pick<
+    ReturnType<typeof createParklandComposableTrace>,
+    "recordSemantic" | "recordMaterialField" | "recordPairFringes"
+  >,
 ): PIXI.Container {
   const presentationLayer = sources.quality === "low" ? new PIXI.Container() : layer;
   if (presentationLayer !== layer) {
@@ -612,9 +681,10 @@ export function appendParklandComposablePresentation(
     rotation,
     standardColorVision ? 0xffffff : mixRgb(0xffffff, colors.rough, 0.35),
   );
-  appendParklandSemanticFields(
+  const semanticFieldDraws = appendParklandSemanticFields(
     presentationLayer,
     sources.undercoat,
+    semanticFields,
     sources.quality,
     components,
     course.width,
@@ -623,6 +693,7 @@ export function appendParklandComposablePresentation(
     rotation,
     colors,
   );
+  if (semanticFields) for (const semantic of semanticFieldDraws) trace.recordMaterialField(semantic);
   for (const semantic of appendParklandComposableCues(
     presentationLayer,
     sources.cues,
@@ -635,9 +706,7 @@ export function appendParklandComposablePresentation(
     // tint even in the standard mode. This restores a readable maintained /
     // natural hierarchy without adding a broad role-colored mask or changing
     // the shared x/8,y/8 material phase.
-    (role) => mixRgb(0xffffff, colors[role], standardColorVision
-      ? ({ fairway: 0.5, rough: 0.24, deep_rough: 0.52, green: 0.52, tee: 0.46 } as const)[role]
-      : 0.48),
+    (role) => parklandCueTint(role, colors[role], standardColorVision),
   )) trace.recordSemantic(semantic);
   trace.recordPairFringes(appendParklandPairFringes(
     presentationLayer,
@@ -876,11 +945,17 @@ export interface ParklandComposableDiagnostics {
   readonly quality: AtlasQuality;
   readonly worldPeriodTiles: typeof PARKLAND_COMPOSABLE_WORLD_PERIOD_TILES;
   readonly undercoatDraws: number;
+  readonly semanticFieldDraws: number;
   readonly semanticCueDraws: number;
   readonly semantics: readonly ParklandComposableSemantic[];
   readonly sourceIds: readonly string[];
   readonly sourceHashes: readonly string[];
-  readonly semanticComposition: "legacy" | "motif-ink-over-common-undercoat";
+  readonly materialFieldSourceIds: readonly string[];
+  readonly materialFieldSourceHashes: readonly string[];
+  readonly semanticComposition:
+    | "legacy"
+    | "motif-ink-over-common-undercoat"
+    | "zk1203-material-fields-with-motif-detail";
   readonly motifOnly: boolean;
   readonly motifMetrics: readonly ParklandMotifMetrics[];
   readonly patterns: Readonly<Record<ParklandComposableSemantic, string>>;
@@ -907,10 +982,13 @@ export function inactiveParklandComposableDiagnostics(quality: AtlasQuality): Pa
     quality,
     worldPeriodTiles: PARKLAND_COMPOSABLE_WORLD_PERIOD_TILES,
     undercoatDraws: 0,
+    semanticFieldDraws: 0,
     semanticCueDraws: 0,
     semantics: [],
     sourceIds: [],
     sourceHashes: [],
+    materialFieldSourceIds: [],
+    materialFieldSourceHashes: [],
     semanticComposition: "legacy",
     motifOnly: false,
     motifMetrics: [],
@@ -949,8 +1027,12 @@ export function activeParklandComposableDiagnostics(
     preservedLandformShoulders: 0,
   },
   pairFringes: ParklandPairFringeRenderDiagnostics | null = null,
+  materialFieldSemantics: readonly ParklandComposableSemantic[] = [],
 ): ParklandComposableDiagnostics {
   const ordered = PARKLAND_COMPOSABLE_SEMANTICS.filter((semantic) => semantics.includes(semantic));
+  const materialFields = quality === "low" ? [] : PARKLAND_COMPOSABLE_SEMANTICS.filter((semantic) => (
+    materialFieldSemantics.includes(semantic)
+  ));
   return {
     active: true,
     contract: PARKLAND_COMPOSABLE_ID,
@@ -959,6 +1041,7 @@ export function activeParklandComposableDiagnostics(
     quality,
     worldPeriodTiles: PARKLAND_COMPOSABLE_WORLD_PERIOD_TILES,
     undercoatDraws: 1,
+    semanticFieldDraws: materialFields.length,
     semanticCueDraws,
     semantics: ordered,
     sourceIds: [
@@ -971,8 +1054,16 @@ export function activeParklandComposableDiagnostics(
         PARKLAND_COMPOSABLE_SOURCE_HASHES[quality][PARKLAND_COMPOSABLE_SEMANTICS.indexOf(semantic) + 1]
       )),
     ],
-    semanticComposition: "motif-ink-over-common-undercoat",
-    motifOnly: motifMetrics.length === ordered.length,
+    materialFieldSourceIds: materialFields.map((semantic) => (
+      `fields/parkland/${quality}/${semantic}.png`
+    )),
+    materialFieldSourceHashes: materialFields.map((semantic) => (
+      PARKLAND_MATERIAL_FIELD_SOURCE_HASHES[quality as Exclude<AtlasQuality, "low">][semantic]
+    )),
+    semanticComposition: materialFields.length === ordered.length && ordered.length > 0
+      ? "zk1203-material-fields-with-motif-detail"
+      : "motif-ink-over-common-undercoat",
+    motifOnly: materialFields.length === 0 && motifMetrics.length === ordered.length,
     motifMetrics: ordered.flatMap((semantic) => (
       motifMetrics.find((metrics) => metrics.semantic === semantic) ?? []
     )),
@@ -998,6 +1089,7 @@ export function createParklandComposableTrace(
   cues?: Readonly<Record<ParklandComposableSemantic, PIXI.Texture>>,
 ) {
   const semantics = new Set<ParklandComposableSemantic>();
+  const materialFields = new Set<ParklandComposableSemantic>();
   let semanticCueDraws = 0;
   let suppressedLegacyTurf = 0;
   let preservedNonTurf = 0;
@@ -1008,6 +1100,9 @@ export function createParklandComposableTrace(
       if (!isParklandComposableSemantic(terrain)) return;
       semantics.add(terrain);
       semanticCueDraws++;
+    },
+    recordMaterialField(terrain: Terrain) {
+      if (isParklandComposableSemantic(terrain)) materialFields.add(terrain);
     },
     suppressLegacyContour(owner: Terrain, outside: Terrain | null) {
       const disposition = parklandComposableContourDisposition(theme, quality, owner, outside);
@@ -1038,6 +1133,7 @@ export function createParklandComposableTrace(
           preservedLandformShoulders,
         },
         pairFringes,
+        [...materialFields],
       );
     },
   };

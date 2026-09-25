@@ -154,12 +154,32 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
       active: true,
       source: "approved-zk463-assets",
       undercoatDraws: 1,
-      semanticComposition: "motif-ink-over-common-undercoat",
+      semanticComposition: mode === "standard" && quality !== "low"
+        ? "zk1203-material-fields-with-motif-detail"
+        : "motif-ink-over-common-undercoat",
+      semanticFieldDraws: mode === "standard" && quality !== "low" ? 5 : 0,
+      motifOnly: !(mode === "standard" && quality !== "low"),
       samePresentationEmitters: 0,
       emittedLegacyTurfContourRuns: 0,
       fullCellOutlines: false,
       legacyDiamondTopPlane: false,
     });
+    if (mode === "standard" && quality !== "low") {
+      expect(renderer.parklandComposable.materialFieldSourceIds).toEqual([
+        `fields/parkland/${quality}/fairway.png`,
+        `fields/parkland/${quality}/rough.png`,
+        `fields/parkland/${quality}/deep_rough.png`,
+        `fields/parkland/${quality}/green.png`,
+        `fields/parkland/${quality}/tee.png`,
+      ]);
+      expect(renderer.parklandComposable.materialFieldSourceHashes).toHaveLength(5);
+      expect(renderer.parklandComposable.materialFieldSourceHashes.every((hash) => (
+        /^[a-f0-9]{64}$/u.test(hash)
+      ))).toBe(true);
+    } else {
+      expect(renderer.parklandComposable.materialFieldSourceIds).toEqual([]);
+      expect(renderer.parklandComposable.materialFieldSourceHashes).toEqual([]);
+    }
     expect(renderer.parklandComposable.pairFringes).toMatchObject({
       authoritativeDifferingTurfAdjacencies: 191,
       sameElevationDifferingTurfAdjacencies: 185,
