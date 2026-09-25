@@ -65,6 +65,15 @@ test("ZK-459 proves all six derived pair materials before the M19 matrix", async
           && Math.abs(state.parklandComposable.camera.zoom - 4) < 0.001;
       }, { quality }), { timeout: 90_000 }).toBe(true);
       await page.waitForTimeout(180);
+      const renderer = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState());
+      const usesAuthoritativeFields = mode === "standard" && quality !== "low";
+      expect(renderer.parklandComposable).toMatchObject({
+        semanticFieldDraws: usesAuthoritativeFields ? 5 : 0,
+        semanticComposition: usesAuthoritativeFields
+          ? "zk1203-material-fields-with-motif-detail"
+          : "motif-ink-over-common-undercoat",
+        motifOnly: !usesAuthoritativeFields,
+      });
       const bytes = await page.screenshot({ fullPage: true });
       const name = `${mode}-${quality}-${proof.pair}-${proof.feature}.png`;
       await writeFile(resolve(outputRoot, name), bytes);
@@ -73,6 +82,8 @@ test("ZK-459 proves all six derived pair materials before the M19 matrix", async
         sha256: createHash("sha256").update(bytes).digest("hex"),
         mode,
         quality,
+        materialFieldSourceIds: renderer.parklandComposable.materialFieldSourceIds,
+        materialFieldSourceHashes: renderer.parklandComposable.materialFieldSourceHashes,
         ...proof,
       });
     }

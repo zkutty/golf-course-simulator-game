@@ -4134,6 +4134,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
       components,
     );
     const sortedComponents = [...components].sort((a, b) => componentDepth(a) - componentDepth(b));
+    const composableSemanticFields = composableSources && quality !== "low"
+      ? composableRuntime!.resolveParklandSemanticFieldSources(
+        quality,
+        props.colorVision === "standard",
+        props.terrainPatterns,
+        (semantic) => getLandscapeMaterialField(course.theme, semantic, quality),
+      )
+      : null;
     const composableTrace = composableRuntime!.createParklandComposableTrace(
       course.theme,
       quality,
@@ -4147,6 +4155,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       ? composableRuntime!.appendParklandComposablePresentation(
         quality === "low" ? rendererLayers.terrain : layer,
         composableSources,
+        composableSemanticFields,
         sortedComponents,
         course,
         presentationTiles,

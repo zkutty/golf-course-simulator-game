@@ -85,6 +85,7 @@ test("ZK-461 consumes one common-phase Parkland undercoat across the required ma
     }, { quality, rotation, zoom }), { timeout: 90_000 }).toBe(true);
     await page.waitForTimeout(250);
     const renderer = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState());
+    const usesAuthoritativeFields = mode === "standard" && quality !== "low";
     expect(renderer.parklandComposable).toMatchObject({
       active: true,
       contract: "parkland-composable-material-v1",
@@ -92,8 +93,11 @@ test("ZK-461 consumes one common-phase Parkland undercoat across the required ma
       source: "approved-zk463-assets",
       worldPeriodTiles: 8,
       undercoatDraws: 1,
-      semanticComposition: "motif-ink-over-common-undercoat",
-      motifOnly: true,
+      semanticFieldDraws: usesAuthoritativeFields ? 5 : 0,
+      semanticComposition: usesAuthoritativeFields
+        ? "zk1203-material-fields-with-motif-detail"
+        : "motif-ink-over-common-undercoat",
+      motifOnly: !usesAuthoritativeFields,
       independentPerCellPhase: false,
       samePresentationEmitters: 0,
       emittedLegacyTurfContourRuns: 0,
@@ -132,6 +136,9 @@ test("ZK-461 consumes one common-phase Parkland undercoat across the required ma
     expect(new Set(renderer.parklandComposable.sourceIds).size).toBe(renderer.parklandComposable.sourceIds.length);
     expect(renderer.parklandComposable.sourceHashes).toHaveLength(renderer.parklandComposable.sourceIds.length);
     expect(renderer.parklandComposable.sourceHashes.every((hash) => /^[a-f0-9]{64}$/u.test(hash))).toBe(true);
+    expect(renderer.parklandComposable.materialFieldSourceIds).toHaveLength(usesAuthoritativeFields ? 5 : 0);
+    expect(renderer.parklandComposable.materialFieldSourceHashes).toHaveLength(usesAuthoritativeFields ? 5 : 0);
+    expect(renderer.parklandComposable.materialFieldSourceHashes.every((hash) => /^[a-f0-9]{64}$/u.test(hash))).toBe(true);
     expect(renderer.residency.parklandComposableFields).toBeGreaterThanOrEqual(6);
     expect(renderer.counts?.naturalProps.habitatMasses).toBeGreaterThan(0);
     expect(renderer.counts?.naturalProps.habitatBedLayers).toBeGreaterThan(0);
