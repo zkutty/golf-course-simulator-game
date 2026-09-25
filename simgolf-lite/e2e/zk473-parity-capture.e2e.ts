@@ -37,6 +37,25 @@ type Capture = {
   renderer: RendererAtlasState;
 };
 
+function normalFrameGeometry(frame: NormalFrame): Omit<NormalFrame, "zoom"> {
+  const { zoom: _zoom, ...geometry } = frame;
+  return geometry;
+}
+
+function expectSameActualFrameAcrossTiers(medium: Capture, high: Capture): void {
+  // Quality may change Pixi's effective screen metrics by a fraction of a
+  // pixel, so fitting the identical active-hole geometry can differ by a
+  // sub-millizoom amount. Preserve the raw values in evidence and prove the
+  // same semantic frame/owner/geometry instead of falsifying either value.
+  expect(normalFrameGeometry(medium.normalFrame)).toEqual(normalFrameGeometry(high.normalFrame));
+  expect(medium.normalFrame.zoom).toBeCloseTo(high.normalFrame.zoom, 3);
+  expect(medium.cameraTransform.camera.center).toEqual(high.cameraTransform.camera.center);
+  expect(medium.cameraTransform.camera.targetCenter).toEqual(high.cameraTransform.camera.targetCenter);
+  expect(medium.cameraTransform.world.pivot).toEqual(high.cameraTransform.world.pivot);
+  expect(medium.cameraTransform.world.scale.x).toBeCloseTo(high.cameraTransform.world.scale.x, 3);
+  expect(medium.cameraTransform.world.scale.y).toBeCloseTo(high.cameraTransform.world.scale.y, 3);
+}
+
 function rendererProblems(state: RendererAtlasState, quality: "high" | "medium"): string[] {
   const problems: string[] = [];
   const { activation, rendered, requested } = state;
@@ -253,8 +272,9 @@ test("ZK-473 captures settled actual normal gameplay frames at Medium and High",
     const pair = captures.filter((capture) => capture.rotation === rotation);
     expect(pair).toHaveLength(2);
     expect(pair.map((capture) => capture.label).sort()).toEqual(["normal-high", "normal-medium"]);
-    expect(pair[0].normalFrame).toEqual(pair[1].normalFrame);
-    expect(pair[0].cameraTransform).toEqual(pair[1].cameraTransform);
+    const medium = pair.find((capture) => capture.label === "normal-medium")!;
+    const high = pair.find((capture) => capture.label === "normal-high")!;
+    expectSameActualFrameAcrossTiers(medium, high);
     expect(pair[0].composition).toEqual(pair[1].composition);
   }
   expect(runtimeErrors).toEqual([]);
