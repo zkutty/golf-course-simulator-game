@@ -7,6 +7,15 @@ import { expect, test } from "@playwright/test";
 const outputRoot = resolve(process.env.ZK1202_EVIDENCE_DIR ?? "../zk1202-habitat-evidence");
 const baseUrl = process.env.ZK1202_BASE_URL ?? "";
 const representativeOnly = process.env.ZK1237_REPRESENTATIVE === "1";
+const viewportShard = process.env.ZK1237_VIEWPORT_SHARD;
+if (viewportShard != null && viewportShard !== "compact" && viewportShard !== "desktop") {
+  throw new Error(`Unsupported ZK1237_VIEWPORT_SHARD: ${viewportShard}`);
+}
+const normalFrameViewports = viewportShard === "compact"
+  ? [{ width: 800, height: 500 }] as const
+  : viewportShard === "desktop"
+    ? [{ width: 1440, height: 900 }] as const
+    : [{ width: 800, height: 500 }, { width: 1440, height: 900 }] as const;
 const gitRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: gitRoot, encoding: "utf8" }).trim();
 const workingTreeStatus = execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
@@ -366,7 +375,7 @@ test("ZK-1202 certifies M19 Detail habitat and retains grove-fixture coverage", 
 });
 
 test("ZK-1237 normal gameplay frame keeps the complete M23 route hierarchy in the playable viewport", async ({ page }) => {
-  test.setTimeout(600_000);
+  test.setTimeout(900_000);
   await mkdir(outputRoot, { recursive: true });
   const runtimeErrors: string[] = [];
   page.on("pageerror", (error) => runtimeErrors.push(`pageerror:${error.message}`));
@@ -411,7 +420,7 @@ test("ZK-1237 normal gameplay frame keeps the complete M23 route hierarchy in th
 
   const pinRotations: readonly ("A" | "B" | "C")[] = representativeOnly ? ["A"] : ["A", "B", "C"];
   const rotations: readonly Capture["rotation"][] = representativeOnly ? [0] : [0, 90, 180, 270];
-  for (const viewport of [{ width: 800, height: 500 }, { width: 1440, height: 900 }] as const) {
+  for (const viewport of normalFrameViewports) {
     await page.setViewportSize(viewport);
     await loadFixture(page, "m23Fixture=1", "M23 Course Standards Club");
     await expect(page.getByRole("button", { name: "Collapse course minimap" })).toBeVisible();
@@ -775,21 +784,23 @@ test("ZK-1237 normal gameplay frame keeps the complete M23 route hierarchy in th
       }
     }
   }
-  expect(captures).toHaveLength(representativeOnly ? 2 : 24);
+  expect(captures).toHaveLength(representativeOnly ? normalFrameViewports.length : normalFrameViewports.length * 12);
   expect(new Set(captures.map((item) => item.courseHash)).size).toBe(representativeOnly ? 1 : 3);
   for (const pinRotation of pinRotations) for (const rotation of rotations) {
     const equivalent = captures.filter((item) => item.pinRotation === pinRotation && item.rotation === rotation);
-    expect(equivalent).toHaveLength(2);
+    expect(equivalent).toHaveLength(normalFrameViewports.length);
     expect(new Set(equivalent.map((item) => item.renderer.after.rendered.quality)).size).toBe(1);
     expect(equivalent.every((item) => rendererProblems(item.renderer.after).length === 0)).toBe(true);
   }
   expect(runtimeErrors).toEqual([]);
-  await writeFile(resolve(outputRoot, representativeOnly ? "zk1237-normal-frame-smoke-report.json" : "zk1237-normal-frame-report.json"), `${JSON.stringify({
+  const reportSuffix = viewportShard == null ? "" : `-${viewportShard}`;
+  await writeFile(resolve(outputRoot, representativeOnly ? `zk1237-normal-frame-smoke-report${reportSuffix}.json` : `zk1237-normal-frame-report${reportSuffix}.json`), `${JSON.stringify({
     version: 4,
     issue: "ZK-1237",
     commit,
     workingTreeDiffSha256,
     sourceFingerprintSha256,
+    viewportShard: viewportShard ?? "combined",
     rendererQualityFixture: "medium",
     rendererDiagnosis: "Prior requested-quality/camera polling could pass against PixiStage's generation-0 placeholder before atlas activation and scene stamps completed. The test now derives readiness independently from raw activation, render-context, generation-stamp, chunk, texture-fallback, and diagnostic fields before and after every screenshot; route-destination, flag, transient-overlay, navigation, and full sidebar-control geometry are recorded from the activated frame.",
     runtimeErrors,

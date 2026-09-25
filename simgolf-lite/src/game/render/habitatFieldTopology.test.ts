@@ -2,10 +2,15 @@ import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import highAtlasJson from "../../assets/terrain/parkland-habitat-4x/high/habitat-atlas.json";
 import {
+  canonicalHabitatMaskTransform,
   classifyHabitatOccupancyMask,
+  HABITAT_D4_CANONICAL_MASKS,
+  HABITAT_D4_TRANSFORMS,
+  HABITAT_NORMALIZED_MASKS,
   HABITAT_OCCUPANCY_MASK_BITS,
   PARKLAND_HABITAT_FAMILIES,
   resolveHabitatFieldTopology,
+  transformHabitatMask,
   type BoundedHabitatOccupancy,
   type HabitatCardinalDirection,
   type HabitatCorner,
@@ -17,7 +22,7 @@ import {
 } from "./habitatFieldTopology";
 
 const HIGH_ATLAS = highAtlasJson as unknown as ParklandHabitatAtlasCatalog;
-const FAMILY: ParklandHabitatFamily = "woodland_floor";
+const FAMILY: ParklandHabitatFamily = "wet_shore";
 
 const CARDINAL_OFFSET: Readonly<Record<HabitatCardinalDirection, HabitatTileCoordinate>> = {
   n: { x: 0, y: -1 },
@@ -225,6 +230,61 @@ describe("Parkland habitat field occupancy topology", () => {
     }
   });
 
+  it("proves all 47 normalized masks map bijectively through exactly 14 D4 canonical classes", () => {
+    expect(HABITAT_NORMALIZED_MASKS).toHaveLength(47);
+    expect(new Set(HABITAT_D4_CANONICAL_MASKS)).toEqual(new Set([
+      0, 1, 5, 7, 17, 21, 23, 31, 85, 87, 95, 119, 127, 255,
+    ]));
+    const observed = new Set<number>();
+    for (const mask of HABITAT_NORMALIZED_MASKS) {
+      const canonical = canonicalHabitatMaskTransform(mask);
+      observed.add(canonical.canonicalMask);
+      expect(transformHabitatMask(canonical.canonicalMask, canonical.transform)).toBe(mask);
+      expect(HABITAT_D4_TRANSFORMS.some((transform) => (
+        transformHabitatMask(mask, transform) === canonical.canonicalMask
+      ))).toBe(true);
+    }
+    expect(observed).toEqual(new Set(HABITAT_D4_CANONICAL_MASKS));
+  });
+
+  it.each(["woodland_floor", "understory_edge"] as const)(
+    "resolves singleton, bars, junctions, and every normalized mask for %s without silent gaps",
+    (family) => {
+      for (const normalizedMask of HABITAT_NORMALIZED_MASKS) {
+        const occupied = [{ x: 1, y: 1 }];
+        const offsets = {
+          n: [0, -1], ne: [1, -1], e: [1, 0], se: [1, 1],
+          s: [0, 1], sw: [-1, 1], w: [-1, 0], nw: [-1, -1],
+        } as const;
+        for (const [direction, [dx, dy]] of Object.entries(offsets)) {
+          if ((normalizedMask & HABITAT_OCCUPANCY_MASK_BITS[direction as keyof typeof HABITAT_OCCUPANCY_MASK_BITS]) !== 0) {
+            occupied.push({ x: 1 + dx, y: 1 + dy });
+          }
+        }
+        // The resolver requires a cardinally connected whole patch. Resolve a
+        // 3x3 field whenever diagonal-only neighbors would be disconnected,
+        // then inspect the center's exact mask placement.
+        const connected = occupied.every((point) => point.x === 1 || point.y === 1)
+          ? occupied
+          : rectangularPatch(3, 3).occupied.filter((point) => (
+            point.x === 1 && point.y === 1
+              ? true
+              : occupied.some((candidate) => candidate.x === point.x && candidate.y === point.y)
+          ));
+        const result = resolve({ bounds: { x: 0, y: 0, width: 3, height: 3 }, occupied: connected }, family);
+        if (!result.ok) {
+          // Some local masks cannot constitute an independently connected
+          // finite patch; their D4 proof above remains exhaustive.
+          expect(result.diagnostics.every((diagnostic) => diagnostic.code === "disconnected_patch")).toBe(true);
+          continue;
+        }
+        const center = placementAt(result.placements, 1, 1);
+        expect(center.canonicalMask).toBe(canonicalHabitatMaskTransform(center.normalizedMask).canonicalMask);
+        expect(transformHabitatMask(center.canonicalMask as number, center.d4Transform)).toBe(center.normalizedMask);
+      }
+    },
+  );
+
   it("rejects unsupported masks transactionally instead of emitting a straight bar or singleton", () => {
     const bar = resolve({
       bounds: { x: 0, y: 0, width: 3, height: 1 },
@@ -260,7 +320,7 @@ describe("Parkland habitat field occupancy topology", () => {
   });
 
   it("uses actual checked-in high-tier records for every manifest family", () => {
-    expect(Object.keys(HIGH_ATLAS.frames)).toHaveLength(95);
+    expect(Object.keys(HIGH_ATLAS.frames)).toHaveLength(89);
     for (const family of PARKLAND_HABITAT_FAMILIES) {
       const result = resolve(rectangularPatch(3, 3), family);
       expect(result.ok).toBe(true);
@@ -276,8 +336,9 @@ describe("Parkland habitat field occupancy topology", () => {
           corner: actual.corner,
           variant: actual.variant,
           atlasAnchor: actual.anchor,
-          edgeAnchors: actual.edgeAnchors,
         });
+        if (placement.canonicalMask === null) expect(placement.edgeAnchors).toEqual(actual.edgeAnchors);
+        else expect(transformHabitatMask(placement.canonicalMask, placement.d4Transform)).toBe(placement.normalizedMask);
         expect(placement.worldAnchor).toEqual({
           x: placement.tile.x + actual.anchor.x / actual.frame.width,
           y: placement.tile.y + actual.anchor.y / actual.frame.height,

@@ -5,6 +5,8 @@ import {
   type CourseSceneCompositionPlanV1,
 } from "../../../game/render/courseSceneComposition";
 import { createParklandVisualReferenceCourse } from "../../../game/testing/referenceCourse";
+import { HABITAT_D4_TRANSFORMS, type HabitatD4Transform } from "../../../game/render/habitatFieldTopology";
+import { ISO_ROTATIONS, worldToIso, type IsoRotation } from "../../../game/render/iso";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import {
   PARKLAND_HABITAT_CATALOGS,
@@ -13,7 +15,7 @@ import {
   type HabitatFieldAtlasLoader,
   type LoadedHabitatAtlas,
 } from "../../../render/habitatFieldAtlas";
-import { createHabitatFieldSceneSystem } from "./habitatFieldScene";
+import { createHabitatFieldSceneSystem, habitatPlacementAffine } from "./habitatFieldScene";
 
 class FakeContainer {
   children: unknown[] = [];
@@ -61,8 +63,11 @@ function fakeTexture() {
   } as unknown as PIXI.Texture;
 }
 
-function fakeSprite(texture: PIXI.Texture) {
-  return {
+type AppliedMatrix = { a: number; b: number; c: number; d: number; tx: number; ty: number };
+type FakeSprite = PIXI.Sprite & { appliedMatrix: AppliedMatrix | null };
+
+function fakeSprite(texture: PIXI.Texture): FakeSprite {
+  const sprite = {
     texture,
     parent: null as FakeContainer | null,
     label: "",
@@ -70,11 +75,35 @@ function fakeSprite(texture: PIXI.Texture) {
     visible: true,
     anchor: point(),
     position: point(),
+    appliedMatrix: null as AppliedMatrix | null,
+    setFromMatrix(matrix: AppliedMatrix) {
+      sprite.appliedMatrix = { a: matrix.a, b: matrix.b, c: matrix.c, d: matrix.d, tx: matrix.tx, ty: matrix.ty };
+      sprite.position.set(matrix.tx, matrix.ty);
+    },
     width: 0,
     height: 0,
     zIndex: 0,
     destroy: vi.fn(),
-  } as unknown as PIXI.Sprite;
+  };
+  return sprite as unknown as FakeSprite;
+}
+
+function d4Point(point: { x: number; y: number }, transform: HabitatD4Transform): { x: number; y: number } {
+  const reflected = transform.startsWith("reflectX") ? { x: -point.x, y: point.y } : point;
+  if (transform.endsWith("Rotate90") || transform === "rotate90") return { x: -reflected.y, y: reflected.x };
+  if (transform.endsWith("Rotate180") || transform === "rotate180") return { x: -reflected.x, y: -reflected.y };
+  if (transform.endsWith("Rotate270") || transform === "rotate270") return { x: reflected.y, y: -reflected.x };
+  return { ...reflected };
+}
+
+function applyAffine(
+  matrix: ReturnType<typeof habitatPlacementAffine>,
+  pointValue: { x: number; y: number },
+): { x: number; y: number } {
+  return {
+    x: matrix.a * pointValue.x + matrix.c * pointValue.y,
+    y: matrix.b * pointValue.x + matrix.d * pointValue.y,
+  };
 }
 
 function snapshot(overrides: Partial<RenderSnapshot> = {}): RenderSnapshot {
@@ -138,6 +167,28 @@ function habitatLayer(parent: FakeContainer): FakeContainer {
 }
 
 describe("verified habitat field scene", () => {
+  it("maps every D4 transform through all camera rotations at projected world-edge anchors", () => {
+    const frameWidth = 256;
+    const frameHeight = 128;
+    const edges = [{ x: 0, y: -0.5 }, { x: 0.5, y: 0 }, { x: 0, y: 0.5 }, { x: -0.5, y: 0 }];
+    for (const transform of HABITAT_D4_TRANSFORMS) for (const rotation of ISO_ROTATIONS) {
+      const matrix = habitatPlacementAffine(frameWidth, frameHeight, transform, rotation, { x: 0, y: 0 });
+      expect(Math.abs(matrix.a * matrix.d - matrix.b * matrix.c)).toBeGreaterThan(0);
+      expect(applyAffine(matrix, { x: 0, y: 0 })).toEqual({ x: 0, y: 0 });
+      for (const edge of edges) {
+        const sourcePixel = {
+          x: (edge.x - edge.y) * frameWidth / 2,
+          y: (edge.x + edge.y) * frameHeight / 2,
+        };
+        const actual = applyAffine(matrix, sourcePixel);
+        const transformed = d4Point(edge, transform);
+        const expected = worldToIso(transformed.x, transformed.y, 0, rotation as IsoRotation);
+        expect(actual.x).toBeCloseTo(expected.x, 10);
+        expect(actual.y).toBeCloseTo(expected.y, 10);
+      }
+    }
+  });
+
   it("atomically creates exactly one noninteractive sprite per accepted P2 placement", async () => {
     const parent = new FakeContainer();
     const sprites: ReturnType<typeof fakeSprite>[] = [];
@@ -172,7 +223,7 @@ describe("verified habitat field scene", () => {
     expect(diagnostics.planHash).toMatch(/^[a-f0-9]{8}$/);
     expect(sprites).toHaveLength(expected);
     expect(new Set(sprites.map((sprite) => sprite.label)).size).toBe(expected);
-    expect(sprites.every((sprite) => sprite.eventMode === "none" && sprite.width === 64 && sprite.height === 32)).toBe(true);
+    expect(sprites.every((sprite) => sprite.eventMode === "none" && sprite.appliedMatrix !== null)).toBe(true);
     expect(sprites.every((sprite) => sprite.zIndex === sprite.position.y)).toBe(true);
   });
 

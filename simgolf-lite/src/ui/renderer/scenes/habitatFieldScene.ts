@@ -1,7 +1,12 @@
 import * as PIXI from "pixi.js";
 import { deriveCourseSceneComposition, type CourseSceneCompositionPlanV1 } from "../../../game/render/courseSceneComposition";
-import type { HabitatFieldPlacement } from "../../../game/render/habitatFieldTopology";
-import { TILE_H, TILE_W, worldToIso } from "../../../game/render/iso";
+import {
+  HABITAT_OCCUPANCY_MASK_BITS,
+  transformHabitatMask,
+  type HabitatD4Transform,
+  type HabitatFieldPlacement,
+} from "../../../game/render/habitatFieldTopology";
+import { TILE_H, TILE_W, worldToIso, type IsoRotation } from "../../../game/render/iso";
 import type { Point } from "../../../game/models/types";
 import type { ColorVisionMode } from "../../../game/onboarding/profile";
 import { hashCanonicalValue } from "../../../utils/canonical";
@@ -63,6 +68,60 @@ interface PlacementRuntime {
   readonly ownerId: string;
   readonly placement: HabitatFieldPlacement;
   readonly sprite: PIXI.Sprite;
+}
+
+export interface HabitatPlacementAffine {
+  readonly a: number;
+  readonly b: number;
+  readonly c: number;
+  readonly d: number;
+  readonly tx: number;
+  readonly ty: number;
+}
+
+type Matrix2 = readonly [number, number, number, number];
+
+function multiply2(left: Matrix2, right: Matrix2): Matrix2 {
+  return [
+    left[0] * right[0] + left[1] * right[2],
+    left[0] * right[1] + left[1] * right[3],
+    left[2] * right[0] + left[3] * right[2],
+    left[2] * right[1] + left[3] * right[3],
+  ];
+}
+
+function d4Matrix(transform: HabitatD4Transform): Matrix2 {
+  const reflection: Matrix2 = transform.startsWith("reflectX") ? [-1, 0, 0, 1] : [1, 0, 0, 1];
+  const rotation: Matrix2 = transform.endsWith("Rotate90") || transform === "rotate90" ? [0, -1, 1, 0]
+    : transform.endsWith("Rotate180") || transform === "rotate180" ? [-1, 0, 0, -1]
+      : transform.endsWith("Rotate270") || transform === "rotate270" ? [0, 1, -1, 0]
+        : [1, 0, 0, 1];
+  return multiply2(rotation, reflection);
+}
+
+function cameraMatrix(rotation: IsoRotation): Matrix2 {
+  if (rotation === 90) return [0, 1, -1, 0];
+  if (rotation === 180) return [-1, 0, 0, -1];
+  if (rotation === 270) return [0, -1, 1, 0];
+  return [1, 0, 0, 1];
+}
+
+/**
+ * Maps canonical atlas pixels through P·camera·D4·P^-1 around the sprite
+ * anchor. This keeps world-neighbor edges coincident at every camera rotation;
+ * a screen-space sprite rotation cannot preserve that invariant.
+ */
+export function habitatPlacementAffine(
+  frameWidth: number,
+  frameHeight: number,
+  transform: HabitatD4Transform,
+  rotation: IsoRotation,
+  position: Readonly<{ x: number; y: number }>,
+): HabitatPlacementAffine {
+  const sourceInverse: Matrix2 = [1 / frameWidth, 1 / frameHeight, -1 / frameWidth, 1 / frameHeight];
+  const projection: Matrix2 = [TILE_W / 2, -TILE_W / 2, TILE_H / 2, TILE_H / 2];
+  const matrix = multiply2(projection, multiply2(cameraMatrix(rotation), multiply2(d4Matrix(transform), sourceInverse)));
+  return { a: matrix[0], b: matrix[2], c: matrix[1], d: matrix[3], tx: position.x, ty: position.y };
 }
 
 function emptyDiagnostics(): HabitatFieldDiagnostics {
@@ -192,7 +251,17 @@ function placementMatchesAtlas(
     || selected.direction !== placement.direction
     || selected.corner !== placement.corner
     || selected.variant !== placement.variant
-    || selected.edgeAnchors.join(",") !== placement.edgeAnchors.join(",")) return false;
+    || (selected.canonicalMask ?? null) !== placement.canonicalMask) return false;
+  if (placement.canonicalMask === null) {
+    if (selected.edgeAnchors.join(",") !== placement.edgeAnchors.join(",")) return false;
+  } else {
+    if (transformHabitatMask(placement.canonicalMask, placement.d4Transform) !== placement.normalizedMask) return false;
+    const expectedEdges = (["n", "e", "s", "w"] as const).filter((direction) => (
+      (placement.normalizedMask & HABITAT_OCCUPANCY_MASK_BITS[direction]) !== 0
+    ));
+    if (expectedEdges.length !== placement.edgeAnchors.length
+      || expectedEdges.some((direction) => !placement.edgeAnchors.includes(direction))) return false;
+  }
   const expectedX = placement.atlasAnchor.x / high.frame.width;
   const expectedY = placement.atlasAnchor.y / high.frame.height;
   return Math.abs(selected.anchor.x / selected.frame.width - expectedX) < 1e-12
@@ -314,9 +383,14 @@ export function createHabitatFieldSceneSystem(
         sprite.label = `habitat-field:${zone.ownerId}:${placement.tile.x},${placement.tile.y}:${placement.frameId}`;
         sprite.eventMode = "none";
         sprite.anchor.set(frame.anchor.x / frame.frame.width, frame.anchor.y / frame.frame.height);
-        sprite.position.set(position.x, position.y);
-        sprite.width = TILE_W;
-        sprite.height = TILE_H;
+        const affine = habitatPlacementAffine(
+          frame.frame.width,
+          frame.frame.height,
+          placement.d4Transform,
+          snapshot.rotation,
+          position,
+        );
+        sprite.setFromMatrix(new PIXI.Matrix(affine.a, affine.b, affine.c, affine.d, affine.tx, affine.ty));
         sprite.zIndex = position.y;
         prepared.push({ ownerId: zone.ownerId, placement, sprite });
       }

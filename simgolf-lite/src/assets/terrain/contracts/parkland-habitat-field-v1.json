@@ -2,8 +2,8 @@
   "schema": "ParklandHabitatFieldManifestV1",
   "version": 1,
   "id": "parkland-habitat-field-v1",
-  "status": "source-contract-only",
-  "runtimeAdoption": "downstream-zk472-composition-node",
+  "status": "asset-source-contract",
+  "runtimeAdoption": "tracked by the separately reviewed ZK-1240 runtime consumer; this contract and its generated bundle carry no gameplay authority",
   "source": {
     "root": "src/assets/terrain/parkland-habitat-4x",
     "manifest": "manifest.json",
@@ -23,10 +23,16 @@
     "rock_leaf_transition"
   ],
   "topology": {
-    "roles": ["interior", "boundary", "convex", "concave", "termination"],
+    "revision": 2,
+    "roles": ["interior", "boundary", "convex", "concave", "termination", "mask"],
     "directions": ["n", "e", "s", "w"],
     "corners": ["ne", "se", "sw", "nw"],
-    "rule": "select topology from connected habitat occupancy; compose adjacent frames at declared edge anchors",
+    "rule": "select topology from connected habitat occupancy; woodland and understory resolve every normalized blob mask through 14 canonical D4 classes, while other families retain the reduced semantic vocabulary",
+    "denseMaskFamilies": ["woodland_floor", "understory_edge"],
+    "normalizedMaskCount": 47,
+    "canonicalMasks": [0, 1, 5, 7, 17, 21, 23, 31, 85, 87, 95, 119, 127, 255],
+    "d4Transforms": ["identity", "rotate90", "rotate180", "rotate270", "reflectX", "reflectXRotate90", "reflectXRotate180", "reflectXRotate270"],
+    "transformRule": "apply the declared world-space D4 transform through the isometric projection around the normalized frame anchor; naive screen-space quarter-turns are forbidden",
     "authority": "visual-only; never defines collision, obstacle, terrain, or simulation state",
     "wholeGrovePadsForbidden": true,
     "oneStampPerCellCadenceForbidden": true,
@@ -38,13 +44,16 @@
     "low": { "scale": 1, "frame": { "width": 64, "height": 32 }, "gutterPx": 1, "variantPolicy": "broad clusters, topology preserved; not derived from legacy 2x terrain" }
   },
   "frameVocabulary": {
-    "interiorVariants": 3,
+    "denseMaskFramesPerFamily": 16,
+    "denseMaskCanonicalFrames": 14,
+    "denseMaskExtraInteriorVariants": 2,
+    "reducedInteriorVariants": 3,
     "boundaryDirections": 4,
     "convexCorners": 4,
     "concaveCorners": 4,
     "terminationDirections": 4,
-    "framesPerFamily": 19,
-    "framesPerTier": 95
+    "reducedFramesPerFamily": 19,
+    "framesPerTier": 89
   },
   "palette": {
     "modes": ["standard", "deuteranopia", "protanopia", "tritanopia"],
@@ -61,7 +70,7 @@
     "packing": "10 columns, row-major, extruded gutter",
     "maximumDimension": 4096,
     "transparentRgb": "zero",
-    "requiredFrameFields": ["id", "family", "topologyRole", "direction", "corner", "variant", "anchor", "edgeAnchors", "frame", "sourceSha256"]
+    "requiredFrameFields": ["id", "family", "topologyRole", "direction", "corner", "variant", "canonicalMask", "anchor", "edgeAnchors", "frame", "sourceSha256"]
   },
   "determinism": {
     "hashAlgorithm": "sha256",

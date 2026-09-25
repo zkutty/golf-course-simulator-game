@@ -75,6 +75,10 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
   const [renderState, setRenderState] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
+    setCollapsed(closed);
+  }, [closed]);
+
+  useEffect(() => {
     setRenderState("loading");
     try {
       const bounds = boundsFor(course, hole, holeIndex);

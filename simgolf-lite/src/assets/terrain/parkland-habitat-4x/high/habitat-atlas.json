@@ -4,17 +4,261 @@
   "tier": "high",
   "image": "habitat-atlas.png",
   "width": 2640,
-  "height": 1360,
+  "height": 1224,
   "gutterPx": 4,
-  "frameCount": 95,
+  "frameCount": 89,
   "frames": {
-    "woodland_floor--interior-0": {
-      "id": "woodland_floor--interior-0",
+    "woodland_floor--mask-00-0": {
+      "id": "woodland_floor--mask-00-0",
       "family": "woodland_floor",
-      "topologyRole": "interior",
+      "topologyRole": "mask",
       "direction": null,
       "corner": null,
       "variant": 0,
+      "canonicalMask": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [],
+      "frame": {
+        "x": 4,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "5c782795ea63a78302505e7edfabb6442397d6bd64454091560418033f1c2943"
+    },
+    "woodland_floor--mask-01-0": {
+      "id": "woodland_floor--mask-01-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 1,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "853a0131ddadfbc9e6b26231a4757f263d13de7b7a39bfa4344b3647d327e654"
+    },
+    "woodland_floor--mask-05-0": {
+      "id": "woodland_floor--mask-05-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 5,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "9e194ba47fd50f6b2b0f5632931824b625aaf889039c99a53ef8d6268abefbe1"
+    },
+    "woodland_floor--mask-07-0": {
+      "id": "woodland_floor--mask-07-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 7,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "740d31c6e9af273a9495a50d7809d61fe233e781433a67aec4f890a6af2ffa6b"
+    },
+    "woodland_floor--mask-11-0": {
+      "id": "woodland_floor--mask-11-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 17,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "s"
+      ],
+      "frame": {
+        "x": 1060,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "0172c7877090bc4c7952cef3207c59927c17220bbdc2abf0c84c861ebc17df62"
+    },
+    "woodland_floor--mask-15-0": {
+      "id": "woodland_floor--mask-15-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 21,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s"
+      ],
+      "frame": {
+        "x": 1324,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "0f700b8efe1f86b3ffb8de54b93f08aa2bdf60e477f5e657c37f93fea2e975d4"
+    },
+    "woodland_floor--mask-17-0": {
+      "id": "woodland_floor--mask-17-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 23,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s"
+      ],
+      "frame": {
+        "x": 1588,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "c8c34c19b9838396889886d333a17a19a26bd9c50f89ec8774f32ce6eebdc767"
+    },
+    "woodland_floor--mask-1f-0": {
+      "id": "woodland_floor--mask-1f-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 31,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s"
+      ],
+      "frame": {
+        "x": 1852,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "23e4d68a078b5666185ba6b6d12f7fefeaa94f735ab0696c781c336ba26bb73c"
+    },
+    "woodland_floor--mask-55-0": {
+      "id": "woodland_floor--mask-55-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 85,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 2116,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "feaacf72e379f90fc821fd5c575bf84a43ccff9198dc2e66c7756cafd6de32bf"
+    },
+    "woodland_floor--mask-57-0": {
+      "id": "woodland_floor--mask-57-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 87,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 2380,
+        "y": 4,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "4806fa512bfc34b78a7e39dec424a07ec238383455b8c0a22ae38ad194999105"
+    },
+    "woodland_floor--mask-5f-0": {
+      "id": "woodland_floor--mask-5f-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 95,
       "anchor": {
         "x": 128,
         "y": 64
@@ -27,19 +271,98 @@
       ],
       "frame": {
         "x": 4,
-        "y": 4,
+        "y": 140,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "15a91ad31daed03cb224bc53d29e2bc4c572ce87a9a009e45fa81c2c729bd3c1"
+      "sourceSha256": "a0f7f92e61844804cc6aa8608890a48b100981b903001e44abc0cfb916b402fe"
     },
-    "woodland_floor--interior-1": {
-      "id": "woodland_floor--interior-1",
+    "woodland_floor--mask-77-0": {
+      "id": "woodland_floor--mask-77-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 119,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 268,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "431a746feda58ac9a7fe9f5665600dea54a1f51138bac5ec3f00b1edba0099f2"
+    },
+    "woodland_floor--mask-7f-0": {
+      "id": "woodland_floor--mask-7f-0",
+      "family": "woodland_floor",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 127,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "14094f1093174aedd7bbbcaa0c5327c072643f4cad84e86483519551a0244a65"
+    },
+    "woodland_floor--mask-ff-0": {
+      "id": "woodland_floor--mask-ff-0",
+      "family": "woodland_floor",
+      "topologyRole": "interior",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 255,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
+        "w"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "ad8ab421ce8e6e12b41e29f2cffb3aa01e9f43602f5eca0b34c349423a773e44"
+    },
+    "woodland_floor--mask-ff-1": {
+      "id": "woodland_floor--mask-ff-1",
       "family": "woodland_floor",
       "topologyRole": "interior",
       "direction": null,
       "corner": null,
       "variant": 1,
+      "canonicalMask": 255,
       "anchor": {
         "x": 128,
         "y": 64
@@ -51,20 +374,21 @@
         "w"
       ],
       "frame": {
-        "x": 268,
-        "y": 4,
+        "x": 1060,
+        "y": 140,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "f575ffd18e2783e72ab3a1168a0e13c360722b8dc8174243e623b22b57df67b3"
+      "sourceSha256": "e2c0861230777e9d8fdc53b7934e9913469637c1f6011ec80f48cde81e8fa5ca"
     },
-    "woodland_floor--interior-2": {
-      "id": "woodland_floor--interior-2",
+    "woodland_floor--mask-ff-2": {
+      "id": "woodland_floor--mask-ff-2",
       "family": "woodland_floor",
       "topologyRole": "interior",
       "direction": null,
       "corner": null,
       "variant": 2,
+      "canonicalMask": 255,
       "anchor": {
         "x": 128,
         "y": 64
@@ -76,20 +400,42 @@
         "w"
       ],
       "frame": {
-        "x": 532,
-        "y": 4,
+        "x": 1324,
+        "y": 140,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "a7da3c90ac9124566acaf5179aa3779446e06cd04c09a562b1c3b69900f53b24"
+      "sourceSha256": "756b1afbce63e8b2175624aaead72755875895c0718af3a8dd0cbb6170d414d5"
     },
-    "woodland_floor--boundary-n": {
-      "id": "woodland_floor--boundary-n",
-      "family": "woodland_floor",
-      "topologyRole": "boundary",
-      "direction": "n",
+    "understory_edge--mask-00-0": {
+      "id": "understory_edge--mask-00-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
+      "direction": null,
       "corner": null,
       "variant": 0,
+      "canonicalMask": 0,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [],
+      "frame": {
+        "x": 1588,
+        "y": 140,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "330d220499833f14590d1c09afd8fef07d1a9989625768ac4d7bee2786f3608c"
+    },
+    "understory_edge--mask-01-0": {
+      "id": "understory_edge--mask-01-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 1,
       "anchor": {
         "x": 128,
         "y": 64
@@ -98,86 +444,21 @@
         "n"
       ],
       "frame": {
-        "x": 796,
-        "y": 4,
+        "x": 1852,
+        "y": 140,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "4b14bc5ab1e56c990cc89600981f5a7d8190799f23591d5c264bd1394f9a9acc"
+      "sourceSha256": "84214c33ef0985a2635a0c603066b4f5a8eca27a7f0088a9477ee3ca065c5b18"
     },
-    "woodland_floor--boundary-e": {
-      "id": "woodland_floor--boundary-e",
-      "family": "woodland_floor",
-      "topologyRole": "boundary",
-      "direction": "e",
-      "corner": null,
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "e"
-      ],
-      "frame": {
-        "x": 1060,
-        "y": 4,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "4b4c1f011e4ebcd1c24cbc760005edb78a3ab954000d8823eac80e62d45510eb"
-    },
-    "woodland_floor--boundary-s": {
-      "id": "woodland_floor--boundary-s",
-      "family": "woodland_floor",
-      "topologyRole": "boundary",
-      "direction": "s",
-      "corner": null,
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "s"
-      ],
-      "frame": {
-        "x": 1324,
-        "y": 4,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "57f99c14c323f35dc5debcf9968aade2315513ece97b26988241068c58cf4436"
-    },
-    "woodland_floor--boundary-w": {
-      "id": "woodland_floor--boundary-w",
-      "family": "woodland_floor",
-      "topologyRole": "boundary",
-      "direction": "w",
-      "corner": null,
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "w"
-      ],
-      "frame": {
-        "x": 1588,
-        "y": 4,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "23d998ef504550ba1c7ea20fa1e34d174370c43203a91f2621447918d36e65a2"
-    },
-    "woodland_floor--convex-ne": {
-      "id": "woodland_floor--convex-ne",
-      "family": "woodland_floor",
-      "topologyRole": "convex",
+    "understory_edge--mask-05-0": {
+      "id": "understory_edge--mask-05-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
       "direction": null,
-      "corner": "ne",
+      "corner": null,
       "variant": 0,
+      "canonicalMask": 5,
       "anchor": {
         "x": 128,
         "y": 64
@@ -187,269 +468,274 @@
         "e"
       ],
       "frame": {
-        "x": 1852,
-        "y": 4,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "621b2ec9d4cb514de2978ff0dfa4d1bb995d73fcc713271c941cf9b3dac43ca1"
-    },
-    "woodland_floor--convex-se": {
-      "id": "woodland_floor--convex-se",
-      "family": "woodland_floor",
-      "topologyRole": "convex",
-      "direction": null,
-      "corner": "se",
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "s",
-        "e"
-      ],
-      "frame": {
         "x": 2116,
-        "y": 4,
+        "y": 140,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "973736146631c884590a35ac58053c848b99b0d51057c7a607674ef9703d8042"
+      "sourceSha256": "fe24c03e6a94d22cf81512945d3301a71bf5fa491398391096d522d1a7708822"
     },
-    "woodland_floor--convex-sw": {
-      "id": "woodland_floor--convex-sw",
-      "family": "woodland_floor",
-      "topologyRole": "convex",
+    "understory_edge--mask-07-0": {
+      "id": "understory_edge--mask-07-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
       "direction": null,
-      "corner": "sw",
+      "corner": null,
       "variant": 0,
+      "canonicalMask": 7,
       "anchor": {
         "x": 128,
         "y": 64
       },
       "edgeAnchors": [
-        "s",
-        "w"
+        "n",
+        "e"
       ],
       "frame": {
         "x": 2380,
-        "y": 4,
+        "y": 140,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "242e886063ad0ca2a0c48b15fb1dc1c55e936fd9ce7284934d1ecd6a0cefc261"
+      "sourceSha256": "350a3d317f84cbf90c638c4b4ecff587b45bacedfd80462e93a50d4af47d2580"
     },
-    "woodland_floor--convex-nw": {
-      "id": "woodland_floor--convex-nw",
-      "family": "woodland_floor",
-      "topologyRole": "convex",
+    "understory_edge--mask-11-0": {
+      "id": "understory_edge--mask-11-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
       "direction": null,
-      "corner": "nw",
+      "corner": null,
       "variant": 0,
+      "canonicalMask": 17,
       "anchor": {
         "x": 128,
         "y": 64
       },
       "edgeAnchors": [
         "n",
-        "w"
+        "s"
       ],
       "frame": {
         "x": 4,
-        "y": 140,
+        "y": 276,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "6b958e2bcb3b75109b2ed6f2b0a34ff68341a98b56ec213749844d18fc60a680"
+      "sourceSha256": "e8d5c404995c2c625bc1cc8851436d0bb88049f3e7a4aadaf7c98b0bb008a446"
     },
-    "woodland_floor--concave-ne": {
-      "id": "woodland_floor--concave-ne",
-      "family": "woodland_floor",
-      "topologyRole": "concave",
+    "understory_edge--mask-15-0": {
+      "id": "understory_edge--mask-15-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
       "direction": null,
-      "corner": "ne",
+      "corner": null,
       "variant": 0,
+      "canonicalMask": 21,
       "anchor": {
         "x": 128,
         "y": 64
       },
       "edgeAnchors": [
         "n",
-        "e"
+        "e",
+        "s"
       ],
       "frame": {
         "x": 268,
-        "y": 140,
+        "y": 276,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "dbe76ded0a0e58acf51ec771c7df9b6a8b6359e1da31dc3cf708bbd007c10809"
+      "sourceSha256": "e181d1fc64aa789f20ea9d98db1f788d5febf6ca7f214bdeeec892a7d320a7dc"
     },
-    "woodland_floor--concave-se": {
-      "id": "woodland_floor--concave-se",
-      "family": "woodland_floor",
-      "topologyRole": "concave",
+    "understory_edge--mask-17-0": {
+      "id": "understory_edge--mask-17-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
       "direction": null,
-      "corner": "se",
+      "corner": null,
       "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "s",
-        "e"
-      ],
-      "frame": {
-        "x": 532,
-        "y": 140,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "fe64b925dcca089286f6aaf9bbb55fc050521792ea1ed99330cfa62ebf97887e"
-    },
-    "woodland_floor--concave-sw": {
-      "id": "woodland_floor--concave-sw",
-      "family": "woodland_floor",
-      "topologyRole": "concave",
-      "direction": null,
-      "corner": "sw",
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "s",
-        "w"
-      ],
-      "frame": {
-        "x": 796,
-        "y": 140,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "8b1f79fcdc190d9d4ba06b1d68d5c32d562f0d56585141e2b1f3c1bd4231fc48"
-    },
-    "woodland_floor--concave-nw": {
-      "id": "woodland_floor--concave-nw",
-      "family": "woodland_floor",
-      "topologyRole": "concave",
-      "direction": null,
-      "corner": "nw",
-      "variant": 0,
+      "canonicalMask": 23,
       "anchor": {
         "x": 128,
         "y": 64
       },
       "edgeAnchors": [
         "n",
+        "e",
+        "s"
+      ],
+      "frame": {
+        "x": 532,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "25b5c8389f365f83430a2a139d26c6f38497c68b960772f9533628eb5e460d3b"
+    },
+    "understory_edge--mask-1f-0": {
+      "id": "understory_edge--mask-1f-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 31,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s"
+      ],
+      "frame": {
+        "x": 796,
+        "y": 276,
+        "width": 256,
+        "height": 128
+      },
+      "sourceSha256": "2bc505a15d4d1103b55cb412a4eccb9f951c6d3989bfc80da61d2ca47b4be4b0"
+    },
+    "understory_edge--mask-55-0": {
+      "id": "understory_edge--mask-55-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
+      "direction": null,
+      "corner": null,
+      "variant": 0,
+      "canonicalMask": 85,
+      "anchor": {
+        "x": 128,
+        "y": 64
+      },
+      "edgeAnchors": [
+        "n",
+        "e",
+        "s",
         "w"
       ],
       "frame": {
         "x": 1060,
-        "y": 140,
+        "y": 276,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "70184953a14cb05473d88c1029914519c5a1b129684d4823e64da014c4a32b77"
+      "sourceSha256": "ee7b873b9a688c9d35bedf5b0423f2e220fc8e9fb9e25b2bd9550f12b4da1b5c"
     },
-    "woodland_floor--termination-n": {
-      "id": "woodland_floor--termination-n",
-      "family": "woodland_floor",
-      "topologyRole": "termination",
-      "direction": "n",
+    "understory_edge--mask-57-0": {
+      "id": "understory_edge--mask-57-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
+      "direction": null,
       "corner": null,
       "variant": 0,
+      "canonicalMask": 87,
       "anchor": {
         "x": 128,
         "y": 64
       },
       "edgeAnchors": [
-        "n"
+        "n",
+        "e",
+        "s",
+        "w"
       ],
       "frame": {
         "x": 1324,
-        "y": 140,
+        "y": 276,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "2453ffb3e864fd7434205c92caac8fb22e86c413f618a53766a2fe506de55167"
+      "sourceSha256": "c47c37666e07b83434e16b0cdb8bfe757e3b198d6ddb4ac4de4bebd92f3833b3"
     },
-    "woodland_floor--termination-e": {
-      "id": "woodland_floor--termination-e",
-      "family": "woodland_floor",
-      "topologyRole": "termination",
-      "direction": "e",
+    "understory_edge--mask-5f-0": {
+      "id": "understory_edge--mask-5f-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
+      "direction": null,
       "corner": null,
       "variant": 0,
+      "canonicalMask": 95,
       "anchor": {
         "x": 128,
         "y": 64
       },
       "edgeAnchors": [
-        "e"
+        "n",
+        "e",
+        "s",
+        "w"
       ],
       "frame": {
         "x": 1588,
-        "y": 140,
+        "y": 276,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "fbc068a34aee0c18b8266b6506053a9b9d072d3fea67e4883020d10cc7ad0392"
+      "sourceSha256": "b81ef749833ca774fb20fd1e1f158b4423eed17e706a9e7c3be0ca140c7fb09a"
     },
-    "woodland_floor--termination-s": {
-      "id": "woodland_floor--termination-s",
-      "family": "woodland_floor",
-      "topologyRole": "termination",
-      "direction": "s",
+    "understory_edge--mask-77-0": {
+      "id": "understory_edge--mask-77-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
+      "direction": null,
       "corner": null,
       "variant": 0,
+      "canonicalMask": 119,
       "anchor": {
         "x": 128,
         "y": 64
       },
       "edgeAnchors": [
-        "s"
+        "n",
+        "e",
+        "s",
+        "w"
       ],
       "frame": {
         "x": 1852,
-        "y": 140,
+        "y": 276,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "d86cfe240af4797d7bb8e78a1db2ead7770100c90d582214468e371602553150"
+      "sourceSha256": "2af66bc76f28f257e95386c9dbab3efa9d455cd72a6b019f10e6723fbeea820f"
     },
-    "woodland_floor--termination-w": {
-      "id": "woodland_floor--termination-w",
-      "family": "woodland_floor",
-      "topologyRole": "termination",
-      "direction": "w",
+    "understory_edge--mask-7f-0": {
+      "id": "understory_edge--mask-7f-0",
+      "family": "understory_edge",
+      "topologyRole": "mask",
+      "direction": null,
       "corner": null,
       "variant": 0,
+      "canonicalMask": 127,
       "anchor": {
         "x": 128,
         "y": 64
       },
       "edgeAnchors": [
+        "n",
+        "e",
+        "s",
         "w"
       ],
       "frame": {
         "x": 2116,
-        "y": 140,
+        "y": 276,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "668f6645f09054a590bc91f26a5e37e7add206c5889d6bc92483f7f3db13c6c0"
+      "sourceSha256": "186f60555f96d15762b1799d1ea92ce34e7b02e7a4ef5b31a66aa9593d617a96"
     },
-    "understory_edge--interior-0": {
-      "id": "understory_edge--interior-0",
+    "understory_edge--mask-ff-0": {
+      "id": "understory_edge--mask-ff-0",
       "family": "understory_edge",
       "topologyRole": "interior",
       "direction": null,
       "corner": null,
       "variant": 0,
+      "canonicalMask": 255,
       "anchor": {
         "x": 128,
         "y": 64
@@ -462,19 +748,20 @@
       ],
       "frame": {
         "x": 2380,
-        "y": 140,
+        "y": 276,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "f182b6c2435c617e1f4db3083bbea71f138dbf53eaa09f84bafc6bf3c029b7bf"
+      "sourceSha256": "973ed3d61de9f406066a567578d91467411f2af8b3c73cc231e72b9ce1465734"
     },
-    "understory_edge--interior-1": {
-      "id": "understory_edge--interior-1",
+    "understory_edge--mask-ff-1": {
+      "id": "understory_edge--mask-ff-1",
       "family": "understory_edge",
       "topologyRole": "interior",
       "direction": null,
       "corner": null,
       "variant": 1,
+      "canonicalMask": 255,
       "anchor": {
         "x": 128,
         "y": 64
@@ -487,19 +774,20 @@
       ],
       "frame": {
         "x": 4,
-        "y": 276,
+        "y": 412,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "403a07df561588f9f1132765e4224d929a07214179da7f515df9b43229401d49"
+      "sourceSha256": "ce8894bbd95f4fe2e7e5e6a45775f839c2c62a1020535c8ae192606d34c587e9"
     },
-    "understory_edge--interior-2": {
-      "id": "understory_edge--interior-2",
+    "understory_edge--mask-ff-2": {
+      "id": "understory_edge--mask-ff-2",
       "family": "understory_edge",
       "topologyRole": "interior",
       "direction": null,
       "corner": null,
       "variant": 2,
+      "canonicalMask": 255,
       "anchor": {
         "x": 128,
         "y": 64
@@ -512,371 +800,11 @@
       ],
       "frame": {
         "x": 268,
-        "y": 276,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "a7a42a27d3bc74e601a3dc2d15a497c981baf7f445711b00fe73e37e7a82f784"
-    },
-    "understory_edge--boundary-n": {
-      "id": "understory_edge--boundary-n",
-      "family": "understory_edge",
-      "topologyRole": "boundary",
-      "direction": "n",
-      "corner": null,
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "n"
-      ],
-      "frame": {
-        "x": 532,
-        "y": 276,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "4c87c2ef08d7cc826c8e833eaf52b3b1b0735ff992b95d0b4d79adce4db3b615"
-    },
-    "understory_edge--boundary-e": {
-      "id": "understory_edge--boundary-e",
-      "family": "understory_edge",
-      "topologyRole": "boundary",
-      "direction": "e",
-      "corner": null,
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "e"
-      ],
-      "frame": {
-        "x": 796,
-        "y": 276,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "39376421167351928bffc165b0f1135e47038f40a2f6d2016bf5c3cd0ecbc355"
-    },
-    "understory_edge--boundary-s": {
-      "id": "understory_edge--boundary-s",
-      "family": "understory_edge",
-      "topologyRole": "boundary",
-      "direction": "s",
-      "corner": null,
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "s"
-      ],
-      "frame": {
-        "x": 1060,
-        "y": 276,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "cd9a1d24a8200fbe15e4d6e430732964e11732b059407e2f01cf4da3f79765fe"
-    },
-    "understory_edge--boundary-w": {
-      "id": "understory_edge--boundary-w",
-      "family": "understory_edge",
-      "topologyRole": "boundary",
-      "direction": "w",
-      "corner": null,
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "w"
-      ],
-      "frame": {
-        "x": 1324,
-        "y": 276,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "ce5cf54235a4fdd919e98a3221a1a471db92213a974b5e7d659a2978bea3f248"
-    },
-    "understory_edge--convex-ne": {
-      "id": "understory_edge--convex-ne",
-      "family": "understory_edge",
-      "topologyRole": "convex",
-      "direction": null,
-      "corner": "ne",
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "n",
-        "e"
-      ],
-      "frame": {
-        "x": 1588,
-        "y": 276,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "5b40d1342e4119abbd807742ec0a2a1041bcaec3c046519d3026d83978b9ccca"
-    },
-    "understory_edge--convex-se": {
-      "id": "understory_edge--convex-se",
-      "family": "understory_edge",
-      "topologyRole": "convex",
-      "direction": null,
-      "corner": "se",
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "s",
-        "e"
-      ],
-      "frame": {
-        "x": 1852,
-        "y": 276,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "9c4cba989769d7d428aa3fa8793df335e73b48784e1b79d1bd8a6c0090adcf06"
-    },
-    "understory_edge--convex-sw": {
-      "id": "understory_edge--convex-sw",
-      "family": "understory_edge",
-      "topologyRole": "convex",
-      "direction": null,
-      "corner": "sw",
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "s",
-        "w"
-      ],
-      "frame": {
-        "x": 2116,
-        "y": 276,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "07a3c204f0f89f95891e059ea5426e5840fde2fd3d551490fecb6a33254baa50"
-    },
-    "understory_edge--convex-nw": {
-      "id": "understory_edge--convex-nw",
-      "family": "understory_edge",
-      "topologyRole": "convex",
-      "direction": null,
-      "corner": "nw",
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "n",
-        "w"
-      ],
-      "frame": {
-        "x": 2380,
-        "y": 276,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "0027ad1d67a2d8789a15c304eb770892c7ef2db67c95b8753937551ee0b4b87b"
-    },
-    "understory_edge--concave-ne": {
-      "id": "understory_edge--concave-ne",
-      "family": "understory_edge",
-      "topologyRole": "concave",
-      "direction": null,
-      "corner": "ne",
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "n",
-        "e"
-      ],
-      "frame": {
-        "x": 4,
         "y": 412,
         "width": 256,
         "height": 128
       },
-      "sourceSha256": "cd640f7f06a56d5ec7a913f5130ac9e4e9f9b794c580bf422dd416dfbd7be0c3"
-    },
-    "understory_edge--concave-se": {
-      "id": "understory_edge--concave-se",
-      "family": "understory_edge",
-      "topologyRole": "concave",
-      "direction": null,
-      "corner": "se",
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "s",
-        "e"
-      ],
-      "frame": {
-        "x": 268,
-        "y": 412,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "596b6d3d7aa3d8678234b9d6e180f57b8de7334a77242bda39ec51ff7c1e65d1"
-    },
-    "understory_edge--concave-sw": {
-      "id": "understory_edge--concave-sw",
-      "family": "understory_edge",
-      "topologyRole": "concave",
-      "direction": null,
-      "corner": "sw",
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "s",
-        "w"
-      ],
-      "frame": {
-        "x": 532,
-        "y": 412,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "95523febe6971a983d38061d4988ca17a058b65d4c863150f46a466b3f60b063"
-    },
-    "understory_edge--concave-nw": {
-      "id": "understory_edge--concave-nw",
-      "family": "understory_edge",
-      "topologyRole": "concave",
-      "direction": null,
-      "corner": "nw",
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "n",
-        "w"
-      ],
-      "frame": {
-        "x": 796,
-        "y": 412,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "a4e4aad01d7b27c91a3217bbec3e74a59f3c3a8ecbc809d3c517fad590224d4b"
-    },
-    "understory_edge--termination-n": {
-      "id": "understory_edge--termination-n",
-      "family": "understory_edge",
-      "topologyRole": "termination",
-      "direction": "n",
-      "corner": null,
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "n"
-      ],
-      "frame": {
-        "x": 1060,
-        "y": 412,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "b064dd61f1f73a0c99d827fae8c48e1a344cb312b4321fcf196a9efe385af570"
-    },
-    "understory_edge--termination-e": {
-      "id": "understory_edge--termination-e",
-      "family": "understory_edge",
-      "topologyRole": "termination",
-      "direction": "e",
-      "corner": null,
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "e"
-      ],
-      "frame": {
-        "x": 1324,
-        "y": 412,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "c864370304006e47bdac125713094e9567d1f8347ef7a3e9ec70c3272d4fb36c"
-    },
-    "understory_edge--termination-s": {
-      "id": "understory_edge--termination-s",
-      "family": "understory_edge",
-      "topologyRole": "termination",
-      "direction": "s",
-      "corner": null,
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "s"
-      ],
-      "frame": {
-        "x": 1588,
-        "y": 412,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "f844ca910039d94421088fd4b31b6299ed7e9a61839f60b16db4311214c7f620"
-    },
-    "understory_edge--termination-w": {
-      "id": "understory_edge--termination-w",
-      "family": "understory_edge",
-      "topologyRole": "termination",
-      "direction": "w",
-      "corner": null,
-      "variant": 0,
-      "anchor": {
-        "x": 128,
-        "y": 64
-      },
-      "edgeAnchors": [
-        "w"
-      ],
-      "frame": {
-        "x": 1852,
-        "y": 412,
-        "width": 256,
-        "height": 128
-      },
-      "sourceSha256": "5a734aef0ed664845f56ce291062fde3f0f5f617dec66c3bf0ab9a22ee0ffa8a"
+      "sourceSha256": "a0f65a7be9ca7882a0c5648b8cec89f527d6163d1a961568f3497215f7e8633c"
     },
     "meadow_deep_rough_margin--interior-0": {
       "id": "meadow_deep_rough_margin--interior-0",
@@ -885,6 +813,7 @@
       "direction": null,
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -896,7 +825,7 @@
         "w"
       ],
       "frame": {
-        "x": 2116,
+        "x": 532,
         "y": 412,
         "width": 256,
         "height": 128
@@ -910,6 +839,7 @@
       "direction": null,
       "corner": null,
       "variant": 1,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -921,7 +851,7 @@
         "w"
       ],
       "frame": {
-        "x": 2380,
+        "x": 796,
         "y": 412,
         "width": 256,
         "height": 128
@@ -935,6 +865,7 @@
       "direction": null,
       "corner": null,
       "variant": 2,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -946,8 +877,8 @@
         "w"
       ],
       "frame": {
-        "x": 4,
-        "y": 548,
+        "x": 1060,
+        "y": 412,
         "width": 256,
         "height": 128
       },
@@ -960,6 +891,7 @@
       "direction": "n",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -968,8 +900,8 @@
         "n"
       ],
       "frame": {
-        "x": 268,
-        "y": 548,
+        "x": 1324,
+        "y": 412,
         "width": 256,
         "height": 128
       },
@@ -982,6 +914,7 @@
       "direction": "e",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -990,8 +923,8 @@
         "e"
       ],
       "frame": {
-        "x": 532,
-        "y": 548,
+        "x": 1588,
+        "y": 412,
         "width": 256,
         "height": 128
       },
@@ -1004,6 +937,7 @@
       "direction": "s",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1012,8 +946,8 @@
         "s"
       ],
       "frame": {
-        "x": 796,
-        "y": 548,
+        "x": 1852,
+        "y": 412,
         "width": 256,
         "height": 128
       },
@@ -1026,6 +960,7 @@
       "direction": "w",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1034,8 +969,8 @@
         "w"
       ],
       "frame": {
-        "x": 1060,
-        "y": 548,
+        "x": 2116,
+        "y": 412,
         "width": 256,
         "height": 128
       },
@@ -1048,6 +983,7 @@
       "direction": null,
       "corner": "ne",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1057,8 +993,8 @@
         "e"
       ],
       "frame": {
-        "x": 1324,
-        "y": 548,
+        "x": 2380,
+        "y": 412,
         "width": 256,
         "height": 128
       },
@@ -1071,6 +1007,7 @@
       "direction": null,
       "corner": "se",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1080,7 +1017,7 @@
         "e"
       ],
       "frame": {
-        "x": 1588,
+        "x": 4,
         "y": 548,
         "width": 256,
         "height": 128
@@ -1094,6 +1031,7 @@
       "direction": null,
       "corner": "sw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1103,7 +1041,7 @@
         "w"
       ],
       "frame": {
-        "x": 1852,
+        "x": 268,
         "y": 548,
         "width": 256,
         "height": 128
@@ -1117,6 +1055,7 @@
       "direction": null,
       "corner": "nw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1126,7 +1065,7 @@
         "w"
       ],
       "frame": {
-        "x": 2116,
+        "x": 532,
         "y": 548,
         "width": 256,
         "height": 128
@@ -1140,6 +1079,7 @@
       "direction": null,
       "corner": "ne",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1149,7 +1089,7 @@
         "e"
       ],
       "frame": {
-        "x": 2380,
+        "x": 796,
         "y": 548,
         "width": 256,
         "height": 128
@@ -1163,6 +1103,7 @@
       "direction": null,
       "corner": "se",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1172,8 +1113,8 @@
         "e"
       ],
       "frame": {
-        "x": 4,
-        "y": 684,
+        "x": 1060,
+        "y": 548,
         "width": 256,
         "height": 128
       },
@@ -1186,6 +1127,7 @@
       "direction": null,
       "corner": "sw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1195,8 +1137,8 @@
         "w"
       ],
       "frame": {
-        "x": 268,
-        "y": 684,
+        "x": 1324,
+        "y": 548,
         "width": 256,
         "height": 128
       },
@@ -1209,6 +1151,7 @@
       "direction": null,
       "corner": "nw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1218,8 +1161,8 @@
         "w"
       ],
       "frame": {
-        "x": 532,
-        "y": 684,
+        "x": 1588,
+        "y": 548,
         "width": 256,
         "height": 128
       },
@@ -1232,6 +1175,7 @@
       "direction": "n",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1240,8 +1184,8 @@
         "n"
       ],
       "frame": {
-        "x": 796,
-        "y": 684,
+        "x": 1852,
+        "y": 548,
         "width": 256,
         "height": 128
       },
@@ -1254,6 +1198,7 @@
       "direction": "e",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1262,8 +1207,8 @@
         "e"
       ],
       "frame": {
-        "x": 1060,
-        "y": 684,
+        "x": 2116,
+        "y": 548,
         "width": 256,
         "height": 128
       },
@@ -1276,6 +1221,7 @@
       "direction": "s",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1284,8 +1230,8 @@
         "s"
       ],
       "frame": {
-        "x": 1324,
-        "y": 684,
+        "x": 2380,
+        "y": 548,
         "width": 256,
         "height": 128
       },
@@ -1298,6 +1244,7 @@
       "direction": "w",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1306,7 +1253,7 @@
         "w"
       ],
       "frame": {
-        "x": 1588,
+        "x": 4,
         "y": 684,
         "width": 256,
         "height": 128
@@ -1320,6 +1267,7 @@
       "direction": null,
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1331,7 +1279,7 @@
         "w"
       ],
       "frame": {
-        "x": 1852,
+        "x": 268,
         "y": 684,
         "width": 256,
         "height": 128
@@ -1345,6 +1293,7 @@
       "direction": null,
       "corner": null,
       "variant": 1,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1356,7 +1305,7 @@
         "w"
       ],
       "frame": {
-        "x": 2116,
+        "x": 532,
         "y": 684,
         "width": 256,
         "height": 128
@@ -1370,6 +1319,7 @@
       "direction": null,
       "corner": null,
       "variant": 2,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1381,7 +1331,7 @@
         "w"
       ],
       "frame": {
-        "x": 2380,
+        "x": 796,
         "y": 684,
         "width": 256,
         "height": 128
@@ -1395,6 +1345,7 @@
       "direction": "n",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1403,8 +1354,8 @@
         "n"
       ],
       "frame": {
-        "x": 4,
-        "y": 820,
+        "x": 1060,
+        "y": 684,
         "width": 256,
         "height": 128
       },
@@ -1417,6 +1368,7 @@
       "direction": "e",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1425,8 +1377,8 @@
         "e"
       ],
       "frame": {
-        "x": 268,
-        "y": 820,
+        "x": 1324,
+        "y": 684,
         "width": 256,
         "height": 128
       },
@@ -1439,6 +1391,7 @@
       "direction": "s",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1447,8 +1400,8 @@
         "s"
       ],
       "frame": {
-        "x": 532,
-        "y": 820,
+        "x": 1588,
+        "y": 684,
         "width": 256,
         "height": 128
       },
@@ -1461,6 +1414,7 @@
       "direction": "w",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1469,8 +1423,8 @@
         "w"
       ],
       "frame": {
-        "x": 796,
-        "y": 820,
+        "x": 1852,
+        "y": 684,
         "width": 256,
         "height": 128
       },
@@ -1483,6 +1437,7 @@
       "direction": null,
       "corner": "ne",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1492,8 +1447,8 @@
         "e"
       ],
       "frame": {
-        "x": 1060,
-        "y": 820,
+        "x": 2116,
+        "y": 684,
         "width": 256,
         "height": 128
       },
@@ -1506,6 +1461,7 @@
       "direction": null,
       "corner": "se",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1515,8 +1471,8 @@
         "e"
       ],
       "frame": {
-        "x": 1324,
-        "y": 820,
+        "x": 2380,
+        "y": 684,
         "width": 256,
         "height": 128
       },
@@ -1529,6 +1485,7 @@
       "direction": null,
       "corner": "sw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1538,7 +1495,7 @@
         "w"
       ],
       "frame": {
-        "x": 1588,
+        "x": 4,
         "y": 820,
         "width": 256,
         "height": 128
@@ -1552,6 +1509,7 @@
       "direction": null,
       "corner": "nw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1561,7 +1519,7 @@
         "w"
       ],
       "frame": {
-        "x": 1852,
+        "x": 268,
         "y": 820,
         "width": 256,
         "height": 128
@@ -1575,6 +1533,7 @@
       "direction": null,
       "corner": "ne",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1584,7 +1543,7 @@
         "e"
       ],
       "frame": {
-        "x": 2116,
+        "x": 532,
         "y": 820,
         "width": 256,
         "height": 128
@@ -1598,6 +1557,7 @@
       "direction": null,
       "corner": "se",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1607,7 +1567,7 @@
         "e"
       ],
       "frame": {
-        "x": 2380,
+        "x": 796,
         "y": 820,
         "width": 256,
         "height": 128
@@ -1621,6 +1581,7 @@
       "direction": null,
       "corner": "sw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1630,8 +1591,8 @@
         "w"
       ],
       "frame": {
-        "x": 4,
-        "y": 956,
+        "x": 1060,
+        "y": 820,
         "width": 256,
         "height": 128
       },
@@ -1644,6 +1605,7 @@
       "direction": null,
       "corner": "nw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1653,8 +1615,8 @@
         "w"
       ],
       "frame": {
-        "x": 268,
-        "y": 956,
+        "x": 1324,
+        "y": 820,
         "width": 256,
         "height": 128
       },
@@ -1667,6 +1629,7 @@
       "direction": "n",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1675,8 +1638,8 @@
         "n"
       ],
       "frame": {
-        "x": 532,
-        "y": 956,
+        "x": 1588,
+        "y": 820,
         "width": 256,
         "height": 128
       },
@@ -1689,6 +1652,7 @@
       "direction": "e",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1697,8 +1661,8 @@
         "e"
       ],
       "frame": {
-        "x": 796,
-        "y": 956,
+        "x": 1852,
+        "y": 820,
         "width": 256,
         "height": 128
       },
@@ -1711,6 +1675,7 @@
       "direction": "s",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1719,8 +1684,8 @@
         "s"
       ],
       "frame": {
-        "x": 1060,
-        "y": 956,
+        "x": 2116,
+        "y": 820,
         "width": 256,
         "height": 128
       },
@@ -1733,6 +1698,7 @@
       "direction": "w",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1741,8 +1707,8 @@
         "w"
       ],
       "frame": {
-        "x": 1324,
-        "y": 956,
+        "x": 2380,
+        "y": 820,
         "width": 256,
         "height": 128
       },
@@ -1755,6 +1721,7 @@
       "direction": null,
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1766,7 +1733,7 @@
         "w"
       ],
       "frame": {
-        "x": 1588,
+        "x": 4,
         "y": 956,
         "width": 256,
         "height": 128
@@ -1780,6 +1747,7 @@
       "direction": null,
       "corner": null,
       "variant": 1,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1791,7 +1759,7 @@
         "w"
       ],
       "frame": {
-        "x": 1852,
+        "x": 268,
         "y": 956,
         "width": 256,
         "height": 128
@@ -1805,6 +1773,7 @@
       "direction": null,
       "corner": null,
       "variant": 2,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1816,7 +1785,7 @@
         "w"
       ],
       "frame": {
-        "x": 2116,
+        "x": 532,
         "y": 956,
         "width": 256,
         "height": 128
@@ -1830,6 +1799,7 @@
       "direction": "n",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1838,7 +1808,7 @@
         "n"
       ],
       "frame": {
-        "x": 2380,
+        "x": 796,
         "y": 956,
         "width": 256,
         "height": 128
@@ -1852,6 +1822,7 @@
       "direction": "e",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1860,8 +1831,8 @@
         "e"
       ],
       "frame": {
-        "x": 4,
-        "y": 1092,
+        "x": 1060,
+        "y": 956,
         "width": 256,
         "height": 128
       },
@@ -1874,6 +1845,7 @@
       "direction": "s",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1882,8 +1854,8 @@
         "s"
       ],
       "frame": {
-        "x": 268,
-        "y": 1092,
+        "x": 1324,
+        "y": 956,
         "width": 256,
         "height": 128
       },
@@ -1896,6 +1868,7 @@
       "direction": "w",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1904,8 +1877,8 @@
         "w"
       ],
       "frame": {
-        "x": 532,
-        "y": 1092,
+        "x": 1588,
+        "y": 956,
         "width": 256,
         "height": 128
       },
@@ -1918,6 +1891,7 @@
       "direction": null,
       "corner": "ne",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1927,8 +1901,8 @@
         "e"
       ],
       "frame": {
-        "x": 796,
-        "y": 1092,
+        "x": 1852,
+        "y": 956,
         "width": 256,
         "height": 128
       },
@@ -1941,6 +1915,7 @@
       "direction": null,
       "corner": "se",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1950,8 +1925,8 @@
         "e"
       ],
       "frame": {
-        "x": 1060,
-        "y": 1092,
+        "x": 2116,
+        "y": 956,
         "width": 256,
         "height": 128
       },
@@ -1964,6 +1939,7 @@
       "direction": null,
       "corner": "sw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1973,8 +1949,8 @@
         "w"
       ],
       "frame": {
-        "x": 1324,
-        "y": 1092,
+        "x": 2380,
+        "y": 956,
         "width": 256,
         "height": 128
       },
@@ -1987,6 +1963,7 @@
       "direction": null,
       "corner": "nw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -1996,7 +1973,7 @@
         "w"
       ],
       "frame": {
-        "x": 1588,
+        "x": 4,
         "y": 1092,
         "width": 256,
         "height": 128
@@ -2010,6 +1987,7 @@
       "direction": null,
       "corner": "ne",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -2019,7 +1997,7 @@
         "e"
       ],
       "frame": {
-        "x": 1852,
+        "x": 268,
         "y": 1092,
         "width": 256,
         "height": 128
@@ -2033,6 +2011,7 @@
       "direction": null,
       "corner": "se",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -2042,7 +2021,7 @@
         "e"
       ],
       "frame": {
-        "x": 2116,
+        "x": 532,
         "y": 1092,
         "width": 256,
         "height": 128
@@ -2056,6 +2035,7 @@
       "direction": null,
       "corner": "sw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -2065,7 +2045,7 @@
         "w"
       ],
       "frame": {
-        "x": 2380,
+        "x": 796,
         "y": 1092,
         "width": 256,
         "height": 128
@@ -2079,6 +2059,7 @@
       "direction": null,
       "corner": "nw",
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -2088,8 +2069,8 @@
         "w"
       ],
       "frame": {
-        "x": 4,
-        "y": 1228,
+        "x": 1060,
+        "y": 1092,
         "width": 256,
         "height": 128
       },
@@ -2102,6 +2083,7 @@
       "direction": "n",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -2110,8 +2092,8 @@
         "n"
       ],
       "frame": {
-        "x": 268,
-        "y": 1228,
+        "x": 1324,
+        "y": 1092,
         "width": 256,
         "height": 128
       },
@@ -2124,6 +2106,7 @@
       "direction": "e",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -2132,8 +2115,8 @@
         "e"
       ],
       "frame": {
-        "x": 532,
-        "y": 1228,
+        "x": 1588,
+        "y": 1092,
         "width": 256,
         "height": 128
       },
@@ -2146,6 +2129,7 @@
       "direction": "s",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -2154,8 +2138,8 @@
         "s"
       ],
       "frame": {
-        "x": 796,
-        "y": 1228,
+        "x": 1852,
+        "y": 1092,
         "width": 256,
         "height": 128
       },
@@ -2168,6 +2152,7 @@
       "direction": "w",
       "corner": null,
       "variant": 0,
+      "canonicalMask": null,
       "anchor": {
         "x": 128,
         "y": 64
@@ -2176,8 +2161,8 @@
         "w"
       ],
       "frame": {
-        "x": 1060,
-        "y": 1228,
+        "x": 2116,
+        "y": 1092,
         "width": 256,
         "height": 128
       },

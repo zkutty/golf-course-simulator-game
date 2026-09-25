@@ -81,6 +81,7 @@ function semanticFrame(frame: ParklandHabitatAtlasFrame): string {
     direction: frame.direction,
     corner: frame.corner,
     variant: frame.variant,
+    canonicalMask: frame.canonicalMask ?? null,
     edgeAnchors: frame.edgeAnchors,
   });
 }

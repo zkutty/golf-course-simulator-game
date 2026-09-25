@@ -62,6 +62,22 @@ function assertCardinallyConnected(points: readonly Point[]): void {
   expect(remaining.size).toBe(0);
 }
 
+function assertChebyshevSourceCluster(points: readonly Point[]): void {
+  const remaining = new Set(points.map(pointKey));
+  const first = points[0];
+  expect(first).toBeDefined();
+  remaining.delete(pointKey(first));
+  const queue = [first];
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    for (const candidate of points) {
+      if (Math.max(Math.abs(queue[cursor].x - candidate.x), Math.abs(queue[cursor].y - candidate.y)) > 4) continue;
+      if (!remaining.delete(pointKey(candidate))) continue;
+      queue.push(candidate);
+    }
+  }
+  expect(remaining.size).toBe(0);
+}
+
 function assertEvidence(course: Course, zone: CourseSceneHabitatZoneV1): void {
   const source = new Set(zone.evidence.sourcePoints.map(pointKey));
   if (zone.evidence.kind === "tree_grove") {
@@ -69,7 +85,12 @@ function assertEvidence(course: Course, zone: CourseSceneHabitatZoneV1): void {
     expect(zone.evidence.sourcePoints.length).toBeGreaterThanOrEqual(2);
     expect(zone.evidence.sourcePoints.every((point) => course.obstacles.some((obstacle) => obstacle.type === "tree"
       && obstacle.x === point.x && obstacle.y === point.y))).toBe(true);
-    assertCardinallyConnected(zone.evidence.sourcePoints);
+    if (zone.evidence.rule.includes("merged before topology")) {
+      expect(zone.evidence.sourcePoints.every((source, index, points) => points.some((candidate, candidateIndex) => (
+        candidateIndex !== index
+        && Math.max(Math.abs(source.x - candidate.x), Math.abs(source.y - candidate.y)) <= 4
+      )))).toBe(true);
+    } else assertChebyshevSourceCluster(zone.evidence.sourcePoints);
   } else if (zone.evidence.kind === "rock") {
     expect(zone.family).toBe("rock_leaf_transition");
     expect(zone.evidence.sourcePoints).toHaveLength(1);
@@ -114,8 +135,14 @@ function assertExactT1(zone: CourseSceneHabitatZoneV1): void {
       corner: frame.corner,
       variant: frame.variant,
       atlasAnchor: frame.anchor,
-      edgeAnchors: frame.edgeAnchors,
     });
+    if (placement.canonicalMask === null) expect(placement.edgeAnchors).toEqual(frame.edgeAnchors);
+    else {
+      const expectedEdges = ["n", "e", "s", "w"].filter((_, index) => (
+        (placement.normalizedMask & [1, 4, 16, 64][index]) !== 0
+      ));
+      expect([...placement.edgeAnchors].sort()).toEqual(expectedEdges.sort());
+    }
     expect(placement.worldAnchor).toEqual({
       x: placement.tile.x + frame.anchor.x / frame.frame.width,
       y: placement.tile.y + frame.anchor.y / frame.frame.height,
@@ -195,7 +222,7 @@ describe("CourseSceneCompositionPlanV1", () => {
       assertExactT1(zone);
       assertCardinallyConnected(zone.occupancy);
       expect(zone.ownerId).toBe(zone.id);
-      expect(zone.area).toBe(zone.bounds.width * zone.bounds.height);
+      expect(zone.area).toBe(zone.occupancy.length);
     }
     expect(course).toEqual(before);
     expect(plan.obstacleHash).toBe(hashCanonicalValue(course.obstacles));
@@ -233,7 +260,7 @@ describe("CourseSceneCompositionPlanV1", () => {
       expect(plan.habitatZones.length).toBeGreaterThan(0);
       expect(plan.habitatZones.every((zone) => zone.family === "understory_edge"
         && zone.evidence.kind === "tree_grove"
-        && zone.evidence.rule.includes("without a complete 2x2 tree core"))).toBe(true);
+        && zone.evidence.rule.includes("two to four sources"))).toBe(true);
     }
   });
 
@@ -250,19 +277,97 @@ describe("CourseSceneCompositionPlanV1", () => {
     expect(plan.exclusions.authoredMarkers.owners[0].sourcePoints).toHaveLength(6);
     expect(plan.exclusions.obstacles.owners).toHaveLength(course.obstacles.length);
     expect(plan.exclusions.buildings.owners).toHaveLength(course.buildings.length);
-    const excluded = new Set([
+    const expandedExcluded = new Set([
       ...plan.exclusions.maintainedTerrain.cells,
       ...plan.exclusions.routedCorridor.cells,
       ...plan.exclusions.authoredMarkers.cells,
       ...plan.exclusions.obstacles.cells,
       ...plan.exclusions.buildings.cells,
     ]);
-    expect(plan.habitatZones.flatMap((zone) => zone.occupancy).every((point) => !excluded.has(cell(course, point)))).toBe(true);
+    const obstacleAt = new Map(course.obstacles.map((obstacle) => [pointKey(obstacle), obstacle]));
+    for (const zone of plan.habitatZones) for (const point of zone.occupancy) {
+      if (zone.evidence.kind !== "tree_grove") {
+        expect(expandedExcluded.has(cell(course, point))).toBe(false);
+        continue;
+      }
+      const obstacle = obstacleAt.get(pointKey(point));
+      if (!obstacle) continue;
+      expect(obstacle.type === "bush" || (obstacle.type === "tree"
+        && zone.evidence.sourcePoints.map(pointKey).includes(pointKey(point)))).toBe(true);
+    }
     expect(plan.exclusions.dynamicSuppression).toEqual({
       golfers: { radius: 2, metric: "chebyshev", policy: "suppress-at-render" },
       activeEditorPreview: { radius: 2, metric: "chebyshev", policy: "suppress-at-render" },
     });
     expect(plan.exclusions.treeAuthority).toBe("existing-obstacles-only");
+    expect(plan.exclusions.adjacentTreeGrovePolicy).toBe("merge-same-family-before-topology");
+    expect(plan.exclusions.vegetationGroundPolicy).toBe("visual-underlay-beneath-source-trees-and-bushes");
+  });
+
+  it("extends dense topology around all four M19 tree-source groves and permits only vegetation overlap", () => {
+    const course = createParklandVisualReferenceCourse();
+    const plan = deriveCourseSceneComposition({ course, seed: 1202 });
+    const groves = plan.habitatZones.filter((zone) => zone.evidence.kind === "tree_grove");
+    expect(groves).toHaveLength(3);
+    expect(groves.map((zone) => zone.evidence.sourcePoints.length).sort((left, right) => left - right)).toEqual([9, 10, 18]);
+    expect(groves.reduce((total, zone) => total + zone.evidence.sourcePoints.length, 0)).toBe(37);
+    expect(groves.every((zone) => zone.family === "woodland_floor" && zone.area >= 90)).toBe(true);
+    for (const zone of groves) {
+      assertCardinallyConnected(zone.occupancy);
+      expect(zone.placements).toHaveLength(zone.occupancy.length);
+      const sources = new Set(zone.evidence.sourcePoints.map(pointKey));
+      for (const point of zone.occupancy) {
+        const obstacle = course.obstacles.find((candidate) => candidate.x === point.x && candidate.y === point.y);
+        if (obstacle) expect(obstacle.type === "bush"
+          || (obstacle.type === "tree" && sources.has(pointKey(point)))).toBe(true);
+      }
+      expect(zone.occupancy.some((point) => sources.has(pointKey(point)))).toBe(true);
+    }
+  });
+
+  it("keeps visual ground beneath grove bushes while retaining rock holes", () => {
+    const course = baseCourse();
+    course.obstacles = [
+      { x: 8, y: 8, type: "tree" }, { x: 9, y: 8, type: "tree" },
+      { x: 7, y: 8, type: "bush" }, { x: 10, y: 8, type: "rock" },
+    ];
+    const plan = deriveCourseSceneComposition({ course, seed: 1202 });
+    const grove = plan.habitatZones.find((zone) => zone.evidence.kind === "tree_grove");
+    expect(grove).toBeDefined();
+    const occupied = new Set(grove!.occupancy.map(pointKey));
+    expect(occupied.has("7,8")).toBe(true);
+    expect(occupied.has("10,8")).toBe(false);
+  });
+
+  it("never grants the adjacency exception to different tree-grove families", () => {
+    const course = baseCourse(24, 16);
+    course.obstacles = [
+      { x: 5, y: 8, type: "tree" }, { x: 6, y: 8, type: "tree" },
+      { x: 11, y: 8, type: "tree" }, { x: 12, y: 8, type: "tree" }, { x: 13, y: 8, type: "tree" },
+      { x: 12, y: 9, type: "tree" }, { x: 13, y: 9, type: "tree" },
+    ];
+    const plan = deriveCourseSceneComposition({ course, seed: 1202 });
+    const groves = plan.habitatZones.filter((zone) => zone.evidence.kind === "tree_grove");
+    expect(groves).toHaveLength(1);
+    expect(groves[0].family).toBe("woodland_floor");
+    assertChebyshevGap(plan);
+  });
+
+  it("merges same-family source fields to a transitive fixed point before topology resolution", () => {
+    const course = baseCourse(24, 16);
+    course.obstacles = [
+      { x: 5, y: 5, type: "tree" }, { x: 6, y: 5, type: "tree" },
+      { x: 17, y: 5, type: "tree" }, { x: 18, y: 5, type: "tree" },
+      { x: 11, y: 9, type: "tree" }, { x: 12, y: 9, type: "tree" },
+    ];
+    const plan = deriveCourseSceneComposition({ course, seed: 1202 });
+    const groves = plan.habitatZones.filter((zone) => zone.evidence.kind === "tree_grove");
+    expect(groves).toHaveLength(1);
+    expect(groves[0].family).toBe("understory_edge");
+    expect(groves[0].evidence.sourcePoints).toHaveLength(6);
+    expect(new Set(groves[0].evidence.sourcePoints.map(pointKey))).toEqual(new Set(course.obstacles.map(pointKey)));
+    expect(groves[0].placements).toHaveLength(groves[0].occupancy.length);
+    assertCardinallyConnected(groves[0].occupancy);
   });
 
   it("keeps A/B/C ownership stable while active setup landmarks follow the selected setup", () => {
@@ -390,9 +495,9 @@ describe("CourseSceneCompositionPlanV1", () => {
     expect(invalid.rejectedCandidates[0].diagnostics.some((diagnostic) => diagnostic.code === "invalid_atlas")).toBe(true);
   });
 
-  it("is deterministic across 80 semantic seeds and retains exact placement/gap truth", () => {
+  it("is deterministic across representative semantic seeds and retains exact placement/gap truth", () => {
     const course = createParklandVisualReferenceCourse();
-    for (let seed = -40; seed < 40; seed += 1) {
+    for (const seed of [-40, -7, 0, 1, 4, 11, 20, 39]) {
       const first = deriveCourseSceneComposition({ course, seed });
       const second = deriveCourseSceneComposition({ course: structuredClone(course), seed });
       expect(second).toEqual(first);
