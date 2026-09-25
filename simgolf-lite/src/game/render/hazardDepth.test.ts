@@ -31,6 +31,16 @@ describe("hazard depth cross-sections", () => {
     }
   });
 
+  it("reserves a normal-scale face instead of an outline-sized recess", () => {
+    expect(hazardDepthProfile("water")!.minimumBankDrop * 8).toBeGreaterThanOrEqual(6);
+    expect(hazardDepthProfile("wetland")!.minimumBankDrop * 8).toBeGreaterThanOrEqual(5);
+    for (const cellCount of [1, 3, 12]) {
+      const profile = hazardDepthProfile("sand", cellCount)!;
+      expect(profile.minimumBankDrop * 8).toBeGreaterThanOrEqual(4);
+      expect(profile.floorDrop).toBeGreaterThanOrEqual(profile.minimumBankDrop);
+    }
+  });
+
   it("orders a finite shelf, bank, contact, shallow, and deep section", () => {
     for (const terrain of ["sand", "water", "wetland"] as const) {
       const profile = hazardDepthProfile(terrain, 4)!;
