@@ -24,6 +24,7 @@ const SHADE_PROFILES: Record<LandTheme, {
 };
 
 const isShadedLand = (terrain: Terrain) => (
+  terrain !== "sand" && terrain !== "waste_area" &&
   terrain !== "water" && terrain !== "wetland" && terrain !== "path"
 );
 
@@ -67,7 +68,7 @@ function filteredGradient(field: VisualHeightfield, x: number, y: number): { dx:
 /**
  * Builds a world-anchored, continuous slope-light raster from the shared
  * presentation heightfield. The derivative is sampled across tile borders;
- * no tile edge or adjacency is emitted into the image. Water, wetlands and
+ * no tile edge or adjacency is emitted into the image. Organic hazards and
  * paths are transparent so their purpose-built planes remain visually level.
  */
 export function buildMacroLandformRaster(

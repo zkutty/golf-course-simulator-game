@@ -39,6 +39,7 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
     scale: string;
     zoom: number;
     focus: { x: number; y: number };
+    depth: unknown;
     file: string;
   }> = [];
 
@@ -71,6 +72,18 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
           targetZoom: view.zoom,
         });
         await page.waitForTimeout(180);
+        const depth = await page.evaluate(({ terrain }) => {
+          const diagnostics = window.__coursecraftPixiTest!.rendererAtlasState().landformDepth;
+          return {
+            macro: diagnostics.macro,
+            hazards: diagnostics.hazards.filter((entry) => entry.terrain === terrain),
+          };
+        }, { terrain: hazard.label === "lake" ? "water" as const : "sand" as const });
+        expect(depth.macro.active).toBe(true);
+        expect(depth.hazards.length).toBeGreaterThan(0);
+        expect(depth.hazards.every((entry) => entry.nearFaces > 0 && entry.farFaces > 0)).toBe(true);
+        expect(Math.min(...depth.hazards.map((entry) => entry.minimumDropPx)))
+          .toBeGreaterThanOrEqual(hazard.label === "lake" ? 6 : 4);
         const file = resolve(outputRoot, `zk1201-r${rotation}-${hazard.label}-${view.label}.png`);
         await writeFile(file, await canvas.screenshot());
         captures.push({
@@ -79,6 +92,7 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
           scale: view.label,
           zoom: view.zoom,
           focus: hazard.focus,
+          depth,
           file,
         });
       }
@@ -86,6 +100,7 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
   }
 
   const finalHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
+  expect(initialHash).toBe("05b74d13");
   expect(finalHash).toBe(initialHash);
   expect(errors).toEqual([]);
   expect(captures).toHaveLength(16);
@@ -106,6 +121,7 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
     hazard: "lake" | "bunker" | "green";
     zoom: number;
     focus: { x: number; y: number };
+    depth: unknown;
     file: string;
   }> = [];
   for (let turn = 0; turn < 4; turn++) {
@@ -128,12 +144,23 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
         return Number(camera.zoom.toFixed(3)) === 2 && Number(camera.targetZoom.toFixed(3)) === 2;
       }), { timeout: 30_000 }).toBe(true);
       await page.waitForTimeout(180);
+      const depth = await page.evaluate(({ terrain }) => {
+        const diagnostics = window.__coursecraftPixiTest!.rendererAtlasState().landformDepth;
+        return diagnostics.hazards.filter((entry) => entry.terrain === terrain);
+      }, { terrain: hazard.label === "lake" ? "water" as const : hazard.label === "bunker" ? "sand" as const : "sand" as const });
+      if (hazard.label !== "green") {
+        expect(depth.length).toBeGreaterThan(0);
+        expect(depth.every((entry) => entry.nearFaces > 0 && entry.farFaces > 0)).toBe(true);
+        expect(Math.min(...depth.map((entry) => entry.minimumDropPx)))
+          .toBeGreaterThanOrEqual(hazard.label === "lake" ? 6 : 4);
+      }
       const file = resolve(outputRoot, `zk1201-m19-r${rotation}-${hazard.label}-detail.png`);
       await writeFile(file, await canvas.screenshot());
-      m19Captures.push({ rotation, hazard: hazard.label, zoom: 2, focus: hazard.focus, file });
+      m19Captures.push({ rotation, hazard: hazard.label, zoom: 2, focus: hazard.focus, depth, file });
     }
   }
   const m19FinalHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
+  expect(m19InitialHash).toBe("3cf67481");
   expect(m19FinalHash).toBe(m19InitialHash);
   expect(m19Captures).toHaveLength(12);
   expect(new Set(m19Captures.map((capture) => `${capture.rotation}:${capture.hazard}`)).size).toBe(12);

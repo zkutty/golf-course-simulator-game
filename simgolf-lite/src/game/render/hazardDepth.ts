@@ -25,11 +25,11 @@ export interface HazardDepthProfile {
 const WATER_PROFILE: HazardDepthProfile = Object.freeze({
   terrain: "water",
   shelfWidth: 0.16,
-  bankWidth: 0.18,
+  bankWidth: 0.24,
   contactWidth: 0.07,
   shallowWidth: 0.22,
   deepWidth: 0.17,
-  minimumBankDrop: 0.56,
+  minimumBankDrop: 0.82,
   floorDrop: 0,
   recessionRun: 0,
 });
@@ -37,11 +37,11 @@ const WATER_PROFILE: HazardDepthProfile = Object.freeze({
 const WETLAND_PROFILE: HazardDepthProfile = Object.freeze({
   terrain: "wetland",
   shelfWidth: 0.13,
-  bankWidth: 0.16,
+  bankWidth: 0.22,
   contactWidth: 0.06,
   shallowWidth: 0.18,
   deepWidth: 0.14,
-  minimumBankDrop: 0.42,
+  minimumBankDrop: 0.65,
   floorDrop: 0,
   recessionRun: 0,
 });
@@ -60,20 +60,20 @@ export function hazardDepthProfile(
   if (terrain === "wetland") return WETLAND_PROFILE;
   if (terrain !== "sand") return null;
   const floorDrop = componentCellCount === 1
-    ? 0.42
+    ? 0.7
     : componentCellCount <= 4
-      ? 0.36
-      : 0.33;
+      ? 0.62
+      : 0.55;
   return {
     terrain: "sand",
     shelfWidth: 0.12,
-    bankWidth: 0.22,
+    bankWidth: 0.26,
     contactWidth: 0.07,
     shallowWidth: 0.14,
     deepWidth: 0.11,
-    minimumBankDrop: 0.34,
+    minimumBankDrop: 0.55,
     floorDrop,
-    recessionRun: 0.22,
+    recessionRun: 0.26,
   };
 }
 

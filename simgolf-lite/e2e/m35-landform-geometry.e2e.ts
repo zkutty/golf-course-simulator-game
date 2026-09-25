@@ -17,7 +17,7 @@ test("captures ZK-1207 broad landform geometry through four rotations", async ({
     window.__coursecraftPixiTest!.focusTileForTest(14, 11, 1);
   });
 
-  const captures: Array<{ rotation: number; file: string; camera: unknown }> = [];
+  const captures: Array<{ rotation: number; file: string; camera: unknown; landformDepth: unknown }> = [];
   for (let turn = 0; turn < 4; turn++) {
     const rotation = turn * 90;
     if (turn > 0) await page.keyboard.press("e");
@@ -28,6 +28,15 @@ test("captures ZK-1207 broad landform geometry through four rotations", async ({
       const camera = window.__coursecraftPixiTest!.rendererAtlasState().camera;
       return Math.abs(camera.zoom - 1) < 0.001 && Math.abs(camera.targetZoom - 1) < 0.001;
     })).toBe(true);
+    const landformDepth = await page.evaluate(() => (
+      window.__coursecraftPixiTest!.rendererAtlasState().landformDepth
+    ));
+    expect(landformDepth.active).toBe(true);
+    expect(landformDepth.macro.active).toBe(true);
+    expect(landformDepth.macro.maximumGrade).toBeGreaterThan(0.2);
+    expect(landformDepth.macro.maximumShadowAlpha).toBeGreaterThanOrEqual(20);
+    expect(landformDepth.shoulderLevels).toEqual([0.5, 1.5]);
+    expect(landformDepth.shoulderFaces).toBeGreaterThan(0);
     await page.waitForTimeout(500);
     const file = resolve(outputRoot, `zk1207-r${rotation}-normal.png`);
     await writeFile(file, await page.screenshot({ fullPage: true }));
@@ -35,6 +44,7 @@ test("captures ZK-1207 broad landform geometry through four rotations", async ({
       rotation,
       file,
       camera: await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().camera),
+      landformDepth,
     });
   }
   await writeFile(resolve(outputRoot, "zk1207-landform-report.json"), `${JSON.stringify({

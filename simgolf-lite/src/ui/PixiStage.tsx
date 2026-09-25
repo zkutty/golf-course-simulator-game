@@ -150,6 +150,7 @@ import {
   buildHazardVisualRings,
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
+import { buildMacroLandformRaster } from "../game/render/macroLandform";
 import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
 import type { TerrainPresentationDiagnostics } from "../game/render/terrainPresentationPolicy";
 import {
@@ -980,6 +981,44 @@ interface PathMaterialRenderDiagnostics {
   ownership: readonly string[];
 }
 
+interface LandformDepthDiagnostics {
+  active: boolean;
+  quality: "high" | "medium" | "low";
+  macro: {
+    active: boolean;
+    maximumGrade: number;
+    maximumShadowAlpha: number;
+    maximumHighlightAlpha: number;
+  };
+  shoulderLevels: readonly number[];
+  shoulderFaces: number;
+  hazards: readonly {
+    terrain: "sand" | "water" | "wetland";
+    topologyKey: string;
+    rings: number;
+    nearFaces: number;
+    farFaces: number;
+    minimumDropPx: number;
+    maximumDropPx: number;
+  }[];
+}
+
+const emptyLandformDepthDiagnostics = (
+  quality: "high" | "medium" | "low",
+): LandformDepthDiagnostics => ({
+  active: false,
+  quality,
+  macro: {
+    active: false,
+    maximumGrade: 0,
+    maximumShadowAlpha: 0,
+    maximumHighlightAlpha: 0,
+  },
+  shoulderLevels: [],
+  shoulderFaces: 0,
+  hazards: [],
+});
+
 type SharedContourRenderDiagnostics = TerrainPresentationDiagnostics;
 
 const EMPTY_SHARED_CONTOUR_DIAGNOSTICS = {
@@ -1255,6 +1294,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
   );
   const parklandComposableDiagnosticsRef = useRef<ParklandComposableDiagnostics>(
     null as unknown as ParklandComposableDiagnostics,
+  );
+  const landformDepthDiagnosticsRef = useRef<LandformDepthDiagnostics>(
+    emptyLandformDepthDiagnostics(initialRendererConfigRef.current.graphicsQuality),
   );
   const structureSpriteCountRef = useRef(0);
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
@@ -2337,6 +2379,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
           },
           parklandComposable: {
             ...parklandComposableDiagnosticsRef.current,
+            camera: {
+              rotation,
+              zoom: camRef.current.zoom,
+              targetZoom: camRef.current.tzoom,
+            },
+          },
+          landformDepth: {
+            ...landformDepthDiagnosticsRef.current,
             camera: {
               rotation,
               zoom: camRef.current.zoom,
@@ -3924,6 +3974,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     layer.removeChildren().forEach((child) => child.destroy({ children: true }));
     surfaceWaterSpritesRef.current = [];
     const quality = props.graphicsQuality;
+    landformDepthDiagnosticsRef.current = emptyLandformDepthDiagnostics(quality);
     const composableRuntime = presentationRuntime;
     lowParklandPresentationLayerRef.current = composableRuntime
       ? composableRuntime.destroyParklandPresentationLayer(lowParklandPresentationLayerRef.current)
@@ -4039,6 +4090,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     recessedLayer.eventMode = "none";
     const landformLayer = new PIXI.Container();
     landformLayer.eventMode = "none";
+    landformLayer.label = "landform-depth";
+    const hazardDepthDiagnostics: LandformDepthDiagnostics["hazards"][number][] = [];
     // Boundary motifs are globally bounded. Habitat composition owns only
     // interior clearings, so shoreline reeds/stones have one renderer owner.
     let remainingContourDetails = quality === "high" ? 440 : quality === "medium" ? 220 : 0;
@@ -4342,17 +4395,22 @@ export function PixiStage(requestedProps: PixiStageProps) {
           rotation,
         );
         const depthProfile = hazardDepthProfile(component.terrain, component.cells.length);
-        // A bank is a single joined world-space skirt per canonical ring. The
-        // strip shares its inner endpoints at every turn; a restrained neutral
-        // material avoids screen-direction branches and edge-by-edge panels.
+        let nearFaces = 0;
+        let farFaces = 0;
+        const depthDrops: number[] = [];
+        // The canonical joined skirt remains the sole geometry owner. Two
+        // restrained material passes make its screen-facing half read as a
+        // bank at normal scale without turning the far half into a dark ring.
         for (let ringIndex = 0; ringIndex < visualRings.length; ringIndex++) {
           const plan = hazardPlans[ringIndex];
           if (!plan || !depthProfile) continue;
           const positions: number[] = [];
           const uvs: number[] = [];
-          const indices = isSand ? [] : [...plan.stripIndices];
-          const lipPoints: Point[] = [];
-          const lip = new PIXI.Graphics();
+          const gradePoints: Point[] = [];
+          const gradePlaneInsetPoints: Point[] = [];
+          const floorPoints: Point[] = [];
+          const nearIndices: number[] = [];
+          const farIndices: number[] = [];
           for (let index = 0; index < plan.outerRing.length; index++) {
             const outer = plan.outerRing[index];
             const inner = plan.innerRing[index];
@@ -4372,66 +4430,101 @@ export function PixiStage(requestedProps: PixiStageProps) {
               gradeHeight - depthProfile.minimumBankDrop,
             );
             const grade = projectDepthPoint({ ...outer, height: gradeHeight });
+            const gradePlaneInset = projectDepthPoint({ ...inner, height: gradeHeight });
             const floor = projectDepthPoint({ ...inner, height: floorHeight });
             positions.push(grade.x, grade.y, floor.x, floor.y);
             uvs.push(0, 0, 1, 1);
-            lipPoints.push(floor);
+            gradePoints.push(grade);
+            gradePlaneInsetPoints.push(gradePlaneInset);
+            floorPoints.push(floor);
+            depthDrops.push((gradeHeight - floorHeight) * ELEVATION_STEP_PX);
           }
-          if (isSand) {
-            // The grade edge owns a sparse, camera-facing turf occlusion.
-            // No tan wall or closed lip is emitted around the inset floor.
-            for (let index = 0; index < plan.outerRing.length; index++) {
-              const next = (index + 1) % plan.outerRing.length;
-              if (
-                positions[index * 4 + 3] + positions[next * 4 + 3]
-                < positions[index * 4 + 1] + positions[next * 4 + 1]
-              ) {
-                indices.push(...plan.stripIndices.slice(index * 6, index * 6 + 6));
-                lip.moveTo(positions[index * 4], positions[index * 4 + 1]);
-                lip.lineTo(positions[next * 4], positions[next * 4 + 1]);
-              }
+          if (positions.length !== plan.outerRing.length * 4) continue;
+          const lip = new PIXI.Graphics();
+          const floorSeam = new PIXI.Graphics();
+          for (let index = 0; index < plan.outerRing.length; index++) {
+            const next = (index + 1) % plan.outerRing.length;
+            // Classify the boundary in the grade plane. Using the lowered
+            // floor point here lets a deeper recess flip every edge toward
+            // the viewer, erasing the far-side material pass.
+            const projectedTowardViewer = gradePlaneInsetPoints[index].y + gradePlaneInsetPoints[next].y <
+              gradePoints[index].y + gradePoints[next].y;
+            const target = projectedTowardViewer ? nearIndices : farIndices;
+            target.push(...plan.stripIndices.slice(index * 6, index * 6 + 6));
+            if (projectedTowardViewer) {
+              nearFaces++;
+              lip.moveTo(gradePoints[index].x, gradePoints[index].y);
+              lip.lineTo(gradePoints[next].x, gradePoints[next].y);
+              floorSeam.moveTo(floorPoints[index].x, floorPoints[index].y);
+              floorSeam.lineTo(floorPoints[next].x, floorPoints[next].y);
+            } else {
+              farFaces++;
             }
-          } else {
-            lip.moveTo(lipPoints[0].x, lipPoints[0].y);
-            for (let index = 1; index < lipPoints.length; index++) lip.lineTo(lipPoints[index].x, lipPoints[index].y);
-            lip.lineTo(lipPoints[0].x, lipPoints[0].y);
           }
-          const bank = new PIXI.Mesh({
-            geometry: new PIXI.MeshGeometry({
-              positions: new Float32Array(positions),
-              uvs: new Float32Array(uvs),
-              indices: new Uint32Array(indices),
-            }),
-            texture: PIXI.Texture.WHITE,
-          });
-          bank.tint = isSand ? shade(themedColors.rough, 0.72) : shade(bankDark, 1.18);
-          bank.alpha = isSand ? 0.62 : 0.68;
-          recessedLayer.addChild(bank);
+
+          const addBankFace = (
+            indices: readonly number[],
+            tint: number,
+            alpha: number,
+            label: string,
+          ) => {
+            if (indices.length === 0) return;
+            const bank = new PIXI.Mesh({
+              geometry: new PIXI.MeshGeometry({
+                positions: new Float32Array(positions),
+                uvs: new Float32Array(uvs),
+                indices: new Uint32Array(indices),
+              }),
+              texture: PIXI.Texture.WHITE,
+            });
+            bank.eventMode = "none";
+            bank.label = label;
+            bank.tint = tint;
+            bank.alpha = alpha;
+            recessedLayer.addChild(bank);
+          };
+          addBankFace(
+            farIndices,
+            isSand ? shade(themedColors.rough, 0.94) : bankLight,
+            isSand ? 0.34 : 0.28,
+            `hazard-bank-far:${component.terrain}`,
+          );
+          addBankFace(
+            nearIndices,
+            isSand ? shade(themedColors.rough, 0.58) : shade(bankDark, 0.9),
+            isSand ? 0.82 : 0.86,
+            `hazard-bank-near:${component.terrain}`,
+          );
 
           lip.stroke({
-            width: isSand ? 1.35 : plan.lip.width,
+            width: isSand ? 1.25 : plan.lip.width,
             color: isSand ? shade(themedColors.rough, 1.08) : bankLight,
-            alpha: isSand ? 0.8 : plan.lip.alpha,
-            cap: isSand ? "square" : "round",
-            join: isSand ? "miter" : "round",
+            alpha: isSand ? 0.72 : 0.52,
+            cap: "round",
+            join: "round",
           });
           recessedLayer.addChild(lip);
-          if (!isSand && lipPoints.length > 2) {
-            const shallow = new PIXI.Graphics();
-            shallow.moveTo(lipPoints[0].x, lipPoints[0].y);
-            for (let index = 1; index < lipPoints.length; index++) {
-              shallow.lineTo(lipPoints[index].x, lipPoints[index].y);
-            }
-            shallow.lineTo(lipPoints[0].x, lipPoints[0].y);
-            shallow.stroke({
-              width: component.terrain === "water" ? 2.2 : 1.6,
+          if (!isSand) {
+            floorSeam.stroke({
+              width: component.terrain === "water" ? 1.4 : 1.15,
               color: component.terrain === "water" ? 0x78b6b8 : 0x719781,
-              alpha: 0.64,
+              alpha: 0.5,
               cap: "round",
               join: "round",
             });
-            recessedLayer.addChild(shallow);
+            recessedLayer.addChild(floorSeam);
           }
+        }
+        if (depthProfile && depthDrops.length > 0) {
+          hazardDepthDiagnostics.push({
+            terrain: depthProfile.terrain,
+            topologyKey: component.topologyKey,
+            rings: visualRings.length,
+            nearFaces,
+            farFaces,
+            minimumDropPx: Math.min(...depthDrops),
+            maximumDropPx: Math.max(...depthDrops),
+          });
         }
       }
 
@@ -4533,9 +4626,82 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
     }
 
-    // ZK-1207: crisp runs come from the actual multi-tile level boundary.
-    // They now shade the two adjoining top surfaces instead of filling a dark
-    // vertical wall, so authored steps read as connected rolling shoulders.
+    // One world-anchored filtered light field makes subpixel heightfield roll
+    // legible at normal scale. Purpose-built hazard and path planes are
+    // transparent in the source raster, so this layer owns only broad grade.
+    const macroRaster = buildMacroLandformRaster(
+      heightfield,
+      effectiveTiles,
+      course.theme,
+      quality === "high" ? 6 : 4,
+    );
+    const textureFromRgba = (rgba: Uint8ClampedArray) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = macroRaster.width;
+      canvas.height = macroRaster.height;
+      const context = canvas.getContext("2d");
+      if (!context) return null;
+      const image = context.createImageData(macroRaster.width, macroRaster.height);
+      image.data.set(rgba);
+      context.putImageData(image, 0, 0);
+      const texture = PIXI.Texture.from(canvas);
+      texture.source.style.scaleMode = "linear";
+      return texture;
+    };
+    const macroPositions: number[] = [];
+    const macroUvs: number[] = [];
+    const macroIndices: number[] = [];
+    const macroSubdivisions = 2;
+    const macroColumns = course.width * macroSubdivisions + 1;
+    for (let sy = 0; sy <= course.height * macroSubdivisions; sy++) {
+      for (let sx = 0; sx <= course.width * macroSubdivisions; sx++) {
+        const x = sx / macroSubdivisions;
+        const y = sy / macroSubdivisions;
+        const point = project({ x, y });
+        macroPositions.push(point.x, point.y);
+        macroUvs.push(x / course.width, y / course.height);
+      }
+    }
+    for (let sy = 0; sy < course.height * macroSubdivisions; sy++) {
+      for (let sx = 0; sx < course.width * macroSubdivisions; sx++) {
+        const topLeft = sy * macroColumns + sx;
+        const topRight = topLeft + 1;
+        const bottomLeft = topLeft + macroColumns;
+        const bottomRight = bottomLeft + 1;
+        macroIndices.push(
+          topLeft, topRight, bottomRight,
+          topLeft, bottomRight, bottomLeft,
+        );
+      }
+    }
+    const macroGeometry = () => new PIXI.MeshGeometry({
+      positions: new Float32Array(macroPositions),
+      uvs: new Float32Array(macroUvs),
+      indices: new Uint32Array(macroIndices),
+    });
+    const generatedMacroTextures: PIXI.Texture[] = [];
+    const shadowTexture = textureFromRgba(macroRaster.shadow);
+    if (shadowTexture) {
+      generatedMacroTextures.push(shadowTexture);
+      const shadow = new PIXI.Mesh({ geometry: macroGeometry(), texture: shadowTexture });
+      shadow.eventMode = "none";
+      shadow.label = "macro-landform-shadow";
+      shadow.blendMode = "multiply";
+      landformLayer.addChild(shadow);
+    }
+    const highlightTexture = textureFromRgba(macroRaster.highlight);
+    if (highlightTexture) {
+      generatedMacroTextures.push(highlightTexture);
+      const highlight = new PIXI.Mesh({ geometry: macroGeometry(), texture: highlightTexture });
+      highlight.eventMode = "none";
+      highlight.label = "macro-landform-highlight";
+      highlight.blendMode = "screen";
+      landformLayer.addChild(highlight);
+    }
+
+    // Crisp sparse runs come from actual multi-tile level boundaries. Preserve
+    // one camera-facing connected owner at every authored level; dropping all
+    // but the longest level erased the inner rise of the M35 fixture.
     const landformPlan = buildLandformPresentationPlan(
       heightfield,
       effectiveTiles,
@@ -4560,18 +4726,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       return lowA.y + lowB.y > highA.y + highB.y;
     });
     const selectedShoulders: typeof visibleShoulders = [];
-    // The heightfield already contains every authored level. Presentation
-    // selects the one dominant connected grade instead of outlining every
-    // successive level as a parallel terrace rail.
-    const primaryLevel = [...new Set(visibleShoulders.map((shoulder) => shoulder.level))]
-      .map((level) => ({
-        level,
-        length: visibleShoulders
-          .filter((shoulder) => shoulder.level === level)
-          .reduce((sum, shoulder) => sum + shoulder.worldLength, 0),
-      }))
-      .sort((left, right) => right.length - left.length || left.level - right.level)[0]?.level;
-    for (const level of primaryLevel == null ? [] : [primaryLevel]) {
+    for (const level of [...new Set(visibleShoulders.map((shoulder) => shoulder.level))].sort((a, b) => a - b)) {
       const candidates = visibleShoulders.filter((shoulder) => shoulder.level === level);
       const seed = candidates.reduce((longest, shoulder) => shoulder.worldLength > longest.worldLength ? shoulder : longest);
       const connected = [seed];
@@ -4601,13 +4756,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
         lowerB.x, lowerB.y,
         lowerA.x, lowerA.y,
       ]);
-      graphics.fill({ color: shade(themedColors.rough, 0.82), alpha: 0.16 });
+      graphics.fill({ color: shade(themedColors.rough, 0.78), alpha: 0.24 });
       graphics.moveTo(upperA.x, upperA.y);
       graphics.lineTo(upperB.x, upperB.y);
       graphics.stroke({
         width: 1,
         color: shade(themedColors.rough, 1.12),
-        alpha: 0.3,
+        alpha: 0.4,
         join: "miter",
         cap: "square",
       });
@@ -4636,11 +4791,32 @@ export function PixiStage(requestedProps: PixiStageProps) {
       ownership: [...pathOwnership].sort(),
     };
     if (composableActive) {
-      parklandComposableDiagnosticsRef.current = composableTrace.diagnostics(landformLayer.children.length);
+      parklandComposableDiagnosticsRef.current = composableTrace.diagnostics(selectedShoulders.length);
     }
+    const alphaMaximum = (raster: Uint8ClampedArray) => {
+      let maximum = 0;
+      for (let offset = 3; offset < raster.length; offset += 4) maximum = Math.max(maximum, raster[offset]);
+      return maximum;
+    };
+    landformDepthDiagnosticsRef.current = {
+      active: generatedMacroTextures.length === 2 || selectedShoulders.length > 0 || hazardDepthDiagnostics.length > 0,
+      quality,
+      macro: {
+        active: generatedMacroTextures.length === 2,
+        maximumGrade: macroRaster.maximumGrade,
+        maximumShadowAlpha: alphaMaximum(macroRaster.shadow),
+        maximumHighlightAlpha: alphaMaximum(macroRaster.highlight),
+      },
+      shoulderLevels: [...new Set(selectedShoulders.map((shoulder) => shoulder.level))].sort((a, b) => a - b),
+      shoulderFaces: selectedShoulders.length,
+      hazards: hazardDepthDiagnostics,
+    };
     sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
     stampAtlasGeneration(layer, atlasRevision);
     recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
+    return () => {
+      for (const texture of generatedMacroTextures) texture.destroy(true);
+    };
   }, [
     appReady,
     atlasRevision,

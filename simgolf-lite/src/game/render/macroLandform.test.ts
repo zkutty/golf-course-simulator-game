@@ -46,8 +46,10 @@ describe("continuous macro-landform shading", () => {
     expect(raster.shadow[plateauInterior]).toBeLessThan(8);
   });
 
-  it("leaves a connected water plane completely unshaded", () => {
+  it("leaves purpose-built hazards completely unshaded", () => {
     const course = fixture();
+    course.tiles[4 * course.width + 10] = "sand";
+    course.tiles[4 * course.width + 11] = "waste_area";
     const density = 4;
     const raster = buildMacroLandformRaster(
       buildVisualHeightfield(course),
@@ -59,6 +61,13 @@ describe("continuous macro-landform shading", () => {
       const alpha = (y * raster.width + x) * 4 + 3;
       expect(raster.shadow[alpha]).toBe(0);
       expect(raster.highlight[alpha]).toBe(0);
+    }
+    for (const x of [10, 11]) for (let py = 4 * density; py < 5 * density; py++) {
+      for (let px = x * density; px < (x + 1) * density; px++) {
+        const alpha = (py * raster.width + px) * 4 + 3;
+        expect(raster.shadow[alpha]).toBe(0);
+        expect(raster.highlight[alpha]).toBe(0);
+      }
     }
   });
 
@@ -82,7 +91,8 @@ describe("continuous macro-landform shading", () => {
       raster.highlight[(y * raster.width + x) * 4 + 3];
     const isShadedAt = (x: number, y: number) => {
       const terrain = course.tiles[Math.floor(y / density) * course.width + Math.floor(x / density)];
-      return terrain !== "water" && terrain !== "wetland" && terrain !== "path";
+      return terrain !== "sand" && terrain !== "waste_area" &&
+        terrain !== "water" && terrain !== "wetland" && terrain !== "path";
     };
     let maximumAdjacentDelta = 0;
     let gradedTransitions = 0;

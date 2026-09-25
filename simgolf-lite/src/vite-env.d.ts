@@ -84,6 +84,28 @@ interface Window {
       parklandComposable: import("./game/render/parklandComposable").ParklandComposableDiagnostics & {
         camera: { rotation: number; zoom: number; targetZoom: number };
       };
+      landformDepth: {
+        active: boolean;
+        quality: "high" | "medium" | "low";
+        macro: {
+          active: boolean;
+          maximumGrade: number;
+          maximumShadowAlpha: number;
+          maximumHighlightAlpha: number;
+        };
+        shoulderLevels: readonly number[];
+        shoulderFaces: number;
+        hazards: readonly {
+          terrain: "sand" | "water" | "wetland";
+          topologyKey: string;
+          rings: number;
+          nearFaces: number;
+          farFaces: number;
+          minimumDropPx: number;
+          maximumDropPx: number;
+        }[];
+        camera: { rotation: number; zoom: number; targetZoom: number };
+      };
       sharedContours: {
         authoritativeSingletonDeepRough: number;
         distinctSingletonDeepRoughFields: number;
