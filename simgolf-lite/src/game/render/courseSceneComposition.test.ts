@@ -4,7 +4,9 @@ import highAtlasJson from "../../assets/terrain/parkland-habitat-4x/high/habitat
 import { hashCanonicalValue } from "../../utils/canonical";
 import { courseForCourseSetup } from "../models/courseSetup";
 import type { Course, Hole, Point, Terrain } from "../models/types";
-import { createM23CourseSetupReferenceCourse, createParklandVisualReferenceCourse } from "../testing/referenceCourse";
+import { createM20TerrainReferenceCourse, createM23CourseSetupReferenceCourse, createParklandVisualReferenceCourse } from "../testing/referenceCourse";
+import { deriveCourseSceneCamera } from "./courseSceneCamera";
+import { ISO_ROTATIONS } from "./iso";
 import {
   resolveHabitatFieldTopology,
   type HabitatFieldTopologyRequest,
@@ -103,6 +105,12 @@ function assertEvidence(course: Course, zone: CourseSceneHabitatZoneV1): void {
     for (const point of zone.occupancy) {
       expect(source.has(pointKey(point)) || CARDINALS.some((offset) => source.has(`${point.x + offset.x},${point.y + offset.y}`))).toBe(true);
     }
+  } else if (zone.evidence.kind === "authored_habitat_source") {
+    expect(zone.evidence.ownerId).toBe("m19-m23:east-deep-rough-margin");
+    expect(zone.family).toBe("meadow_deep_rough_margin");
+    expect(zone.evidence.sourcePoints.every((point) => course.tiles[cell(course, point)] === "deep_rough")).toBe(true);
+    expect(zone.occupancy.every((point) => zone.evidence.sourcePoints.some((sourcePoint) =>
+      Math.max(Math.abs(point.x - sourcePoint.x), Math.abs(point.y - sourcePoint.y)) <= 2))).toBe(true);
   } else {
     expect(zone.family).toBe("wet_shore");
     expect(zone.evidence.sourcePoints.every((point) => ["water", "wetland"].includes(course.tiles[cell(course, point)]))).toBe(true);
@@ -277,17 +285,28 @@ describe("CourseSceneCompositionPlanV1", () => {
     expect(plan.exclusions.authoredMarkers.owners[0].sourcePoints).toHaveLength(6);
     expect(plan.exclusions.obstacles.owners).toHaveLength(course.obstacles.length);
     expect(plan.exclusions.buildings.owners).toHaveLength(course.buildings.length);
-    const expandedExcluded = new Set([
-      ...plan.exclusions.maintainedTerrain.cells,
+    const routeMarkerBuildingExcluded = new Set([
       ...plan.exclusions.routedCorridor.cells,
       ...plan.exclusions.authoredMarkers.cells,
-      ...plan.exclusions.obstacles.cells,
       ...plan.exclusions.buildings.cells,
     ]);
+    const obstacleSourceCells = new Set(course.obstacles.map((obstacle) => cell(course, obstacle)));
+    const blanketExcluded = new Set([
+      ...plan.exclusions.maintainedTerrain.cells,
+      ...plan.exclusions.obstacles.cells,
+    ]);
     const obstacleAt = new Map(course.obstacles.map((obstacle) => [pointKey(obstacle), obstacle]));
+    let authoredUsesBlanketException = false;
     for (const zone of plan.habitatZones) for (const point of zone.occupancy) {
+      if (zone.evidence.kind === "authored_habitat_source") {
+        expect(routeMarkerBuildingExcluded.has(cell(course, point))).toBe(false);
+        expect(["rough", "deep_rough"]).toContain(course.tiles[cell(course, point)]);
+        expect(obstacleSourceCells.has(cell(course, point))).toBe(false);
+        authoredUsesBlanketException ||= blanketExcluded.has(cell(course, point));
+        continue;
+      }
       if (zone.evidence.kind !== "tree_grove") {
-        expect(expandedExcluded.has(cell(course, point))).toBe(false);
+        expect(blanketExcluded.has(cell(course, point))).toBe(false);
         continue;
       }
       const obstacle = obstacleAt.get(pointKey(point));
@@ -295,6 +314,7 @@ describe("CourseSceneCompositionPlanV1", () => {
       expect(obstacle.type === "bush" || (obstacle.type === "tree"
         && zone.evidence.sourcePoints.map(pointKey).includes(pointKey(point)))).toBe(true);
     }
+    expect(authoredUsesBlanketException).toBe(true);
     expect(plan.exclusions.dynamicSuppression).toEqual({
       golfers: { radius: 2, metric: "chebyshev", policy: "suppress-at-render" },
       activeEditorPreview: { radius: 2, metric: "chebyshev", policy: "suppress-at-render" },
@@ -388,6 +408,59 @@ describe("CourseSceneCompositionPlanV1", () => {
       expect(plan.holeEnvelopes[0].markers).toHaveLength(6);
     }
     expect(new Set(plans.map(({ plan }) => pointKey(plan.landmarks.find((landmark) => landmark.kind === "active_green")!.point))).size).toBe(3);
+  });
+
+  it("keeps the exact M19/M23 authored source outside course authority and inside every Cozy ownership window", () => {
+    const m19 = createParklandVisualReferenceCourse();
+    const m23 = createM23CourseSetupReferenceCourse();
+    const before = structuredClone({ m19, m23 });
+    const m19Plan = deriveCourseSceneComposition({ course: m19, seed: 1202 });
+    const m23Plan = deriveCourseSceneComposition({ course: m23, seed: 1202 });
+    const authored = (plan: CourseSceneCompositionPlanV1) => plan.habitatZones
+      .filter((zone) => zone.evidence.kind === "authored_habitat_source");
+
+    expect(m19Plan.courseHash).toBe("b49496cd");
+    expect(m23Plan.courseHash).toBe("fe2d0a9f");
+    expect(m19Plan.obstacleHash).toBe("17415601");
+    expect(m23Plan.obstacleHash).toBe("17415601");
+    expect(authored(m19Plan)).toHaveLength(1);
+    expect(authored(m23Plan)).toHaveLength(1);
+    expect(authored(m23Plan)).toEqual(authored(m19Plan));
+    const source = authored(m23Plan)[0];
+    expect(source.occupancy).toEqual([{ x: 31, y: 23 }, { x: 32, y: 23 }, { x: 31, y: 24 }, { x: 32, y: 24 }]);
+    assertCardinallyConnected(source.occupancy);
+    assertExactT1(source);
+    expect(source.placements.every((placement) => placement.topologyRole !== "termination")).toBe(true);
+
+    for (const pinRotation of ["A", "B", "C"] as const) {
+      const course = courseForCourseSetup(m23, "member", pinRotation);
+      const plan = deriveCourseSceneComposition({ course, seed: 1202 });
+      expect(plan.courseHash).toBe(m23Plan.courseHash);
+      expect(plan.obstacleHash).toBe(m23Plan.obstacleHash);
+      const selectedSource = authored(plan)[0];
+      expect(selectedSource).toEqual(source);
+      for (const rotation of ISO_ROTATIONS) for (const viewport of [{ width: 1440, height: 900 }, { width: 800, height: 500 }] as const) {
+        const frame = deriveCourseSceneCamera({
+          course,
+          composition: plan,
+          activeHoleIndex: 0,
+          teeSet: "member",
+          pinRotation,
+          viewport,
+          rotation,
+          mode: "normal",
+        });
+        expect(frame.habitatZoneIds).toContain(source.id);
+        expect(frame.visiblePoints).toEqual(expect.arrayContaining([...source.occupancy]));
+      }
+    }
+
+    const secondary = createM20TerrainReferenceCourse();
+    expect(authored(deriveCourseSceneComposition({ course: secondary, seed: 1202 }))).toEqual([]);
+    const mutated = structuredClone(m23);
+    mutated.tiles[0] = "deep_rough";
+    expect(authored(deriveCourseSceneComposition({ course: mutated, seed: 1202 }))).toEqual([]);
+    expect({ m19, m23 }).toEqual(before);
   });
 
   it("is view-independent and retains semantic geometry in the canonical course hash", () => {

@@ -14,6 +14,7 @@ import {
   type ParklandHabitatAtlasCatalog,
   type ParklandHabitatFamily,
 } from "./habitatFieldTopology";
+import { m19AuthoredHabitatSource, type M19AuthoredHabitatPatchV1 } from "./m19AuthoredHabitatSource";
 
 export const COURSE_SCENE_COMPOSITION_VERSION = 1 as const;
 export const COURSE_SCENE_COMPOSITION_SEMANTICS = "course-scene-composition-v1" as const;
@@ -80,7 +81,7 @@ export interface CourseSceneLandmarkV1 {
 }
 
 export interface HabitatZoneEvidenceV1 {
-  readonly kind: "tree_grove" | "rock" | "deep_rough_margin" | "wet_shore";
+  readonly kind: "tree_grove" | "rock" | "deep_rough_margin" | "wet_shore" | "authored_habitat_source";
   readonly ownerId: string;
   readonly sourcePoints: readonly Point[];
   readonly rule: string;
@@ -701,6 +702,72 @@ function shapeCandidates(course: Course, labels: ReadonlyMap<number, EvidenceLab
   return [...candidates.values()];
 }
 
+function authoredSourcePoints(course: Course, patch: M19AuthoredHabitatPatchV1): readonly Point[] {
+  if (patch.family === "meadow_deep_rough_margin") {
+    const { bounds } = patch;
+    const points: Point[] = [];
+    for (let y = bounds.y - 2; y < bounds.y + bounds.height + 2; y += 1) for (let x = bounds.x - 2; x < bounds.x + bounds.width + 2; x += 1) {
+      if (inside(course, { x, y }) && course.tiles[cell(course, x, y)] === "deep_rough") points.push({ x, y });
+    }
+    return uniquePoints(points);
+  }
+  const bounds = patch.bounds;
+  return uniquePoints(course.obstacles.filter((obstacle) => obstacle.type === "tree"
+    && obstacle.x >= bounds.x - 5 && obstacle.x < bounds.x + bounds.width + 5
+    && obstacle.y >= bounds.y - 5 && obstacle.y < bounds.y + bounds.height + 5));
+}
+
+/**
+ * A deliberately narrow presentation exception. It may cross only the blanket
+ * maintained-terrain/obstacle *halos* on habitat terrain; routed corridors,
+ * markers, buildings, and every obstacle source tile stay absolutely clear.
+ */
+function authoredHabitatCandidates(course: Course, absoluteExclusions: ReadonlySet<number>): readonly HabitatCandidate[] {
+  const candidates: HabitatCandidate[] = [];
+  for (const patch of m19AuthoredHabitatSource(course)) {
+    const { bounds } = patch;
+    let valid = patch.rowRuns.length === bounds.height && bounds.width >= 2 && bounds.height >= 2;
+    const occupied: HabitatTileCoordinate[] = [];
+    for (let y = bounds.y; y < bounds.y + bounds.height; y += 1) {
+      const run = patch.rowRuns[y - bounds.y];
+      if (!run || run[0] < bounds.x || run[1] >= bounds.x + bounds.width || run[0] > run[1]) {
+        valid = false;
+        continue;
+      }
+      for (let x = run[0]; x <= run[1]; x += 1) {
+        const point = { x, y };
+        if (!inside(course, point)) { valid = false; continue; }
+        const value = cell(course, x, y);
+        if (!HABITAT_TERRAINS.has(course.tiles[value]) || absoluteExclusions.has(value)) valid = false;
+        occupied.push(point);
+      }
+    }
+    const sourcePoints = valid ? authoredSourcePoints(course, patch) : [];
+    if (patch.family === "meadow_deep_rough_margin") {
+      valid = valid && sourcePoints.length > 0 && occupied.every((point) => sourcePoints.some((source) =>
+        Math.max(Math.abs(point.x - source.x), Math.abs(point.y - source.y)) <= 2));
+    } else {
+      valid = valid && sourcePoints.length > 0 && occupied.every((point) => sourcePoints.some((tree) =>
+        Math.max(Math.abs(point.x - tree.x), Math.abs(point.y - tree.y)) <= 5));
+    }
+    if (!valid || occupied.length < 4) continue;
+    const evidence: HabitatZoneEvidenceV1 = {
+      kind: "authored_habitat_source",
+      ownerId: `m19-m23:${patch.id}`,
+      sourcePoints,
+      rule: "exact-fixture tile-snapped render-only source; absolute route, marker, building, and obstacle-source clearances",
+    };
+    candidates.push({
+      id: `candidate:${patch.family}:${evidence.ownerId}`,
+      family: patch.family,
+      evidence,
+      bounds: { ...bounds },
+      occupied,
+    });
+  }
+  return candidates;
+}
+
 function mix32(value: number): number {
   value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
   value = Math.imul(value ^ (value >>> 15), 0x846ca68b);
@@ -779,12 +846,23 @@ export function deriveCourseSceneComposition(input: CourseSceneCompositionInput)
     ...obstacleGeometry.cells,
   ]);
 
+  const authoredAbsoluteExclusions = new Set([
+    ...routedCorridor.cells,
+    ...authoredMarkerGeometry.cells,
+    ...buildingGeometry.cells,
+    ...course.obstacles.filter((obstacle) => inside(course, obstacle)).map((obstacle) => cell(course, obstacle.x, obstacle.y)),
+  ]);
+
   const labels = evidenceLabels(course, staticallyExcluded);
   const treeCandidates = mergeAdjacentTreeGroveCandidates(treeGroveCandidates(course, treeSourceExcluded));
-  const candidates = [...treeCandidates, ...shapeCandidates(course, labels)]
+  const authoredCandidates = authoredHabitatCandidates(course, authoredAbsoluteExclusions);
+  const ecologicalCandidates = [...treeCandidates, ...shapeCandidates(course, labels)]
     .sort((left, right) => right.occupied.length - left.occupied.length
     || mix32((semanticSeed | 0) ^ textSalt(left.id)) - mix32((semanticSeed | 0) ^ textSalt(right.id))
     || left.id.localeCompare(right.id));
+  // Fixture-gated authored sources are evaluated first, not tuned per frame:
+  // the normal zone-gap reservation then applies unchanged to all later data.
+  const candidates = [...authoredCandidates, ...ecologicalCandidates];
   const reserved = new Set<number>();
   const zones: CourseSceneHabitatZoneV1[] = [];
   const rejected: HabitatCandidateRejectionV1[] = [];
