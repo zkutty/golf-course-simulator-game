@@ -9,6 +9,14 @@ const DEFAULT_ASSET_ROOT = path.join(ROOT, "src/assets/terrain/parkland-habitat-
 const CONTRACT_PATH = path.join(ROOT, "src/assets/terrain/contracts/parkland-habitat-field-v1.json");
 const GENERATOR_PATH = path.join(ROOT, "scripts/gen-parkland-habitat-field.mjs");
 const FAMILIES = ["woodland_floor", "understory_edge", "meadow_deep_rough_margin", "wet_shore", "rock_leaf_transition"];
+const DENSE_MASK_FAMILIES = new Set(["woodland_floor", "understory_edge"]);
+const CANONICAL_MASKS = [0, 1, 5, 7, 17, 21, 23, 31, 85, 87, 95, 119, 127, 255];
+const D4_TRANSFORMS = [
+  "identity", "rotate90", "rotate180", "rotate270",
+  "reflectX", "reflectXRotate90", "reflectXRotate180", "reflectXRotate270",
+];
+const MASK_BITS = { n: 1, e: 4, s: 16, w: 64 };
+const FRAME_COUNT = 89;
 const MODES = ["standard", "deuteranopia", "protanopia", "tritanopia"];
 const TIERS = {
   high: { width: 256, height: 128, gutter: 4, scale: 4 },
@@ -38,9 +46,50 @@ function edgeHasAlpha(image, frame, edge) {
   return false;
 }
 
+function worldEdgeHasAlpha(image, frame, edge) {
+  const radius = Math.max(2, Math.floor(Math.min(frame.width, frame.height) * 0.04));
+  for (const tangent of [-0.18, 0, 0.18]) {
+    const world = edge === "n" ? { x: tangent, y: -0.5 }
+      : edge === "e" ? { x: 0.5, y: tangent }
+        : edge === "s" ? { x: tangent, y: 0.5 }
+          : { x: -0.5, y: tangent };
+    const screenX = world.x - world.y;
+    const screenY = world.x + world.y;
+    const centerX = Math.round((0.5 + screenX / 2) * (frame.width - 1));
+    const centerY = Math.round((0.5 + screenY / 2) * (frame.height - 1));
+    let visible = false;
+    for (let dy = -radius; dy <= radius && !visible; dy += 1) for (let dx = -radius; dx <= radius; dx += 1) {
+      const x = centerX + dx; const y = centerY + dy;
+      if (x >= 0 && y >= 0 && x < frame.width && y < frame.height
+        && image.data[at(image, frame.x + x, frame.y + y) + 3] > 0) { visible = true; break; }
+    }
+    if (!visible) return false;
+  }
+  return true;
+}
+
+function outsideDiamondAlphaCount(region, width, height) {
+  let outside = 0;
+  for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+    const screenX = (((x + 0.5) / width) - 0.5) * 2;
+    const screenY = (((y + 0.5) / height) - 0.5) * 2;
+    const worldX = (screenX + screenY) / 2;
+    const worldY = (screenY - screenX) / 2;
+    if ((Math.abs(worldX) > 0.5 || Math.abs(worldY) > 0.5) && region[(y * width + x) * 4 + 3] > 0) outside += 1;
+  }
+  return outside;
+}
+
 function expectedFrameIds() {
   const ids = [];
   for (const family of FAMILIES) {
+    if (DENSE_MASK_FAMILIES.has(family)) {
+      for (const mask of CANONICAL_MASKS) {
+        const variants = mask === 255 ? [0, 1, 2] : [0];
+        for (const variant of variants) ids.push(`${family}--mask-${mask.toString(16).padStart(2, "0")}-${variant}`);
+      }
+      continue;
+    }
     for (let variant = 0; variant < 3; variant += 1) ids.push(`${family}--interior-${variant}`);
     for (const direction of ["n", "e", "s", "w"]) ids.push(`${family}--boundary-${direction}`);
     for (const corner of ["ne", "se", "sw", "nw"]) ids.push(`${family}--convex-${corner}`);
@@ -84,7 +133,17 @@ export function auditParklandHabitat({ assetRoot = DEFAULT_ASSET_ROOT } = {}) {
   const sidecar = readFileSync(path.join(assetRoot, "manifest.sha256"), "utf8").trim();
   require(sidecar === `${sha256(manifestBytes)}  manifest.json`, "manifest SHA-256 sidecar mismatch");
   require(JSON.stringify([...manifest.vocabulary.families].sort()) === JSON.stringify([...FAMILIES].sort()), "semantic family vocabulary mismatch");
-  require(JSON.stringify([...manifest.vocabulary.topologyRoles].sort()) === JSON.stringify(["boundary", "concave", "convex", "interior", "termination"]), "topology role vocabulary mismatch");
+  require(manifest.vocabulary.revision === 2, "topology vocabulary revision must be 2");
+  require(JSON.stringify([...manifest.vocabulary.topologyRoles].sort()) === JSON.stringify(["boundary", "concave", "convex", "interior", "mask", "termination"]), "topology role vocabulary mismatch");
+  require(JSON.stringify(manifest.vocabulary.denseMaskFamilies) === JSON.stringify([...DENSE_MASK_FAMILIES]), "dense-mask family vocabulary mismatch");
+  require(JSON.stringify(manifest.vocabulary.canonicalMasks) === JSON.stringify(CANONICAL_MASKS), "canonical-mask vocabulary mismatch");
+  require(contract.topology?.revision === manifest.vocabulary.revision, "contract and manifest topology revisions must agree");
+  require(JSON.stringify([...(contract.topology?.roles ?? [])].sort()) === JSON.stringify([...manifest.vocabulary.topologyRoles].sort()), "contract and manifest topology roles must agree");
+  require(JSON.stringify(contract.topology?.denseMaskFamilies) === JSON.stringify(manifest.vocabulary.denseMaskFamilies), "contract and manifest dense-mask families must agree");
+  require(contract.topology?.normalizedMaskCount === 47 && manifest.vocabulary.normalizedMaskCount === 47, "contract and manifest must declare 47 normalized masks");
+  require(JSON.stringify(contract.topology?.canonicalMasks) === JSON.stringify(manifest.vocabulary.canonicalMasks), "contract and manifest canonical-mask classes must agree");
+  require(JSON.stringify(contract.topology?.d4Transforms) === JSON.stringify(manifest.vocabulary.d4Transforms)
+    && JSON.stringify(manifest.vocabulary.d4Transforms) === JSON.stringify(D4_TRANSFORMS), "contract and manifest D4 transforms must agree");
   require(Object.keys(manifest.vocabulary.patterns).length === FAMILIES.length && new Set(Object.values(manifest.vocabulary.patterns)).size === FAMILIES.length, "each family requires a unique non-color pattern identity");
   const paletteMaps = {}; const coverage = {};
   require(JSON.stringify(Object.keys(manifest.paletteTransforms ?? {}).sort()) === JSON.stringify([...MODES].sort()), "palette transforms must contain exactly standard, deuteranopia, protanopia, and tritanopia");
@@ -126,7 +185,7 @@ export function auditParklandHabitat({ assetRoot = DEFAULT_ASSET_ROOT } = {}) {
   }
   let totalAtlasBytes = 0; const expectedIds = expectedFrameIds();
   for (const [tier, expected] of Object.entries(TIERS)) {
-    for (const mode of MODES) coverage[mode][tier] = { coveredFrames: 0, totalFrames: 95, missingSourceColors: [] };
+    for (const mode of MODES) coverage[mode][tier] = { coveredFrames: 0, totalFrames: FRAME_COUNT, missingSourceColors: [] };
     const descriptor = manifest.tiers?.[tier];
     require(Boolean(descriptor), `${tier} tier missing`); if (!descriptor) continue;
     let atlas; let atlasJson;
@@ -141,9 +200,9 @@ export function auditParklandHabitat({ assetRoot = DEFAULT_ASSET_ROOT } = {}) {
     require(imageBytes.length <= contract.budgets.atlasBytesMaxPerTier, `${tier} atlas exceeds byte budget`);
     require(atlas.width * atlas.height * 4 <= contract.budgets.selectedTierDecodedBytesMax, `${tier} atlas exceeds decoded residency budget`);
     const ids = Object.keys(atlasJson.frames ?? {}).sort();
-    require(JSON.stringify(ids) === JSON.stringify(expectedIds), `${tier} frame IDs do not match the 95-frame vocabulary`);
-    require(atlasJson.frameCount === 95 && descriptor.frameCount === 95, `${tier} must expose 95 frames`);
-    const seen = new Map(); let minCoverage = 1; let maxCoverage = 0;
+    require(JSON.stringify(ids) === JSON.stringify(expectedIds), `${tier} frame IDs do not match the ${FRAME_COUNT}-frame vocabulary`);
+    require(atlasJson.frameCount === FRAME_COUNT && descriptor.frameCount === FRAME_COUNT, `${tier} must expose ${FRAME_COUNT} frames`);
+    const seen = new Map(); let minCoverage = 1; let maxCoverage = 0; let maxOutsideDiamondAlphaPixels = 0;
     for (const id of ids) {
       const frame = atlasJson.frames[id]; const manifestFrame = descriptor.frames[id];
       require(JSON.stringify(frame) === JSON.stringify(manifestFrame), `${tier}/${id} differs between atlas and manifest`);
@@ -170,13 +229,25 @@ export function auditParklandHabitat({ assetRoot = DEFAULT_ASSET_ROOT } = {}) {
       require(alphaCoverage >= 0.004 && alphaCoverage <= 0.72, `${tier}/${id} alpha coverage ${alphaCoverage.toFixed(4)} is outside sparse-field bounds`);
       require(transparentRgb === 0, `${tier}/${id} has RGB data in transparent pixels`);
       require(frame.anchor?.x === expected.width / 2 && frame.anchor?.y === expected.height / 2, `${tier}/${id} logical anchor mismatch`);
-      require(Array.isArray(frame.edgeAnchors) && frame.edgeAnchors.length > 0, `${tier}/${id} requires topology anchors`);
-      for (const edge of frame.edgeAnchors ?? []) require(edgeHasAlpha(atlas, frame.frame, edge), `${tier}/${id} lacks pixels at declared ${edge} anchor`);
+      require(Array.isArray(frame.edgeAnchors), `${tier}/${id} requires an edge-anchor array`);
+      if (DENSE_MASK_FAMILIES.has(frame.family)) {
+        const outsideAlphaPixels = outsideDiamondAlphaCount(region, frame.frame.width, frame.frame.height);
+        maxOutsideDiamondAlphaPixels = Math.max(maxOutsideDiamondAlphaPixels, outsideAlphaPixels);
+        require(outsideAlphaPixels === 0, `${tier}/${id} has ${outsideAlphaPixels} visible pixels outside its projected tile diamond`);
+        require(CANONICAL_MASKS.includes(frame.canonicalMask), `${tier}/${id} has invalid canonical-mask metadata`);
+        const expectedEdges = Object.entries(MASK_BITS).filter(([, bit]) => (frame.canonicalMask & bit) !== 0).map(([edge]) => edge).sort();
+        require(JSON.stringify([...frame.edgeAnchors].sort()) === JSON.stringify(expectedEdges), `${tier}/${id} edge anchors do not match canonical mask`);
+        for (const edge of frame.edgeAnchors) require(worldEdgeHasAlpha(atlas, frame.frame, edge), `${tier}/${id} lacks pixels at declared world ${edge} anchor`);
+      } else {
+        require(frame.canonicalMask === null, `${tier}/${id} reduced frame must not declare a canonical mask`);
+        require(frame.edgeAnchors.length > 0, `${tier}/${id} requires topology anchors`);
+        for (const edge of frame.edgeAnchors) require(edgeHasAlpha(atlas, frame.frame, edge), `${tier}/${id} lacks pixels at declared ${edge} anchor`);
+      }
       validateGutters(atlas, frame.frame, expected.gutter, errors, `${tier}/${id}`);
     }
-    report.tiers[tier] = { frames: ids.length, imageBytes: imageBytes.length, jsonBytes: jsonBytes.length, decodedBytes: atlas.width * atlas.height * 4, minCoverage, maxCoverage, uniqueFrameHashes: seen.size };
+    report.tiers[tier] = { frames: ids.length, imageBytes: imageBytes.length, jsonBytes: jsonBytes.length, decodedBytes: atlas.width * atlas.height * 4, minCoverage, maxCoverage, maxOutsideDiamondAlphaPixels, uniqueFrameHashes: seen.size };
   }
-  for (const mode of MODES) for (const tier of Object.keys(TIERS)) require(coverage[mode][tier].coveredFrames === 95, `${mode}/${tier} palette coverage is ${coverage[mode][tier].coveredFrames}/95 frames`);
+  for (const mode of MODES) for (const tier of Object.keys(TIERS)) require(coverage[mode][tier].coveredFrames === FRAME_COUNT, `${mode}/${tier} palette coverage is ${coverage[mode][tier].coveredFrames}/${FRAME_COUNT} frames`);
   require(totalAtlasBytes <= contract.budgets.totalAtlasBytesMax, "combined atlas bytes exceed budget");
   const proof = manifest.proof; let proofImage;
   try { proofImage = PNG.sync.read(readFileSync(path.join(assetRoot, proof.file))); } catch (error) { errors.push(`proof board unreadable: ${error.message}`); }

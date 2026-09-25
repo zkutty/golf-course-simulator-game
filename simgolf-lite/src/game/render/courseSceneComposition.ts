@@ -126,6 +126,8 @@ export interface CourseSceneCompositionPlanV1 {
     };
     readonly interZoneGapCells: typeof COURSE_SCENE_INTER_ZONE_GAP_CELLS;
     readonly interZoneGapMetric: "chebyshev";
+    readonly adjacentTreeGrovePolicy: "merge-same-family-before-topology";
+    readonly vegetationGroundPolicy: "visual-underlay-beneath-source-trees-and-bushes";
     readonly treeAuthority: "existing-obstacles-only";
   };
   readonly habitatZones: readonly CourseSceneHabitatZoneV1[];
@@ -476,17 +478,34 @@ function cardinalComponents(course: Course, source: ReadonlySet<number>): readon
 }
 
 function treeGroveEvidence(course: Course): readonly { points: readonly Point[]; label: EvidenceLabel }[] {
-  const treeCells = new Set(course.obstacles.filter((obstacle) => obstacle.type === "tree" && inside(course, obstacle))
-    .map((obstacle) => cell(course, obstacle.x, obstacle.y)));
-  return cardinalComponents(course, treeCells).filter((component) => component.length >= 2).map((component) => {
-    const points = component.map((value) => pointFor(course, value));
-    // A grove with a 2x2-or-denser core owns woodland floor. Smaller cardinal
-    // chains own understory edge. This is geometry-derived, never ordinal/seeded.
+  const trees = canonicalObstacleEntries(course.obstacles)
+    .filter((obstacle) => obstacle.type === "tree" && inside(course, obstacle));
+  const remaining = new Set(trees.map((_, index) => index));
+  const groups: Point[][] = [];
+  while (remaining.size > 0) {
+    const first = Math.min(...remaining);
+    remaining.delete(first);
+    const members = [first];
+    for (let cursor = 0; cursor < members.length; cursor += 1) {
+      const source = trees[members[cursor]];
+      for (const candidate of [...remaining]) {
+        const target = trees[candidate];
+        if (Math.max(Math.abs(source.x - target.x), Math.abs(source.y - target.y)) > 4) continue;
+        remaining.delete(candidate);
+        members.push(candidate);
+      }
+    }
+    if (members.length >= 2) groups.push(members.map((index) => ({ x: trees[index].x, y: trees[index].y })).sort(comparePoints));
+  }
+  return groups.map((points) => {
+    // Five-source groves and 2x2-or-denser cores own woodland floor. Smaller
+    // source clusters own understory edge. This is world geometry, never view
+    // angle, obstacle input order, or a hand-authored course coordinate.
     const pointSet = new Set(points.map(pointKey));
     const denseCore = points.some((point) => pointSet.has(`${point.x + 1},${point.y}`)
       && pointSet.has(`${point.x},${point.y + 1}`) && pointSet.has(`${point.x + 1},${point.y + 1}`));
-    const family: ParklandHabitatFamily = denseCore ? "woodland_floor" : "understory_edge";
-    const ownerId = `tree-grove:${component[0]}`;
+    const family: ParklandHabitatFamily = points.length >= 5 || denseCore ? "woodland_floor" : "understory_edge";
+    const ownerId = `tree-grove:${cell(course, points[0].x, points[0].y)}`;
     return {
       points,
       label: {
@@ -495,9 +514,9 @@ function treeGroveEvidence(course: Course): readonly { points: readonly Point[];
           kind: "tree_grove",
           ownerId,
           sourcePoints: points,
-          rule: denseCore
-            ? "cardinal grove with a complete 2x2 tree core -> woodland_floor"
-            : "cardinal grove without a complete 2x2 tree core -> understory_edge",
+          rule: family === "woodland_floor"
+            ? "Chebyshev-4 tree-source cluster with at least five sources or a complete 2x2 core -> woodland_floor"
+            : "Chebyshev-4 tree-source cluster with two to four sources and no complete 2x2 core -> understory_edge",
         },
       },
     };
@@ -513,13 +532,6 @@ function evidenceLabels(course: Course, staticallyExcluded: ReadonlySet<number>)
   const assign = (point: Point, label: EvidenceLabel) => {
     if (habitatCell(point) && !labels.has(cell(course, point.x, point.y))) labels.set(cell(course, point.x, point.y), label);
   };
-
-  for (const grove of treeGroveEvidence(course)) {
-    for (let y = 0; y < course.height; y += 1) for (let x = 0; x < course.width; x += 1) {
-      const distance = Math.min(...grove.points.map((tree) => Math.abs(tree.x - x) + Math.abs(tree.y - y)));
-      if (distance >= 3 && distance <= 5) assign({ x, y }, grove.label);
-    }
-  }
 
   for (const rock of canonicalObstacleEntries(course.obstacles).filter((obstacle) => obstacle.type === "rock")) {
     const ownerId = `rock:${rock.x},${rock.y}`;
@@ -564,6 +576,89 @@ function evidenceLabels(course: Course, staticallyExcluded: ReadonlySet<number>)
     }
   }
   return labels;
+}
+
+function treeGroveCandidates(
+  course: Course,
+  hardExcluded: ReadonlySet<number>,
+): readonly HabitatCandidate[] {
+  const obstaclesByCell = new Map<number, Obstacle[]>();
+  for (const obstacle of canonicalObstacleEntries(course.obstacles)) {
+    const value = cell(course, obstacle.x, obstacle.y);
+    obstaclesByCell.set(value, [...(obstaclesByCell.get(value) ?? []), obstacle]);
+  }
+  return treeGroveEvidence(course).flatMap((grove) => {
+    const sourceCells = new Set(grove.points.map((point) => cell(course, point.x, point.y)));
+    const occupied = new Map<number, HabitatTileCoordinate>();
+    for (const source of grove.points) for (let dy = -2; dy <= 2; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
+      const point = { x: source.x + dx, y: source.y + dy };
+      if (!inside(course, point)) continue;
+      const value = cell(course, point.x, point.y);
+      if (!HABITAT_TERRAINS.has(course.tiles[value]) || hardExcluded.has(value)) continue;
+      // The presentation layer renders below real vegetation props, so source
+      // trees and bushes may retain ecological ground. Rocks and any unrelated
+      // obstacle authority remain hard holes in the visual occupancy.
+      const obstacles = obstaclesByCell.get(value) ?? [];
+      if (obstacles.some((obstacle) => obstacle.type !== "bush"
+        && !(obstacle.type === "tree" && sourceCells.has(value)))) continue;
+      occupied.set(value, point);
+    }
+    const largest = cardinalComponents(course, new Set(occupied.keys()))
+      .slice().sort((left, right) => right.length - left.length || left[0] - right[0])[0] ?? [];
+    const sorted = largest.map((value) => pointFor(course, value)).sort(comparePoints);
+    if (sorted.length < 2) return [];
+    const signature = sorted.map(pointKey).join(";");
+    return [{
+      id: `candidate:${grove.label.family}:${grove.label.evidence.ownerId}:${signature}`,
+      family: grove.label.family,
+      evidence: grove.label.evidence,
+      bounds: candidateBounds(sorted),
+      occupied: sorted,
+    }];
+  });
+}
+
+function candidateCellsTouchCardinally(left: HabitatCandidate, right: HabitatCandidate): boolean {
+  const rightCells = new Set(right.occupied.map(pointKey));
+  return left.occupied.some((point) => rightCells.has(pointKey(point)) || CARDINALS.some((offset) => (
+    rightCells.has(`${point.x + offset.x},${point.y + offset.y}`)
+  )));
+}
+
+function mergeAdjacentTreeGroveCandidates(candidates: readonly HabitatCandidate[]): readonly HabitatCandidate[] {
+  const merged = candidates.map((candidate) => ({ ...candidate, occupied: [...candidate.occupied] }));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    mergePass: for (let left = 0; left < merged.length; left += 1) {
+      for (let right = left + 1; right < merged.length; right += 1) {
+        const a = merged[left]; const b = merged[right];
+        if (a.family !== b.family || !candidateCellsTouchCardinally(a, b)) continue;
+        const occupied = [...new Map([...a.occupied, ...b.occupied].map((point) => [pointKey(point), point])).values()]
+          .sort(comparePoints);
+        const sourcePoints = [...new Map([...a.evidence.sourcePoints, ...b.evidence.sourcePoints]
+          .map((point) => [pointKey(point), point])).values()].sort(comparePoints);
+        const ownerIds = [a.evidence.ownerId, b.evidence.ownerId].flatMap((value) => value.split("+")).sort();
+        const ownerId = ownerIds.join("+");
+        merged[left] = {
+          id: `candidate:${a.family}:${ownerId}:${occupied.map(pointKey).join(";")}`,
+          family: a.family,
+          evidence: {
+            kind: "tree_grove",
+            ownerId,
+            sourcePoints,
+            rule: `${a.evidence.rule}; cardinally adjacent same-family source fields merged before topology resolution`,
+          },
+          bounds: candidateBounds(occupied),
+          occupied,
+        };
+        merged.splice(right, 1);
+        changed = true;
+        break mergePass;
+      }
+    }
+  }
+  return merged;
 }
 
 function candidateBounds(occupied: readonly HabitatTileCoordinate[]): HabitatGridBounds {
@@ -668,16 +763,26 @@ export function deriveCourseSceneComposition(input: CourseSceneCompositionInput)
   const authoredMarkerGeometry = exclusionGeometry(markerOwners(course, holes), 3);
   const obstacleGeometry = exclusionGeometry(obstacleOwners(course), 2);
   const buildingGeometry = exclusionGeometry(buildingOwners(course), 2);
-  const staticallyExcluded = new Set([
+  const hardExcluded = new Set([
     ...maintainedTerrain.cells,
     ...routedCorridor.cells,
     ...authoredMarkerGeometry.cells,
-    ...obstacleGeometry.cells,
     ...buildingGeometry.cells,
+  ]);
+  const treeSourceExcluded = new Set([
+    ...routedCorridor.owners.flatMap((owner) => owner.sourcePoints.map((point) => cell(course, point.x, point.y))),
+    ...authoredMarkerGeometry.owners.flatMap((owner) => owner.sourcePoints.map((point) => cell(course, point.x, point.y))),
+    ...buildingGeometry.owners.flatMap((owner) => owner.sourcePoints.map((point) => cell(course, point.x, point.y))),
+  ]);
+  const staticallyExcluded = new Set([
+    ...hardExcluded,
+    ...obstacleGeometry.cells,
   ]);
 
   const labels = evidenceLabels(course, staticallyExcluded);
-  const candidates = shapeCandidates(course, labels).slice().sort((left, right) => right.occupied.length - left.occupied.length
+  const treeCandidates = mergeAdjacentTreeGroveCandidates(treeGroveCandidates(course, treeSourceExcluded));
+  const candidates = [...treeCandidates, ...shapeCandidates(course, labels)]
+    .sort((left, right) => right.occupied.length - left.occupied.length
     || mix32((semanticSeed | 0) ^ textSalt(left.id)) - mix32((semanticSeed | 0) ^ textSalt(right.id))
     || left.id.localeCompare(right.id));
   const reserved = new Set<number>();
@@ -773,6 +878,8 @@ export function deriveCourseSceneComposition(input: CourseSceneCompositionInput)
       },
       interZoneGapCells: COURSE_SCENE_INTER_ZONE_GAP_CELLS,
       interZoneGapMetric: "chebyshev",
+      adjacentTreeGrovePolicy: "merge-same-family-before-topology",
+      vegetationGroundPolicy: "visual-underlay-beneath-source-trees-and-bushes",
       treeAuthority: "existing-obstacles-only",
     },
     habitatZones: zones.sort((left, right) => left.id.localeCompare(right.id)),

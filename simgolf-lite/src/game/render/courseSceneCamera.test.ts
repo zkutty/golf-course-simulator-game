@@ -105,7 +105,9 @@ describe("deriveCourseSceneCamera", () => {
         expect(frame.visiblePoints).toEqual(expect.arrayContaining([resolved.tee, resolved.green]));
         expect(frame.visiblePoints.every((point) => point.x >= frame.bounds.minX && point.x <= frame.bounds.maxX
           && point.y >= frame.bounds.minY && point.y <= frame.bounds.maxY)).toBe(true);
-        expect(frame.zoom).toBeGreaterThan(oldCozyZoom(resolved.tee!, resolved.green!, viewport));
+        // Connected source-derived habitat extends beyond the old tee/pin-only
+        // envelope, so the authoritative frame must widen rather than crop it.
+        expect(frame.zoom).toBeLessThan(oldCozyZoom(resolved.tee!, resolved.green!, viewport));
         for (const point of frame.visiblePoints) {
           const offset = screenOffset(point, frame.center, frame.zoom, rotation);
           expect(Math.abs(offset.x)).toBeLessThanOrEqual(viewport.width * COURSE_SCENE_CAMERA_NORMAL_MARGIN / 2);

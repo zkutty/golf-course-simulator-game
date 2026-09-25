@@ -14,7 +14,16 @@ export const PARKLAND_HABITAT_FAMILIES = [
 export type ParklandHabitatFamily = (typeof PARKLAND_HABITAT_FAMILIES)[number];
 export type HabitatCardinalDirection = "n" | "e" | "s" | "w";
 export type HabitatCorner = "ne" | "se" | "sw" | "nw";
-export type HabitatTopologyRole = "interior" | "boundary" | "convex" | "concave" | "termination";
+export type HabitatTopologyRole = "interior" | "boundary" | "convex" | "concave" | "termination" | "mask";
+export type HabitatD4Transform =
+  | "identity"
+  | "rotate90"
+  | "rotate180"
+  | "rotate270"
+  | "reflectX"
+  | "reflectXRotate90"
+  | "reflectXRotate180"
+  | "reflectXRotate270";
 
 export interface HabitatTileCoordinate {
   readonly x: number;
@@ -51,6 +60,8 @@ export interface ParklandHabitatAtlasFrame {
   readonly direction: HabitatCardinalDirection | null;
   readonly corner: HabitatCorner | null;
   readonly variant: number;
+  /** Canonical normalized 8-neighbor mask for the dense D4 vocabulary. */
+  readonly canonicalMask?: number | null;
   readonly anchor: HabitatAtlasPoint;
   readonly edgeAnchors: readonly HabitatCardinalDirection[];
   readonly frame: HabitatAtlasRegion;
@@ -84,6 +95,9 @@ export interface HabitatFieldPlacement {
   readonly direction: HabitatCardinalDirection | null;
   readonly corner: HabitatCorner | null;
   readonly variant: number;
+  readonly normalizedMask: number;
+  readonly canonicalMask: number | null;
+  readonly d4Transform: HabitatD4Transform;
   readonly tile: HabitatTileCoordinate;
   /** Anchor copied verbatim from the selected atlas frame. */
   readonly atlasAnchor: HabitatAtlasPoint;
@@ -147,8 +161,28 @@ const FAMILY_SET: ReadonlySet<string> = new Set(PARKLAND_HABITAT_FAMILIES);
 const DIRECTION_SET: ReadonlySet<string> = new Set(CARDINALS);
 const CORNER_SET: ReadonlySet<string> = new Set(CORNERS);
 const ROLE_SET: ReadonlySet<string> = new Set([
-  "interior", "boundary", "convex", "concave", "termination",
+  "interior", "boundary", "convex", "concave", "termination", "mask",
 ]);
+
+const DENSE_MASK_FAMILIES: ReadonlySet<ParklandHabitatFamily> = new Set([
+  "woodland_floor",
+  "understory_edge",
+]);
+
+export const HABITAT_D4_TRANSFORMS: readonly HabitatD4Transform[] = [
+  "identity",
+  "rotate90",
+  "rotate180",
+  "rotate270",
+  "reflectX",
+  "reflectXRotate90",
+  "reflectXRotate180",
+  "reflectXRotate270",
+];
+
+export const HABITAT_D4_CANONICAL_MASKS = [
+  0, 1, 5, 7, 17, 21, 23, 31, 85, 87, 95, 119, 127, 255,
+] as const;
 
 const OFFSETS: Readonly<Record<keyof typeof HABITAT_OCCUPANCY_MASK_BITS, HabitatTileCoordinate>> = {
   n: { x: 0, y: -1 },
@@ -218,6 +252,7 @@ export interface HabitatMaskClassification {
 
 interface AtlasIndex {
   readonly bySemantic: ReadonlyMap<string, readonly ParklandHabitatAtlasFrame[]>;
+  readonly byCanonicalMask: ReadonlyMap<number, readonly ParklandHabitatAtlasFrame[]>;
 }
 
 function tileKey(x: number, y: number): string {
@@ -237,6 +272,69 @@ function normalizeOccupancyMask(mask: number): number {
     if ((mask & firstSide) === 0 || (mask & secondSide) === 0) normalized &= ~diagonalBit;
   }
   return normalized;
+}
+
+export function normalizedHabitatOccupancyMask(mask: number): number {
+  return normalizeOccupancyMask(mask & 0xff);
+}
+
+function transformCoordinate(
+  point: HabitatTileCoordinate,
+  transform: HabitatD4Transform,
+): HabitatTileCoordinate {
+  const reflected = transform.startsWith("reflectX") ? { x: -point.x, y: point.y } : point;
+  if (transform.endsWith("Rotate90") || transform === "rotate90") return { x: -reflected.y, y: reflected.x };
+  if (transform.endsWith("Rotate180") || transform === "rotate180") return { x: -reflected.x, y: -reflected.y };
+  if (transform.endsWith("Rotate270") || transform === "rotate270") return { x: reflected.y, y: -reflected.x };
+  return { x: reflected.x, y: reflected.y };
+}
+
+function directionForOffset(point: HabitatTileCoordinate): keyof typeof HABITAT_OCCUPANCY_MASK_BITS {
+  const match = (Object.entries(OFFSETS) as [keyof typeof OFFSETS, HabitatTileCoordinate][])
+    .find(([, offset]) => offset.x === point.x && offset.y === point.y);
+  if (!match) throw new Error(`invalid D4-transformed habitat offset ${point.x},${point.y}`);
+  return match[0];
+}
+
+export function transformHabitatMask(mask: number, transform: HabitatD4Transform): number {
+  let transformed = 0;
+  for (const direction of Object.keys(OFFSETS) as (keyof typeof OFFSETS)[]) {
+    if ((mask & HABITAT_OCCUPANCY_MASK_BITS[direction]) === 0) continue;
+    const target = directionForOffset(transformCoordinate(OFFSETS[direction], transform));
+    transformed |= HABITAT_OCCUPANCY_MASK_BITS[target];
+  }
+  return transformed;
+}
+
+export interface HabitatCanonicalMaskTransform {
+  readonly normalizedMask: number;
+  readonly canonicalMask: number;
+  /** Maps the canonical frame into the normalized occupancy orientation. */
+  readonly transform: HabitatD4Transform;
+}
+
+export function canonicalHabitatMaskTransform(mask: number): HabitatCanonicalMaskTransform {
+  const normalizedMask = normalizeOccupancyMask(mask & 0xff);
+  const orbit = HABITAT_D4_TRANSFORMS.map((transform) => transformHabitatMask(normalizedMask, transform));
+  const canonicalMask = Math.min(...orbit);
+  const transform = HABITAT_D4_TRANSFORMS.find((candidate) => (
+    transformHabitatMask(canonicalMask, candidate) === normalizedMask
+  ));
+  if (!transform || !(HABITAT_D4_CANONICAL_MASKS as readonly number[]).includes(canonicalMask)) {
+    throw new Error(`normalized habitat mask 0x${normalizedMask.toString(16)} has no D4 canonical class`);
+  }
+  return { normalizedMask, canonicalMask, transform };
+}
+
+export const HABITAT_NORMALIZED_MASKS: readonly number[] = [...new Set(
+  Array.from({ length: 256 }, (_, mask) => normalizeOccupancyMask(mask)),
+)].sort((left, right) => left - right);
+
+function transformCardinalDirection(
+  direction: HabitatCardinalDirection,
+  transform: HabitatD4Transform,
+): HabitatCardinalDirection {
+  return directionForOffset(transformCoordinate(OFFSETS[direction], transform)) as HabitatCardinalDirection;
 }
 
 /** Classifies a raw 8-neighbor mask without choosing any random orientation. */
@@ -259,6 +357,12 @@ function semanticKey(
 }
 
 function expectedEdgeAnchors(frame: ParklandHabitatAtlasFrame): readonly HabitatCardinalDirection[] {
+  if (frame.topologyRole === "mask") {
+    if (!Number.isSafeInteger(frame.canonicalMask) || frame.canonicalMask === null) return [];
+    return CARDINALS.filter((direction) => (
+      ((frame.canonicalMask as number) & HABITAT_OCCUPANCY_MASK_BITS[direction]) !== 0
+    ));
+  }
   if (frame.topologyRole === "interior") return CARDINALS;
   if (frame.topologyRole === "boundary" || frame.topologyRole === "termination") {
     return frame.direction === null ? [] : [frame.direction];
@@ -296,6 +400,7 @@ function frameMetadataError(
     return "has an invalid, fractional, or out-of-bounds frame region or anchor";
   }
 
+  const isMask = frame.topologyRole === "mask";
   const directional = frame.topologyRole === "boundary" || frame.topologyRole === "termination";
   const cornered = frame.topologyRole === "convex" || frame.topologyRole === "concave";
   if (directional !== (frame.direction !== null)
@@ -305,6 +410,20 @@ function frameMetadataError(
   if (cornered !== (frame.corner !== null)
     || (frame.corner !== null && !CORNER_SET.has(frame.corner))) {
     return "has corner metadata inconsistent with its topology role";
+  }
+  if (isMask && (!Number.isSafeInteger(frame.canonicalMask)
+    || !(HABITAT_D4_CANONICAL_MASKS as readonly number[]).includes(frame.canonicalMask as number)
+    || frame.canonicalMask === 255)) {
+    return "has invalid canonical-mask metadata";
+  }
+  if (frame.canonicalMask != null && !DENSE_MASK_FAMILIES.has(frame.family)) {
+    return "declares dense canonical-mask metadata for a reduced-vocabulary family";
+  }
+  if (frame.topologyRole === "interior" && frame.canonicalMask != null && frame.canonicalMask !== 255) {
+    return "declares non-interior canonical-mask metadata on an interior frame";
+  }
+  if (!isMask && frame.topologyRole !== "interior" && frame.canonicalMask != null) {
+    return "declares canonical-mask metadata outside the dense mask vocabulary";
   }
   if (frame.topologyRole !== "interior" && frame.variant !== 0) {
     return "uses a nonzero variant outside the interior role";
@@ -323,6 +442,9 @@ function atlasDiagnostics(
   const byFamily = new Map<ParklandHabitatFamily, Map<string, ParklandHabitatAtlasFrame[]>>(
     PARKLAND_HABITAT_FAMILIES.map((candidate) => [candidate, new Map()]),
   );
+  const byMaskFamily = new Map<ParklandHabitatFamily, Map<number, ParklandHabitatAtlasFrame[]>>(
+    PARKLAND_HABITAT_FAMILIES.map((candidate) => [candidate, new Map()]),
+  );
   const seenIds = new Set<string>();
 
   const validHeader = atlas.schema === "ParklandHabitatFieldAtlasV1"
@@ -338,7 +460,7 @@ function atlasDiagnostics(
     messages.push("atlas header does not match a finite positive-integer ParklandHabitatFieldAtlasV1 catalog");
   } else {
     const recordCount = Object.keys(atlas.frames).length;
-    const expectedRecordCount = PARKLAND_HABITAT_FAMILIES.length * 19;
+    const expectedRecordCount = 89;
     if (atlas.frameCount !== recordCount) {
       messages.push(`atlas frameCount ${atlas.frameCount} does not match ${recordCount} frame records`);
     }
@@ -359,6 +481,12 @@ function atlasDiagnostics(
       const matches = familyIndex.get(key) ?? [];
       matches.push(frame);
       familyIndex.set(key, matches);
+      if (frame.canonicalMask != null) {
+        const maskIndex = byMaskFamily.get(frame.family) as Map<number, ParklandHabitatAtlasFrame[]>;
+        const maskMatches = maskIndex.get(frame.canonicalMask) ?? [];
+        maskMatches.push(frame);
+        maskIndex.set(frame.canonicalMask, maskMatches);
+      }
     }
   }
 
@@ -371,6 +499,22 @@ function atlasDiagnostics(
   ];
 
   for (const candidateFamily of PARKLAND_HABITAT_FAMILIES) {
+    if (DENSE_MASK_FAMILIES.has(candidateFamily)) {
+      const maskIndex = byMaskFamily.get(candidateFamily) as Map<number, ParklandHabitatAtlasFrame[]>;
+      for (const canonicalMask of HABITAT_D4_CANONICAL_MASKS) {
+        const matches = maskIndex.get(canonicalMask) ?? [];
+        const expectedCount = canonicalMask === 255 ? 3 : 1;
+        if (matches.length !== expectedCount) {
+          messages.push(`${candidateFamily}: canonical mask ${canonicalMask} requires exactly ${expectedCount} frame(s)`);
+        }
+        const variants = matches.map((frame) => frame.variant).sort((left, right) => left - right);
+        const expectedVariants = canonicalMask === 255 ? [0, 1, 2] : [0];
+        if (variants.join(",") !== expectedVariants.join(",")) {
+          messages.push(`${candidateFamily}: canonical mask ${canonicalMask} variants are ${variants.join(",") || "missing"}`);
+        }
+      }
+      continue;
+    }
     const familyIndex = byFamily.get(candidateFamily) as Map<string, ParklandHabitatAtlasFrame[]>;
     for (const semantic of expectedSemantics) {
       const key = semanticKey(semantic.role, semantic.direction, semantic.corner);
@@ -399,10 +543,14 @@ function atlasDiagnostics(
   for (const [key, frames] of byFamily.get(family) as Map<string, ParklandHabitatAtlasFrame[]>) {
     sortedIndex.set(key, frames.slice().sort((left, right) => left.variant - right.variant || left.id.localeCompare(right.id)));
   }
+  const sortedMaskIndex = new Map<number, readonly ParklandHabitatAtlasFrame[]>();
+  for (const [mask, frames] of byMaskFamily.get(family) as Map<number, ParklandHabitatAtlasFrame[]>) {
+    sortedMaskIndex.set(mask, frames.slice().sort((left, right) => left.variant - right.variant || left.id.localeCompare(right.id)));
+  }
 
   return {
     diagnostics: [...new Set(messages)].sort().map((message) => ({ code: "invalid_atlas", message })),
-    index: { bySemantic: sortedIndex },
+    index: { bySemantic: sortedIndex, byCanonicalMask: sortedMaskIndex },
   };
 }
 
@@ -537,7 +685,8 @@ export function resolveHabitatFieldTopology(
     .sort((left, right) => left.y - right.y || left.x - right.x);
   const occupied = new Set(tiles.map((tile) => tileKey(tile.x, tile.y)));
   const classified = tiles.map((tile) => ({ tile, mask: classifyHabitatOccupancyMask(occupancyMask(tile, occupied)) }));
-  const unsupported = classified
+  const denseMaskFamily = DENSE_MASK_FAMILIES.has(request.family);
+  const unsupported = denseMaskFamily ? [] : classified
     .filter((entry) => entry.mask.topology === null)
     .map<HabitatFieldDiagnostic>((entry) => ({
       code: "unsupported_topology",
@@ -550,6 +699,29 @@ export function resolveHabitatFieldTopology(
   if (unsupported.length > 0) return { ok: false, diagnostics: unsupported };
 
   const placements = classified.map(({ tile, mask }) => {
+    if (denseMaskFamily) {
+      const canonical = canonicalHabitatMaskTransform(mask.normalizedMask);
+      const matches = validatedAtlas.index.byCanonicalMask.get(canonical.canonicalMask) as readonly ParklandHabitatAtlasFrame[];
+      const frame = selectFrame(matches, request.seed, request.family, tile);
+      return {
+        frameId: frame.id,
+        family: frame.family,
+        topologyRole: frame.topologyRole,
+        direction: null,
+        corner: null,
+        variant: frame.variant,
+        normalizedMask: canonical.normalizedMask,
+        canonicalMask: canonical.canonicalMask,
+        d4Transform: canonical.transform,
+        tile,
+        atlasAnchor: { x: frame.anchor.x, y: frame.anchor.y },
+        worldAnchor: {
+          x: tile.x + frame.anchor.x / frame.frame.width,
+          y: tile.y + frame.anchor.y / frame.frame.height,
+        },
+        edgeAnchors: frame.edgeAnchors.map((direction) => transformCardinalDirection(direction, canonical.transform)),
+      } satisfies HabitatFieldPlacement;
+    }
     const topology = mask.topology as HabitatMaskTopology;
     const matches = validatedAtlas.index.bySemantic.get(
       semanticKey(topology.role, topology.direction, topology.corner),
@@ -562,6 +734,9 @@ export function resolveHabitatFieldTopology(
       direction: frame.direction,
       corner: frame.corner,
       variant: frame.variant,
+      normalizedMask: mask.normalizedMask,
+      canonicalMask: null,
+      d4Transform: "identity",
       tile,
       atlasAnchor: { x: frame.anchor.x, y: frame.anchor.y },
       worldAnchor: {

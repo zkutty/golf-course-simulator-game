@@ -14,6 +14,17 @@ const GENERATOR = "scripts/gen-parkland-habitat-field.mjs";
 const FAMILIES = [
   "woodland_floor", "understory_edge", "meadow_deep_rough_margin", "wet_shore", "rock_leaf_transition",
 ];
+const DENSE_MASK_FAMILIES = new Set(["woodland_floor", "understory_edge"]);
+const CANONICAL_MASKS = [0, 1, 5, 7, 17, 21, 23, 31, 85, 87, 95, 119, 127, 255];
+const MASK_BITS = { n: 1, ne: 2, e: 4, se: 8, s: 16, sw: 32, w: 64, nw: 128 };
+const MASK_OFFSETS = {
+  n: { x: 0, y: -1 }, ne: { x: 1, y: -1 }, e: { x: 1, y: 0 }, se: { x: 1, y: 1 },
+  s: { x: 0, y: 1 }, sw: { x: -1, y: 1 }, w: { x: -1, y: 0 }, nw: { x: -1, y: -1 },
+};
+const D4_TRANSFORMS = [
+  "identity", "rotate90", "rotate180", "rotate270",
+  "reflectX", "reflectXRotate90", "reflectXRotate180", "reflectXRotate270",
+];
 const TIERS = {
   high: { scale: 4, width: 256, height: 128, gutter: 4, detail: 3 },
   medium: { scale: 2, width: 128, height: 64, gutter: 2, detail: 2 },
@@ -71,13 +82,18 @@ function put(image, x, y, color, alpha = 255) {
   image.data[at] = color[0]; image.data[at + 1] = color[1]; image.data[at + 2] = color[2]; image.data[at + 3] = alpha;
 }
 
+function clearPixel(image, x, y) {
+  const at = offset(image, x, y);
+  image.data[at] = 0; image.data[at + 1] = 0; image.data[at + 2] = 0; image.data[at + 3] = 0;
+}
+
 function hashUnit(seed, x, y, lane = 0) {
   let value = Math.imul(seed ^ Math.imul(x + 101, 0x9e3779b1) ^ Math.imul(y + 211, 0x85ebca6b) ^ Math.imul(lane + 17, 0xc2b2ae35), 0x27d4eb2d);
   value = Math.imul(value ^ (value >>> 15), 0x165667b1);
   return ((value ^ (value >>> 16)) >>> 0) / 0xffffffff;
 }
 
-function topologyFrames() {
+function reducedTopologyFrames() {
   const frames = [];
   for (let variant = 0; variant < 3; variant += 1) frames.push({ role: "interior", variant, direction: null, corner: null });
   for (const direction of ["n", "e", "s", "w"]) frames.push({ role: "boundary", variant: 0, direction, corner: null });
@@ -85,6 +101,15 @@ function topologyFrames() {
   for (const corner of ["ne", "se", "sw", "nw"]) frames.push({ role: "concave", variant: 0, direction: null, corner });
   for (const direction of ["n", "e", "s", "w"]) frames.push({ role: "termination", variant: 0, direction, corner: null });
   return frames;
+}
+
+function topologyFrames(family) {
+  if (!DENSE_MASK_FAMILIES.has(family)) return reducedTopologyFrames();
+  return CANONICAL_MASKS.flatMap((canonicalMask) => (
+    canonicalMask === 255
+      ? [0, 1, 2].map((variant) => ({ role: "interior", variant, direction: null, corner: null, canonicalMask }))
+      : [{ role: "mask", variant: 0, direction: null, corner: null, canonicalMask }]
+  ));
 }
 
 function rotateUv(u, v, direction) {
@@ -124,6 +149,42 @@ function topologyStrength(u, v, frame, wave) {
   return frame.role === "convex" ? Math.max(edgeA, edgeB) * (a + b < 1.45 ? 1 : 0.25) : Math.max(edgeA, edgeB) * (a + b > 0.52 ? 1 : 0.3);
 }
 
+function screenToWorld(u, v) {
+  const screenX = (u - 0.5) * 2;
+  const screenY = (v - 0.5) * 2;
+  return { x: (screenX + screenY) / 2, y: (screenY - screenX) / 2 };
+}
+
+function worldToPixel(config, x, y) {
+  const screenX = x - y;
+  const screenY = x + y;
+  return {
+    x: Math.round((0.5 + screenX / 2) * (config.width - 1)),
+    y: Math.round((0.5 + screenY / 2) * (config.height - 1)),
+  };
+}
+
+function denseMaskContains(u, v, frame, seed) {
+  const point = screenToWorld(u, v);
+  const tangentX = Math.sin((point.y * 5.1 + seed * 0.0007) * Math.PI) * 0.035;
+  const tangentY = Math.sin((point.x * 5.7 - seed * 0.0009) * Math.PI) * 0.035;
+  const connected = (direction) => (frame.canonicalMask & MASK_BITS[direction]) !== 0;
+  const minX = connected("w") ? -0.53 : -0.42 - tangentX;
+  const maxX = connected("e") ? 0.53 : 0.42 + tangentX;
+  const minY = connected("n") ? -0.53 : -0.42 - tangentY;
+  const maxY = connected("s") ? 0.53 : 0.42 + tangentY;
+  if (point.x < minX || point.x > maxX || point.y < minY || point.y > maxY) return false;
+  const corners = [
+    ["ne", point.x - point.y], ["se", point.x + point.y],
+    ["sw", -point.x + point.y], ["nw", -point.x - point.y],
+  ];
+  for (const [corner, reach] of corners) {
+    const [first, second] = corner.split("");
+    if (connected(first) && connected(second) && !connected(corner) && reach > 0.66 + tangentX * 0.5) return false;
+  }
+  return true;
+}
+
 function familyMark(family, x, y, seed) {
   const familyIndex = FAMILIES.indexOf(family);
   const coarseX = Math.floor(x / (4 + familyIndex % 3));
@@ -158,8 +219,47 @@ function drawCluster(image, cx, cy, family, color, scale, seed) {
 function makeFrame(tier, family, frame) {
   const config = TIERS[tier];
   const image = new PNG({ width: config.width, height: config.height });
-  const seed = 0x472a + FAMILIES.indexOf(family) * 97 + topologyFrames().findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(frame)) * 31;
+  const seed = 0x472a + FAMILIES.indexOf(family) * 97 + topologyFrames(family).findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(frame)) * 31;
   const palette = FAMILY[family].colors;
+  if (frame.canonicalMask != null) {
+    // Sample the material in world space at every output pixel. Screen-space
+    // square blocks turn into horizontal bands under an isometric D4 affine;
+    // world-quantized grains keep the same texture character in every orbit.
+    for (let y = 0; y < config.height; y += 1) for (let x = 0; x < config.width; x += 1) {
+      const u = (x + 0.5) / config.width;
+      const v = (y + 0.5) / config.height;
+      if (!denseMaskContains(u, v, frame, seed)) continue;
+      const world = screenToWorld(u, v);
+      const grainX = Math.floor((world.x + 0.75) * 64);
+      const grainY = Math.floor((world.y + 0.75) * 64);
+      const grain = hashUnit(seed, grainX, grainY, frame.variant + 23);
+      if (grain < 0.09) continue;
+      const color = palette[Math.min(3, Math.floor(hashUnit(seed, grainX, grainY, 27) * 4))];
+      const alpha = 176 + Math.floor(hashUnit(seed, grainX, grainY, 29) * 72);
+      put(image, x, y, color, alpha);
+    }
+    const anchorRadius = Math.max(1, Math.floor(config.scale / 2));
+    for (const edge of edgeAnchors(frame)) {
+      const points = [-0.18, 0, 0.18].map((offset) => edge === "n" ? { x: offset, y: -0.5 }
+        : edge === "e" ? { x: 0.5, y: offset }
+          : edge === "s" ? { x: offset, y: 0.5 }
+            : { x: -0.5, y: offset });
+      for (const point of points) {
+        const pixel = worldToPixel(config, point.x, point.y);
+        for (let yy = -anchorRadius; yy <= anchorRadius; yy += 1) for (let xx = -anchorRadius; xx <= anchorRadius; xx += 1) {
+          put(image, pixel.x + xx, pixel.y + yy, palette[1], 224);
+        }
+      }
+    }
+    // Final containment is authoritative: density, block drawing, and anchor
+    // reinforcement may approach the projected world-tile edge but never
+    // spill into a neighboring tile's diamond.
+    for (let y = 0; y < config.height; y += 1) for (let x = 0; x < config.width; x += 1) {
+      const world = screenToWorld((x + 0.5) / config.width, (y + 0.5) / config.height);
+      if (Math.abs(world.x) > 0.5 || Math.abs(world.y) > 0.5) clearPixel(image, x, y);
+    }
+    return image;
+  }
   const step = Math.max(2, config.scale * 3);
   for (let y = config.scale; y < config.height - config.scale; y += step) for (let x = config.scale; x < config.width - config.scale; x += step) {
     const u = x / (config.width - 1); const v = y / (config.height - 1);
@@ -184,12 +284,16 @@ function makeFrame(tier, family, frame) {
 }
 
 function edgeAnchors(frame) {
+  if (frame.canonicalMask != null) return ["n", "e", "s", "w"].filter((direction) => (
+    (frame.canonicalMask & MASK_BITS[direction]) !== 0
+  ));
   if (frame.role === "boundary" || frame.role === "termination") return [frame.direction];
   if (frame.role === "convex" || frame.role === "concave") return frame.corner.split("");
   return ["n", "e", "s", "w"];
 }
 
 function frameId(family, frame) {
+  if (frame.canonicalMask != null) return `${family}--mask-${frame.canonicalMask.toString(16).padStart(2, "0")}-${frame.variant}`;
   if (frame.role === "interior") return `${family}--interior-${frame.variant}`;
   return `${family}--${frame.role}-${frame.direction || frame.corner}`;
 }
@@ -202,9 +306,9 @@ function copyPixel(source, sx, sy, target, tx, ty) {
 function regionHash(image) { return sha256(image.data); }
 
 function makeTier(tier) {
-  const config = TIERS[tier]; const definitions = topologyFrames();
+  const config = TIERS[tier];
   const entries = [];
-  for (const family of FAMILIES) for (const frame of definitions) {
+  for (const family of FAMILIES) for (const frame of topologyFrames(family)) {
     const image = makeFrame(tier, family, frame);
     entries.push({ id: frameId(family, frame), family, ...frame, image, sourceSha256: regionHash(image) });
   }
@@ -222,6 +326,7 @@ function makeTier(tier) {
     frames[entry.id] = {
       id: entry.id, family: entry.family, topologyRole: entry.role,
       direction: entry.direction, corner: entry.corner, variant: entry.variant,
+      canonicalMask: entry.canonicalMask ?? null,
       anchor: { x: config.width / 2, y: config.height / 2 },
       edgeAnchors: edgeAnchors(entry), frame: { x, y, width: config.width, height: config.height },
       sourceSha256: entry.sourceSha256,
@@ -297,6 +402,124 @@ function cropFrame(atlas, descriptor) {
   return result;
 }
 
+function normalizeMask(mask) {
+  let normalized = mask & 0xff;
+  for (const [diagonal, first, second] of [
+    ["ne", "n", "e"], ["se", "s", "e"], ["sw", "s", "w"], ["nw", "n", "w"],
+  ]) {
+    if ((mask & MASK_BITS[first]) === 0 || (mask & MASK_BITS[second]) === 0) normalized &= ~MASK_BITS[diagonal];
+  }
+  return normalized;
+}
+
+function transformPoint(point, transform) {
+  const reflected = transform.startsWith("reflectX") ? { x: -point.x, y: point.y } : point;
+  if (transform.endsWith("Rotate90") || transform === "rotate90") return { x: -reflected.y, y: reflected.x };
+  if (transform.endsWith("Rotate180") || transform === "rotate180") return { x: -reflected.x, y: -reflected.y };
+  if (transform.endsWith("Rotate270") || transform === "rotate270") return { x: reflected.y, y: -reflected.x };
+  return { ...reflected };
+}
+
+function directionAt(point) {
+  return Object.keys(MASK_OFFSETS).find((direction) => (
+    MASK_OFFSETS[direction].x === point.x && MASK_OFFSETS[direction].y === point.y
+  ));
+}
+
+function transformMask(mask, transform) {
+  let result = 0;
+  for (const [direction, point] of Object.entries(MASK_OFFSETS)) {
+    if ((mask & MASK_BITS[direction]) === 0) continue;
+    result |= MASK_BITS[directionAt(transformPoint(point, transform))];
+  }
+  return result;
+}
+
+function canonicalMaskTransform(rawMask) {
+  const normalizedMask = normalizeMask(rawMask);
+  const canonicalMask = Math.min(...D4_TRANSFORMS.map((transform) => transformMask(normalizedMask, transform)));
+  const transform = D4_TRANSFORMS.find((candidate) => transformMask(canonicalMask, candidate) === normalizedMask);
+  if (!transform || !CANONICAL_MASKS.includes(canonicalMask)) throw new Error(`missing D4 class for mask ${normalizedMask}`);
+  return { normalizedMask, canonicalMask, transform };
+}
+
+function inverseTransform(transform) {
+  if (transform === "rotate90") return "rotate270";
+  if (transform === "rotate270") return "rotate90";
+  return transform;
+}
+
+function transformDenseFrame(source, transform) {
+  if (transform === "identity") return source;
+  const target = new PNG({ width: source.width, height: source.height });
+  const inverse = inverseTransform(transform);
+  for (let y = 0; y < target.height; y += 1) for (let x = 0; x < target.width; x += 1) {
+    const world = screenToWorld((x + 0.5) / target.width, (y + 0.5) / target.height);
+    const canonical = transformPoint(world, inverse);
+    const pixelPoint = worldToPixel(source, canonical.x, canonical.y);
+    if (pixelPoint.x >= 0 && pixelPoint.y >= 0 && pixelPoint.x < source.width && pixelPoint.y < source.height) {
+      copyPixel(source, pixelPoint.x, pixelPoint.y, target, x, y);
+    }
+  }
+  return target;
+}
+
+function occupancyMask(occupied, cell) {
+  const keys = new Set(occupied.map(({ x, y }) => `${x},${y}`));
+  let mask = 0;
+  for (const [direction, offsetPoint] of Object.entries(MASK_OFFSETS)) {
+    if (keys.has(`${cell.x + offsetPoint.x},${cell.y + offsetPoint.y}`)) mask |= MASK_BITS[direction];
+  }
+  return mask;
+}
+
+function projectedCell(origin, cell) {
+  return { x: origin.x + (cell.x - cell.y) * 64, y: origin.y + (cell.x + cell.y) * 32 };
+}
+
+function drawDenseComposition(proof, terrain, atlas, highTier, family, origin, propName) {
+  // A connected ring around an empty source-tree cell, plus a one-cell neck.
+  // The asymmetry necessarily exercises rotations/reflections instead of
+  // repeating stamps, while the center proves the trunk-cell exclusion.
+  const occupied = [
+    { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 },
+    { x: 0, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 1 },
+    { x: 0, y: 2 }, { x: 1, y: 2 }, { x: 2, y: 2 },
+  ];
+  const ordered = [...occupied].sort((left, right) => (left.x + left.y) - (right.x + right.y) || left.x - right.x);
+  for (const cell of ordered) {
+    const center = projectedCell(origin, cell);
+    blitHalf(proof, terrain, center.x - terrain.width / 4, center.y - terrain.height / 4);
+  }
+  for (const cell of ordered) {
+    const rawMask = occupancyMask(occupied, cell);
+    const { canonicalMask, transform } = canonicalMaskTransform(rawMask);
+    const variant = canonicalMask === 255 ? (cell.x + cell.y) % 3 : 0;
+    const id = `${family}--mask-${canonicalMask.toString(16).padStart(2, "0")}-${variant}`;
+    const frame = transformDenseFrame(cropFrame(atlas, highTier.frames[id]), transform);
+    const center = projectedCell(origin, cell);
+    blitHalf(proof, frame, center.x - frame.width / 4, center.y - frame.height / 4);
+  }
+  const sourceCell = projectedCell(origin, { x: 1, y: 1 });
+  const prop = PNG.sync.read(readFileSync(path.join(ROOT, "src/assets/props/natural", propName)));
+  blitHalf(proof, prop, Math.round(sourceCell.x - prop.width / 4), Math.round(sourceCell.y - prop.height / 2 + 9));
+}
+
+function blitHalf(target, source, dx, dy) {
+  for (let y = 0; y < Math.ceil(source.height / 2); y += 1) for (let x = 0; x < Math.ceil(source.width / 2); x += 1) {
+    const sx = Math.min(source.width - 1, x * 2); const sy = Math.min(source.height - 1, y * 2);
+    const sourceAt = offset(source, sx, sy); const alpha = source.data[sourceAt + 3] / 255;
+    if (!alpha) continue;
+    const tx = dx + x; const ty = dy + y;
+    if (tx < 0 || ty < 0 || tx >= target.width || ty >= target.height) continue;
+    const targetAt = offset(target, tx, ty);
+    for (let channel = 0; channel < 3; channel += 1) {
+      target.data[targetAt + channel] = Math.round(target.data[targetAt + channel] * (1 - alpha) + source.data[sourceAt + channel] * alpha);
+    }
+    target.data[targetAt + 3] = 255;
+  }
+}
+
 function makeProof(highTier) {
   const proof = new PNG({ width: 1440, height: 900 });
   for (let y = 0; y < proof.height; y += 1) for (let x = 0; x < proof.width; x += 1) put(proof, x, y, [25 + Math.floor(y / 160), 32 + Math.floor(y / 180), 26], 255);
@@ -304,20 +527,25 @@ function makeProof(highTier) {
   text(proof, "CONNECTED HABITAT FIELD / REAL PARKLAND PROPS", 46, 72, 2, [157, 184, 125]);
   const terrain = PNG.sync.read(readFileSync(path.join(ROOT, "src/assets/terrain/parkland-4x/parkland_rough_base_0.png")));
   const atlas = PNG.sync.read(readFileSync(path.join(OUTPUT, highTier.image)));
-  for (let row = 0; row < 5; row += 1) {
-    const top = 122 + row * 145;
-    text(proof, FAMILIES[row].replaceAll("_", " "), 46, top + 8, 2, [215, 205, 163]);
-    for (let cell = 0; cell < 4; cell += 1) blit(proof, terrain, 318 + cell * 250, top);
-    const ids = [
-      `${FAMILIES[row]}--termination-e`, `${FAMILIES[row]}--boundary-e`,
-      `${FAMILIES[row]}--interior-${row % 3}`, `${FAMILIES[row]}--termination-w`,
-    ];
-    ids.forEach((id, cell) => blit(proof, cropFrame(atlas, highTier.frames[id]), 318 + cell * 250, top));
-  }
-  const props = ["parkland_tree_oak.png", "parkland_tree_pine.png", "parkland_bush_wildflowers.png", "parkland_rock_granite.png"];
-  props.forEach((name, index) => {
+  text(proof, "WOODLAND / TREE HOLE + BRIDGE", 46, 116, 2, [215, 205, 163]);
+  text(proof, "UNDERSTORY / TREE HOLE + D4", 784, 116, 2, [215, 205, 163]);
+  drawDenseComposition(proof, terrain, atlas, highTier, "woodland_floor", { x: 290, y: 196 }, "parkland_tree_oak.png");
+  drawDenseComposition(proof, terrain, atlas, highTier, "understory_edge", { x: 1010, y: 196 }, "parkland_tree_pine.png");
+
+  const reduced = FAMILIES.slice(2);
+  reduced.forEach((family, index) => {
+    const left = 54 + index * 466;
+    text(proof, family.replaceAll("_", " "), left, 646, 2, [215, 205, 163]);
+    const ids = [`${family}--termination-e`, `${family}--boundary-w`];
+    ids.forEach((id, cell) => {
+      blitHalf(proof, terrain, left + 26 + cell * 112, 686 + cell * 32);
+      blitHalf(proof, cropFrame(atlas, highTier.frames[id]), left + 26 + cell * 112, 686 + cell * 32);
+    });
+  });
+  const accents = ["parkland_bush_wildflowers.png", "parkland_rock_granite.png"];
+  accents.forEach((name, index) => {
     const prop = PNG.sync.read(readFileSync(path.join(ROOT, "src/assets/props/natural", name)));
-    blit(proof, prop, 350 + index * 260, 706 - Math.floor(prop.height * 0.55), 1);
+    blitHalf(proof, prop, 1070 + index * 145, 742 - Math.floor(prop.height / 2));
   });
   const proofBytes = PNG.sync.write(proof, { deflateLevel: 9, deflateStrategy: 0 });
   mkdirSync(path.join(OUTPUT, "evidence"), { recursive: true });
@@ -336,7 +564,16 @@ const manifest = {
   contract: "../contracts/parkland-habitat-field-v1.json", generatedBy: GENERATOR,
   source: { sha256: sourceHash, author: "CourseCraft", externalProvider: "none", referencePixelsCopied: false, license: "project-original", kind: "deterministic-procedural-original" },
   authority: { visualOnly: true, collision: false, obstacle: false, canopy: false, simulation: false, treeSpritesRemainAuthoritative: true },
-  vocabulary: { families: FAMILIES, topologyRoles: ["interior", "boundary", "convex", "concave", "termination"], patterns: Object.fromEntries(FAMILIES.map((family) => [family, FAMILY[family].pattern])) },
+  vocabulary: {
+    revision: 2,
+    families: FAMILIES,
+    topologyRoles: ["interior", "boundary", "convex", "concave", "termination", "mask"],
+    denseMaskFamilies: [...DENSE_MASK_FAMILIES],
+    normalizedMaskCount: 47,
+    canonicalMasks: CANONICAL_MASKS,
+    d4Transforms: D4_TRANSFORMS,
+    patterns: Object.fromEntries(FAMILIES.map((family) => [family, FAMILY[family].pattern])),
+  },
   paletteTransforms: PALETTE_TRANSFORMS, tiers, proof,
   budgets: { sourceBytesMax: 4194304, atlasBytesMaxPerTier: 2097152, totalAtlasBytesMax: 4194304, selectedTierDecodedBytesMax: 14680064, runtimeBytesAdded: 0, fileCountMax: 12 },
   rollback: { legacy2xUnchanged: true, runtimeImportsAdded: 0, action: "delete this source-only sidecar and its generator/audit registration" },
