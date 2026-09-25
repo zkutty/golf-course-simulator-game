@@ -2252,6 +2252,25 @@ export function PixiStage(requestedProps: PixiStageProps) {
           mode: "normal",
         });
       },
+      /** Raw applied world transform for E2E evidence; read-only. */
+      cameraTransform: () => {
+        const world = layersRef.current?.world;
+        if (!world) return null;
+        const camera = camRef.current;
+        return {
+          world: {
+            position: { x: world.position.x, y: world.position.y },
+            pivot: { x: world.pivot.x, y: world.pivot.y },
+            scale: { x: world.scale.x, y: world.scale.y },
+          },
+          camera: {
+            center: { x: camera.cx, y: camera.cy },
+            targetCenter: { x: camera.tcx, y: camera.tcy },
+            zoom: camera.zoom,
+            targetZoom: camera.tzoom,
+          },
+        };
+      },
       viewport: (): { width: number; height: number } | null => {
         const app = appRef.current;
         return app ? { width: app.screen.width, height: app.screen.height } : null;
