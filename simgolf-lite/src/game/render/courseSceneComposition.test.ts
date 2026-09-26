@@ -324,24 +324,38 @@ describe("CourseSceneCompositionPlanV1", () => {
     expect(plan.exclusions.vegetationGroundPolicy).toBe("visual-underlay-beneath-source-trees-and-bushes");
   });
 
-  it("extends dense topology around all four M19 tree-source groves and permits only vegetation overlap", () => {
+  it("keeps M19 tree habitat as bounded source-supported bed islands", () => {
     const course = createParklandVisualReferenceCourse();
     const plan = deriveCourseSceneComposition({ course, seed: 1202 });
     const groves = plan.habitatZones.filter((zone) => zone.evidence.kind === "tree_grove");
-    expect(groves).toHaveLength(3);
-    expect(groves.map((zone) => zone.evidence.sourcePoints.length).sort((left, right) => left - right)).toEqual([9, 10, 18]);
-    expect(groves.reduce((total, zone) => total + zone.evidence.sourcePoints.length, 0)).toBe(37);
-    expect(groves.every((zone) => zone.family === "woodland_floor" && zone.area >= 90)).toBe(true);
+    expect(groves).toHaveLength(5);
+    expect(groves.every((zone) => zone.family === "woodland_floor" && zone.area >= 4 && zone.area < 40)).toBe(true);
+    expect(groves.reduce((total, zone) => total + zone.area, 0)).toBeLessThan(100);
     for (const zone of groves) {
       assertCardinallyConnected(zone.occupancy);
       expect(zone.placements).toHaveLength(zone.occupancy.length);
-      const sources = new Set(zone.evidence.sourcePoints.map(pointKey));
+      expect(zone.evidence.sourcePoints.length).toBeGreaterThanOrEqual(2);
       for (const point of zone.occupancy) {
+        const localSources = course.obstacles.filter((candidate) => candidate.type === "tree"
+          && Math.max(Math.abs(candidate.x - point.x), Math.abs(candidate.y - point.y)) <= 2);
+        expect(localSources.length).toBeGreaterThanOrEqual(3);
         const obstacle = course.obstacles.find((candidate) => candidate.x === point.x && candidate.y === point.y);
         if (obstacle) expect(obstacle.type === "bush"
-          || (obstacle.type === "tree" && sources.has(pointKey(point)))).toBe(true);
+          || (obstacle.type === "tree" && localSources.some((source) => source.x === point.x && source.y === point.y))).toBe(true);
       }
-      expect(zone.occupancy.some((point) => sources.has(pointKey(point)))).toBe(true);
+    }
+  });
+
+  it("selects bounded deep-rough edge fragments sequentially with peer separation", () => {
+    const plan = deriveCourseSceneComposition({ course: createParklandVisualReferenceCourse(), seed: 1202 });
+    const fragments = plan.habitatZones.filter((zone) => zone.evidence.ownerId === "deep-rough:1065");
+    expect(fragments).toHaveLength(2);
+    expect(fragments.every((zone) => zone.evidence.rule.includes("bounded connected local edge-break fragment"))).toBe(true);
+    for (const left of fragments) for (const right of fragments) {
+      if (left.id === right.id) continue;
+      for (const a of left.occupancy) for (const b of right.occupancy) {
+        expect(Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y))).toBeGreaterThan(1);
+      }
     }
   });
 
@@ -359,7 +373,7 @@ describe("CourseSceneCompositionPlanV1", () => {
     expect(occupied.has("10,8")).toBe(false);
   });
 
-  it("never grants the adjacency exception to different tree-grove families", () => {
+  it("never merges disconnected source-supported beds across different tree-grove families", () => {
     const course = baseCourse(24, 16);
     course.obstacles = [
       { x: 5, y: 8, type: "tree" }, { x: 6, y: 8, type: "tree" },
@@ -368,12 +382,12 @@ describe("CourseSceneCompositionPlanV1", () => {
     ];
     const plan = deriveCourseSceneComposition({ course, seed: 1202 });
     const groves = plan.habitatZones.filter((zone) => zone.evidence.kind === "tree_grove");
-    expect(groves).toHaveLength(1);
-    expect(groves[0].family).toBe("woodland_floor");
+    expect(groves).toHaveLength(2);
+    expect(new Set(groves.map((zone) => zone.family))).toEqual(new Set(["understory_edge", "woodland_floor"]));
     assertChebyshevGap(plan);
   });
 
-  it("merges same-family source fields to a transitive fixed point before topology resolution", () => {
+  it("splits a transitive same-family source field into local supported beds", () => {
     const course = baseCourse(24, 16);
     course.obstacles = [
       { x: 5, y: 5, type: "tree" }, { x: 6, y: 5, type: "tree" },
@@ -382,12 +396,17 @@ describe("CourseSceneCompositionPlanV1", () => {
     ];
     const plan = deriveCourseSceneComposition({ course, seed: 1202 });
     const groves = plan.habitatZones.filter((zone) => zone.evidence.kind === "tree_grove");
-    expect(groves).toHaveLength(1);
-    expect(groves[0].family).toBe("understory_edge");
-    expect(groves[0].evidence.sourcePoints).toHaveLength(6);
-    expect(new Set(groves[0].evidence.sourcePoints.map(pointKey))).toEqual(new Set(course.obstacles.map(pointKey)));
-    expect(groves[0].placements).toHaveLength(groves[0].occupancy.length);
-    assertCardinallyConnected(groves[0].occupancy);
+    expect(groves).toHaveLength(3);
+    expect(groves.every((zone) => zone.family === "understory_edge")).toBe(true);
+    for (const grove of groves) {
+      expect(grove.evidence.sourcePoints.length).toBeGreaterThanOrEqual(2);
+      expect(grove.placements).toHaveLength(grove.occupancy.length);
+      assertCardinallyConnected(grove.occupancy);
+      for (const point of grove.occupancy) {
+        expect(course.obstacles.filter((source) => source.type === "tree"
+          && Math.max(Math.abs(source.x - point.x), Math.abs(source.y - point.y)) <= 2).length).toBeGreaterThanOrEqual(2);
+      }
+    }
   });
 
   it("keeps A/B/C ownership stable while active setup landmarks follow the selected setup", () => {
