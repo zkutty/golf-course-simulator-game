@@ -76,10 +76,14 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
           const diagnostics = window.__coursecraftPixiTest!.rendererAtlasState().landformDepth;
           return {
             macro: diagnostics.macro,
+            waterSurfaceOwners: diagnostics.waterSurfaceOwners,
             hazards: diagnostics.hazards.filter((entry) => entry.terrain === terrain),
           };
         }, { terrain: hazard.label === "lake" ? "water" as const : "sand" as const });
         expect(depth.macro.active).toBe(true);
+        expect(depth.waterSurfaceOwners.chunkSprites).toBe(0);
+        expect(depth.waterSurfaceOwners.chunkFoam).toBe(0);
+        expect(depth.waterSurfaceOwners.joinedMeshes).toBeGreaterThan(0);
         expect(depth.hazards.length).toBeGreaterThan(0);
         expect(depth.hazards.every((entry) => entry.nearFaces > 0 && entry.farFaces > 0)).toBe(true);
         // Actual joined surface separation, not the old forced bank-only drop.
@@ -121,6 +125,7 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
   const m19Captures: Array<{
     rotation: number;
     hazard: "lake" | "bunker" | "green";
+    quality: "medium" | "high";
     zoom: number;
     focus: { x: number; y: number };
     depth: unknown;
@@ -137,10 +142,13 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
       { label: "bunker" as const, focus: { x: 32, y: 15 } },
       { label: "green" as const, focus: { x: 39, y: 20 } },
     ]) {
-      await page.evaluate(({ focus }) => {
-        window.__coursecraftTest!.setGraphicsQualityFixture("high");
+      for (const quality of hazard.label === "lake" ? ["medium", "high"] as const : ["high"] as const) {
+      await page.evaluate(({ focus, quality }) => {
+        window.__coursecraftTest!.setGraphicsQualityFixture(quality);
         window.__coursecraftPixiTest!.focusTileForTest(focus.x, focus.y, 2);
-      }, hazard);
+      }, { ...hazard, quality });
+      await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().rendered.quality))
+        .toBe(quality);
       await expect.poll(() => page.evaluate(() => {
         const camera = window.__coursecraftPixiTest!.rendererAtlasState().camera;
         return Number(camera.zoom.toFixed(3)) === 2 && Number(camera.targetZoom.toFixed(3)) === 2;
@@ -150,6 +158,10 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
         const diagnostics = window.__coursecraftPixiTest!.rendererAtlasState().landformDepth;
         return diagnostics.hazards.filter((entry) => entry.terrain === terrain);
       }, { terrain: hazard.label === "lake" ? "water" as const : hazard.label === "bunker" ? "sand" as const : "sand" as const });
+      const owners = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().landformDepth.waterSurfaceOwners);
+      expect(owners.chunkSprites).toBe(0);
+      expect(owners.chunkFoam).toBe(0);
+      expect(owners.joinedMeshes).toBeGreaterThan(0);
       if (hazard.label !== "green") {
         expect(depth.length).toBeGreaterThan(0);
         expect(depth.every((entry) => entry.nearFaces > 0 && entry.farFaces > 0)).toBe(true);
@@ -157,16 +169,17 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
           .toBeGreaterThanOrEqual(hazard.label === "lake" ? 6 : 2);
         expect(depth.every((entry) => entry.floorBoundaryOwner === "shared" && entry.interiorFaceAreaPx > 50)).toBe(true);
       }
-      const file = resolve(outputRoot, `zk1201-m19-r${rotation}-${hazard.label}-detail.png`);
+      const file = resolve(outputRoot, `zk1201-m19-r${rotation}-${hazard.label}-${quality}-detail.png`);
       await writeFile(file, await canvas.screenshot());
-      m19Captures.push({ rotation, hazard: hazard.label, zoom: 2, focus: hazard.focus, depth, file });
+      m19Captures.push({ rotation, hazard: hazard.label, quality, zoom: 2, focus: hazard.focus, depth: { hazards: depth, waterSurfaceOwners: owners }, file });
+      }
     }
   }
   const m19FinalHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
   expect(m19InitialHash).toBe("3cf67481");
   expect(m19FinalHash).toBe(m19InitialHash);
-  expect(m19Captures).toHaveLength(12);
-  expect(new Set(m19Captures.map((capture) => `${capture.rotation}:${capture.hazard}`)).size).toBe(12);
+  expect(m19Captures).toHaveLength(16);
+  expect(new Set(m19Captures.map((capture) => `${capture.rotation}:${capture.hazard}:${capture.quality}`)).size).toBe(16);
   expect(errors).toEqual([]);
   await writeFile(resolve(outputRoot, "zk1201-depth-relief-report.json"), `${JSON.stringify({
     version: 1,

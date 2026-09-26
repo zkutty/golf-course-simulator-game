@@ -2,6 +2,18 @@ import type { Terrain } from "../models/types";
 
 export type RecessedHazardTerrain = "sand" | "water" | "wetland";
 
+/** The joined surface owns the hazard material, including the outer-ring
+ * cutout. A whole-cell hazard underlay would leak through that cutout above
+ * the raised bank. Keep the existing Low/failure fallback unchanged. */
+export function hazardChunkUnderlay(
+  terrain: Terrain,
+  joinedSurfacesReady: boolean,
+): Terrain {
+  return joinedSurfacesReady && (terrain === "sand" || terrain === "water" || terrain === "wetland")
+    ? "rough"
+    : terrain;
+}
+
 export interface HazardDepthProfile {
   readonly terrain: RecessedHazardTerrain;
   /** Width of the undisturbed grade immediately outside the shared boundary. */

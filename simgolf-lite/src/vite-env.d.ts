@@ -98,6 +98,7 @@ interface Window {
         camera: { rotation: number; zoom: number; targetZoom: number };
       };
       landformDepth: {
+        waterSurfaceOwners: { chunkSprites: number; chunkFoam: number; joinedMeshes: number };
         active: boolean;
         quality: "high" | "medium" | "low";
         macro: {
