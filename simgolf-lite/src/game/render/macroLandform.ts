@@ -11,6 +11,7 @@ export interface MacroLandformRaster {
   /** White RGBA veil used with screen blending. */
   highlight: Uint8ClampedArray;
   maximumGrade: number;
+  shadedSamples: number;
 }
 
 const SHADE_PROFILES: Record<LandTheme, {
@@ -48,15 +49,15 @@ function sampleTerrain(
 function filteredHeight(field: VisualHeightfield, x: number, y: number): number {
   const center = sampleVisualHeight(field, x, y) * 4;
   const cardinal =
-    sampleVisualHeight(field, x - 0.42, y) +
-    sampleVisualHeight(field, x + 0.42, y) +
-    sampleVisualHeight(field, x, y - 0.42) +
-    sampleVisualHeight(field, x, y + 0.42);
+    sampleVisualHeight(field, x - 1.2, y) +
+    sampleVisualHeight(field, x + 1.2, y) +
+    sampleVisualHeight(field, x, y - 1.2) +
+    sampleVisualHeight(field, x, y + 1.2);
   return (center + cardinal) / 8;
 }
 
 function filteredGradient(field: VisualHeightfield, x: number, y: number): { dx: number; dy: number } {
-  const derivativeRadius = 0.72;
+  const derivativeRadius = 1.6;
   return {
     dx: (filteredHeight(field, x + derivativeRadius, y) - filteredHeight(field, x - derivativeRadius, y)) /
       (derivativeRadius * 2),
@@ -85,6 +86,7 @@ export function buildMacroLandformRaster(
   const owner = getBiomeDefinition(theme).content.materials.terrain;
   const profile = SHADE_PROFILES[owner];
   let maximumGrade = 0;
+  let shadedSamples = 0;
 
   for (let py = 0; py < height; py++) for (let px = 0; px < width; px++) {
     const x = (px + 0.5) / density;
@@ -96,18 +98,22 @@ export function buildMacroLandformRaster(
     if (!isShadedLand(terrain)) continue;
 
     const { dx, dy } = filteredGradient(field, x, y);
-    const grade = Math.min(1, Math.hypot(dx, dy) / 1.35);
     maximumGrade = Math.max(maximumGrade, Math.hypot(dx, dy));
 
-    // Fixed north-west world light. Rotating the camera rotates the shaded
-    // landform with the course rather than relighting it in screen space.
-    const signedLight = Math.max(-1, Math.min(1, -(dx * 0.82 + dy * 0.57) / 1.35));
-    const shadowAlpha = Math.round(Math.min(112,
-      grade * profile.ambientGrade + Math.max(0, -signedLight) * profile.shadow,
+    // Diffuse exposure is a two-dimensional surface property, not a stroke
+    // following an elevation boundary. Broad normals carry the shoulder and
+    // local sky occlusion carries its foot. Flat summits remain flat, with no
+    // manufactured vertical face on the reverse bearing.
+    const center = filteredHeight(field, x, y);
+    const surround = (filteredHeight(field, x - 2.4, y) + filteredHeight(field, x + 2.4, y) +
+      filteredHeight(field, x, y - 2.4) + filteredHeight(field, x, y + 2.4)) / 4;
+    const exposure = (1 - 2.8 * (dx * .82 + dy * .57)) /
+      Math.sqrt(1 + 7.84 * (dx * dx + dy * dy)) - 1;
+    const shadowAlpha = Math.round(Math.min(100,
+      Math.max(0, -exposure) * profile.shadow + Math.max(0, surround - center) * profile.ambientGrade,
     ));
-    const highlightAlpha = Math.round(Math.min(76,
-      Math.max(0, signedLight) * profile.highlight,
-    ));
+    const highlightAlpha = Math.round(Math.min(22, Math.max(0, exposure) * profile.highlight * .45));
+    if (shadowAlpha || highlightAlpha) shadedSamples++;
     shadow[offset] = 0;
     shadow[offset + 1] = 0;
     shadow[offset + 2] = 0;
@@ -118,7 +124,7 @@ export function buildMacroLandformRaster(
     highlight[offset + 3] = highlightAlpha;
   }
 
-  return { width, height, shadow, highlight, maximumGrade };
+  return { width, height, shadow, highlight, maximumGrade, shadedSamples };
 }
 
 export function rasterAlphaRange(

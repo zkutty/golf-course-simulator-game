@@ -1,5 +1,5 @@
 import type { SurfacePoint, Terrain } from "../models/types";
-import { sampleVisualHeight, type VisualHeightfield } from "./landscapeGeometry";
+import type { VisualHeightfield } from "./landscapeGeometry";
 
 export interface LandformPresentationPlan {
   /** Sparse tile-boundary runs; no raster halo or closed contour ring. */
@@ -141,45 +141,4 @@ export function buildLandformPresentationPlan(
   return Object.freeze({
     shoulders: Object.freeze(buildLandformShoulders(field, tiles, elevations, density)),
   });
-}
-
-export interface LandformSurfaceCue {
-  readonly level: number;
-  readonly points: readonly (SurfacePoint & { height: number })[];
-}
-
-/** Open crest polylines, not vertical faces. Sampling each half tile keeps
- * the feathered renderer strokes attached to the field across every bearing.
- * Paths and hazards retain their own owners. A reversed view still sees the
- * top-surface crest, not a manufactured backface.
- */
-export function buildLandformSurfaceCues(
-  shoulders: readonly LandformShoulder[],
-  field: VisualHeightfield,
-  tiles: readonly Terrain[],
-): LandformSurfaceCue[] {
-  const cues: LandformSurfaceCue[] = [];
-  for (const shoulder of shoulders) {
-    if (shoulder.worldLength < 2) continue;
-    const [a, b] = shoulder.points;
-    const length = Math.hypot(a.upper.x - a.lower.x, a.upper.y - a.lower.y);
-    const nx = (a.upper.x - a.lower.x) / length;
-    const ny = (a.upper.y - a.lower.y) / length;
-    const steps = Math.ceil(shoulder.worldLength * 2);
-    let points: Array<SurfacePoint & { height: number }> = [];
-    const flush = () => {
-      if (points.length > 1) cues.push({ level: shoulder.level, points });
-      points = [];
-    };
-    for (let step = 0; step <= steps; step++) {
-      const t = step / steps;
-      const x = a.boundary.x + (b.boundary.x - a.boundary.x) * t + nx * .48;
-      const y = a.boundary.y + (b.boundary.y - a.boundary.y) * t + ny * .48;
-      const terrain = tiles[Math.min(field.height - 1, Math.floor(y)) * field.width + Math.min(field.width - 1, Math.floor(x))];
-      if (isRecessed(terrain) || terrain === "path") flush();
-      else points.push({ x, y, height: sampleVisualHeight(field, x, y) });
-    }
-    flush();
-  }
-  return cues;
 }

@@ -40,10 +40,37 @@ describe("continuous macro-landform shading", () => {
     expect(raster.maximumGrade).toBeGreaterThan(0.2);
     const alphas = Array.from(raster.shadow).filter((_, index) => index % 4 === 3);
     expect(Math.max(...alphas)).toBeGreaterThan(20);
-    // A flat high plateau is not outlined per cell; its interior remains clear.
+    // Beyond the multi-tile shoulder, the flat summit has no cell outlines.
     const density = 4;
-    const plateauInterior = (5 * density * raster.width + 11 * density) * 4 + 3;
+    const plateauInterior = (5 * density * raster.width + 13 * density) * 4 + 3;
     expect(raster.shadow[plateauInterior]).toBeLessThan(8);
+  });
+
+  it("uses broad diffuse mass and rejects flat, path and hazard negatives", () => {
+    const course = fixture(20, 12);
+    course.tiles.fill("rough");
+    const field = buildVisualHeightfield(course);
+    // Isolate a single authored step, without the biome micro-undulation.
+    for (let y = 0; y <= field.height; y++) for (let x = 0; x <= field.width; x++) {
+      field.vertices[y * (field.width + 1) + x] = x < 10 ? 0 : 1;
+    }
+    const density = 6;
+    const raster = buildMacroLandformRaster(field, course.tiles, "parkland", density);
+    const row = Array.from({ length: raster.width }, (_, x) => raster.shadow[(6 * density * raster.width + x) * 4 + 3]);
+    const peak = Math.max(...row);
+    const halfMass = row.filter((alpha) => alpha >= peak / 2).length;
+    // At least two world tiles across at half intensity: cannot be the old
+    // 8/4/1.5 px screen-space line stack or its round caps.
+    expect(halfMass).toBeGreaterThanOrEqual(2 * density);
+    expect(Math.max(...row.slice(1).map((alpha, i) => Math.abs(alpha - row[i])))).toBeLessThan(16);
+    for (const terrain of ["path", "water", "wetland", "sand", "waste_area"] as const) {
+      const excluded = buildMacroLandformRaster(field, course.tiles.map(() => terrain), "parkland");
+      expect(excluded.shadedSamples).toBe(0);
+    }
+    field.vertices.fill(2);
+    const flat = buildMacroLandformRaster(field, course.tiles, "parkland");
+    expect(flat.shadedSamples).toBe(0);
+    expect(flat.maximumGrade).toBe(0);
   });
 
   it("leaves purpose-built hazards completely unshaded", () => {
