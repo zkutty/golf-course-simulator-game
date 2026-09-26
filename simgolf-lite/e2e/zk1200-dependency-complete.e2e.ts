@@ -100,7 +100,7 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
   expect(initialCourseHash).toBe("3cf67481");
 
   const captures: Array<Record<string, unknown>> = [];
-  let deterministicProjection: unknown = null;
+  const deterministicProjections = new Map<string, unknown>();
   const capture = async (
     label: string,
     mode: Mode,
@@ -184,16 +184,16 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
       authoritativeDifferingTurfAdjacencies: 191,
       sameElevationDifferingTurfAdjacencies: 185,
       omittedDifferentElevation: 6,
-      omittedSamePresentation: 98,
+      omittedSamePresentation: quality === "low" ? 98 : 0,
       presentationDifferingTurfAdjacencies: 191,
       presentationSameElevationDifferingTurfAdjacencies: 185,
       presentationOmittedDifferentElevation: 6,
       omittedBlocked: 0,
-      plannedStrips: 87,
-      emittedStrips: 87,
-      cornerCandidates: 7,
-      plannedCorners: 7,
-      emittedCorners: 7,
+      plannedStrips: quality === "low" ? 87 : 185,
+      emittedStrips: quality === "low" ? 87 : 185,
+      cornerCandidates: quality === "low" ? 7 : 25,
+      plannedCorners: quality === "low" ? 7 : 25,
+      emittedCorners: quality === "low" ? 7 : 25,
       omittedMixedPairCorners: 0,
       missingOwners: 0,
       exactlyOnceOwnerKeys: true,
@@ -211,8 +211,20 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
         "rough--green": 15,
         "rough--tee": 15,
       },
-      directionCounts: { n: 30, e: 13, s: 29, w: 15 },
+      directionCounts: quality === "low"
+        ? { n: 30, e: 13, s: 29, w: 15 }
+        : { n: 59, e: 36, s: 57, w: 33 },
     });
+    if (quality !== "low") {
+      expect(renderer.parklandComposable.pairFringes.pairCounts["rough--deep_rough"]).toBe(98);
+      expect(renderer.parklandComposable.pairFringes.directionCounts).toEqual({ n: 59, e: 36, s: 57, w: 33 });
+      expect(renderer.parklandComposable.pairFringes.opacity).toBe(
+        mode === "standard" ? 0.82 : quality === "high" ? 0.38 : 0.34,
+      );
+    } else {
+      expect(renderer.parklandComposable.pairFringes.pairCounts["rough--deep_rough"]).toBeUndefined();
+      expect(renderer.parklandComposable.pairFringes.opacity).toBe(0.3);
+    }
     expect(renderer.parklandComposable.pairFringes.authorityHashes.tilesBefore)
       .toBe(renderer.parklandComposable.pairFringes.authorityHashes.tilesAfter);
     expect(renderer.parklandComposable.pairFringes.authorityHashes.presentationTilesBefore)
@@ -222,8 +234,9 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
     if (quality === "low") expect(renderer.counts?.connectedSurfaces).toBe(0);
 
     const projection = deterministicPresentationProjection(renderer);
-    if (deterministicProjection == null) deterministicProjection = projection;
-    else expect(projection).toEqual(deterministicProjection);
+    const projectionClass = quality === "low" ? "low" : "derived";
+    if (!deterministicProjections.has(projectionClass)) deterministicProjections.set(projectionClass, projection);
+    else expect(projection).toEqual(deterministicProjections.get(projectionClass));
     expect(await page.evaluate(() => window.__coursecraftTest!.state().courseHash)).toBe(initialCourseHash);
     const bytes = await page.screenshot({ fullPage: false });
     const file = resolve(
@@ -260,7 +273,7 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
     await capture("accessibility-hole100", mode, "medium", 0, 1, { x: 24, y: 18 });
   }
 
-  const beforeRepeat = deterministicProjection;
+  const beforeRepeat = deterministicProjections.get("derived");
   await page.reload();
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), {
     timeout: 90_000,
@@ -318,7 +331,7 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
     initialCourseHash,
     postLoadStateHash: postLoadState.courseHash,
     finalCourseHash: await page.evaluate(() => window.__coursecraftTest!.state().courseHash),
-    deterministicProjection,
+    deterministicProjections: Object.fromEntries(deterministicProjections),
     runtimeErrors,
     captures,
   }, null, 2)}\n`);
