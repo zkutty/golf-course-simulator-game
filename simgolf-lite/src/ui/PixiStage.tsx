@@ -2414,8 +2414,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
           landformDepth: {
             ...landformDepthDiagnosticsRef.current,
             waterSurfaceOwners: {
-              chunkSprites: chunksRef.current.reduce((count, chunk) => count + chunk.waterSprites.length, 0),
-              chunkFoam: chunksRef.current.reduce((count, chunk) => count + chunk.foamSprites.length, 0),
+              chunkSprites: chunksRef.current.flatMap((chunk) => chunk.waterSprites).length,
+              chunkFoam: chunksRef.current.flatMap((chunk) => chunk.foamSprites).length,
               joinedMeshes: surfaceWaterSpritesRef.current.length,
             },
             camera: {
@@ -3627,8 +3627,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       };
       const recessedFace = (x: number, y: number, d: Point) => {
         const terrain = visualTerrainAt(x, y);
-        if (composableTurfOwnsTransitions && (terrain === "sand"
-          || (props.graphicsQuality !== "low" && hazardChunkUnderlay(terrain, true) !== terrain))) return;
+        if (composableTurfOwnsTransitions && terrain === "sand") return;
         const style = terrainReliefStyle(course.theme, terrain);
         if (!style) return;
         const nx = x + d.x;
