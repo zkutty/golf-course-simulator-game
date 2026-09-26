@@ -206,6 +206,59 @@ describe("natural props scene ownership", () => {
     expect(JSON.stringify(course)).toBe(before);
   });
 
+  it("keeps grove accents visible through atlas fallback and replaces owned textures on recovery", () => {
+    const course = createParklandVisualReferenceCourse();
+    const before = JSON.stringify(course);
+    const objects = new FakeContainer();
+    const ownedFallbacks: PIXI.Texture[] = [];
+    const atlasTexture = fakeTexture();
+    let atlasReady = false;
+    const scene = createNaturalPropsSceneSystem(
+      objects as unknown as PIXI.Container,
+      new FakeContainer() as unknown as PIXI.Container,
+      undefined,
+      {
+        getAtlasTexture: () => atlasReady ? atlasTexture : null,
+        createFallbackTexture: () => {
+          const texture = fakeTexture();
+          ownedFallbacks.push(texture);
+          return { texture, owned: true };
+        },
+        createSprite: fakeSprite,
+        createGraphics: fakeGraphics,
+      },
+    );
+    const input = snapshot({
+      course,
+      obstacles: course.obstacles,
+      effectiveTiles: course.tiles,
+      holes: course.holes,
+      graphicsQuality: "high",
+    });
+
+    expect(() => scene.create!(input)).not.toThrow();
+    const fallbackAccents = (objects.children as PIXI.Sprite[])
+      .filter((sprite) => sprite.label.startsWith("habitat-accent:"))
+      .map((sprite) => ({ label: sprite.label, x: sprite.position.x, y: sprite.position.y }));
+    expect(fallbackAccents.length).toBeGreaterThan(0);
+    expect(scene.fallbackTextureCount()).toBeGreaterThan(0);
+
+    atlasReady = true;
+    scene.update!({ ...input, atlasRevision: input.atlasRevision + 1 });
+    const atlasAccents = (objects.children as PIXI.Sprite[])
+      .filter((sprite) => sprite.label.startsWith("habitat-accent:"))
+      .map((sprite) => ({ label: sprite.label, x: sprite.position.x, y: sprite.position.y }));
+    expect(atlasAccents).toEqual(fallbackAccents);
+    expect(scene.fallbackTextureCount()).toBe(0);
+    expect(ownedFallbacks.length).toBeGreaterThan(0);
+    expect(ownedFallbacks.every((texture) => vi.mocked(texture.destroy).mock.calls.length === 1)).toBe(true);
+    expect(atlasTexture.destroy).not.toHaveBeenCalled();
+    expect(JSON.stringify(course)).toBe(before);
+
+    scene.destroy!();
+    expect(atlasTexture.destroy).not.toHaveBeenCalled();
+  });
+
   it("groups Parkland wet-bank reeds and stones without entering course surfaces", () => {
     const width = 24;
     const height = 24;

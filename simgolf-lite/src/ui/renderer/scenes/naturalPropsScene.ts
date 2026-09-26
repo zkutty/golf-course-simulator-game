@@ -906,10 +906,17 @@ export function createNaturalPropsSceneSystem(
       });
     }
     for (const accent of grove?.accents.slice(0, HABITAT_COMPOSITION_CAPS[snapshot.graphicsQuality]) ?? []) {
-      const texture = getAtlasTexture(course.theme, snapshot.graphicsQuality, accent.frame);
-      // This path shares the already-resident natural-prop bundle. Missing
-      // art is a hard error, never a silent substitute or invisible accent.
-      if (!texture) throw new Error(`Missing grove accent: ${accent.frame}`);
+      const fallbackKey = `bush:${accent.frame}`;
+      const atlasTexture = getAtlasTexture(course.theme, snapshot.graphicsQuality, accent.frame);
+      let texture = atlasTexture;
+      if (!texture) {
+        let fallback = fallbackTextures.get(fallbackKey);
+        if (!fallback) {
+          fallback = createFallbackTexture("bush", accent.frame);
+          fallbackTextures.set(fallbackKey, fallback);
+        }
+        texture = fallback.texture;
+      }
       const footprint = { x: accent.tile.x, y: accent.tile.y, w: 1, d: 1 };
       const anchor = frontCorner(footprint, snapshot.rotation);
       const placement = placeObject(footprint, snapshot.surfaceHeightAt(anchor.x, anchor.y), snapshot.rotation);

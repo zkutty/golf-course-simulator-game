@@ -209,13 +209,13 @@
     }
   },
   "initialCritical": {
-    "bytes": 3784878,
+    "bytes": 3785677,
     "mib": 3.61,
     "files": [
       "assets/building-sites-sA2JWQgX.js",
-      "assets/index-AJbTMdre.js",
       "assets/index-C0fkWDcM.css",
-      "assets/pixi-BE_7rYJu.js",
+      "assets/index-SsECAxEp.js",
+      "assets/pixi-CHPDOepS.js",
       "assets/react-CGmq1y7D.js",
       "assets/vendor-CAfNi7eK.js",
       "atlases/biomes/buildings-decor-parkland-high.291bca113f4e.json",
