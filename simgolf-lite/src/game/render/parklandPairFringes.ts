@@ -51,11 +51,7 @@ const screenDirectionByRotation: Readonly<Record<IsoRotation, Readonly<Record<Pa
   270: { n: "w", e: "n", s: "e", w: "s" },
 };
 
-/**
- * ZK-1200 deliberately presents isolated deep rough as rough at their shared
- * join. Keep that fringe-only equivalence explicit: both semantic motif fields
- * remain distinct, while the 157 tiny M19 rough/deep-rough seams emit no ink.
- */
+/** Low retains the original fringe-equivalent rough/deep-rough presentation. */
 export function isSameParklandFringePresentation(
   a: ParklandPairFringeSemantic,
   b: ParklandPairFringeSemantic,
@@ -137,6 +133,8 @@ export interface ParklandPairFringePlanInput {
   readonly blockedCells?: ReadonlySet<number>;
   /** Optional pre-presentation semantics used to preserve true pair corners. */
   readonly pairIdentityTiles?: readonly Terrain[];
+  /** High/medium fields expose the authored rough/deep-rough density crossover. */
+  readonly includeDensityCrossovers?: boolean;
 }
 
 function directionBetween(ownerCell: number, neighborCell: number, width: number): ParklandPairFringeDirection {
@@ -194,10 +192,9 @@ export function buildParklandPairFringePlan(input: ParklandPairFringePlanInput):
         continue;
       }
       sameElevationDifferingTurfAdjacencies++;
-      // Fringe-equivalent semantic joins remain one explicit diagnostic class
-      // even when a building also covers them; this keeps the M19 authority's
-      // 157 rough/deep-rough omissions stable without ever emitting one.
-      if (isSameParklandFringePresentation(a, b)) {
+      // Low keeps the original compact presentation. High/medium consume the
+      // derived two-material crossover atlas without changing tile authority.
+      if (!input.includeDensityCrossovers && isSameParklandFringePresentation(a, b)) {
         omittedSamePresentation++;
         continue;
       }

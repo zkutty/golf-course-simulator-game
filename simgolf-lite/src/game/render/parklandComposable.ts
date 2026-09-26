@@ -715,6 +715,7 @@ export function appendParklandComposablePresentation(
     { ...course, tiles: presentationTiles, authoritativeTiles },
     heightfield,
     rotation,
+    standardColorVision,
   ));
   return presentationLayer;
 }
@@ -843,6 +844,7 @@ export function appendParklandPairFringes(
   },
   heightfield: VisualHeightfield,
   rotation: IsoRotation,
+  standardColorVision = true,
 ): ParklandPairFringeRenderDiagnostics {
   const authoritativeTiles = course.authoritativeTiles ?? course.tiles;
   const tileHashBefore = fnv1aAuthority(authoritativeTiles);
@@ -861,6 +863,7 @@ export function appendParklandPairFringes(
     width: course.width,
     height: course.height,
     blockedCells,
+    includeDensityCrossovers: quality !== "low",
   });
   const authoritativePlan = buildParklandPairFringePlan({
     tiles: authoritativeTiles,
@@ -868,10 +871,12 @@ export function appendParklandPairFringes(
     width: course.width,
     height: course.height,
     blockedCells,
+    includeDensityCrossovers: quality !== "low",
   });
-  // Fields establish role hierarchy; the authored fringe is now a transition
-  // accent rather than a dark outline network around every maintained patch.
-  const opacity = quality === "high" ? 0.38 : quality === "medium" ? 0.34 : 0.3;
+  // The derived high/medium frames already contain bounded owner/neighbor
+  // material energy. CVD modes keep the former restrained strength so their
+  // palette/pattern authority remains dominant; Low is byte-for-byte stable.
+  const opacity = quality === "low" ? 0.3 : standardColorVision ? 0.82 : quality === "high" ? 0.38 : 0.34;
   const emittedOwnerKeys = new Set<string>();
   const source = new Map<string, string>();
   const missingAssetSourceIds = new Set<string>();

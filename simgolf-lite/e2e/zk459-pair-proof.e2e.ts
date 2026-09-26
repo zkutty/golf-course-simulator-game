@@ -15,6 +15,7 @@ const proofs = [
   { pair: "fairway--tee", feature: "straight", focus: { x: 10, y: 18 } },
   { pair: "rough--green", feature: "outer-turn-sw", focus: { x: 42, y: 17 } },
   { pair: "rough--tee", feature: "straight", focus: { x: 5, y: 14 } },
+  { pair: "rough--deep_rough", feature: "density-turn-se", focus: { x: 8, y: 22 } },
 ] as const;
 
 async function applyPalette(page: Page, mode: Mode) {
@@ -37,7 +38,7 @@ async function applyPalette(page: Page, mode: Mode) {
   await page.waitForFunction(() => Boolean(window.__coursecraftPixiTest));
 }
 
-test("ZK-459 proves all six derived pair materials before the M19 matrix", async ({ page }) => {
+test("ZK-459 proves all seven M19 pair materials including density crossover", async ({ page }) => {
   test.setTimeout(600_000);
   await mkdir(outputRoot, { recursive: true });
   const errors: string[] = [];
@@ -94,13 +95,13 @@ test("ZK-459 proves all six derived pair materials before the M19 matrix", async
   }
   await captureSet("deuteranopia", "medium");
 
-  expect(captures).toHaveLength(24);
-  expect(new Set(captures.map((capture) => capture.sha256)).size).toBe(24);
+  expect(captures).toHaveLength(28);
+  expect(new Set(captures.map((capture) => capture.sha256)).size).toBe(28);
   expect(errors).toEqual([]);
   await writeFile(resolve(outputRoot, "zk459-pair-proof-report.json"), `${JSON.stringify({
     version: 2,
     issue: "ZK-459",
-    fixture: "m19Fixture-all-six-pair-closeups",
+    fixture: "m19Fixture-all-seven-pair-closeups",
     zoom: 4,
     errors,
     captures,

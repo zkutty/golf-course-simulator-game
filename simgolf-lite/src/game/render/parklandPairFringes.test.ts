@@ -20,6 +20,7 @@ import {
 
 const assetRoot = new URL("../../assets/terrain/parkland-composable-v1/", import.meta.url);
 const derivedAssetRoot = new URL("../../assets/terrain/parkland-pair-atlas-v2/", import.meta.url);
+const materialFieldRoot = new URL("../../assets/terrain/fields/parkland/", import.meta.url);
 const manifest = JSON.parse(readFileSync(new URL("manifest.json", assetRoot), "utf8")) as {
   files: Record<string, {
     sha256: string;
@@ -54,6 +55,10 @@ const derivedManifest = JSON.parse(readFileSync(new URL("manifest.json", derived
       guideSha256: string;
       semanticPath: string;
       semanticSha256: string;
+      materialInputs: null | {
+        owner: { path: string; sha256: string };
+        neighbor: { path: string; sha256: string };
+      };
       rgbaSha256: string;
       metrics: {
         visiblePixels: number;
@@ -62,11 +67,31 @@ const derivedManifest = JSON.parse(readFileSync(new URL("manifest.json", derived
         distinctVisibleColors: number;
         transparentRgbPixels: number;
         bandPixels: number[];
+        zonePixels?: { outer: number; intermix: number; inner: number };
         modulatedPixels: number;
         outsideDiamondPixels: number;
         oppositeSidePixels?: number;
         incidentOverlapPixels?: number;
         continuityPixels?: number;
+        densityCrossover?: boolean;
+        ownerContributionPixels?: number;
+        neighborContributionPixels?: number;
+        intermixPixels?: number;
+        noFringeRmsDelta?: number;
+        withoutOwnerRmsDelta?: number;
+        withoutNeighborRmsDelta?: number;
+        withoutOwnerRgbaSha256?: string;
+        withoutNeighborRgbaSha256?: string;
+        finalPixelControls?: {
+          enabledVsNoFringeRms: number;
+          enabledVsWithoutOwnerRms: number;
+          enabledVsWithoutNeighborRms: number;
+          noFringeControlRms: number;
+          enabledSha256: string;
+          noFringeSha256: string;
+          withoutOwnerSha256: string;
+          withoutNeighborSha256: string;
+        };
       };
     }>;
   }>;
@@ -93,23 +118,24 @@ function alphaMetrics(image: PNG) {
 }
 
 describe("ZK-459 canonical Parkland pair fringe planner", () => {
-  it("reconciles the exact M19 authority and emits 87 owned strips", () => {
+  it("reconciles the exact M19 authority including the high/medium density crossover", () => {
     const course = createParklandVisualReferenceCourse();
     const plan = buildParklandPairFringePlan({
       tiles: course.tiles,
       elevations: course.elevations,
       width: course.width,
       height: course.height,
+      includeDensityCrossovers: true,
     });
     expect(plan.diagnostics).toMatchObject({
       authoritativeDifferingTurfAdjacencies: 191,
       sameElevationDifferingTurfAdjacencies: 185,
       omittedDifferentElevation: 6,
-      omittedSamePresentation: 98,
+      omittedSamePresentation: 0,
       omittedBlocked: 0,
-      plannedStrips: 87,
-      cornerCandidates: 7,
-      plannedCorners: 7,
+      plannedStrips: 185,
+      cornerCandidates: 25,
+      plannedCorners: 25,
       mixedPairMasks: 0,
       fullCellSprites: 0,
       ownershipOverlaps: 0,
@@ -121,13 +147,32 @@ describe("ZK-459 canonical Parkland pair fringe planner", () => {
         "fairway--tee": 5,
         "rough--green": 15,
         "rough--tee": 15,
+        "rough--deep_rough": 98,
       },
-      directionCounts: { n: 30, e: 13, s: 29, w: 15 },
+      directionCounts: { n: 59, e: 36, s: 57, w: 33 },
     });
-    expect(Object.values(plan.diagnostics.pairCounts).reduce((total, count) => total + count, 0)).toBe(87);
+    expect(Object.values(plan.diagnostics.pairCounts).reduce((total, count) => total + count, 0)).toBe(185);
     expect(plan.diagnostics.omittedSamePresentation + plan.diagnostics.plannedStrips).toBe(185);
     expect(new Set(plan.edges.map((edge) => edge.ownerKey)).size).toBe(plan.edges.length);
     expect(new Set(plan.corners.map((corner) => corner.ownerKey)).size).toBe(plan.corners.length);
+    expect(plan.diagnostics.pairCounts["rough--deep_rough"]).toBe(98);
+    expect(plan.edges.some((edge) => edge.pair === "rough--deep_rough")).toBe(true);
+  });
+
+  it("preserves the legacy Low plan without density crossover emitters", () => {
+    const course = createParklandVisualReferenceCourse();
+    const plan = buildParklandPairFringePlan({
+      tiles: course.tiles,
+      elevations: course.elevations,
+      width: course.width,
+      height: course.height,
+      includeDensityCrossovers: false,
+    });
+    expect(plan.diagnostics).toMatchObject({
+      omittedSamePresentation: 98,
+      plannedStrips: 87,
+      plannedCorners: 7,
+    });
     expect(plan.edges.some((edge) => edge.pair === "rough--deep_rough")).toBe(false);
   });
 
@@ -142,13 +187,14 @@ describe("ZK-459 canonical Parkland pair fringe planner", () => {
       width: course.width,
       height: course.height,
       blockedCells,
+      includeDensityCrossovers: true,
     });
     expect(plan.diagnostics).toMatchObject({
       authoritativeDifferingTurfAdjacencies: 191,
       omittedDifferentElevation: 6,
-      omittedSamePresentation: 98,
+      omittedSamePresentation: 0,
       omittedBlocked: 0,
-      plannedStrips: 87,
+      plannedStrips: 185,
     });
     expect(
       plan.diagnostics.omittedDifferentElevation
@@ -170,10 +216,11 @@ describe("ZK-459 canonical Parkland pair fringe planner", () => {
       width: 3,
       height: 3,
       blockedCells: new Set([2]),
+      includeDensityCrossovers: true,
     });
     const edges = new Map(plan.edges.map((edge) => [edge.ownerKey, edge]));
     expect(plan.diagnostics.omittedBlocked).toBeGreaterThan(0);
-    expect(plan.diagnostics.omittedSamePresentation).toBe(1);
+    expect(plan.diagnostics.omittedSamePresentation).toBe(0);
     for (const edge of plan.edges) {
       expect(parklandPairFringeAssetRole(edge)).toBe(`edge:${edge.pair}:${edge.direction}`);
       expect(edge.ownerCell).not.toBe(2);
@@ -184,7 +231,7 @@ describe("ZK-459 canonical Parkland pair fringe planner", () => {
       const compatible = corner.compatibleEdgeOwnerKeys.map((key) => edges.get(key)!);
       expect(compatible).toHaveLength(2);
       expect(compatible.every((edge) => edge.pair === corner.pair)).toBe(true);
-      expect(compatible.every((edge) => edge.pair !== "rough--deep_rough")).toBe(true);
+      expect(compatible.every((edge) => edge.pair === corner.pair)).toBe(true);
     }
   });
 
@@ -210,6 +257,7 @@ describe("ZK-459 canonical Parkland pair fringe planner", () => {
       elevations: course.elevations,
       width: course.width,
       height: course.height,
+      includeDensityCrossovers: true,
     });
     const roles = new Set([
       ...plan.edges.map(parklandPairFringeAssetRole),
@@ -259,7 +307,7 @@ describe("ZK-459 canonical Parkland pair fringe planner", () => {
   it("packs deterministic derived multi-band frames with exact guide provenance", () => {
     expect(new Set(PARKLAND_PAIR_ATLAS_ROLES).size).toBe(80);
     expect(derivedManifest).toMatchObject({
-      contract: "parkland-pair-derived-runtime-v2",
+      contract: "parkland-pair-derived-runtime-v3",
       columns: PARKLAND_PAIR_ATLAS_COLUMNS,
       roles: PARKLAND_PAIR_ATLAS_ROLES,
     });
@@ -298,6 +346,17 @@ describe("ZK-459 canonical Parkland pair fringe planner", () => {
         expect(frame.guideSha256).toBe(manifest.files[frame.guidePath].sha256);
         expect(frame.semanticPath).toBe(`${quality}/semantic-${pair.split("--")[0]}.png`);
         expect(frame.semanticSha256).toBe(manifest.files[frame.semanticPath].sha256);
+        if (quality === "low") {
+          expect(frame.materialInputs).toBeNull();
+        } else {
+          const [owner, neighbor] = pair.split("--");
+          expect(frame.materialInputs?.owner.path).toBe(`${quality}/${owner}.png`);
+          expect(frame.materialInputs?.neighbor.path).toBe(`${quality}/${neighbor}.png`);
+          for (const input of [frame.materialInputs?.owner, frame.materialInputs?.neighbor]) {
+            const bytes = readFileSync(new URL(input!.path, materialFieldRoot));
+            expect(createHash("sha256").update(bytes).digest("hex")).toBe(input!.sha256);
+          }
+        }
         const extracted = Buffer.alloc(width * height * 4);
         const frameX = index % PARKLAND_PAIR_ATLAS_COLUMNS * width;
         const frameY = Math.floor(index / PARKLAND_PAIR_ATLAS_COLUMNS) * height;
@@ -324,6 +383,33 @@ describe("ZK-459 canonical Parkland pair fringe planner", () => {
         expect(frame.metrics.transparentRgbPixels).toBe(0);
         expect(frame.metrics.outsideDiamondPixels).toBe(0);
         expect(frame.metrics.distinctVisibleColors).toBeGreaterThanOrEqual(3);
+        if (quality === "low") {
+          expect(frame.metrics.zonePixels).toBeUndefined();
+        } else {
+          expect(frame.metrics.zonePixels).toEqual({
+            outer: frame.metrics.bandPixels[0],
+            intermix: frame.metrics.bandPixels[1],
+            inner: frame.metrics.bandPixels[2],
+          });
+          expect(frame.metrics.ownerContributionPixels).toBe(frame.metrics.visiblePixels);
+          expect(frame.metrics.neighborContributionPixels).toBe(frame.metrics.visiblePixels);
+          expect(frame.metrics.intermixPixels).toBe(frame.metrics.bandPixels[1]);
+          expect(frame.metrics.noFringeRmsDelta).toBe(0);
+          expect(frame.metrics.withoutOwnerRmsDelta).toBeGreaterThan(1);
+          expect(frame.metrics.withoutNeighborRmsDelta).toBeGreaterThan(1);
+          expect(frame.metrics.withoutOwnerRgbaSha256).not.toBe(frame.rgbaSha256);
+          expect(frame.metrics.withoutNeighborRgbaSha256).not.toBe(frame.rgbaSha256);
+          expect(frame.metrics.withoutOwnerRgbaSha256).not.toBe(frame.metrics.withoutNeighborRgbaSha256);
+          expect(frame.metrics.densityCrossover).toBe(pair === "rough--deep_rough");
+          const controls = frame.metrics.finalPixelControls!;
+          expect(controls.noFringeControlRms).toBe(0);
+          expect(controls.enabledVsNoFringeRms).toBeGreaterThan(1);
+          expect(controls.enabledVsWithoutOwnerRms).toBeGreaterThan(0.5);
+          expect(controls.enabledVsWithoutNeighborRms).toBeGreaterThan(0.5);
+          expect(controls.enabledSha256).not.toBe(controls.noFringeSha256);
+          expect(controls.enabledSha256).not.toBe(controls.withoutOwnerSha256);
+          expect(controls.enabledSha256).not.toBe(controls.withoutNeighborSha256);
+        }
         if (kind === "edge") {
           expect(frame.metrics.coverage).toBeGreaterThanOrEqual(0.05);
           expect(frame.metrics.coverage).toBeLessThan(0.06);
@@ -338,6 +424,9 @@ describe("ZK-459 canonical Parkland pair fringe planner", () => {
         }
       }
     }
+    expect(derivedManifest.qualities.low.atlasSha256).toBe(
+      "cfe49db34543f3fc684ec2f65ef29fefb8f3d4615821526095863414ea4caacf",
+    );
   });
 
   it("does not invent corner vocabulary outside the four declared patches", () => {
