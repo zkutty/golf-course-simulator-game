@@ -8,6 +8,7 @@ import {
   sampleVisualHeight,
 } from "../render/landscapeGeometry";
 import { buildMacroLandformRaster } from "../render/macroLandform";
+import { hazardDepthProfile } from "../render/hazardDepth";
 import { createM20TerrainReferenceCourse, createParklandVisualReferenceCourse } from "./referenceCourse";
 import { createMacroLandformFixture } from "./macroLandformFixture";
 
@@ -47,8 +48,12 @@ describe("M35 macro-landform fixture contract", () => {
       const x = centerCell % course.width + 0.5;
       const y = Math.floor(centerCell / course.width) + 0.5;
       const recession = sampleVisualHeight(field, x, y) - sampleLandscapeSurfaceHeight(field, bunker, x, y);
+      expect(bunker.cells.length).toBeGreaterThan(4);
+      const profile = hazardDepthProfile("sand", bunker.cells.length)!;
+      expect(profile.floorDrop).toBe(0.55);
       expect(recession).toBeGreaterThan(0.08);
-      expect(recession).toBeLessThanOrEqual(0.34);
+      expect(recession).toBeCloseTo(profile.floorDrop, 7);
+      expect(recession).toBeLessThanOrEqual(profile.floorDrop + 1e-7);
       const ribbon = buildRecessedLandformRibbon(field, bunker, bunker.rings[0]);
       expect(Math.max(...ribbon.map((point) => point.topHeight - point.bottomHeight))).toBeLessThan(1.5);
     }
