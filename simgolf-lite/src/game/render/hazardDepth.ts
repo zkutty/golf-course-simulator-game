@@ -102,6 +102,16 @@ export interface HazardBankPoint {
   readonly y: number;
 }
 
+/** Positive means the bank's inward normal faces the viewer in the grade plane.
+ * Test the unlowered plane: a vertical drop must never turn a backface into a face.
+ */
+export function isInteriorBankFacingViewer(
+  outer: readonly [HazardBankPoint, HazardBankPoint],
+  innerAtGrade: readonly [HazardBankPoint, HazardBankPoint],
+): boolean {
+  return innerAtGrade[0].y + innerAtGrade[1].y > outer[0].y + outer[1].y + 1e-6;
+}
+
 export interface HazardBankFacePlan {
   readonly terrain: RecessedHazardTerrain;
   /**
@@ -196,11 +206,12 @@ function cleanClosedRing(
 function joinedInnerRing(
   outerRing: readonly HazardBankPoint[],
   requestedWidth: number,
+  legacyOutward = false,
 ): HazardBankPoint[] | null {
-  // A contour traced by landscapeGeometry keeps its filled component on the
-  // right of every directed edge, including hole rings. Therefore the right
-  // normal is consistently the hazard-side direction without a camera- or
-  // screen-space branch.
+  // traceComponentRings walks a top edge left-to-right with filled cells at
+  // +y. Its inward normal is (-dy, dx), including oppositely wound hole rings.
+  // Low's frozen silhouette adapter explicitly retains the old outward mask.
+  const direction = legacyOutward ? -1 : 1;
   for (let scale = 1; scale >= 0.1; scale *= 0.72) {
     const width = requestedWidth * scale;
     const innerRing: HazardBankPoint[] = [];
@@ -215,12 +226,12 @@ function joinedInnerRing(
         break;
       }
       const previousNormal = {
-        x: (current.y - previous.y) / previousLength,
-        y: -(current.x - previous.x) / previousLength,
+        x: -(current.y - previous.y) / previousLength * direction,
+        y: (current.x - previous.x) / previousLength * direction,
       };
       const nextNormal = {
-        x: (next.y - current.y) / nextLength,
-        y: -(next.x - current.x) / nextLength,
+        x: -(next.y - current.y) / nextLength * direction,
+        y: (next.x - current.x) / nextLength * direction,
       };
       const bisectorLength = Math.hypot(
         previousNormal.x + nextNormal.x,
@@ -237,7 +248,8 @@ function joinedInnerRing(
       // Keep an exact normal-width offset where the miter is tame, but bound
       // acute turns so dense canonical samples cannot grow long fins.
       const normalAlignment = Math.max(0.5, Math.abs(bisector.x * nextNormal.x + bisector.y * nextNormal.y));
-      const miter = Math.min(width / normalAlignment, width * 1.6);
+      const localWidth = legacyOutward ? width : Math.min(width, Math.min(previousLength, nextLength) * 0.8);
+      const miter = Math.min(localWidth / normalAlignment, localWidth * 1.6);
       innerRing.push({ x: current.x + bisector.x * miter, y: current.y + bisector.y * miter });
     }
     if (innerRing.length !== outerRing.length || hasProperSelfIntersection(innerRing)) continue;
@@ -283,11 +295,12 @@ export function buildHazardBankFacePlan(
   terrain: Terrain,
   componentCellCount: number,
   ring: readonly { readonly x: number; readonly y: number }[],
+  legacyOutward = false,
 ): HazardBankFacePlan | null {
   const profile = hazardDepthProfile(terrain, componentCellCount);
   const outerRing = cleanClosedRing(ring);
   if (!profile || outerRing.length < 3 || Math.abs(signedArea(outerRing)) <= HAZARD_EPSILON) return null;
-  const innerRing = joinedInnerRing(outerRing, profile.bankWidth);
+  const innerRing = joinedInnerRing(outerRing, profile.bankWidth, legacyOutward);
   if (!innerRing) return null;
   const stripIndices: number[] = [];
   for (let index = 0; index < outerRing.length; index++) {

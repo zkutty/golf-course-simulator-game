@@ -142,7 +142,7 @@ import {
   sampleVisualHeight,
   type LandscapeComponent,
 } from "../game/render/landscapeGeometry";
-import { buildHazardBankFacePlan, hazardDepthProfile } from "../game/render/hazardDepth";
+import { buildHazardBankFacePlan, hazardDepthProfile, isInteriorBankFacingViewer } from "../game/render/hazardDepth";
 import { buildLandscapeBoundaryRuns } from "../game/render/landscapeEdges";
 import { buildSignedContourRibbons, shouldProjectContourRibbon } from "../game/render/contourRibbons";
 import {
@@ -151,7 +151,7 @@ import {
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
 import { buildMacroLandformRaster } from "../game/render/macroLandform";
-import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
+import { buildLandformPresentationPlan, buildLandformSurfaceCues } from "../game/render/landformGeometry";
 import type { TerrainPresentationDiagnostics } from "../game/render/terrainPresentationPolicy";
 import {
   buildPathMaterialScenePlan,
@@ -992,6 +992,8 @@ interface LandformDepthDiagnostics {
   };
   shoulderLevels: readonly number[];
   shoulderFaces: number;
+  topSurfaceCrests: number;
+  topSurfaceCrestLevels: readonly number[];
   hazards: readonly {
     terrain: "sand" | "water" | "wetland";
     topologyKey: string;
@@ -1000,6 +1002,8 @@ interface LandformDepthDiagnostics {
     farFaces: number;
     minimumDropPx: number;
     maximumDropPx: number;
+    floorBoundaryOwner: "shared";
+    interiorFaceAreaPx: number;
   }[];
 }
 
@@ -1016,6 +1020,8 @@ const emptyLandformDepthDiagnostics = (
   },
   shoulderLevels: [],
   shoulderFaces: 0,
+  topSurfaceCrests: 0,
+  topSurfaceCrestLevels: [],
   hazards: [],
 });
 
@@ -1585,6 +1591,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         ],
         x,
         y,
+        true,
       )
   ), [
     course.elevations,
@@ -4254,6 +4261,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           hazardComponent.terrain,
           hazardComponent.cells.length,
           ring,
+          true,
         ));
         const hazardMesh = composableRuntime!.createParklandComposableMesh(
           textureFor(hazardComponent.terrain),
@@ -4328,7 +4336,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         (_cell, x, y) => worldToIso(
           x,
           y,
-          sampleLandscapeSurfaceHeight(heightfield, component, x, y),
+          sampleLandscapeSurfaceHeight(heightfield, component, x, y, true),
           rotation,
         ),
         true,
@@ -4369,7 +4377,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const maskRings = hazardPlans.some(Boolean)
           ? visualRings.map((ring, index) => hazardPlans[index]?.innerRing ?? ring)
           : visualRings;
-        const mask = composableRuntime!.createLandscapeRingMask(maskRings, project);
+        const mask = composableRuntime!.createLandscapeRingMask(maskRings, (point) => worldToIso(
+          point.x, point.y,
+          sampleLandscapeSurfaceHeight(heightfield, component, point.x, point.y, true),
+          rotation,
+        ));
         mesh.mask = mask;
         layer.addChild(mesh, mask);
       }
@@ -4426,12 +4438,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
         let nearFaces = 0;
         let farFaces = 0;
         const depthDrops: number[] = [];
+        let interiorFaceAreaPx = 0;
         // The canonical joined skirt remains the sole geometry owner. Two
         // restrained material passes make its screen-facing half read as a
         // bank at normal scale without turning the far half into a dark ring.
         for (let ringIndex = 0; ringIndex < visualRings.length; ringIndex++) {
           const plan = hazardPlans[ringIndex];
-          if (!plan || !depthProfile) continue;
+          if (!plan) continue;
           const positions: number[] = [];
           const uvs: number[] = [];
           const gradePoints: Point[] = [];
@@ -4442,21 +4455,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
           for (let index = 0; index < plan.outerRing.length; index++) {
             const outer = plan.outerRing[index];
             const inner = plan.innerRing[index];
-            const inwardLength = Math.hypot(inner.x - outer.x, inner.y - outer.y);
-            if (inwardLength <= 1e-6) continue;
-            const bounded = (point: Point) => ({
-              x: Math.max(0, Math.min(course.width, point.x)),
-              y: Math.max(0, Math.min(course.height, point.y)),
-            });
-            const gradeSample = bounded({
-              x: outer.x - (inner.x - outer.x) / inwardLength * Math.min(inwardLength, depthProfile.bankWidth),
-              y: outer.y - (inner.y - outer.y) / inwardLength * Math.min(inwardLength, depthProfile.bankWidth),
-            });
-            const gradeHeight = sampleVisualHeight(heightfield, gradeSample.x, gradeSample.y);
-            const floorHeight = Math.min(
-              sampleLandscapeSurfaceHeight(heightfield, component, inner.x, inner.y),
-              gradeHeight - depthProfile.minimumBankDrop,
-            );
+            const gradeHeight = sampleVisualHeight(heightfield, outer.x, outer.y);
+            // No private bank-only forced drop: the floor mesh and its mask
+            // use this exact sampler at this exact joined inner-ring vertex.
+            const floorHeight = sampleLandscapeSurfaceHeight(heightfield, component, inner.x, inner.y, true);
             const grade = projectDepthPoint({ ...outer, height: gradeHeight });
             const gradePlaneInset = projectDepthPoint({ ...inner, height: gradeHeight });
             const floor = projectDepthPoint({ ...inner, height: floorHeight });
@@ -4467,7 +4469,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
             floorPoints.push(floor);
             depthDrops.push((gradeHeight - floorHeight) * ELEVATION_STEP_PX);
           }
-          if (positions.length !== plan.outerRing.length * 4) continue;
           const lip = new PIXI.Graphics();
           const floorSeam = new PIXI.Graphics();
           for (let index = 0; index < plan.outerRing.length; index++) {
@@ -4475,12 +4476,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
             // Classify the boundary in the grade plane. Using the lowered
             // floor point here lets a deeper recess flip every edge toward
             // the viewer, erasing the far-side material pass.
-            const projectedTowardViewer = gradePlaneInsetPoints[index].y + gradePlaneInsetPoints[next].y <
-              gradePoints[index].y + gradePoints[next].y;
+            const projectedTowardViewer = isInteriorBankFacingViewer(
+              [gradePoints[index], gradePoints[next]],
+              [gradePlaneInsetPoints[index], gradePlaneInsetPoints[next]],
+            );
             const target = projectedTowardViewer ? nearIndices : farIndices;
             target.push(...plan.stripIndices.slice(index * 6, index * 6 + 6));
             if (projectedTowardViewer) {
               nearFaces++;
+              const polygon = [gradePoints[index], gradePoints[next], floorPoints[next], floorPoints[index]];
+              interiorFaceAreaPx += Math.abs(polygon.reduce((area, point, vertex) => {
+                const after = polygon[(vertex + 1) % polygon.length];
+                return area + point.x * after.y - after.x * point.y;
+              }, 0)) / 2;
               lip.moveTo(gradePoints[index].x, gradePoints[index].y);
               lip.lineTo(gradePoints[next].x, gradePoints[next].y);
               floorSeam.moveTo(floorPoints[index].x, floorPoints[index].y);
@@ -4513,30 +4521,30 @@ export function PixiStage(requestedProps: PixiStageProps) {
           };
           addBankFace(
             farIndices,
-            isSand ? shade(themedColors.rough, 0.94) : bankLight,
-            isSand ? 0.34 : 0.28,
+            isSand ? shade(themedColors.rough, 0.98) : shade(themedColors.rough, 0.9),
+            0.9,
             `hazard-bank-far:${component.terrain}`,
           );
           addBankFace(
             nearIndices,
-            isSand ? shade(themedColors.rough, 0.58) : shade(bankDark, 0.9),
-            isSand ? 0.82 : 0.86,
+            isSand ? shade(bankLight, 0.72) : shade(bankLight, 0.8),
+            1,
             `hazard-bank-near:${component.terrain}`,
           );
 
           lip.stroke({
-            width: isSand ? 1.25 : plan.lip.width,
-            color: isSand ? shade(themedColors.rough, 1.08) : bankLight,
-            alpha: isSand ? 0.72 : 0.52,
+            width: isSand ? 1.6 : 1.4,
+            color: shade(themedColors.rough, 1.15),
+            alpha: 0.85,
             cap: "round",
             join: "round",
           });
           recessedLayer.addChild(lip);
-          if (!isSand) {
+          {
             floorSeam.stroke({
-              width: component.terrain === "water" ? 1.4 : 1.15,
-              color: component.terrain === "water" ? 0x78b6b8 : 0x719781,
-              alpha: 0.5,
+              width: isSand ? 1.8 : 2,
+              color: isSand ? shade(bankDark, 0.55) : shade(bankDark, 0.75),
+              alpha: 0.7,
               cap: "round",
               join: "round",
             });
@@ -4552,6 +4560,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
             farFaces,
             minimumDropPx: Math.min(...depthDrops),
             maximumDropPx: Math.max(...depthDrops),
+            floorBoundaryOwner: "shared",
+            interiorFaceAreaPx,
           });
         }
       }
@@ -4727,9 +4737,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       landformLayer.addChild(highlight);
     }
 
-    // Crisp sparse runs come from actual multi-tile level boundaries. Preserve
-    // one camera-facing connected owner at every authored level; dropping all
-    // but the longest level erased the inner rise of the M35 fixture.
+    // One owner per authored open boundary. Top-surface crests are independent
+    // of front-face visibility; neither requires a longest-run heuristic.
     const landformPlan = buildLandformPresentationPlan(
       heightfield,
       effectiveTiles,
@@ -4737,15 +4746,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       course.theme,
       1,
     );
-    const landformBoundary = (point: (typeof landformPlan.shoulders)[number]["points"][number]) => ({
-      x: (point.upper.x + point.lower.x) / 2,
-      y: (point.upper.y + point.lower.y) / 2,
-    });
-    const boundaryKey = (point: (typeof landformPlan.shoulders)[number]["points"][number]) => {
-      const boundary = landformBoundary(point);
-      return `${boundary.x}:${boundary.y}`;
-    };
-    const visibleShoulders = landformPlan.shoulders.filter((shoulder) => {
+    const selectedShoulders = landformPlan.shoulders.filter((shoulder) => {
+      if (shoulder.worldLength < 2) return false;
       const [current, next] = shoulder.points;
       const highA = worldToIso(current.upper.x, current.upper.y, current.lowerHeight, rotation);
       const highB = worldToIso(next.upper.x, next.upper.y, next.lowerHeight, rotation);
@@ -4753,49 +4755,29 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const lowB = worldToIso(next.lower.x, next.lower.y, next.lowerHeight, rotation);
       return lowA.y + lowB.y > highA.y + highB.y;
     });
-    const selectedShoulders: typeof visibleShoulders = [];
-    for (const level of [...new Set(visibleShoulders.map((shoulder) => shoulder.level))].sort((a, b) => a - b)) {
-      const candidates = visibleShoulders.filter((shoulder) => shoulder.level === level);
-      const seed = candidates.reduce((longest, shoulder) => shoulder.worldLength > longest.worldLength ? shoulder : longest);
-      const connected = [seed];
-      const keys = new Set(seed.points.map(boundaryKey));
-      for (let changed = true; changed;) {
-        changed = false;
-        for (const shoulder of candidates) {
-          if (connected.includes(shoulder) || !shoulder.points.some((point) => keys.has(boundaryKey(point)))) continue;
-          connected.push(shoulder);
-          for (const point of shoulder.points) keys.add(boundaryKey(point));
-          changed = true;
-        }
+    const slope = new PIXI.Graphics();
+    slope.eventMode = "none";
+    slope.blendMode = "multiply";
+    for (const { points: [a, b] } of selectedShoulders) {
+      slope.poly([a.upper, b.upper, b.lower, a.lower].flatMap((point) => {
+        const p = project(point);
+        return [p.x, p.y];
+      })).fill({ color: 0, alpha: .12 });
+    }
+    landformLayer.addChild(slope);
+    const crestCues = buildLandformSurfaceCues(landformPlan.shoulders, heightfield, effectiveTiles);
+    const crests = new PIXI.Graphics();
+    crests.eventMode = "none";
+    crests.blendMode = "screen";
+    for (const width of [8, 4, 1.5]) {
+      for (const cue of crestCues) {
+        const points = cue.points.map((point) => worldToIso(point.x, point.y, point.height, rotation));
+        crests.moveTo(points[0].x, points[0].y);
+        for (const point of points.slice(1)) crests.lineTo(point.x, point.y);
       }
-      selectedShoulders.push(...connected);
+      crests.stroke({ width, color: 0xffffff, alpha: .045, cap: "round", join: "round" });
     }
-    for (const shoulder of selectedShoulders) {
-      const graphics = new PIXI.Graphics();
-      graphics.eventMode = "none";
-      const [current, next] = shoulder.points;
-      const upperA = worldToIso(current.upper.x, current.upper.y, current.upperHeight, rotation);
-      const upperB = worldToIso(next.upper.x, next.upper.y, next.upperHeight, rotation);
-      const lowerA = worldToIso(current.lower.x, current.lower.y, current.lowerHeight, rotation);
-      const lowerB = worldToIso(next.lower.x, next.lower.y, next.lowerHeight, rotation);
-      graphics.poly([
-        upperA.x, upperA.y,
-        upperB.x, upperB.y,
-        lowerB.x, lowerB.y,
-        lowerA.x, lowerA.y,
-      ]);
-      graphics.fill({ color: shade(themedColors.rough, 0.78), alpha: 0.24 });
-      graphics.moveTo(upperA.x, upperA.y);
-      graphics.lineTo(upperB.x, upperB.y);
-      graphics.stroke({
-        width: 1,
-        color: shade(themedColors.rough, 1.12),
-        alpha: 0.4,
-        join: "miter",
-        cap: "square",
-      });
-      landformLayer.addChild(graphics);
-    }
+    landformLayer.addChild(crests);
     layer.addChild(landformLayer);
     layer.addChild(recessedLayer);
     layer.addChild(pathMaterialLayer);
@@ -4837,6 +4819,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       },
       shoulderLevels: [...new Set(selectedShoulders.map((shoulder) => shoulder.level))].sort((a, b) => a - b),
       shoulderFaces: selectedShoulders.length,
+      topSurfaceCrests: crestCues.length,
+      topSurfaceCrestLevels: [...new Set(crestCues.map((cue) => cue.level))].sort((a, b) => a - b),
       hazards: hazardDepthDiagnostics,
     };
     sharedContourDiagnosticsRef.current = sharedContourDiagnostics;

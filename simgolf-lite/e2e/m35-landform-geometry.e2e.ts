@@ -37,6 +37,8 @@ test("captures ZK-1207 broad landform geometry through four rotations", async ({
     expect(landformDepth.macro.maximumShadowAlpha).toBeGreaterThanOrEqual(20);
     expect(landformDepth.shoulderLevels).toEqual([0.5, 1.5]);
     expect(landformDepth.shoulderFaces).toBeGreaterThan(0);
+    expect(landformDepth.topSurfaceCrests).toBeGreaterThan(0);
+    expect(landformDepth.topSurfaceCrestLevels).toEqual([0.5, 1.5]);
     await page.waitForTimeout(500);
     const file = resolve(outputRoot, `zk1207-r${rotation}-normal.png`);
     await writeFile(file, await page.screenshot({ fullPage: true }));

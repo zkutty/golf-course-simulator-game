@@ -740,19 +740,27 @@ export function sampleVisualHeight(
 }
 
 /**
- * Samples the shared field plus terrain-interior shaping that cannot live on
- * shared cell corners. Bunker boundaries remain at the shared land height,
- * while the sand floor eases down toward the component interior. The same
- * helper is used by meshes and world objects, avoiding floating golfers or
- * markers without changing simulation coordinates.
+ * Samples shared presentation height plus interior shaping. Legacy/Low sand
+ * eases down from the tile boundary. Connected Medium/High hazards opt into
+ * a floor whose bank is owned by the joined organic ring. Meshes, masks and
+ * grounded objects use the same sampler, without changing simulation data.
  */
 export function sampleLandscapeSurfaceHeight(
   field: VisualHeightfield,
   component: LandscapeComponent | null | undefined,
   x: number,
   y: number,
+  recessedHazards = false,
 ): number {
   const base = sampleVisualHeight(field, x, y);
+  // The connected Medium/High floor, its mask, bank feet and grounded objects
+  // consume this same level. Its inward ring owns the sloping bank, so floor
+  // vertices must not ease back up against a different, tile-snapped boundary.
+  // Low retains the accepted legacy surface and its original smoothstep.
+  if (recessedHazards && component) {
+    const profile = hazardDepthProfile(component.terrain, component.cells.length);
+    if (profile) return base - (component.terrain === "sand" ? profile.floorDrop : profile.minimumBankDrop);
+  }
   if (component?.terrain !== "sand") return base;
   const point = { x, y };
   if (!pointInLandscapeComponent(component, point)) return base;

@@ -4,11 +4,26 @@ import {
   hazardDepthProfile,
   hazardInteriorDropAt,
   buildHazardBankFacePlan,
+  isInteriorBankFacingViewer,
 } from "./hazardDepth";
-import { buildLandscapeComponents } from "./landscapeGeometry";
+import { worldToIso, type IsoRotation } from "./iso";
+import { buildLandscapeComponents, pointInLandscapeRing } from "./landscapeGeometry";
 import { createParklandVisualReferenceCourse } from "../testing/referenceCourse";
+import { buildHazardVisualRings, classifyBunkerVisualType } from "./bunkerShapes";
 
 describe("hazard depth cross-sections", () => {
+  it("emphasizes interior-facing rear banks, never a foreground backface", () => {
+    for (const rotation of [0, 90, 180, 270] as IsoRotation[]) {
+      const direction = { x: rotation === 0 || rotation === 270 ? 1 : -1 };
+      const outer = [worldToIso(2, 2, 0, rotation), worldToIso(2, 3, 0, rotation)] as const;
+      const inside = [worldToIso(2 + direction.x * .3, 2, 0, rotation), worldToIso(2 + direction.x * .3, 3, 0, rotation)] as const;
+      expect(isInteriorBankFacingViewer(outer, inside)).toBe(true);
+      // Reversing the semantic normal must fail; increasing floor drop is
+      // deliberately not an input to this grade-plane visibility decision.
+      expect(isInteriorBankFacingViewer(inside, outer)).toBe(false);
+      expect(isInteriorBankFacingViewer(outer, outer)).toBe(false);
+    }
+  });
   it("eases bunker grade monotonically into a lower sand floor", () => {
     for (const cellCount of [1, 3, 12]) {
       const profile = hazardDepthProfile("sand", cellCount)!;
@@ -78,6 +93,13 @@ describe("hazard depth cross-sections", () => {
       expect(plan.stripIndices).toHaveLength(ring.length * 6);
       expect(new Set(plan.innerRing.map((point) => `${point.x},${point.y}`)).size).toBe(ring.length);
       expect(plan.innerRing.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))).toBe(true);
+      expect(plan.innerRing.every((point) => pointInLandscapeRing(ring, point))).toBe(true);
+      const reversed = buildHazardBankFacePlan(terrain, 6, ring, true)!;
+      expect(reversed.innerRing.some((point) => pointInLandscapeRing(ring, point))).toBe(false);
+      // A hole's opposite winding expands into surrounding hazard material,
+      // never contracts into the island.
+      const hole = buildHazardBankFacePlan(terrain, 6, [...ring].reverse())!;
+      expect(hole.innerRing.some((point) => pointInLandscapeRing(ring, point))).toBe(false);
       expect(plan.lip.offset).toBe(0);
       expect(plan.lip.width).toBeGreaterThan(0);
     }
@@ -141,6 +163,23 @@ describe("hazard depth cross-sections", () => {
       expect(plan!.outerRing).toHaveLength(plan!.innerRing.length);
       expect(plan!.stripIndices).toHaveLength(plan!.outerRing.length * 6);
       expect(new Set(plan!.innerRing.map((point) => `${point.x},${point.y}`)).size).toBe(plan!.innerRing.length);
+    }
+  });
+
+  it("keeps every exact M19 organic bank inward at both accepted qualities", () => {
+    const course = createParklandVisualReferenceCourse();
+    for (const options of [{ cornerRadius: .32, cornerSegments: 2 }, { cornerRadius: .4, cornerSegments: 4 }]) {
+      for (const component of buildLandscapeComponents(course.tiles, course.width, course.height, options)) {
+        if (!["sand", "water", "wetland"].includes(component.terrain)) continue;
+        const rings = buildHazardVisualRings(component.terrain, component.rings, component.topologyKey,
+          component.cells.length, component.terrain === "sand"
+            ? classifyBunkerVisualType(component.cells, course.tiles, course.width, course.height) : undefined);
+        for (const ring of rings) {
+          const plan = buildHazardBankFacePlan(component.terrain, component.cells.length, ring);
+          expect(plan, `${component.topologyKey}:${options.cornerSegments}`).not.toBeNull();
+          expect(plan!.innerRing.every((point) => pointInLandscapeRing(ring, point))).toBe(true);
+        }
+      }
     }
   });
 });
