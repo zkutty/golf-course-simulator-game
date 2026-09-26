@@ -161,6 +161,19 @@ describe("connected landscape geometry", () => {
 });
 
 describe("shared visual heightfield", () => {
+  it("shares the connected water floor level without changing Low or course authority", () => {
+    const course = courseWith(3, 3, new Array(9).fill("water"));
+    const before = JSON.stringify(course);
+    const field = buildVisualHeightfield(course);
+    const water = buildLandscapeComponents(course.tiles, 3, 3)[0];
+    for (const point of [{ x: .3, y: .6 }, { x: 1.5, y: 1.5 }, { x: 2.8, y: 2.8 }]) {
+      const legacy = sampleLandscapeSurfaceHeight(field, water, point.x, point.y);
+      expect(legacy).toBe(sampleVisualHeight(field, point.x, point.y));
+      const connected = sampleLandscapeSurfaceHeight(field, water, point.x, point.y, true);
+      expect(legacy - connected).toBeCloseTo(.82, 8);
+    }
+    expect(JSON.stringify(course)).toBe(before);
+  });
   it("shares one vertex array and levels a connected water surface", () => {
     const course = courseWith(3, 2, [
       "rough", "water", "water",

@@ -1,11 +1,32 @@
 import { describe, expect, it } from "vitest";
 import { worldToIso, type IsoRotation } from "./iso";
-import { buildVisualHeightfield } from "./landscapeGeometry";
-import { buildLandformPresentationPlan, buildLandformShoulders } from "./landformGeometry";
+import { buildVisualHeightfield, sampleVisualHeight } from "./landscapeGeometry";
+import { buildLandformPresentationPlan, buildLandformShoulders, buildLandformSurfaceCues } from "./landformGeometry";
 import { createMacroLandformFixture } from "../testing/macroLandformFixture";
 import { createM20TerrainReferenceCourse, createParklandVisualReferenceCourse } from "../testing/referenceCourse";
 
 describe("tile-snapped landform transitions", () => {
+  it("retains sampled open crest cues when M19 r270 correctly has no front-facing slopes", () => {
+    const course = createParklandVisualReferenceCourse();
+    const before = JSON.stringify(course);
+    const field = buildVisualHeightfield(course);
+    const shoulders = buildLandformShoulders(field, course.tiles, course.elevations);
+    const front = shoulders.filter(({ points: [a, b] }) => (
+      worldToIso(a.lower.x, a.lower.y, 0, 270).y + worldToIso(b.lower.x, b.lower.y, 0, 270).y >
+      worldToIso(a.upper.x, a.upper.y, 0, 270).y + worldToIso(b.upper.x, b.upper.y, 0, 270).y
+    ));
+    expect(front).toHaveLength(0);
+    const cues = buildLandformSurfaceCues(shoulders, field, course.tiles);
+    expect(cues.length).toBeGreaterThan(0);
+    expect([...new Set(cues.map((cue) => cue.level))].sort()).toEqual([.5, 1.5, 2.5]);
+    for (const cue of cues) for (const point of cue.points) {
+      expect(point.height).toBe(sampleVisualHeight(field, point.x, point.y));
+    }
+    expect(JSON.stringify(course)).toBe(before);
+    expect(buildLandformSurfaceCues(buildLandformShoulders(field, course.tiles,
+      course.elevations.map(() => 0)), field, course.tiles)).toEqual([]);
+    expect(buildLandformSurfaceCues(shoulders, field, course.tiles.map(() => "path"))).toEqual([]);
+  });
   it("merges actual M19 and M20 level edges without mutating course data", () => {
     for (const course of [createParklandVisualReferenceCourse(), createM20TerrainReferenceCourse()]) {
       const before = JSON.stringify(course);

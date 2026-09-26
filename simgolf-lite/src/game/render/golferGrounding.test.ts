@@ -3,6 +3,7 @@ import { DEFAULT_COURSE } from "../models/defaults";
 import type { Course, Terrain } from "../models/types";
 import { findWalkPathCells } from "../live/walkPath";
 import { ISO_ROTATIONS, tileCenterIso } from "./iso";
+import { buildLandscapeComponents, buildVisualHeightfield, sampleLandscapeSurfaceHeight } from "./landscapeGeometry";
 import {
   GOLFER_CONTACT_SHADOW,
   GOLFER_GROUNDING_RENDER_BUDGET,
@@ -33,6 +34,20 @@ function heightAt(course: Course, x: number, y: number): number {
 }
 
 describe("ZK-330 grounded golfer traversal", () => {
+  it("shares the connected recessed floor with golfer feet without changing walk authority", () => {
+    const course = groundedCourse();
+    course.tiles[22] = "sand";
+    const before = JSON.stringify(course);
+    const field = buildVisualHeightfield(course);
+    const sand = buildLandscapeComponents(course.tiles, course.width, course.height).find((component) => component.terrain === "sand")!;
+    const floor = (x: number, y: number) => sampleLandscapeSurfaceHeight(field, sand, x, y, true);
+    for (const rotation of ISO_ROTATIONS) {
+      const grounded = groundedGolferFrame(2, 2, rotation, floor);
+      expect(grounded.elevation).toBe(floor(2.5, 2.5));
+      expect(grounded.screen).toEqual(tileCenterIso(2, 2, floor(2.5, 2.5), rotation));
+    }
+    expect(JSON.stringify(course)).toBe(before);
+  });
   it("samples the same landscape surface for feet, shadow, and depth through flat, slope, crest, basin, and green", () => {
     const course = groundedCourse();
     for (const rotation of ISO_ROTATIONS) {

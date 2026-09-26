@@ -82,8 +82,10 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
         expect(depth.macro.active).toBe(true);
         expect(depth.hazards.length).toBeGreaterThan(0);
         expect(depth.hazards.every((entry) => entry.nearFaces > 0 && entry.farFaces > 0)).toBe(true);
+        // Actual joined surface separation, not the old forced bank-only drop.
         expect(Math.min(...depth.hazards.map((entry) => entry.minimumDropPx)))
-          .toBeGreaterThanOrEqual(hazard.label === "lake" ? 6 : 4);
+          .toBeGreaterThanOrEqual(hazard.label === "lake" ? 6 : 2);
+        expect(depth.hazards.every((entry) => entry.floorBoundaryOwner === "shared" && entry.interiorFaceAreaPx > 50)).toBe(true);
         const file = resolve(outputRoot, `zk1201-r${rotation}-${hazard.label}-${view.label}.png`);
         await writeFile(file, await canvas.screenshot());
         captures.push({
@@ -152,7 +154,8 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
         expect(depth.length).toBeGreaterThan(0);
         expect(depth.every((entry) => entry.nearFaces > 0 && entry.farFaces > 0)).toBe(true);
         expect(Math.min(...depth.map((entry) => entry.minimumDropPx)))
-          .toBeGreaterThanOrEqual(hazard.label === "lake" ? 6 : 4);
+          .toBeGreaterThanOrEqual(hazard.label === "lake" ? 6 : 2);
+        expect(depth.every((entry) => entry.floorBoundaryOwner === "shared" && entry.interiorFaceAreaPx > 50)).toBe(true);
       }
       const file = resolve(outputRoot, `zk1201-m19-r${rotation}-${hazard.label}-detail.png`);
       await writeFile(file, await canvas.screenshot());

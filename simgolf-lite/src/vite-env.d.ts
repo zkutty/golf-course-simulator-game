@@ -108,6 +108,8 @@ interface Window {
         };
         shoulderLevels: readonly number[];
         shoulderFaces: number;
+        topSurfaceCrests: number;
+        topSurfaceCrestLevels: readonly number[];
         hazards: readonly {
           terrain: "sand" | "water" | "wetland";
           topologyKey: string;
@@ -116,6 +118,8 @@ interface Window {
           farFaces: number;
           minimumDropPx: number;
           maximumDropPx: number;
+          floorBoundaryOwner: "shared";
+          interiorFaceAreaPx: number;
         }[];
         camera: { rotation: number; zoom: number; targetZoom: number };
       };
