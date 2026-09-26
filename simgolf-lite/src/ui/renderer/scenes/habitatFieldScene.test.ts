@@ -225,6 +225,11 @@ describe("verified habitat field scene", () => {
     expect(new Set(sprites.map((sprite) => sprite.label)).size).toBe(expected);
     expect(sprites.every((sprite) => sprite.eventMode === "none" && sprite.appliedMatrix !== null)).toBe(true);
     expect(sprites.every((sprite) => sprite.zIndex === sprite.position.y)).toBe(true);
+    const groveOwners = plan.habitatZones.filter((zone) => zone.evidence.kind === "tree_grove").map((zone) => zone.ownerId);
+    const groveGround = sprites.filter((sprite) => groveOwners.some((owner) => sprite.label.startsWith(`habitat-field:${owner}:`)));
+    expect(groveGround.length).toBeGreaterThan(0);
+    expect(groveGround.every((sprite) => sprite.alpha >= 0.0288 && sprite.alpha <= 0.24)).toBe(true);
+    expect(new Set(groveGround.map((sprite) => sprite.alpha)).size).toBeGreaterThan(1);
   });
 
   it("rejects duplicate plan ownership before loading textures or creating sprites", async () => {

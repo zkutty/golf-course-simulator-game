@@ -382,6 +382,14 @@ export function createHabitatFieldSceneSystem(
         const sprite = createSprite(texture);
         sprite.label = `habitat-field:${zone.ownerId}:${placement.tile.x},${placement.tile.y}:${placement.frameId}`;
         sprite.eventMode = "none";
+        // Ground is the quiet small-scale layer, not the grove silhouette.
+        // Source crowns and their registered understory provide the masses.
+        if (zone.evidence.kind === "tree_grove") {
+          const distance = Math.min(...zone.evidence.sourcePoints.map((source) => Math.hypot(
+            placement.tile.x - source.x, placement.tile.y - source.y,
+          )));
+          sprite.alpha = 0.24 * Math.max(0.12, 1 - distance / 2.4);
+        }
         sprite.anchor.set(frame.anchor.x / frame.frame.width, frame.anchor.y / frame.frame.height);
         const affine = habitatPlacementAffine(
           frame.frame.width,

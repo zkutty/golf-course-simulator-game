@@ -4,6 +4,9 @@ import { DEFAULT_STATE } from "../../../game/gameState";
 import { BIOME_KEYS } from "../../../game/models/biomes";
 import type { Terrain } from "../../../game/models/types";
 import { deriveHabitatComposition } from "../../../game/render/habitatComposition";
+import { deriveCourseSceneComposition } from "../../../game/render/courseSceneComposition";
+import { deriveGrovePresentation } from "../../../game/render/grovePresentation";
+import { ISO_ROTATIONS } from "../../../game/render/iso";
 import { createParklandVisualReferenceCourse } from "../../../game/testing/referenceCourse";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import {
@@ -158,6 +161,51 @@ function snapshot(overrides: Partial<RenderSnapshot> = {}): RenderSnapshot {
 }
 
 describe("natural props scene ownership", () => {
+  it("keeps source-tree bijection, anchors, depth and focus fading through every hierarchy rotation", () => {
+    const course = createParklandVisualReferenceCourse();
+    const before = JSON.stringify(course);
+    const plan = deriveCourseSceneComposition({ course, seed: 42 });
+    const grove = deriveGrovePresentation(course, plan);
+    for (const rotation of ISO_ROTATIONS) {
+      const objects = new FakeContainer();
+      const decals = new FakeContainer();
+      const scene = createNaturalPropsSceneSystem(objects as unknown as PIXI.Container,
+        decals as unknown as PIXI.Container, undefined, {
+          getAtlasTexture: () => fakeTexture(), createSprite: fakeSprite, createGraphics: fakeGraphics,
+        });
+      const input = snapshot({ course, obstacles: course.obstacles, effectiveTiles: course.tiles, holes: course.holes, rotation });
+      scene.create!({ ...input, graphicsQuality: "low" });
+      const baseline = new Map((objects.children as PIXI.Sprite[]).map((sprite) => [sprite.label, {
+        x: sprite.position.x, y: sprite.position.y, z: sprite.zIndex, width: sprite.width,
+      }]));
+      for (const graphicsQuality of ["medium", "high"] as const) {
+        scene.update!({ ...input, graphicsQuality });
+        const trees = (objects.children as PIXI.Sprite[]).filter((sprite) => sprite.label.startsWith("structure-prop:natural:"));
+        expect(trees).toHaveLength(course.obstacles.length);
+        expect(new Set(trees.map((sprite) => sprite.label)).size).toBe(course.obstacles.length);
+        for (const sprite of trees) {
+          const previous = baseline.get(sprite.label)!;
+          const key = sprite.label.replace("structure-prop:natural:", "");
+          expect({ x: sprite.position.x, y: sprite.position.y, z: sprite.zIndex }).toEqual({ x: previous.x, y: previous.y, z: previous.z });
+          expect(sprite.width).toBeCloseTo(previous.width * (grove.trees.get(key) ?? 1));
+        }
+        const accents = (objects.children as PIXI.Sprite[]).filter((sprite) => sprite.label.startsWith("habitat-accent:"));
+        expect(accents).toHaveLength(grove.accents.length);
+        expect(accents.every((sprite) => sprite.eventMode === "none")).toBe(true);
+        const first = accents[0];
+        scene.tick({ nowMs: 0, animationsEnabled: false, treeSway: false, focus: { x: first.position.x, y: first.position.y } });
+        expect(first.alpha).toBe(0.25);
+        scene.tick({ nowMs: 0, animationsEnabled: false, treeSway: false, focus: null });
+        expect(first.alpha).toBe(1);
+        expect(scene.legacyHabitatCount()).toBe(0);
+        expect(scene.fallbackTextureCount()).toBe(0);
+      }
+      scene.destroy!();
+      expect(objects.children).toEqual([]);
+    }
+    expect(JSON.stringify(course)).toBe(before);
+  });
+
   it("groups Parkland wet-bank reeds and stones without entering course surfaces", () => {
     const width = 24;
     const height = 24;
@@ -390,7 +438,10 @@ describe("natural props scene ownership", () => {
       effectiveTiles: course.tiles,
       graphicsQuality: "high",
     }));
-    expect(scene.contentCount()).toBe(3);
+    const treeSprites = objects.children.filter((child) => (child as PIXI.Sprite).label?.startsWith("structure-prop:natural:"));
+    const accentSprites = objects.children.filter((child) => (child as PIXI.Sprite).label?.startsWith("habitat-accent:"));
+    expect(treeSprites).toHaveLength(3);
+    expect(scene.contentCount()).toBe(treeSprites.length + accentSprites.length);
     expect(scene.habitatDetailCount()).toBe(0);
     expect(scene.legacyHabitatCount()).toBe(0);
     expect(detailTextures).not.toHaveBeenCalled();

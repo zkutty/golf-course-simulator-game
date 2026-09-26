@@ -25,8 +25,11 @@ import {
 } from "../../../game/render/treeHabitat";
 import {
   deriveHabitatComposition,
+  HABITAT_COMPOSITION_CAPS,
   type HabitatCompositionPlacement,
 } from "../../../game/render/habitatComposition";
+import { deriveCourseSceneComposition } from "../../../game/render/courseSceneComposition";
+import { deriveGrovePresentation } from "../../../game/render/grovePresentation";
 import { isWaterHazard } from "../../../game/models/terrainRules";
 import { worldToIso } from "../../../game/render/iso";
 import { getPropFrame, getTerrainDetailFrame } from "../../../render/atlas";
@@ -612,6 +615,7 @@ export function createNaturalPropsSceneSystem(
   const createContainer = dependencies.createContainer ?? (() => new PIXI.Container());
   const entries = new Map<string, NaturalPropSceneEntry>();
   const habitatDetails: PIXI.Sprite[] = [];
+  const groveAccents = new Map<PIXI.Sprite, number>();
   const habitatMasses: HabitatMassRuntime[] = [];
   let habitatMassDiagnostics: readonly HabitatMassDiagnostics[] = [];
   const fallbackTextures = new Map<string, { texture: PIXI.Texture; owned: boolean }>();
@@ -627,6 +631,11 @@ export function createNaturalPropsSceneSystem(
       entry.habitat?.destroy();
     }
     entries.clear();
+    for (const sprite of groveAccents.keys()) {
+      sprite.parent?.removeChild(sprite);
+      sprite.destroy();
+    }
+    groveAccents.clear();
     for (const sprite of habitatDetails) {
       sprite.parent?.removeChild(sprite);
       sprite.destroy();
@@ -652,6 +661,11 @@ export function createNaturalPropsSceneSystem(
     clear();
     if (!snapshot.showObstacles) return;
     const course = snapshot.course;
+    const grove = course.theme === "parkland" && snapshot.graphicsQuality !== "low"
+      ? deriveGrovePresentation({ ...course, obstacles: [...snapshot.obstacles] }, deriveCourseSceneComposition({
+        course: { ...course, tiles: [...snapshot.effectiveTiles], obstacles: [...snapshot.obstacles], holes: [...snapshot.holes] },
+        seed: snapshot.worldSeed,
+      })) : null;
     const terrainNearWater = (x: number, y: number) => {
       for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
         const tx = x + dx;
@@ -839,7 +853,7 @@ export function createNaturalPropsSceneSystem(
       sprite.label = `structure-prop:natural:${key}`;
       sprite.anchor.set(selected.variant.anchor[0], selected.variant.anchor[1]);
       sprite.position.set(placement.position.x, placement.position.y);
-      const size = TILE_W * 0.72 * selected.scale;
+      const size = TILE_W * 0.72 * selected.scale * (grove?.trees.get(key) ?? 1);
       sprite.width = size * (seasonal?.scaleX ?? 1);
       sprite.height = (size * texture.height) / texture.width * (seasonal?.scaleY ?? 1);
       sprite.tint = seasonal?.tint ?? 0xffffff;
@@ -891,7 +905,37 @@ export function createNaturalPropsSceneSystem(
         baseAlpha: seasonal?.alpha ?? 1,
       });
     }
-    onContentCount(entries.size);
+    for (const accent of grove?.accents.slice(0, HABITAT_COMPOSITION_CAPS[snapshot.graphicsQuality]) ?? []) {
+      const texture = getAtlasTexture(course.theme, snapshot.graphicsQuality, accent.frame);
+      // This path shares the already-resident natural-prop bundle. Missing
+      // art is a hard error, never a silent substitute or invisible accent.
+      if (!texture) throw new Error(`Missing grove accent: ${accent.frame}`);
+      const footprint = { x: accent.tile.x, y: accent.tile.y, w: 1, d: 1 };
+      const anchor = frontCorner(footprint, snapshot.rotation);
+      const placement = placeObject(footprint, snapshot.surfaceHeightAt(anchor.x, anchor.y), snapshot.rotation);
+      const sprite = createSprite(texture);
+      sprite.label = `habitat-accent:${accent.source.x},${accent.source.y}:${accent.tile.x},${accent.tile.y}`;
+      sprite.eventMode = "none";
+      sprite.anchor.set(0.5, 1);
+      sprite.position.set(placement.position.x, placement.position.y);
+      sprite.width = TILE_W * 0.72 * accent.scale;
+      sprite.height = sprite.width * texture.height / texture.width;
+      const flower = accent.frame === "parkland_bush_wildflowers";
+      const seasonal = seasonalPlantPresentation({
+        identity: accent.frame, profile: flower ? "flowering" : "deciduous", form: flower ? "flower" : "shrub",
+        x: accent.tile.x, y: accent.tile.y, cultivated: false,
+        elevation: course.elevations[accent.tile.y * course.width + accent.tile.x] ?? 0,
+        nearWater: terrainNearWater(accent.tile.x, accent.tile.y), ecologicalFit: "native", climate: seasonalClimate,
+      });
+      sprite.width *= seasonal.scaleX;
+      sprite.height *= seasonal.scaleY;
+      sprite.tint = seasonal.tint;
+      sprite.alpha = seasonal.alpha;
+      sprite.zIndex = placement.zIndex;
+      objects.addChild(sprite);
+      groveAccents.set(sprite, seasonal.alpha);
+    }
+    onContentCount(entries.size + groveAccents.size);
   };
 
   return {
@@ -920,8 +964,13 @@ export function createNaturalPropsSceneSystem(
           ? Math.min(entry.baseAlpha, entry.fadeAlpha)
           : entry.baseAlpha;
       }
+      for (const [sprite, baseAlpha] of groveAccents) {
+        sprite.alpha = input.focus && shouldFadeTallProp({ tall: true,
+          propX: sprite.position.x, propY: sprite.position.y, propWidth: sprite.width, propHeight: sprite.height,
+          focusX: input.focus.x, focusY: input.focus.y }) ? Math.min(baseAlpha, 0.25) : baseAlpha;
+      }
     },
-    contentCount: () => entries.size,
+    contentCount: () => entries.size + groveAccents.size,
     habitatDetailCount: () => habitatDetails.length,
     habitatMassDiagnostics: () => habitatMassDiagnostics,
     legacyHabitatCount: () => habitatDetails.length
