@@ -589,6 +589,7 @@ function treeGroveCandidates(
     obstaclesByCell.set(value, [...(obstaclesByCell.get(value) ?? []), obstacle]);
   }
   return treeGroveEvidence(course).flatMap((grove) => {
+    const minimumSourceSupport = grove.label.family === "woodland_floor" ? 3 : 2;
     const sourceCells = new Set(grove.points.map((point) => cell(course, point.x, point.y)));
     const occupied = new Map<number, HabitatTileCoordinate>();
     for (const source of grove.points) for (let dy = -2; dy <= 2; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
@@ -596,6 +597,16 @@ function treeGroveCandidates(
       if (!inside(course, point)) continue;
       const value = cell(course, point.x, point.y);
       if (!HABITAT_TERRAINS.has(course.tiles[value]) || hardExcluded.has(value)) continue;
+      // A single source can never paint its entire five-by-five halo. A
+      // ground bed is evidence of an existing *group* of trees, so retain
+      // only the overlap between authoritative source windows. Dense woodland
+      // needs three local sources to become a bed; smaller understory needs
+      // two. This prevents a sparse line of trees from becoming a broad,
+      // transitive carpet.
+      const supportingSources = grove.points.filter((candidate) => (
+        Math.max(Math.abs(candidate.x - point.x), Math.abs(candidate.y - point.y)) <= 2
+      ));
+      if (supportingSources.length < minimumSourceSupport) continue;
       // The presentation layer renders below real vegetation props, so source
       // trees and bushes may retain ecological ground. Rocks and any unrelated
       // obstacle authority remain hard holes in the visual occupancy.
@@ -604,18 +615,39 @@ function treeGroveCandidates(
         && !(obstacle.type === "tree" && sourceCells.has(value)))) continue;
       occupied.set(value, point);
     }
-    const largest = cardinalComponents(course, new Set(occupied.keys()))
-      .slice().sort((left, right) => right.length - left.length || left[0] - right[0])[0] ?? [];
-    const sorted = largest.map((value) => pointFor(course, value)).sort(comparePoints);
-    if (sorted.length < 2) return [];
-    const signature = sorted.map(pointKey).join(";");
-    return [{
-      id: `candidate:${grove.label.family}:${grove.label.evidence.ownerId}:${signature}`,
-      family: grove.label.family,
-      evidence: grove.label.evidence,
-      bounds: candidateBounds(sorted),
-      occupied: sorted,
-    }];
+    // Keep disconnected overlap patches separate. Joining them through empty
+    // rough was the direct cause of the broad, repeated ground carpet in the
+    // M19 normal frame; each retained island is now a local, source-supported
+    // edge break below the real tree props.
+    return cardinalComponents(course, new Set(occupied.keys()))
+      .map((component) => component.map((value) => pointFor(course, value)).sort(comparePoints))
+      // Tiny slivers read as the isolated sprites this planner replaces. Keep
+      // only bed-scale components and at most two distinct islands per
+      // authoritative grove, ranked by their actual supported footprint.
+      .filter((component) => component.length >= 4)
+      .sort((left, right) => right.length - left.length || left[0].y - right[0].y || left[0].x - right[0].x)
+      .slice(0, 2)
+      .sort((left, right) => left[0].y - right[0].y || left[0].x - right[0].x)
+      .map((component, index) => {
+        const sourcePoints = grove.points.filter((source) => component.some((point) => (
+          Math.max(Math.abs(source.x - point.x), Math.abs(source.y - point.y)) <= 2
+        )));
+        const ownerId = `${grove.label.evidence.ownerId}:bed-${index + 1}`;
+        const evidence: HabitatZoneEvidenceV1 = {
+          ...grove.label.evidence,
+          ownerId,
+          sourcePoints,
+          rule: `${grove.label.evidence.rule}; source-supported overlap of at least ${minimumSourceSupport} existing tree windows; disconnected beds remain separate`,
+        };
+        const signature = component.map(pointKey).join(";");
+        return {
+          id: `candidate:${grove.label.family}:${ownerId}:${signature}`,
+          family: grove.label.family,
+          evidence,
+          bounds: candidateBounds(component),
+          occupied: component,
+        };
+      });
   });
 }
 
@@ -678,28 +710,76 @@ function shapeCandidates(course: Course, labels: ReadonlyMap<number, EvidenceLab
     group.cells.add(value);
     groups.set(key, group);
   }
-  const candidates = new Map<string, HabitatCandidate>();
-  const add = (label: EvidenceLabel, occupied: readonly HabitatTileCoordinate[]) => {
-    const sorted = occupied.slice().sort(comparePoints);
-    const signature = sorted.map(pointKey).join(";");
-    const id = `candidate:${label.family}:${label.evidence.ownerId}:${signature}`;
-    candidates.set(id, { id, family: label.family, evidence: label.evidence, bounds: candidateBounds(sorted), occupied: sorted });
+  const candidates: HabitatCandidate[] = [];
+  const fragmentPolicy: Readonly<Record<ParklandHabitatFamily, Readonly<{ maxFragments: number; maxCells: number }>>> = {
+    woodland_floor: { maxFragments: 0, maxCells: 0 },
+    understory_edge: { maxFragments: 0, maxCells: 0 },
+    meadow_deep_rough_margin: { maxFragments: 2, maxCells: 7 },
+    wet_shore: { maxFragments: 2, maxCells: 6 },
+    rock_leaf_transition: { maxFragments: 1, maxCells: 5 },
   };
+
   for (const { label, cells } of [...groups.values()].sort((left, right) => left.label.evidence.ownerId.localeCompare(right.label.evidence.ownerId))) {
+    const policy = fragmentPolicy[label.family];
+    if (policy.maxFragments === 0) continue;
+    const seed = textSalt(`${label.family}:${label.evidence.ownerId}`);
+    const options = new Map<string, readonly HabitatTileCoordinate[]>();
     const has = (x: number, y: number) => inside(course, { x, y }) && cells.has(cell(course, x, y));
+    const add = (points: readonly HabitatTileCoordinate[]) => {
+      const occupied = points.slice().sort(comparePoints);
+      if (occupied.length < 2 || occupied.length > policy.maxCells) return;
+      options.set(occupied.map(pointKey).join(";"), occupied);
+    };
+    // Only choose shapes already expressible by the reduced topology atlas.
+    // We inspect all local source-edge possibilities, but render only a small,
+    // separated deterministic subset rather than every overlapping square.
     for (let y = 0; y < course.height; y += 1) for (let x = 0; x < course.width; x += 1) {
       const square3 = Array.from({ length: 9 }, (_, index) => ({ x: x + index % 3, y: y + Math.floor(index / 3) }));
       if (square3.every((point) => has(point.x, point.y))) {
-        add(label, square3);
-        for (const corner of [square3[0], square3[2], square3[6], square3[8]]) add(label, square3.filter((point) => point !== corner));
+        if (policy.maxCells >= 9) add(square3);
+        for (const corner of [square3[0], square3[2], square3[6], square3[8]]) add(square3.filter((point) => point !== corner));
       }
       const square2 = [{ x, y }, { x: x + 1, y }, { x, y: y + 1 }, { x: x + 1, y: y + 1 }];
-      if (square2.every((point) => has(point.x, point.y))) add(label, square2);
-      if (has(x, y) && has(x + 1, y)) add(label, [{ x, y }, { x: x + 1, y }]);
-      if (has(x, y) && has(x, y + 1)) add(label, [{ x, y }, { x, y: y + 1 }]);
+      if (square2.every((point) => has(point.x, point.y))) add(square2);
+      if (has(x, y) && has(x + 1, y)) add([{ x, y }, { x: x + 1, y }]);
+      if (has(x, y) && has(x, y + 1)) add([{ x, y }, { x, y: y + 1 }]);
+    }
+    const reserved = new Set<number>();
+    const selected: (readonly HabitatTileCoordinate[])[] = [];
+    const orderedOptions = [...options.values()].sort((left, right) => right.length - left.length
+      || mix32(seed ^ cell(course, left[0].x, left[0].y)) - mix32(seed ^ cell(course, right[0].x, right[0].y))
+      || left.map(pointKey).join(";").localeCompare(right.map(pointKey).join(";")));
+    for (const occupied of orderedOptions) {
+      if (selected.length >= policy.maxFragments) break;
+      const conflictsWithSelectedFragment = occupied.some((point) => {
+        for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) {
+          const neighbor = { x: point.x + dx, y: point.y + dy };
+          if (inside(course, neighbor) && reserved.has(cell(course, neighbor.x, neighbor.y))) return true;
+        }
+        return false;
+      });
+      if (conflictsWithSelectedFragment) continue;
+      selected.push(occupied);
+      for (const point of occupied) for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) {
+        const neighbor = { x: point.x + dx, y: point.y + dy };
+        if (inside(course, neighbor)) reserved.add(cell(course, neighbor.x, neighbor.y));
+      }
+    }
+    for (const [index, occupied] of selected.entries()) {
+      const signature = occupied.map(pointKey).join(";");
+      candidates.push({
+        id: `candidate:${label.family}:${label.evidence.ownerId}:edge-break-${index + 1}:${signature}`,
+        family: label.family,
+        evidence: {
+          ...label.evidence,
+          rule: `${label.evidence.rule}; bounded connected local edge-break fragment`,
+        },
+        bounds: candidateBounds(occupied),
+        occupied,
+      });
     }
   }
-  return [...candidates.values()];
+  return candidates;
 }
 
 function authoredSourcePoints(course: Course, patch: M19AuthoredHabitatPatchV1): readonly Point[] {
