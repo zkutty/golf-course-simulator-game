@@ -9,7 +9,7 @@ export function hazardChunkUnderlay(
   terrain: Terrain,
   joinedSurfacesReady: boolean,
 ): Terrain {
-  return joinedSurfacesReady && (terrain === "sand" || terrain === "water" || terrain === "wetland")
+  return joinedSurfacesReady && ["sand", "water", "wetland"].includes(terrain)
     ? "rough"
     : terrain;
 }
