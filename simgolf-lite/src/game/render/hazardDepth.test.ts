@@ -5,6 +5,7 @@ import {
   hazardInteriorDropAt,
   buildHazardBankFacePlan,
   isInteriorBankFacingViewer,
+  hazardChunkUnderlay,
 } from "./hazardDepth";
 import { worldToIso, type IsoRotation } from "./iso";
 import { buildLandscapeComponents, pointInLandscapeRing } from "./landscapeGeometry";
@@ -12,6 +13,44 @@ import { createParklandVisualReferenceCourse } from "../testing/referenceCourse"
 import { buildHazardVisualRings, classifyBunkerVisualType } from "./bunkerShapes";
 
 describe("hazard depth cross-sections", () => {
+  it("retains Low's rough hazard underlay and the unavailable-surface fallback", () => {
+    for (const terrain of ["water", "wetland", "sand"] as const) {
+      // Low already substitutes rough for all three organic hazards.
+      expect(hazardChunkUnderlay(terrain, true)).toBe("rough");
+      expect(hazardChunkUnderlay(terrain, false)).toBe(terrain);
+    }
+    for (const terrain of ["rough", "fairway", "green", "tee", "path"] as const) {
+      expect(hazardChunkUnderlay(terrain, true)).toBe(terrain);
+    }
+  });
+
+  it("rejects full-cell blue ownership outside each rotated M19 inner surface", () => {
+    const course = createParklandVisualReferenceCourse();
+    for (const options of [{ cornerRadius: .32, cornerSegments: 2 }, { cornerRadius: .4, cornerSegments: 4 }]) {
+      const water = buildLandscapeComponents(course.tiles, course.width, course.height, options)
+        .find((component) => component.terrain === "water")!;
+      const plans = buildHazardVisualRings("water", water.rings, water.topologyKey, water.cells.length)
+        .map((ring) => buildHazardBankFacePlan("water", water.cells.length, ring)!);
+      for (const rotation of [0, 90, 180, 270] as IsoRotation[]) {
+        const project = (point: { x: number; y: number }) => worldToIso(point.x, point.y, 0, rotation);
+        const inner = plans.map((plan) => plan.innerRing.map(project));
+        // Rasterize ownership at deterministic subcell centers, in projected
+        // space. Full-cell blue beneath the organic mask is not a valid
+        // second owner: the exposed samples include the rejected outer ring.
+        let exposedSamples = 0;
+        for (const cell of water.cells) for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+          const point = project({ x: cell % course.width + (x + .5) / 8,
+            y: Math.floor(cell / course.width) + (y + .5) / 8 });
+          if (!inner.some((ring) => pointInLandscapeRing(ring, point))) exposedSamples++;
+        }
+        const escapedWaterSamples = (underlay: string) => underlay === "water" ? exposedSamples : 0;
+        expect(escapedWaterSamples(hazardChunkUnderlay("water", true))).toBe(0);
+        // The exact former full-cell owner is the negative control, not a
+        // threshold fitted to the corrected image or a mocked green report.
+        expect(escapedWaterSamples("water")).toBeGreaterThan(100);
+      }
+    }
+  });
   it("emphasizes interior-facing rear banks, never a foreground backface", () => {
     for (const rotation of [0, 90, 180, 270] as IsoRotation[]) {
       const direction = { x: rotation === 0 || rotation === 270 ? 1 : -1 };

@@ -142,7 +142,7 @@ import {
   sampleVisualHeight,
   type LandscapeComponent,
 } from "../game/render/landscapeGeometry";
-import { buildHazardBankFacePlan, hazardDepthProfile, isInteriorBankFacingViewer } from "../game/render/hazardDepth";
+import { buildHazardBankFacePlan, hazardChunkUnderlay, hazardDepthProfile, isInteriorBankFacingViewer } from "../game/render/hazardDepth";
 import { buildLandscapeBoundaryRuns } from "../game/render/landscapeEdges";
 import { buildSignedContourRibbons, shouldProjectContourRibbon } from "../game/render/contourRibbons";
 import {
@@ -2413,6 +2413,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
           },
           landformDepth: {
             ...landformDepthDiagnosticsRef.current,
+            waterSurfaceOwners: {
+              chunkSprites: chunksRef.current.reduce((count, chunk) => count + chunk.waterSprites.length, 0),
+              chunkFoam: chunksRef.current.reduce((count, chunk) => count + chunk.foamSprites.length, 0),
+              joinedMeshes: surfaceWaterSpritesRef.current.length,
+            },
             camera: {
               rotation,
               zoom: camRef.current.zoom,
@@ -3622,7 +3627,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       };
       const recessedFace = (x: number, y: number, d: Point) => {
         const terrain = visualTerrainAt(x, y);
-        if (composableTurfOwnsTransitions && terrain === "sand") return;
+        if (composableTurfOwnsTransitions && (terrain === "sand"
+          || (props.graphicsQuality !== "low" && hazardChunkUnderlay(terrain, true) !== terrain))) return;
         const style = terrainReliefStyle(course.theme, terrain);
         if (!style) return;
         const nx = x + d.x;
@@ -3675,11 +3681,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
         });
       for (const { x, y } of order) {
         const terrain = visualTerrainAt(x, y);
-        const lowOrganicHazard = props.graphicsQuality === "low"
-          && (terrain === "water" || terrain === "wetland" || terrain === "sand");
-        const underlayTerrain = composableTurfOwnsTransitions && (terrain === "sand" || lowOrganicHazard)
-          ? "rough"
-          : terrain;
+        // Joined hazard masks, not whole-cell atlas diamonds/lips, own all
+        // visible water. Low already used this exact rough underlay.
+        const underlayTerrain = hazardChunkUnderlay(terrain, composableTurfOwnsTransitions);
         const material = getTerrainMaterial(course.theme, underlayTerrain);
         const e = elev(x, y);
         const groundPosition = worldToIso(x + 0.5, y, e, rotation);
