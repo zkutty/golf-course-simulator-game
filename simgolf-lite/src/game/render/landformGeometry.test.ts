@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { worldToIso, type IsoRotation } from "./iso";
-import { buildVisualHeightfield, sampleVisualHeight } from "./landscapeGeometry";
-import { buildLandformPresentationPlan, buildLandformShoulders, buildLandformSurfaceCues } from "./landformGeometry";
+import { buildVisualHeightfield } from "./landscapeGeometry";
+import { buildLandformPresentationPlan, buildLandformShoulders } from "./landformGeometry";
+import { buildMacroLandformRaster } from "./macroLandform";
 import { createMacroLandformFixture } from "../testing/macroLandformFixture";
 import { createM20TerrainReferenceCourse, createParklandVisualReferenceCourse } from "../testing/referenceCourse";
 
 describe("tile-snapped landform transitions", () => {
-  it("retains sampled open crest cues when M19 r270 correctly has no front-facing slopes", () => {
+  it("retains surface material relief when M19 r270 has no front-facing slopes", () => {
     const course = createParklandVisualReferenceCourse();
     const before = JSON.stringify(course);
     const field = buildVisualHeightfield(course);
@@ -16,16 +17,12 @@ describe("tile-snapped landform transitions", () => {
       worldToIso(a.upper.x, a.upper.y, 0, 270).y + worldToIso(b.upper.x, b.upper.y, 0, 270).y
     ));
     expect(front).toHaveLength(0);
-    const cues = buildLandformSurfaceCues(shoulders, field, course.tiles);
-    expect(cues.length).toBeGreaterThan(0);
-    expect([...new Set(cues.map((cue) => cue.level))].sort()).toEqual([.5, 1.5, 2.5]);
-    for (const cue of cues) for (const point of cue.points) {
-      expect(point.height).toBe(sampleVisualHeight(field, point.x, point.y));
-    }
+    const material = buildMacroLandformRaster(field, course.tiles, course.theme);
+    expect(material.shadedSamples).toBeGreaterThan(100);
+    expect([...new Set(shoulders.map((cue) => cue.level))].sort()).toEqual([.5, 1.5, 2.5]);
     expect(JSON.stringify(course)).toBe(before);
-    expect(buildLandformSurfaceCues(buildLandformShoulders(field, course.tiles,
-      course.elevations.map(() => 0)), field, course.tiles)).toEqual([]);
-    expect(buildLandformSurfaceCues(shoulders, field, course.tiles.map(() => "path"))).toEqual([]);
+    expect(buildLandformShoulders(field, course.tiles, course.elevations.map(() => 0))).toEqual([]);
+    expect(buildMacroLandformRaster(field, course.tiles.map(() => "path"), course.theme).shadedSamples).toBe(0);
   });
   it("merges actual M19 and M20 level edges without mutating course data", () => {
     for (const course of [createParklandVisualReferenceCourse(), createM20TerrainReferenceCourse()]) {

@@ -251,9 +251,11 @@ test("ZK-473 captures settled actual normal gameplay frames at Medium and High",
       expect(rendererProblems(renderer, tier.quality)).toEqual([]);
       const depth = renderer.landformDepth;
       expect(depth.hazards.map((hazard) => hazard.terrain).sort()).toEqual(["sand", "sand", "water"]);
-      expect(depth.topSurfaceCrests).toBeGreaterThan(0);
-      expect(depth.topSurfaceCrestLevels).toEqual([0.5, 1.5, 2.5]);
-      if (rotation === 270) expect(depth.shoulderFaces).toBe(0); // No manufactured backfaces.
+      expect(depth.topSurfaceCrests).toBe(0);
+      expect(depth.shoulderFaces).toBe(0); // No manufactured faces at any bearing.
+      expect(depth.surfaceForm.mode).toBe("material-field");
+      expect(depth.surfaceForm.samples).toBeGreaterThan(100);
+      expect(depth.surfaceForm.levels).toEqual([0.5, 1.5, 2.5]);
       for (const hazard of depth.hazards) {
         expect(hazard.floorBoundaryOwner).toBe("shared");
         expect(hazard.minimumDropPx * evidence.transform.world.scale.y).toBeGreaterThan(1);

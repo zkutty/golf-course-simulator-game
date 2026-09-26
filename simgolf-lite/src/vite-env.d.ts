@@ -111,6 +111,7 @@ interface Window {
         shoulderFaces: number;
         topSurfaceCrests: number;
         topSurfaceCrestLevels: readonly number[];
+        surfaceForm: { mode: "material-field"; samples: number; levels: readonly number[] };
         hazards: readonly {
           terrain: "sand" | "water" | "wetland";
           topologyKey: string;

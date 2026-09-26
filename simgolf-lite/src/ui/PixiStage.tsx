@@ -151,7 +151,7 @@ import {
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
 import { buildMacroLandformRaster } from "../game/render/macroLandform";
-import { buildLandformPresentationPlan, buildLandformSurfaceCues } from "../game/render/landformGeometry";
+import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
 import type { TerrainPresentationDiagnostics } from "../game/render/terrainPresentationPolicy";
 import {
   buildPathMaterialScenePlan,
@@ -994,6 +994,7 @@ interface LandformDepthDiagnostics {
   shoulderFaces: number;
   topSurfaceCrests: number;
   topSurfaceCrestLevels: readonly number[];
+  surfaceForm: { mode: "material-field"; samples: number; levels: readonly number[] };
   hazards: readonly {
     terrain: "sand" | "water" | "wetland";
     topologyKey: string;
@@ -1022,6 +1023,7 @@ const emptyLandformDepthDiagnostics = (
   shoulderFaces: 0,
   topSurfaceCrests: 0,
   topSurfaceCrestLevels: [],
+  surfaceForm: { mode: "material-field", samples: 0, levels: [] },
   hazards: [],
 });
 
@@ -4740,8 +4742,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       landformLayer.addChild(highlight);
     }
 
-    // One owner per authored open boundary. Top-surface crests are independent
-    // of front-face visibility; neither requires a longest-run heuristic.
+    // Boundaries are provenance only; the broad material field above owns
+    // visible relief. Never emit lines, closed rings or shoulder backfaces.
     const landformPlan = buildLandformPresentationPlan(
       heightfield,
       effectiveTiles,
@@ -4749,38 +4751,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
       course.theme,
       1,
     );
-    const selectedShoulders = landformPlan.shoulders.filter((shoulder) => {
-      if (shoulder.worldLength < 2) return false;
-      const [current, next] = shoulder.points;
-      const highA = worldToIso(current.upper.x, current.upper.y, current.lowerHeight, rotation);
-      const highB = worldToIso(next.upper.x, next.upper.y, next.lowerHeight, rotation);
-      const lowA = worldToIso(current.lower.x, current.lower.y, current.lowerHeight, rotation);
-      const lowB = worldToIso(next.lower.x, next.lower.y, next.lowerHeight, rotation);
-      return lowA.y + lowB.y > highA.y + highB.y;
-    });
-    const slope = new PIXI.Graphics();
-    slope.eventMode = "none";
-    slope.blendMode = "multiply";
-    for (const { points: [a, b] } of selectedShoulders) {
-      slope.poly([a.upper, b.upper, b.lower, a.lower].flatMap((point) => {
-        const p = project(point);
-        return [p.x, p.y];
-      })).fill({ color: 0, alpha: .12 });
-    }
-    landformLayer.addChild(slope);
-    const crestCues = buildLandformSurfaceCues(landformPlan.shoulders, heightfield, effectiveTiles);
-    const crests = new PIXI.Graphics();
-    crests.eventMode = "none";
-    crests.blendMode = "screen";
-    for (const width of [8, 4, 1.5]) {
-      for (const cue of crestCues) {
-        const points = cue.points.map((point) => worldToIso(point.x, point.y, point.height, rotation));
-        crests.moveTo(points[0].x, points[0].y);
-        for (const point of points.slice(1)) crests.lineTo(point.x, point.y);
-      }
-      crests.stroke({ width, color: 0xffffff, alpha: .045, cap: "round", join: "round" });
-    }
-    landformLayer.addChild(crests);
     layer.addChild(landformLayer);
     layer.addChild(recessedLayer);
     layer.addChild(pathMaterialLayer);
@@ -4804,7 +4774,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       ownership: [...pathOwnership].sort(),
     };
     if (composableActive) {
-      parklandComposableDiagnosticsRef.current = composableTrace.diagnostics(selectedShoulders.length);
+      parklandComposableDiagnosticsRef.current = composableTrace.diagnostics(0);
     }
     const alphaMaximum = (raster: Uint8ClampedArray) => {
       let maximum = 0;
@@ -4812,7 +4782,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       return maximum;
     };
     landformDepthDiagnosticsRef.current = {
-      active: generatedMacroTextures.length === 2 || selectedShoulders.length > 0 || hazardDepthDiagnostics.length > 0,
+      active: generatedMacroTextures.length === 2 || hazardDepthDiagnostics.length > 0,
       quality,
       macro: {
         active: generatedMacroTextures.length === 2,
@@ -4820,10 +4790,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
         maximumShadowAlpha: alphaMaximum(macroRaster.shadow),
         maximumHighlightAlpha: alphaMaximum(macroRaster.highlight),
       },
-      shoulderLevels: [...new Set(selectedShoulders.map((shoulder) => shoulder.level))].sort((a, b) => a - b),
-      shoulderFaces: selectedShoulders.length,
-      topSurfaceCrests: crestCues.length,
-      topSurfaceCrestLevels: [...new Set(crestCues.map((cue) => cue.level))].sort((a, b) => a - b),
+      shoulderLevels: [],
+      shoulderFaces: 0,
+      topSurfaceCrests: 0,
+      topSurfaceCrestLevels: [],
+      surfaceForm: {
+        mode: "material-field",
+        samples: macroRaster.shadedSamples,
+        levels: [...new Set(landformPlan.shoulders.map((shoulder) => shoulder.level))].sort((a, b) => a - b),
+      },
       hazards: hazardDepthDiagnostics,
     };
     sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
