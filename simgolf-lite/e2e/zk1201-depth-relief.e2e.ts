@@ -1,9 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
 const outputRoot = resolve(
-  process.env.ZK1201_EVIDENCE_DIR ?? "/private/tmp/zk1201-depth-relief-evidence",
+  process.env.ZK1201_EVIDENCE_DIR ?? join(tmpdir(), "zk1201-depth-relief-evidence"),
 );
 const commit = process.env.ZK1201_COMMIT ?? "working-tree";
 

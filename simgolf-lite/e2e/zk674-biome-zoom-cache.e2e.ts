@@ -42,6 +42,20 @@ const MATERIAL_FAMILY_DISTANCE_LIMIT = 0.8;
 const MIN_VISIBLE_COVERAGE = 0.8;
 const MAX_FLAT_BLOCK_RATIO = 0.04;
 
+async function captureStableCanvas(page: Page, path?: string): Promise<Buffer> {
+  const canvas = page.locator(".cc-pixi-stage canvas");
+  await expect(canvas).toBeVisible({ timeout: 120_000 });
+  const clip = await canvas.boundingBox();
+  if (!clip) throw new Error("Course canvas has no visible capture bounds.");
+  return page.screenshot({
+    path,
+    clip,
+    animations: "disabled",
+    caret: "hide",
+    timeout: 30_000,
+  });
+}
+
 interface VisibleMaterialSignature {
   visibleCoverage: number;
   flatBlockRatio: number;
@@ -270,9 +284,7 @@ async function exerciseWheelZoomSequence(
     expect(structured.course?.theme).toBe(theme);
     expect(structured.graphics?.quality).toBe("high");
     const frameName = `${theme}-wheel-${boundary}-${kind}-event-${eventIndex + 1}`;
-    const frame = await page.locator(".cc-pixi-stage canvas").screenshot({
-      path: testInfo.outputPath(`${frameName}.png`),
-    });
+    const frame = await captureStableCanvas(page, testInfo.outputPath(`${frameName}.png`));
     const visualMaterial = expectVisibleMaterial(frame, frameName);
     await retainJsonEvidence(testInfo, `${frameName}-provenance`, {
       fixture: { id: fixture.id, query: fixture.query, biome: fixture.biome, quality: fixture.quality, rotation: fixture.rotation },
@@ -329,9 +341,7 @@ async function captureMaterialEvidence(
   quality: typeof QUALITY_REVERSAL[number],
   reference: Buffer,
 ) {
-  const body = await page.locator(".cc-pixi-stage canvas").screenshot({
-    path: testInfo.outputPath(`${theme}-${quality}-zoom-generation.png`),
-  });
+  const body = await captureStableCanvas(page, testInfo.outputPath(`${theme}-${quality}-zoom-generation.png`));
   const assessment = expectVisibleMaterial(body, `${theme}/${quality}`, reference);
   await testInfo.attach(`${theme}-${quality}-zoom-generation`, { body, contentType: "image/png" });
   await retainJsonEvidence(testInfo, `${theme}-${quality}-zoom-generation-signal`, assessment);
@@ -365,9 +375,7 @@ async function captureZoomCheckpoint(
   expect(state?.fallbacks).toEqual([]);
   expect(new Set(Object.values(state?.layers ?? {}))).toEqual(new Set([state?.rendered.generation]));
   expect(state?.counts?.terrainChunks).toBeGreaterThan(0);
-  const body = await page.locator(".cc-pixi-stage canvas").screenshot({
-    path: testInfo.outputPath(`${theme}-lod-${boundary}-${zoom}-${sequence}.png`),
-  });
+  const body = await captureStableCanvas(page, testInfo.outputPath(`${theme}-lod-${boundary}-${zoom}-${sequence}.png`));
   const assessment = expectVisibleMaterial(body, `${theme} ${boundary}/${zoom} ${sequence}`, reference);
   const browserEvidence = await page.evaluate(() => ({
     dpr: window.devicePixelRatio,
@@ -461,7 +469,7 @@ async function captureProductionPanRotation(
   );
   expect(panDistance).toBeGreaterThan(0.5);
 
-  const beforeRotationFrame = await canvas.screenshot();
+  const beforeRotationFrame = await captureStableCanvas(page);
   await page.keyboard.press("q");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation), {
     timeout: 120_000,
@@ -486,9 +494,7 @@ async function captureProductionPanRotation(
   expect(state?.counts?.terrainChunks).toBeGreaterThan(0);
   expect(new Set(Object.values(state?.layers ?? {}))).toEqual(new Set([state?.rendered.generation]));
   expect(state?.camera).toMatchObject({ zoom: 0.72, targetZoom: 0.72, groundCoverTier: 2 });
-  const body = await canvas.screenshot({
-    path: testInfo.outputPath(`${theme}-lod-0.72-0.72-pan-rotation.png`),
-  });
+  const body = await captureStableCanvas(page, testInfo.outputPath(`${theme}-lod-0.72-0.72-pan-rotation.png`));
   const visualMaterial = expectVisibleMaterial(body, `${theme} production pan/rotation`, beforeRotationFrame);
   const dpr = await page.evaluate(() => window.devicePixelRatio);
   await retainJsonEvidence(testInfo, `${theme}-lod-0.72-0.72-pan-rotation-provenance`, {
@@ -677,9 +683,7 @@ for (const theme of PRIMARY_BIOMES) {
     // Freeze a same-camera reference for the reload boundary. Reload must
     // rehydrate the exact fixture at the same focus, zoom, quality and rotation.
     await page.evaluate(() => window.__coursecraftPixiTest!.focusTileForTest(60, 40, 0.72));
-    const beforeReloadBody = await canvas.screenshot({
-      path: testInfo.outputPath(`${theme}-reload-reference.png`),
-    });
+    const beforeReloadBody = await captureStableCanvas(page, testInfo.outputPath(`${theme}-reload-reference.png`));
 
     // The seasonal fixture has no exposed reducer edit/undo action; do not
     // manufacture a second harness. Reload is available and is the relevant
@@ -696,9 +700,7 @@ for (const theme of PRIMARY_BIOMES) {
       groundCoverTier: 2,
     });
     const reloaded = await rendererState(page);
-    const reloadedBody = await page.locator(".cc-pixi-stage canvas").screenshot({
-      path: testInfo.outputPath(`${theme}-reload-settled.png`),
-    });
+    const reloadedBody = await captureStableCanvas(page, testInfo.outputPath(`${theme}-reload-settled.png`));
     const reloadedAssessment = expectVisibleMaterial(reloadedBody, `${theme} reload`, beforeReloadBody);
     const reloadBrowserEvidence = await page.evaluate(() => ({
       dpr: window.devicePixelRatio,
@@ -741,7 +743,7 @@ for (const theme of PRIMARY_BIOMES) {
     for (const quality of QUALITY_REVERSAL) {
       await page.evaluate((value) => window.__coursecraftTest!.setGraphicsQualityFixture(value), quality);
       await expectAtomicGeneration(page, quality);
-      const qualityReference = await canvas.screenshot();
+      const qualityReference = await captureStableCanvas(page);
       await captureMaterialEvidence(page, testInfo, theme, quality, qualityReference);
     }
 
