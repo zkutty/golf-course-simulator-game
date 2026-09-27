@@ -28,10 +28,12 @@ jobs:
         run: npm run test:fuzz
       - name: Full browser regression
         run: npm run test:e2e -- --grep-invert "ZK-813" --workers=1
-      - name: Cross-engine clean-profile path
+      - name: Chrome and WebKit clean-profile path
+        run: npm run test:release:browsers -- --grep-invert "ZK-813" --project=chrome-stable --project=webkit-safari-proxy --workers=1
+      - name: Firefox headed clean-profile path
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
-        run: npm run test:release:browsers -- --grep-invert "ZK-813" --workers=1
+        run: xvfb-run --auto-servernum npm run test:release:browsers -- --grep-invert "ZK-813" --project=firefox --workers=1 --headed
       - name: Long-form balance matrix
         run: npm run test:balance
       - name: Deterministic simulation soak
@@ -79,7 +81,9 @@ jobs:
           path: simgolf-lite/artifacts/m65/certification-report.json
           if-no-files-found: error
           retention-days: 90
-      - name: ZK-813 Firefox and WebKit certification
+      - name: ZK-813 Firefox headed certification
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
-        run: npm run test:release:browsers -- --grep "ZK-813" --project=firefox --project=webkit-safari-proxy --workers=1
+        run: xvfb-run --auto-servernum npm run test:release:browsers -- --grep "ZK-813" --project=firefox --workers=1 --headed
+      - name: ZK-813 WebKit certification
+        run: npm run test:release:browsers -- --grep "ZK-813" --project=webkit-safari-proxy --workers=1
