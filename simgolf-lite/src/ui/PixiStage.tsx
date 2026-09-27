@@ -140,6 +140,7 @@ import {
   createLandscapeComponentCache,
   sampleLandscapeSurfaceHeight,
   sampleVisualHeight,
+  shouldRenderLegacyElevationFace,
   type LandscapeComponent,
 } from "../game/render/landscapeGeometry";
 import { buildHazardBankFacePlan, hazardChunkUnderlay, hazardDepthProfile, isInteriorBankFacingViewer } from "../game/render/hazardDepth";
@@ -152,6 +153,7 @@ import {
 } from "../game/render/bunkerShapes";
 import { buildMacroLandformRaster } from "../game/render/macroLandform";
 import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
+import { isMaintained } from "../game/render/materialFields";
 import type { TerrainPresentationDiagnostics } from "../game/render/terrainPresentationPolicy";
 import {
   buildPathMaterialScenePlan,
@@ -1554,9 +1556,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
   ]);
   const landscapeComponentCacheRef = useRef(createLandscapeComponentCache());
   const landscapeComponents = useMemo(() => {
-    const composableLow = props.graphicsQuality === "low"
-      && (course.theme ?? "parkland") === "parkland";
-    if (props.graphicsQuality === "low" && !composableLow) return [];
     const options = landscapeOptionsForQuality(props.graphicsQuality);
     const snapshot = landscapeComponentCacheRef.current.update(
       effectiveTiles,
@@ -1567,7 +1566,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     return snapshot.components;
   }, [
     course.height,
-    course.theme,
     effectiveTiles,
     course.width,
     props.graphicsQuality,
@@ -1579,26 +1577,24 @@ export function PixiStage(requestedProps: PixiStageProps) {
     }
     return lookup;
   }, [effectiveTiles.length, landscapeComponents]);
-  const surfaceHeightAt = useCallback((x: number, y: number) => (
-    props.graphicsQuality === "low"
-      ? course.elevations[
-        Math.max(0, Math.min(course.height - 1, Math.floor(y))) * course.width
-        + Math.max(0, Math.min(course.width - 1, Math.floor(x)))
-      ] ?? 0
-      : sampleLandscapeSurfaceHeight(
-        visualHeightfield,
-        landscapeComponentByCell[
-          Math.max(0, Math.min(course.height - 1, Math.floor(y))) * course.width +
-          Math.max(0, Math.min(course.width - 1, Math.floor(x)))
-        ],
-        x,
-        y,
-        true,
-      )
-  ), [
+  const surfaceHeightAt = useCallback((x: number, y: number) => {
+    const index = Math.max(0, Math.min(course.height - 1, Math.floor(y))) * course.width
+      + Math.max(0, Math.min(course.width - 1, Math.floor(x)));
+    if (props.graphicsQuality === "low" && !isMaintained(effectiveTiles[index])) {
+      return course.elevations[index] ?? 0;
+    }
+    return sampleLandscapeSurfaceHeight(
+      visualHeightfield,
+      landscapeComponentByCell[index],
+      x,
+      y,
+      true,
+    );
+  }, [
     course.elevations,
     course.height,
     course.width,
+    effectiveTiles,
     landscapeComponentByCell,
     props.graphicsQuality,
     visualHeightfield,
@@ -2515,6 +2511,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           activeEffects: impactsRef.current.length + ripplesRef.current.length,
         };
       },
+      surfaceHeightAt: (x: number, y: number) => surfaceHeightAt(x, y),
       screenToTile,
       screenToWorld: screenToWorldPoint,
       terrainStrokePointerDownCell: () => (
@@ -3620,6 +3617,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
         // brown "cut slab" face around the whole map.
         const ne = nx < 0 || ny < 0 || nx >= w || ny >= h ? e : elev(nx, ny);
         if (ne >= e || e <= 0) return;
+        // Joined maintained turf owns its complete top plane. A legacy dirt
+        // face between two cells of that same component would cut a green,
+        // tee, or fairway into disconnected slabs beneath the shared mesh.
+        if (!shouldRenderLegacyElevationFace(
+          visualTerrainAt(x, y),
+          visualTerrainAt(nx, ny),
+          Boolean(presentationRuntime),
+        )) return;
         const [c1, c2] = edgeCorners(x, y, d.x, d.y);
         const a = worldToIso(c1.x, c1.y, e, rotation);
         const b = worldToIso(c2.x, c2.y, e, rotation);
@@ -4019,23 +4024,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     if (composableRuntime) {
       parklandComposableDiagnosticsRef.current = composableRuntime.inactiveParklandComposableDiagnostics(quality);
     }
-    if (quality === "low" && !composableActive) {
-      pathMaterialDiagnosticsRef.current = {
-        active: false,
-        mode: "legacy",
-        quality: "low",
-        componentCount: 0,
-        stripCount: 0,
-        roles: ["core"],
-        textureIds: ["legacy:path"],
-        widths: { shoulder: 0, edge: 0 },
-        ownership: [],
-      };
-      sharedContourDiagnosticsRef.current = EMPTY_SHARED_CONTOUR_DIAGNOSTICS;
-      stampAtlasGeneration(layer, atlasRevision);
-      return;
-    }
-
     const subdivisions = quality === "high" ? 4 : quality === "medium" ? 2 : 1;
     const components = landscapeComponentCacheRef.current.update(
       presentationTiles,
@@ -4110,6 +4098,61 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
       return total / Math.max(1, samples);
     };
+
+    // Links and Desert Low retain the economical chunk renderer for ordinary
+    // terrain. Maintained components receive one joined, one-subdivision top
+    // plane so their authored elevation can remain visible without exposing
+    // the suppressed dirt faces between cells. Keeping this container on the
+    // terrain layer preserves Low's existing connected-surface diagnostics.
+    if (quality === "low" && !composableActive) {
+      const maintainedLayer = new PIXI.Container();
+      maintainedLayer.eventMode = "none";
+      maintainedLayer.label = "low-maintained-tier-surfaces";
+      rendererLayers.terrain.addChild(maintainedLayer);
+      lowParklandPresentationLayerRef.current = maintainedLayer;
+      const maintained = components
+        .filter((component) => isMaintained(component.terrain))
+        .sort((a, b) => componentDepth(a) - componentDepth(b));
+      for (const component of maintained) {
+        const mesh = composableRuntime!.createParklandComposableMesh(
+          textureFor(component.terrain),
+          component.presentationCells,
+          course.width,
+          1,
+          (cell) => cell,
+          (_cell, x, y) => worldToIso(
+            x,
+            y,
+            sampleLandscapeSurfaceHeight(heightfield, component, x, y),
+            rotation,
+          ),
+          true,
+        );
+        if (!mesh) continue;
+        const mask = composableRuntime!.createLandscapeRingMask(component.rings, project);
+        mesh.eventMode = "none";
+        mesh.label = `low-maintained-tier:${component.terrain}:${component.topologyKey}`;
+        mesh.mask = mask;
+        maintainedLayer.addChild(mesh, mask);
+      }
+      pathMaterialDiagnosticsRef.current = {
+        active: false,
+        mode: "legacy",
+        quality: "low",
+        componentCount: 0,
+        stripCount: 0,
+        roles: ["core"],
+        textureIds: ["legacy:path"],
+        widths: { shoulder: 0, edge: 0 },
+        ownership: [],
+      };
+      sharedContourDiagnosticsRef.current = EMPTY_SHARED_CONTOUR_DIAGNOSTICS;
+      stampAtlasGeneration(maintainedLayer, atlasRevision);
+      stampAtlasGeneration(rendererLayers.terrain, atlasRevision);
+      stampAtlasGeneration(layer, atlasRevision);
+      recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
+      return;
+    }
 
     const bandLayer = new PIXI.Container();
     bandLayer.eventMode = "none";
@@ -4314,6 +4357,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       parklandComposableDiagnosticsRef.current = diagnostics.composable;
       sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
       stampAtlasGeneration(presentationLayer, atlasRevision);
+      stampAtlasGeneration(rendererLayers.terrain, atlasRevision);
+      stampAtlasGeneration(layer, atlasRevision);
       recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
       return;
     }

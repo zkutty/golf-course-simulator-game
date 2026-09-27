@@ -107,6 +107,7 @@ import { VictoryModal } from "./ui/VictoryModal";
 import { createObjectiveState, type GoalDefinition, type RunOutcome } from "./game/models/objectives";
 import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createM26MultiCourseReferenceCourse, createM27ReleaseReferenceCourse, createParklandVisualReferenceCourse, createPlayerProReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
 import { createMacroLandformFixture } from "./game/testing/macroLandformFixture";
+import { createZk677TieredGreenFixture } from "./game/testing/zk677TieredGreenFixture";
 import { createZk1202HabitatReferenceCourse } from "./game/testing/zk1202HabitatFixture";
 import {
   BIOME_REFERENCE_ROTATIONS,
@@ -1774,6 +1775,7 @@ export default function App() {
     const isPerfFixture = fixtureParams.get("perfFixture") === "1";
     const isM19Fixture = fixtureParams.get("m19Fixture") === "1";
     const isMacroLandformFixture = fixtureParams.get("m35LandformFixture") === "1";
+    const isZk677TieredGreenFixture = fixtureParams.get("zk677TieredGreenFixture") === "1";
     const isZk1202Fixture = fixtureParams.get("zk1202HabitatFixture") === "1";
     const isM20Fixture = fixtureParams.get("m20Fixture") === "1";
     const isM21Fixture = fixtureParams.get("m21Fixture") === "1";
@@ -1801,16 +1803,18 @@ export default function App() {
       : 0;
     const isPropertyFixture = fixtureParams.get("propertyFixture") === "1";
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isMacroLandformFixture && !isZk1202Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isM53Fixture && !isZk689Fixture && !isPropertyFixture) return;
+    if (!isPerfFixture && !isM19Fixture && !isMacroLandformFixture && !isZk677TieredGreenFixture && !isZk1202Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isM53Fixture && !isZk689Fixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
     const m25SeedParam = fixtureParams.get("m25Seed");
     const parsedM25Seed = m25SeedParam == null ? Number.NaN : Number(m25SeedParam);
     const m25Seed = Number.isInteger(parsedM25Seed) ? parsedM25Seed | 0 : 250025;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
-    const requestedTheme = fixtureParams.get("m53Theme") ?? fixtureParams.get("m52Theme") ?? fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
+    const requestedTheme = fixtureParams.get("zk677Theme") ?? fixtureParams.get("m53Theme") ?? fixtureParams.get("m52Theme") ?? fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = isLandTheme(requestedTheme) ? requestedTheme : BIOME_KEYS[0];
-    let fixtureCourse = isMacroLandformFixture
+    let fixtureCourse = isZk677TieredGreenFixture
+      ? createZk677TieredGreenFixture(fixtureTheme)
+      : isMacroLandformFixture
       ? createMacroLandformFixture()
       : isZk1202Fixture
       ? createZk1202HabitatReferenceCourse()
