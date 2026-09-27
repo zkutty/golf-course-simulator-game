@@ -1,4 +1,35 @@
 import { expect, test, type Page } from "@playwright/test";
+import { PNG } from "pngjs";
+
+function changedPixelsInCorridor(
+  before: PNG,
+  after: PNG,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  padding: number,
+) {
+  const minX = Math.max(0, Math.floor(Math.min(start.x, end.x) - padding));
+  const maxX = Math.min(before.width - 1, Math.ceil(Math.max(start.x, end.x) + padding));
+  const minY = Math.max(0, Math.floor(Math.min(start.y, end.y) - padding));
+  const maxY = Math.min(before.height - 1, Math.ceil(Math.max(start.y, end.y) + padding));
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  let changed = 0;
+  for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
+    const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, (
+      (x - start.x) * dx + (y - start.y) * dy
+    ) / lengthSquared));
+    const distance = Math.hypot(x - (start.x + dx * t), y - (start.y + dy * t));
+    if (distance > padding) continue;
+    const offset = (y * before.width + x) * 4;
+    const delta = Math.abs(before.data[offset] - after.data[offset])
+      + Math.abs(before.data[offset + 1] - after.data[offset + 1])
+      + Math.abs(before.data[offset + 2] - after.data[offset + 2]);
+    if (delta > 30) changed++;
+  }
+  return changed;
+}
 
 async function enterGame(page: Page) {
   await page.goto("/");
@@ -260,6 +291,9 @@ test("terrain drag exposes the shared material ghost and full precommit summary"
   await enterGame(page);
   await page.getByRole("tab", { name: "Terrain" }).click();
   await page.getByTestId("design-card-terrain-green").click();
+  await expect.poll(() => page.evaluate(() => (
+    JSON.parse(window.render_game_to_text?.() ?? "{}").editor?.selectedTerrain
+  )), { timeout: 30_000 }).toBe("green");
   const canvas = page.locator(".cc-course-pane canvas").first();
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
@@ -285,24 +319,33 @@ test("terrain drag exposes the shared material ghost and full precommit summary"
 });
 
 test("live terrain ghosts clear when the selected material changes", async ({ page }) => {
+  await page.addInitScript(() => {
+    const key = "coursecraft_app_profile_v5";
+    const profile = JSON.parse(localStorage.getItem(key) ?? "{}");
+    profile.accessibility = { ...profile.accessibility, reducedMotion: true };
+    profile.graphics = { ...profile.graphics, animations: false };
+    localStorage.setItem(key, JSON.stringify(profile));
+  });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await enterGame(page);
   await page.getByRole("tab", { name: "Terrain" }).click();
   await page.getByTestId("design-card-terrain-green").click();
+  await expect.poll(() => page.evaluate(() => (
+    JSON.parse(window.render_game_to_text?.() ?? "{}").editor?.selectedTerrain
+  )), { timeout: 30_000 }).toBe("green");
   const canvas = page.locator(".cc-course-pane canvas").first();
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
   const x = box!.x + box!.width * 0.48;
   const y = box!.y + box!.height * 0.34;
   await page.mouse.move(x, y);
+  await page.waitForTimeout(100);
+  const baseline = PNG.sync.read(await canvas.screenshot());
   await page.mouse.down();
   await page.mouse.move(x + 36, y + 14, { steps: 4 });
-  await expect.poll(() => page.evaluate(
-    () => window.__coursecraftPixiTest?.terrainPreview() ?? null,
-  )).toMatchObject({
-    previewKind: "stroke",
-    selectedTerrain: "green",
-    materials: ["green"],
-  });
+  await expect(page.getByTestId("terrain-stroke-preview")).toContainText("Green stroke");
+  await page.waitForTimeout(100);
+  const active = PNG.sync.read(await canvas.screenshot());
   await page.evaluate(() => {
     (
       document.querySelector(
@@ -310,10 +353,18 @@ test("live terrain ghosts clear when the selected material changes", async ({ pa
       ) as HTMLButtonElement | null
     )?.click();
   });
-  await expect.poll(() => page.evaluate(
-    () => window.__coursecraftPixiTest?.terrainPreview() ?? null,
-  )).toBeNull();
+  await expect.poll(() => page.evaluate(() => (
+    JSON.parse(window.render_game_to_text?.() ?? "{}").editor?.selectedTerrain
+  )), { timeout: 30_000 }).toBe("fairway");
   await expect(page.getByTestId("terrain-stroke-preview")).toHaveCount(0);
+  await page.waitForTimeout(100);
+  const cleared = PNG.sync.read(await canvas.screenshot());
+  const start = { x: x - box!.x, y: y - box!.y };
+  const end = { x: x + 36 - box!.x, y: y + 14 - box!.y };
+  const activeChanged = changedPixelsInCorridor(baseline, active, start, end, 90);
+  const clearedResidual = changedPixelsInCorridor(baseline, cleared, start, end, 90);
+  expect(activeChanged).toBeGreaterThan(200);
+  expect(clearedResidual).toBeLessThan(activeChanged * 0.25);
   await page.mouse.up();
 });
 

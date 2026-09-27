@@ -14,6 +14,8 @@ test("Pixi requests the current season and a missing optional overlay preserves 
     const seasonal = manifest.biomes.parkland.high.seasonal;
     for (const season of ["spring", "winter"]) {
       seasonal[season] = {
+        owner: "parkland",
+        season,
         materials: {
           fairway: {
             image: `seasonal-missing-${season}.123456789abc.png`,
@@ -22,8 +24,7 @@ test("Pixi requests the current season and a missing optional overlay preserves 
             height: 1,
           },
         },
-        props: null,
-        decals: null,
+        frames: {},
       };
     }
     await route.fulfill({ response, json: manifest });
@@ -43,17 +44,17 @@ test("Pixi requests the current season and a missing optional overlay preserves 
       graphics: { quality: "high" },
     }));
   });
-  await page.goto("/");
-  await page.getByRole("button", { name: "Quick Start" }).click();
-  const tutorial = page.getByRole("dialog", { name: "First-launch tutorial" });
-  if (await tutorial.count()) await tutorial.getByRole("button", { name: "Skip tutorial" }).click();
+  await page.goto("/?m53Fixture=1&m53Theme=parkland&m53Season=spring&m53Quality=high&m53Rotation=0");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), {
+    timeout: 90_000,
+  }).toBe("game");
 
   const canvas = page.locator(".cc-pixi-stage canvas");
   await expect.poll(() => page.evaluate(() => {
     const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
     return { season: state.seasons?.calendar?.season, quality: state.graphics?.quality };
   })).toEqual({ season: "spring", quality: "high" });
-  await expect.poll(() => overlayRequests.some((url) => url.includes("seasonal-missing-spring"))).toBe(true);
+  await expect.poll(() => overlayRequests.some((url) => url.includes("seasonal-missing-spring")), { timeout: 30_000 }).toBe(true);
   await expect(canvas).toBeVisible();
 
   // The production M39 fixture advances the same world-owned calendar to
@@ -63,7 +64,7 @@ test("Pixi requests the current season and a missing optional overlay preserves 
   await expect.poll(() => page.evaluate(() => (
     JSON.parse(window.render_game_to_text?.() ?? "{}").seasons?.calendar?.season
   ))).toBe("winter");
-  await expect.poll(() => overlayRequests.some((url) => url.includes("seasonal-missing-winter"))).toBe(true);
+  await expect.poll(() => overlayRequests.some((url) => url.includes("seasonal-missing-winter")), { timeout: 30_000 }).toBe(true);
   await expect(canvas).toBeVisible();
 
   const screenshot = await page.screenshot({

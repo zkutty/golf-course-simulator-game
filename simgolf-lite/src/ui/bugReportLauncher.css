@@ -2,7 +2,8 @@
   position: fixed;
   right: 18px;
   bottom: 82px;
-  z-index: 100040;
+  /* Keep the persistent launcher below transient advisor/onboarding cards. */
+  z-index: 8500;
   min-height: 36px;
   border: 2px outset #e8cf8d;
   border-radius: 8px;

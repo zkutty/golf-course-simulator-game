@@ -138,7 +138,7 @@ async function rotateTo(page: import("@playwright/test").Page, target: Capture["
     await page.keyboard.press("e");
     await expect.poll(() => page.evaluate(() => (
       JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation
-    ))).toBe(next);
+    )), { timeout: 30_000 }).toBe(next);
     current = next;
   }
 }

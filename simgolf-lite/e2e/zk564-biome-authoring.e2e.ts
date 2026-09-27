@@ -54,7 +54,12 @@ test("ZK-564 executes every biome, view, and rotation reference state", async ({
         expect(initial.simulation.following).not.toBeNull();
         expect(initial.simulation.golfers.length).toBeGreaterThan(0);
       } else if (view === "direct-play") {
-        expect(initial.playerPro.activeRound).toMatchObject({
+        const activeRound = await expect.poll(() => page.evaluate(() => (
+          JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro?.activeRound ?? null
+        )), { timeout: 30_000 }).not.toBeNull().then(() => page.evaluate(() => (
+          JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound
+        )));
+        expect(activeRound).toMatchObject({
           phase: "awaiting_shot",
           editingLocked: true,
           aim: { x: expect.any(Number), y: expect.any(Number) },

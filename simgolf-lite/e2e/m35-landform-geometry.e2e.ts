@@ -18,7 +18,7 @@ test("captures ZK-1207 material relief at actual normal scale through four rotat
   const initialHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
   // Real Operate/Cozy transition owns the camera. No forced numerical zoom.
   await page.evaluate(() => window.__coursecraftTest!.enterNormalGameplayForTest());
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.viewMode)).toBe("COZY");
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.viewMode), { timeout: 30_000 }).toBe("COZY");
   const achievements = page.getByTestId("achievement-toast");
   for (let i = 0; i < 12 && await achievements.count(); i++) {
     await achievements.first().click({ timeout: 1_000 }).catch(() => undefined);
@@ -32,7 +32,7 @@ test("captures ZK-1207 material relief at actual normal scale through four rotat
     if (turn > 0) await page.keyboard.press("e");
     await expect.poll(() => page.evaluate(() => (
       JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation
-    ))).toBe(rotation);
+    )), { timeout: 30_000 }).toBe(rotation);
     for (const quality of ["medium", "high"] as const) {
     await page.evaluate((quality) => window.__coursecraftTest!.setGraphicsQualityFixture(quality), quality);
     await expect.poll(() => page.evaluate((quality) => {

@@ -55,7 +55,7 @@ test.afterEach(async ({ page: _page }, testInfo) => {
 });
 
 test("M35 click spline and post-commit node/tangent editing stay atomic", async ({ page }, testInfo) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());

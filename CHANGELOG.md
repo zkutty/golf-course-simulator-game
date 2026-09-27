@@ -6,6 +6,30 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0-rc.6] - 2026-09-27
+
+### Added
+- Player Pro competition, experience-profile, Pro-Am, course-architecture,
+  hole-illustration, and shot-evidence systems delivered since RC5, with their
+  deterministic certification packets.
+- Source-authored Parkland terrain, path, habitat, and continuous landform
+  presentation, including the current multiscale delivery and visual-evidence
+  contracts.
+
+### Changed
+- Nightly certification now isolates long-running browser and visual matrices,
+  retains retry evidence, and truthfully aggregates every required gate.
+- Optional application, HUD, renderer, and monitoring surfaces are deferred to
+  preserve the production delivery budgets.
+
+### Fixed
+- Release-candidate metadata is consistent at RC6, reviewed error-boundary
+  reporting is explicitly allowed by the source audit, and the renderer
+  performance fixture waits for the game canvas before measuring it.
+- The deterministic balance baselines now match the current 81-run matrix, and
+  M65 browser certification loads the Vite configuration without relying on a
+  writable dependency cache.
+
 ## [1.0.0-rc.5] - 2026-08-04
 
 ### Added

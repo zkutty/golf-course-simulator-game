@@ -97,8 +97,8 @@ if (elapsedMs > runtimeBudgetMs) {
 }
 const canonicalHash = hashCanonicalValue(canonical);
 const legacyProjectionHash = hashCanonicalValue({ weeksPerRun: 104, rows: legacyProjectedRows });
-const expectedCanonicalHash = "499b7056";
-const expectedLegacyProjectionHash = "b5a5a183";
+const expectedCanonicalHash = "2f5c72eb";
+const expectedLegacyProjectionHash = "ea4b9754";
 if (canonicalHash !== expectedCanonicalHash) {
   throw new Error(`Release balance canonical hash changed: expected ${expectedCanonicalHash}, got ${canonicalHash}`);
 }

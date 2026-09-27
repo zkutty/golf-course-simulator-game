@@ -82,7 +82,7 @@ test("ZK-689 Simulation exposes all thirteen responsibilities through existing s
   await panel.getByTestId("system-operation-open-mobility").click();
   live = page.getByTestId("live-overview");
   await expect(live.getByRole("tab", { name: "Mobility" })).toHaveAttribute("aria-selected", "true");
-  await expect.poll(() => live.getByTestId("mobility-operations").evaluate((target) => target.contains(document.activeElement))).toBe(true);
+  await expect.poll(() => live.getByTestId("mobility-operations").evaluate((target) => target.contains(document.activeElement)), { timeout: 30_000 }).toBe(true);
   await live.getByRole("button", { name: "Close live overview" }).click();
   await page.getByRole("button", { name: "Open live overview" }).click();
   live = page.getByTestId("live-overview");

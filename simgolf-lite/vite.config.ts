@@ -2,10 +2,13 @@ import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
+
 const pkg = JSON.parse(
-  readFileSync(path.resolve(__dirname, "package.json"), "utf-8")
+  readFileSync(path.resolve(projectRoot, "package.json"), "utf-8")
 ) as { version: string };
 const commitSha = process.env.GITHUB_SHA ?? process.env.VITE_COMMIT_SHA ?? "local";
 const appRelease = process.env.SENTRY_RELEASE ?? `coursecraft@${pkg.version}+${commitSha.slice(0, 12)}`;
@@ -68,7 +71,7 @@ export default defineConfig({
       "worker/**/*.integration.test.ts",
     ],
     alias: {
-      "cloudflare:workers": path.resolve(__dirname, "worker/cloudflare-workers-test.ts"),
+      "cloudflare:workers": path.resolve(projectRoot, "worker/cloudflare-workers-test.ts"),
     },
   },
   build: {
@@ -105,7 +108,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "src"),
+      "@": path.resolve(projectRoot, "src"),
     },
   },
 });

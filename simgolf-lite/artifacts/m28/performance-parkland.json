@@ -1,40 +1,58 @@
 {
   "version": 1,
   "theme": "parkland",
-  "fixture": "perfFixture",
-  "coldStartupMs": 1311,
-  "fixtureLoadMs": 2526,
+  "fixture": "m27Fixture",
+  "coldStartupMs": 957,
+  "fixtureLoadMs": 85872,
   "renderer": {
-    "fps": 10,
-    "meanMs": 100,
+    "fps": 10.129817507441524,
+    "meanMs": 98.7184615384615,
     "p95Ms": 100,
     "maxMs": 100,
-    "workMs": 0.32000000609291923,
+    "workMs": 0.859999995965224,
     "sections": {
-      "hover+flags": 0.0866666661368476,
-      "water+sway": 0.12444444762335884,
-      "ambient": 0.006666665607028537,
-      "golfers+emotes": 0.10222222672568428
+      "hover+flags": 0.2784615333263691,
+      "water+sway": 0.07384614577660194,
+      "ambient": 0.08615384652064396,
+      "golfers+emotes": 0.4215384703416091
     },
     "golfers": 100,
     "bubbles": 0,
     "ripples": 0,
     "impacts": 0,
     "ambientObjects": 6,
-    "chunksVisible": 28,
-    "chunksTotal": 35,
-    "objects": 1048
+    "chunksVisible": 37,
+    "chunksTotal": 126,
+    "objects": 1068
   },
   "effective": {
     "theme": "parkland",
-    "fixture": "perfFixture",
+    "fixture": "m27Fixture",
     "measureSeconds": 20,
     "warmupSeconds": 8,
     "frameAssertion": false,
+    "browserMode": "headless",
     "budgets": {
       "rendererWorkMilliseconds": 8,
       "coldStartupMilliseconds": 5000,
       "frameMilliseconds": 33
+    }
+  },
+  "physicalRun": {
+    "hardwareClass": null,
+    "powerState": null,
+    "runLabel": null,
+    "browser": {
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0.7827.55 Safari/537.36",
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "devicePixelRatio": 1
+      },
+      "visibilityState": "visible",
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "context": "webgl2"
     }
   },
   "gateValidation": {

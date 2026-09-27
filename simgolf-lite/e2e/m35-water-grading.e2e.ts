@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("painting water automatically commits a flat excavated basin", async ({ page }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   const errors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());

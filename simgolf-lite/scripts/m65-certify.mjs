@@ -75,6 +75,7 @@ try {
     [
       "run",
       "src/game/testing/zk813ProfileCertification.test.ts",
+      "--configLoader=runner",
       "--maxWorkers=1",
       "--testTimeout=120000",
       "--reporter=json",
