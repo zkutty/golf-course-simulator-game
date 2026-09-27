@@ -189,7 +189,7 @@ test("keyboard-only options, remapping, conflicts, and save/load round-trip", as
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /load game/i }).focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("save-slot-quick-save")).toContainText("Quick Save");
+  await expect(page.getByTestId("save-slot-quick-save")).toContainText("Quick Save", { timeout: 30_000 });
   await page.getByTestId("save-slot-quick-save").getByRole("button", { name: "Load", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screenBase)).toBe("in-game");

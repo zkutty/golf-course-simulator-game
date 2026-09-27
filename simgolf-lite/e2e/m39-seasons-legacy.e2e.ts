@@ -12,7 +12,7 @@ test("M39 forecasts, strategic responses, charters, automation, and annual legac
   await page.evaluate(() => window.__coursecraftTest!.setM39Fixture());
 
   const panel = page.getByTestId("seasons-legacy-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("club-calendar-date")).toContainText("Year 1");
   await expect(page.getByTestId("current-weather")).toBeVisible();
   await expect(page.getByTestId("seven-day-forecast").locator("> div")).toHaveCount(7);

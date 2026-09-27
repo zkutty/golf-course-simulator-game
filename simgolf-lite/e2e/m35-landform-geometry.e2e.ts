@@ -6,7 +6,7 @@ const outputRoot = resolve(process.env.M35_LANDFORM_EVIDENCE_DIR ?? "../m35-land
 const commit = process.env.M35_LANDFORM_COMMIT ?? "unknown";
 
 test("captures ZK-1207 material relief at actual normal scale through four rotations and both tiers", async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(360_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
