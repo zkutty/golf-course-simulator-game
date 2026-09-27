@@ -72,7 +72,21 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
           zoom: view.zoom,
           targetZoom: view.zoom,
         });
-        await page.waitForTimeout(180);
+        await expect.poll(() => page.evaluate(({ terrain }) => {
+          const diagnostics = window.__coursecraftPixiTest!.rendererAtlasState().landformDepth;
+          const hazards = diagnostics.hazards.filter((entry) => entry.terrain === terrain);
+          return {
+            macroActive: diagnostics.macro.active,
+            joinedMeshesReady: diagnostics.waterSurfaceOwners.joinedMeshes > 0,
+            hazardsReady: hazards.length > 0 && hazards.every((entry) => entry.nearFaces > 0 && entry.farFaces > 0),
+          };
+        }, { terrain: hazard.label === "lake" ? "water" as const : "sand" as const }), {
+          timeout: 90_000,
+        }).toMatchObject({
+          macroActive: true,
+          joinedMeshesReady: true,
+          hazardsReady: true,
+        });
         const depth = await page.evaluate(({ terrain }) => {
           const diagnostics = window.__coursecraftPixiTest!.rendererAtlasState().landformDepth;
           return {

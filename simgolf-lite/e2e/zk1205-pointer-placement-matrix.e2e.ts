@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 type ActionClass = "terrain-stroke" | "tee" | "pin" | "prop" | "structure" | "occlusion-selection";
@@ -12,7 +13,7 @@ const TIERS: readonly Tier[] = ["high", "medium", "low"];
 const LOCI: readonly Locus[] = ["center", "visible-edge"];
 const ROTATIONS = [0, 90, 180, 270] as const;
 const MUTATING = new Set<ActionClass>(["terrain-stroke", "tee", "pin", "prop", "structure"]);
-const EVIDENCE_DIR = process.env.ZK1205_EVIDENCE_DIR ?? "/private/tmp/zk1205-pointer-matrix-attempt2-evidence";
+const EVIDENCE_DIR = process.env.ZK1205_EVIDENCE_DIR ?? path.join(tmpdir(), "zk1205-pointer-matrix-evidence");
 const MAX_ROWS = Number(process.env.ZK1205_MAX_ROWS ?? 144);
 const START_ROW = Number(process.env.ZK1205_START_ROW ?? 0);
 const SKIP_PERSISTENCE = process.env.ZK1205_SKIP_PERSISTENCE === "1";
