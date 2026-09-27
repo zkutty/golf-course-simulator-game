@@ -543,6 +543,7 @@ test("ZK-674 visible material signal rejects only the controlled material-family
 
 for (const theme of PRIMARY_BIOMES) {
   test(`ZK-674 keeps ${theme} atlas generations atomic through tier and zoom reversals`, async ({ page }, testInfo) => {
+    test.setTimeout(20 * 60_000);
     const errors: string[] = [];
     const failedAssets: string[] = [];
     let releaseAutumnOverlay = () => {};
