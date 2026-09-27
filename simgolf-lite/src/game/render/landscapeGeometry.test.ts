@@ -6,6 +6,7 @@ import {
   buildRecessedLandformRibbon,
   buildVisualHeightfield,
   createLandscapeComponentCache,
+  maintainedChunkUnderlay,
   ringSignedArea,
   roundLandscapeRing,
   sampleLandscapeSurfaceHeight,
@@ -162,6 +163,16 @@ describe("connected landscape geometry", () => {
 });
 
 describe("shared visual heightfield", () => {
+  it("uses neutral ground below Low joined maintained masks", () => {
+    for (const terrain of ["green", "tee", "fairway"] as const) {
+      expect(maintainedChunkUnderlay(terrain, true)).toBe("rough");
+      expect(maintainedChunkUnderlay(terrain, false)).toBe(terrain);
+    }
+    for (const terrain of ["rough", "deep_rough", "sand", "waste_area", "water", "wetland", "path"] as const) {
+      expect(maintainedChunkUnderlay(terrain, true)).toBe(terrain);
+    }
+  });
+
   it("gives joined maintained turf sole ownership of its internal elevation transition", () => {
     for (const terrain of ["green", "tee", "fairway"] as const) {
       expect(shouldRenderLegacyElevationFace(terrain, terrain, true)).toBe(false);

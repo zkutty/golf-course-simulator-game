@@ -138,6 +138,7 @@ import {
   buildLandscapeComponents,
   buildVisualHeightfield,
   createLandscapeComponentCache,
+  maintainedChunkUnderlay,
   sampleLandscapeSurfaceHeight,
   sampleVisualHeight,
   shouldRenderLegacyElevationFace,
@@ -3542,6 +3543,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const composableTurfOwnsTransitions = Boolean(
       getParklandComposableField(course.theme, props.graphicsQuality, "tee"),
     );
+    const lowJoinedMaintainedTopReady = props.graphicsQuality === "low"
+      && Boolean(composableRuntime)
+      && !composableTurfOwnsTransitions;
     const visualTerrainAt = (x: number, y: number): Terrain => {
       const index = y * w + x;
       return presentationTiles[index];
@@ -3687,9 +3691,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
         });
       for (const { x, y } of order) {
         const terrain = visualTerrainAt(x, y);
+        const joinedMaintainedTop = lowJoinedMaintainedTopReady && isMaintained(terrain);
         // Joined hazard masks, not whole-cell atlas diamonds/lips, own all
         // visible water. Low already used this exact rough underlay.
-        const underlayTerrain = hazardChunkUnderlay(terrain, composableTurfOwnsTransitions);
+        const underlayTerrain = hazardChunkUnderlay(
+          maintainedChunkUnderlay(terrain, lowJoinedMaintainedTopReady),
+          composableTurfOwnsTransitions,
+        );
         const material = getTerrainMaterial(course.theme, underlayTerrain);
         const e = elev(x, y);
         const groundPosition = worldToIso(x + 0.5, y, e, rotation);
@@ -3700,7 +3708,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
         let slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
         if (
-          (terrain === "fairway" || terrain === "green" || terrain === "tee")
+          isMaintained(underlayTerrain)
           && mowingQualityAt(y * w + x) >= 0.83
         ) {
           slopeShade *= mowingShadeAt(x, y, holeAxes);
@@ -3727,7 +3735,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           ? shade(seasonal?.textureTint ?? 0xffffff, slopeShade)
           : legacyTint;
         chunk.container.addChild(sprite);
-        if (props.terrainPatterns && terrainPattern(terrain) !== "none") {
+        if (!joinedMaintainedTop && props.terrainPatterns && terrainPattern(terrain) !== "none") {
           const pattern = new PIXI.Graphics();
           pattern.position.set(p.x, p.y);
           pattern.alpha = 0.38;
@@ -3863,6 +3871,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
           const nx = x + direction.dx;
           const ny = y + direction.dy;
           if (nx < 0 || ny < 0 || nx >= w || ny >= h || elev(nx, ny) >= e) continue;
+          if (!shouldRenderLegacyElevationFace(
+            terrain,
+            visualTerrainAt(nx, ny),
+            Boolean(presentationRuntime),
+          )) continue;
           const [c1, c2] = edgeCorners(x, y, direction.dx, direction.dy);
           const a = worldToIso(c1.x, c1.y, e, rotation);
           const b = worldToIso(c2.x, c2.y, e, rotation);

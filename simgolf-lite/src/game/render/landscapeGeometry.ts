@@ -85,6 +85,21 @@ export function shouldRenderLegacyElevationFace(
     (terrain !== "fairway" && terrain !== "green" && terrain !== "tee");
 }
 
+/**
+ * Low's joined maintained mesh owns the visible turf mask. Keep a neutral
+ * ground plane below it so the legacy tile diamonds cannot escape around the
+ * rounded mask as a second, lower maintained-surface silhouette.
+ */
+export function maintainedChunkUnderlay(
+  terrain: Terrain,
+  joinedMaintainedTopReady: boolean,
+): Terrain {
+  return joinedMaintainedTopReady &&
+    (terrain === "fairway" || terrain === "green" || terrain === "tee")
+    ? "rough"
+    : terrain;
+}
+
 export interface RecessedLandformRibbonPoint {
   top: SurfacePoint;
   bottom: SurfacePoint;
