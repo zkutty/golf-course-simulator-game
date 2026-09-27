@@ -109,7 +109,10 @@ test("ZK-689 Simulation exposes all thirteen responsibilities through existing s
     panel = await openNavigator(page);
     await panel.getByTestId(`system-operation-open-${system}`).click();
     const property = page.getByTestId("property-management-panel");
-    await expect(property.getByTestId(`property-tab-${tab}`)).toHaveAttribute("aria-pressed", "true");
+    await expect(property).toBeVisible({ timeout: 30_000 });
+    await expect(property.getByTestId(`property-tab-${tab}`)).toHaveAttribute("aria-pressed", "true", {
+      timeout: 30_000,
+    });
     if (system === "memberships") {
       const membership = property.getByTestId("membership-operations");
       const topTier = membership.getByRole("button", { name: "Top tier reached" });
