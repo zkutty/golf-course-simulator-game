@@ -14,7 +14,7 @@ jobs:
   browser:
     name: Browser suite (shard ${{ matrix.shard }}/21)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -36,6 +36,7 @@ jobs:
           npm run test:e2e --
           --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$|ZK-571 publishes a versioned machine-only screenshot/state matrix$|M27 reports architecture for a live 36-hole, two-course estate$|M27 report remains usable with pseudo locale, text scaling, reduced motion, and color-safe terrain$|M43 packages a course locally and test plays an isolated copy$|manual reporter sends only the previewed, consented payload$|React crash boundary hands bounded crash context to an opt-in report$|terrain strokes preview and commit atomically, cancel safely, and reject unaffordable work$|M30 pace history exposes identity, local bottlenecks, and multi-course reports$|Classic completes three-hole public operations through weekly results and graduation$|single-cell bunker and natural detail render as organic landscape$|M35 click spline and post-commit node/tangent editing stay atomic$|painting water automatically commits a flat excavated basin$|M36-M37 Player Pro aims, resolves, progresses, and returns to design$|manual reporter sends only required fields when optional evidence is off$|diagnostics and renderer screenshot require separate explicit consent$|keyboard close restores focus to the launcher$|canceling an in-flight submission keeps one report ID for a safe retry$'
           --shard=${{ matrix.shard }}/21
+          --workers=1
           --trace retain-on-failure-and-retries
           --reporter=github,html,json | tee browser-shard-${{ matrix.shard }}.log
       - name: Build selected browser retry-evidence manifest

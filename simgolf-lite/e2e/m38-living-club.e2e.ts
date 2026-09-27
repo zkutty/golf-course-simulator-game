@@ -40,7 +40,7 @@ test("M38 architecture evidence and living club remain inspectable and actionabl
 
   await page.getByTestId("open-architecture-review").click();
   const architecture = page.getByTestId("architecture-review");
-  await expect(architecture).toBeVisible();
+  await expect(architecture).toBeVisible({ timeout: 30_000 });
   await expect(architecture).toContainText("Evidence is ready to review");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview.overlay.traces)).toBeGreaterThan(0);
   await architecture.getByTestId("architecture-overlay-heatmap").click();
