@@ -760,8 +760,13 @@ test("one-hole invited preview is save-safe, evidence-backed, and rewards exactl
     expectedPutts: 2,
     plannedStrokes: 3,
   });
+  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.routeOverlay())).toMatchObject({
+    visibleLayers: 2,
+    semanticTargets: 1,
+    fullShotSegments: 1,
+    expectedPutts: 2,
+  });
   const routeOverlay = await page.evaluate(() => window.__coursecraftPixiTest!.routeOverlay());
-  expect(routeOverlay).toMatchObject({ visibleLayers: 1, semanticTargets: 1, fullShotSegments: 1, expectedPutts: 2 });
   expect(routeOverlay.geometrySamples).toBeGreaterThan(routeOverlay.semanticTargets);
   const activeRoute = await page.evaluate(() => JSON.parse(window.render_game_to_text!()).editor.activeRoute);
   expect(activeRoute.geometrySamples).toBeGreaterThan(activeRoute.semanticTargets);
