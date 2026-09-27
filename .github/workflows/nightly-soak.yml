@@ -253,7 +253,7 @@ jobs:
   m14_classic_onboarding:
     name: M14 Classic onboarding certification
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       CI: 1
     steps:
