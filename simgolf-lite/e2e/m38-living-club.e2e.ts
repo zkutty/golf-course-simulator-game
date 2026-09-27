@@ -6,6 +6,9 @@ test("M38 architecture evidence and living club remain inspectable and actionabl
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/?m38Fixture=1");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").livingClub?.regulars?.length), { timeout: 60_000 }).toBe(1);
+  await expect.poll(() => page.evaluate(() => (
+    JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview?.currentEvidence ?? 0
+  )), { timeout: 60_000 }).toBeGreaterThanOrEqual(20);
 
   const seeded = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}"));
   expect(seeded.livingClub.regulars[0]).toMatchObject({ name: "Morgan Links", rounds: 2 });

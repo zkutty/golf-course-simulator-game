@@ -33,6 +33,7 @@ const BIOME_KEYS = loadBiomeKeys();
 const PERF_THEME = BIOME_KEYS.includes(process.env.PERF_THEME) ? process.env.PERF_THEME : BIOME_KEYS[0];
 const PERF_FIXTURE = process.env.PERF_FIXTURE === "m27" ? "m27Fixture" : "perfFixture";
 const STARTUP_BUDGET_MS = Number(process.env.PERF_STARTUP_BUDGET_MS || 5000);
+const FIXTURE_READY_TIMEOUT_MS = Number(process.env.PERF_FIXTURE_READY_TIMEOUT_MS || 120_000);
 const WARMUP_S = 8;
 const OUTPUT_PATH = process.env.PERF_OUTPUT_PATH
   ? resolve(process.env.PERF_OUTPUT_PATH)
@@ -83,6 +84,10 @@ const browser = await chromium.launch(
 );
 console.log("[perf-smoke] browser ready; loading fixture …");
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+page.on("pageerror", (error) => console.error(`[perf-smoke] page error: ${error.message}`));
+page.on("console", (message) => {
+  if (message.type() === "error") console.error(`[perf-smoke] console error: ${message.text()}`);
+});
 await page.addInitScript(() => {
   localStorage.setItem("coursecraft_perfhud", "on");
   localStorage.setItem("coursecraft_ambience", "on");
@@ -93,23 +98,32 @@ await page.getByRole("button", { name: "Quick Start" }).waitFor({ state: "visibl
 const coldStartupMs = performance.now() - coldStartedAt;
 const fixtureStartedAt = performance.now();
 await page.goto(`http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-console.log("[perf-smoke] document loaded; waiting for game state …");
+console.log("[perf-smoke] document loaded; waiting for the visible course canvas …");
 await sleep(500);
-const canvasHandle = await page.evaluateHandle(() => {
-  let best = null;
-  let area = 0;
-  for (const canvas of document.querySelectorAll("canvas")) {
-    const candidateArea = (canvas.width || canvas.clientWidth) * (canvas.height || canvas.clientHeight);
-    if (candidateArea > area) { best = canvas; area = candidateArea; }
-  }
-  return best;
-});
-const canvas = canvasHandle.asElement();
-const box = canvas ? await canvas.boundingBox() : null;
+const canvas = page.locator(".cc-course-pane canvas").first();
+try {
+  await canvas.waitFor({ state: "visible", timeout: FIXTURE_READY_TIMEOUT_MS });
+} catch (error) {
+  const status = await page.evaluate(() => {
+    const text = window.render_game_to_text?.();
+    const parsed = text ? JSON.parse(text) : null;
+    return {
+      screen: parsed?.screen ?? null,
+      course: parsed?.course?.name ?? null,
+      theme: parsed?.course?.theme ?? null,
+      holesOpen: parsed?.course?.holesOpen ?? null,
+      canvasCount: document.querySelectorAll("canvas").length,
+      bodyText: document.body.innerText.slice(0, 300),
+    };
+  });
+  console.error(`[perf-smoke] fixture readiness timeout: ${JSON.stringify(status)}`);
+  throw error;
+}
 await page.waitForFunction(() => {
-  const text = window.render_game_to_text?.();
-  return text && JSON.parse(text).screen === "game";
-}, null, { timeout: 30_000 });
+  const target = document.querySelector(".cc-course-pane canvas");
+  return target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
+}, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
+const box = await canvas.boundingBox();
 const fixtureLoadMs = performance.now() - fixtureStartedAt;
 console.log(`[perf-smoke] game state ready in ${fixtureLoadMs.toFixed(0)}ms`);
 await sleep(1200);
@@ -165,7 +179,7 @@ if (!perf) {
   process.exit(2);
 }
 console.log("[perf-smoke] result:", JSON.stringify(perf, null, 2));
-console.log(`[perf-smoke] cold startup ${coldStartupMs.toFixed(0)}ms; 36-hole fixture load ${fixtureLoadMs.toFixed(0)}ms`);
+console.log(`[perf-smoke] cold startup ${coldStartupMs.toFixed(0)}ms; ${PERF_FIXTURE} load ${fixtureLoadMs.toFixed(0)}ms`);
 let failed = false;
 if (coldStartupMs > STARTUP_BUDGET_MS) {
   console.error(`[perf-smoke] FAIL: cold startup ${coldStartupMs.toFixed(0)}ms > budget ${STARTUP_BUDGET_MS}ms`);

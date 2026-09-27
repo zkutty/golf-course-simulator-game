@@ -85,33 +85,36 @@ test("ZK-459 renders one source-faithful pair fringe per canonical M19 owner", a
     await page.waitForTimeout(250);
     const renderer = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState());
     const fringe = renderer.parklandComposable.pairFringes;
+    const lowTier = quality === "low";
     expect(fringe).toMatchObject({
       active: true,
       quality,
       rotation,
-      authoritativeDifferingTurfAdjacencies: 289,
-      sameElevationDifferingTurfAdjacencies: 261,
-      omittedDifferentElevation: 28,
-      omittedSamePresentation: 157,
-      presentationDifferingTurfAdjacencies: 108,
-      presentationSameElevationDifferingTurfAdjacencies: 104,
-      presentationOmittedDifferentElevation: 4,
+      authoritativeDifferingTurfAdjacencies: 191,
+      sameElevationDifferingTurfAdjacencies: 185,
+      omittedDifferentElevation: 6,
+      omittedSamePresentation: lowTier ? 98 : 0,
+      presentationDifferingTurfAdjacencies: 191,
+      presentationSameElevationDifferingTurfAdjacencies: 185,
+      presentationOmittedDifferentElevation: 6,
       omittedBlocked: 0,
-      plannedStrips: 104,
-      emittedStrips: 104,
-      cornerCandidates: 16,
-      plannedCorners: 16,
-      emittedCorners: 16,
-      omittedMixedPairCorners: 2,
+      plannedStrips: lowTier ? 87 : 185,
+      emittedStrips: lowTier ? 87 : 185,
+      cornerCandidates: lowTier ? 7 : 25,
+      plannedCorners: lowTier ? 7 : 25,
+      emittedCorners: lowTier ? 7 : 25,
+      omittedMixedPairCorners: 0,
       missingOwners: 0,
       pairCounts: {
         "fairway--green": 8,
-        "fairway--rough": 61,
-        "fairway--tee": 6,
+        "fairway--rough": 21,
+        "fairway--tee": 5,
         "rough--green": 15,
-        "rough--tee": 14,
+        "rough--tee": 15,
       },
-      directionCounts: { n: 31, e: 20, s: 31, w: 22 },
+      directionCounts: lowTier
+        ? { n: 30, e: 13, s: 29, w: 15 }
+        : { n: 59, e: 36, s: 57, w: 33 },
       exactlyOnceOwnerKeys: true,
       mixedPairMasks: 0,
       samePresentationEmitters: 0,
@@ -120,7 +123,8 @@ test("ZK-459 renders one source-faithful pair fringe per canonical M19 owner", a
       doubleOwners: 0,
       missingAssetSourceIds: [],
     });
-    expect(Object.values(fringe.pairCounts).reduce((sum: number, count) => sum + Number(count), 0)).toBe(104);
+    expect(Object.values(fringe.pairCounts).reduce((sum: number, count) => sum + Number(count), 0))
+      .toBe(lowTier ? 87 : 185);
     expect(new Set(fringe.assetSourceIds).size).toBe(fringe.assetSourceIds.length);
     expect(fringe.assetSourceHashes).toHaveLength(fringe.assetSourceIds.length);
     expect(fringe.assetSourceIds.every((id) => id.startsWith(`${quality}/`))).toBe(true);

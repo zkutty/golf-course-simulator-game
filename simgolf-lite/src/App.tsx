@@ -1984,6 +1984,7 @@ export default function App() {
         courseName: fixtureCourse.name,
         holeIds: evidenceHoles.map((hole) => hole.id!),
         teeSet: "member",
+        pinRotation: "A",
         waitMinutes: 8,
         shots: Array.from({ length: 12 }, (_, index) => {
           const hole = evidenceHoles[index % evidenceHoles.length];

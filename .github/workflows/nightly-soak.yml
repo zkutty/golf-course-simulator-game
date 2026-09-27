@@ -304,6 +304,7 @@ jobs:
         run: >-
           npm run test:e2e -- e2e/m35-landscape-details.e2e.ts e2e/m35-surface-authoring.e2e.ts e2e/m35-water-grading.e2e.ts
           --grep 'single-cell bunker and natural detail render as organic landscape$|M35 click spline and post-commit node/tangent editing stay atomic$|painting water automatically commits a flat excavated basin$'
+          --workers=1
           --trace retain-on-failure-and-retries
           --reporter=github,html,json | tee m35-authoring.log
       - name: Build M35 retry-evidence manifest

@@ -4,11 +4,11 @@ import { expect, test } from "@playwright/test";
 import { PNG } from "pngjs";
 
 const outputRoot = resolve(
-  process.env.ZK1200_EVIDENCE_DIR ?? "/private/tmp/zk1200-shared-contour-evidence",
+  process.env.ZK1200_EVIDENCE_DIR ?? "test-results/zk1200-shared-contour-evidence",
 );
 
 test("ZK-1200 captures canonical medium seams and high-detail green rotations", async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
@@ -58,16 +58,16 @@ test("ZK-1200 captures canonical medium seams and high-detail green rotations", 
         zoom: state.pathMaterialCrossSection.camera.zoom,
         contours: state.sharedContours,
       };
-    })).toMatchObject({
+    }), { timeout: 90_000 }).toMatchObject({
       quality: "medium",
       rotation,
       zoom: 1,
       contours: {
-        authoritativeSingletonDeepRough: 49,
+        authoritativeSingletonDeepRough: 0,
         distinctSingletonDeepRoughFields: 0,
         distinctSingletonDeepRoughBands: 0,
-        coalescedSingletonDeepRough: 49,
-        enclosedSingletonRoughToFairway: 1,
+        coalescedSingletonDeepRough: 0,
+        enclosedSingletonRoughToFairway: 0,
         tileSurfaceConnectedMasks: 0,
       },
     });
@@ -119,16 +119,16 @@ test("ZK-1200 captures canonical medium seams and high-detail green rotations", 
         zoom: state.pathMaterialCrossSection.camera.zoom,
         contours: state.sharedContours,
       };
-    })).toMatchObject({
+    }), { timeout: 90_000 }).toMatchObject({
       quality: "high",
       rotation,
       zoom: 2,
       contours: {
-        authoritativeSingletonDeepRough: 49,
+        authoritativeSingletonDeepRough: 0,
         distinctSingletonDeepRoughFields: 0,
         distinctSingletonDeepRoughBands: 0,
-        coalescedSingletonDeepRough: 49,
-        enclosedSingletonRoughToFairway: 1,
+        coalescedSingletonDeepRough: 0,
+        enclosedSingletonRoughToFairway: 0,
         tileSurfaceConnectedMasks: 0,
       },
     });

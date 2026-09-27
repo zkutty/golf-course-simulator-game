@@ -1,24 +1,64 @@
 {
+  "version": 1,
   "theme": "links",
   "fixture": "perfFixture",
-  "coldStartupMs": 861,
-  "fixtureLoadMs": 4251,
+  "coldStartupMs": 931,
+  "fixtureLoadMs": 5133,
   "renderer": {
-    "fps": 30.76923076923077,
-    "meanMs": 32.5,
-    "p95Ms": 50,
-    "maxMs": 50.79999999999927,
-    "workMs": 0.2916666669978036,
+    "fps": 10,
+    "meanMs": 100,
+    "p95Ms": 100,
+    "maxMs": 100,
+    "workMs": 0.36500000026490953,
     "sections": {
-      "hover+flags": 0.07888888849152459,
-      "water+sway": 0.11666666766007741,
-      "ambient": 0.012777778506278991,
-      "golfers+emotes": 0.08333333233992259
+      "hover+flags": 0.11777777738041348,
+      "water+sway": 0.10166666441493565,
+      "ambient": 0.016111108991834853,
+      "golfers+emotes": 0.12944444947772557
     },
     "golfers": 100,
     "bubbles": 0,
-    "chunksVisible": 20,
+    "ripples": 0,
+    "impacts": 0,
+    "ambientObjects": 6,
+    "chunksVisible": 29,
     "chunksTotal": 35,
     "objects": 1048
+  },
+  "effective": {
+    "theme": "links",
+    "fixture": "perfFixture",
+    "measureSeconds": 20,
+    "warmupSeconds": 8,
+    "frameAssertion": false,
+    "browserMode": "headless",
+    "budgets": {
+      "rendererWorkMilliseconds": 8,
+      "coldStartupMilliseconds": 5000,
+      "frameMilliseconds": 33
+    }
+  },
+  "physicalRun": {
+    "hardwareClass": null,
+    "powerState": null,
+    "runLabel": null,
+    "browser": {
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0.7827.55 Safari/537.36",
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "devicePixelRatio": 1
+      },
+      "visibilityState": "visible",
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "context": "webgl2"
+    }
+  },
+  "gateValidation": {
+    "coldStartupWithinBudget": true,
+    "rendererWorkWithinBudget": true,
+    "frameWithinBudget": null,
+    "passed": true
   }
 }

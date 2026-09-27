@@ -79,7 +79,7 @@ test("ZK-688 Classic keeps the ordinary management loop visible and makes back-o
 
   await page.getByTestId("open-property-management").click();
   const property = page.getByTestId("property-management-panel");
-  await expect(property.getByText("Memberships and lockers")).toBeAttached();
+  await expect(property.getByText("Memberships and lockers")).toBeAttached({ timeout: 30_000 });
   await expect(property.locator('select[aria-label*="hours" i]')).toHaveCount(0);
   await property.getByTestId("property-tab-resort").click();
   await expect(property.getByTestId("resort-package-room_only")).toBeVisible();

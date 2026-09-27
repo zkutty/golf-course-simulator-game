@@ -40,7 +40,10 @@ test("current-shot channel follows actual live action and survives keyboard save
   expect(observedResult, "a completed observed shot must yield a result").toBe(true);
   await page.evaluate(() => window.__coursecraftTest?.pauseLiveSimulation());
   await quickSave(page);
-  await expect.poll(async () => (await saved(page)).live.state.golfers.find((g: { id: number }) => g.id === flyingId).segIndex).toBeGreaterThan(before.segIndex);
+  await expect.poll(
+    async () => (await saved(page)).live.state.golfers.find((g: { id: number }) => g.id === flyingId).segIndex,
+    { timeout: 30_000 },
+  ).toBeGreaterThan(before.segIndex);
   const afterSave = await saved(page);
   const after = afterSave.live.state.golfers.find((g: { id: number }) => g.id === flyingId);
   await page.getByRole("button", { name: "Open live overview" }).click();

@@ -1,6 +1,6 @@
 # M28 release gate status
 
-Release candidate `1.0.0-rc.4` is **HOLD** until the external gates below have
+Release candidate `1.0.0-rc.6` is **HOLD** until the external gates below have
 real evidence from the exact deployed main-branch build. The certification
 manifest intentionally rejects a false GO decision or a passed gate without an
 evidence reference.
@@ -32,13 +32,12 @@ run to the matching Linear issue:
 - ZK-261: change the manifest decision to GO only after every prerequisite has
   passed; otherwise retain HOLD and record owners and the next decision point.
 
-## Current RC4 implementation verification — 2026-07-29
+## Current RC6 implementation verification — 2026-09-27
 
-The current working tree for `1.0.0-rc.4` passed the implementation-focused
-verification packet: 98 unit files (817 passed, 1 skipped), lint with zero
-errors, production build, exact 40-file Suno audio audit, M35 asset audit,
-Parkland 4× contract audit, and all three M15 audio browser scenarios. These
-results do not replace the external M28 gates below.
+The exact release-candidate commit for `1.0.0-rc.6` must pass the hosted
+release-candidate workflow and the complete Nightly QA matrix before its
+deployment evidence can close ZK-253. Those results do not replace the other
+external M28 gates below.
 
 ## Local automated evidence — 2026-07-24
 

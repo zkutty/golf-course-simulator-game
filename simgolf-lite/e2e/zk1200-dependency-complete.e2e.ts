@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const outputRoot = resolve(
-  process.env.ZK1200_EVIDENCE_DIR ?? "/private/tmp/zk1200-dependency-complete-cycle1-evidence",
+  process.env.ZK1200_EVIDENCE_DIR ?? "test-results/zk1200-dependency-complete-cycle1-evidence",
 );
 const profileKey = "coursecraft_app_profile_v5";
 type Quality = "high" | "medium" | "low";

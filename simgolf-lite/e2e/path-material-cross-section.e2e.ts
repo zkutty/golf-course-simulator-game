@@ -185,18 +185,42 @@ test("ZK-1210 renders one three-material path cross-section through four rotatio
         const image = PNG.sync.read(screenshot);
         const box = await canvas.boundingBox();
         expect(box).not.toBeNull();
-        // x=8..13 is a fixed six-cell straight authored segment. Select the
-        // unobscured probe with the strongest *minimum* adjacent separation;
-        // trees and ground-cover can cross a single tile in some rotations.
-        const candidates = await page.evaluate(() => [8, 9, 10, 11, 12, 13].map((x) => ({
-          tile: { x, y: 12 },
-          pathCenter: window.__coursecraftPixiTest!.tileToScreen(x, 12),
-          roughCenter: window.__coursecraftPixiTest!.tileToScreen(x, 11),
-        })));
+        // x=8..13 is a fixed six-cell straight authored segment. Probe every
+        // cardinal neighbor that is not part of the authored path: the fixture
+        // includes bridge cells, so a hard-coded north neighbor can itself be
+        // path in some rotations and sample the wrong cross-section.
+        const pathCellKeys = new Set<string>();
+        let priorY: number | null = null;
+        for (let x = 3; x <= 44; x++) {
+          const y = 10 + Math.round(Math.sin(x / 6) * 2);
+          if (priorY != null) {
+            const direction = Math.sign(y - priorY);
+            for (let bridgeY = priorY; bridgeY !== y; bridgeY += direction || 1) {
+              pathCellKeys.add(`${x},${bridgeY}`);
+            }
+          }
+          pathCellKeys.add(`${x},${y}`);
+          priorY = y;
+        }
+        const candidateTiles = [8, 9, 10, 11, 12, 13].flatMap((x) => [
+          { x, y: 11 },
+          { x: x + 1, y: 12 },
+          { x, y: 13 },
+          { x: x - 1, y: 12 },
+        ].filter((outside) => !pathCellKeys.has(`${outside.x},${outside.y}`))
+          .map((outside) => ({ tile: { x, y: 12 }, outside })));
+        const candidates = await page.evaluate((tiles) => tiles.map(({ tile, outside }) => ({
+          tile,
+          outside,
+          pathCenter: window.__coursecraftPixiTest!.tileToScreen(tile.x, tile.y),
+          roughCenter: window.__coursecraftPixiTest!.tileToScreen(outside.x, outside.y),
+        })), candidateTiles);
         const probes = candidates.flatMap((candidate) => {
           if (!candidate.pathCenter || !candidate.roughCenter) return [];
-          const start = { x: candidate.pathCenter.x - box!.x, y: candidate.pathCenter.y - box!.y };
-          const end = { x: candidate.roughCenter.x - box!.x, y: candidate.roughCenter.y - box!.y };
+          // tileToScreen reports coordinates in the renderer canvas coordinate
+          // space, which is also the coordinate space of canvas.screenshot().
+          const start = { x: candidate.pathCenter.x, y: candidate.pathCenter.y };
+          const end = { x: candidate.roughCenter.x, y: candidate.roughCenter.y };
           const core = averageRegion(image, start, end, 0.08, 0.2);
           const edge = averageRegion(image, start, end, 0.32, 0.46);
           const shoulder = averageRegion(image, start, end, 0.54, 0.68);
@@ -224,7 +248,7 @@ test("ZK-1210 renders one three-material path cross-section through four rotatio
         // Guard the vocabulary regression without prescribing exact artwork:
         // dense local variation must occur across the straight core, while a
         // broad flat or panel-only fill fails on edge density and plateaus.
-        expect(coreTexture.candidateCount).toBe(6);
+        expect(coreTexture.candidateCount).toBeGreaterThanOrEqual(6);
         expect(coreTexture.medianStandardDeviation).toBeGreaterThan(2.25);
         expect(coreTexture.medianNeighborDelta).toBeGreaterThan(0.7);
         expect(coreTexture.medianFineEdgeRatio).toBeGreaterThan(0.12);
@@ -256,21 +280,21 @@ test("ZK-1210 renders one three-material path cross-section through four rotatio
           }
         ).setPathMaterialVisibilityForTest(true));
         const pathCells: Array<{ x: number; y: number }> = [];
-        let priorY: number | null = null;
+        let roiPriorY: number | null = null;
         for (let x = 3; x <= 44; x++) {
           const y = 10 + Math.round(Math.sin(x / 6) * 2);
-          if (priorY != null) {
-            const direction = Math.sign(y - priorY);
-            for (let bridgeY = priorY; bridgeY !== y; bridgeY += direction || 1) pathCells.push({ x, y: bridgeY });
+          if (roiPriorY != null) {
+            const direction = Math.sign(y - roiPriorY);
+            for (let bridgeY = roiPriorY; bridgeY !== y; bridgeY += direction || 1) pathCells.push({ x, y: bridgeY });
           }
           pathCells.push({ x, y });
-          priorY = y;
+          roiPriorY = y;
         }
         const pathRoi = (await page.evaluate((cells) => cells.map(({ x, y }) => (
           window.__coursecraftPixiTest!.tileToScreen(x, y)
         )), pathCells))
           .filter((point): point is ScreenPoint => point != null)
-          .map((point) => ({ x: point.x - box!.x, y: point.y - box!.y }));
+          .map((point) => ({ x: point.x, y: point.y }));
         const paddingPx = 120;
         const outside = changedOutsidePaddedPath(image, hidden, pathRoi, paddingPx);
         expect(outside.ratio).toBeLessThan(0.001);
