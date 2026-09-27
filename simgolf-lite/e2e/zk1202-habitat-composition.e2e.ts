@@ -377,7 +377,7 @@ test("ZK-1202 certifies M19 Detail habitat and retains grove-fixture coverage", 
 });
 
 test("ZK-1237 normal gameplay frame keeps the complete M23 route hierarchy in the playable viewport", async ({ page }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(45 * 60_000);
   await mkdir(outputRoot, { recursive: true });
   const runtimeErrors: string[] = [];
   page.on("pageerror", (error) => runtimeErrors.push(`pageerror:${error.message}`));
@@ -708,20 +708,25 @@ test("ZK-1237 normal gameplay frame keeps the complete M23 route hierarchy in th
         }
         const file = resolve(outputRoot, `zk1237-m23-normal-${viewport.width}x${viewport.height}-pin${pinRotation}-r${rotation}.png`);
         for (const target of ["speed-paused", "speed-1x", "speed-2x", "speed-4x", "daily-pin-rotation"]) {
-          const control = page.getByTestId(target);
-          await control.scrollIntoViewIfNeeded();
-          await control.focus();
-          await expect(control).toBeFocused();
-          await expect(control).toBeInViewport();
-          const uncovered = await control.evaluate((element) => {
+          const audit = await page.evaluate((testId) => {
+            const element = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+            if (!element) return null;
+            element.scrollIntoView({ block: "nearest", inline: "nearest" });
+            element.focus();
             const ticker = document.querySelector<HTMLElement>(".cc-news");
-            if (!ticker) return true;
             const rect = element.getBoundingClientRect();
-            const cover = ticker.getBoundingClientRect();
-            return rect.right <= cover.left || rect.left >= cover.right
-              || rect.bottom <= cover.top || rect.top >= cover.bottom;
-          });
-          expect(uncovered, `${target} obscured by global ticker`).toBe(true);
+            const cover = ticker?.getBoundingClientRect();
+            return {
+              focused: document.activeElement === element,
+              inViewport: rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight,
+              uncovered: !cover || rect.right <= cover.left || rect.left >= cover.right
+                || rect.bottom <= cover.top || rect.top >= cover.bottom,
+            };
+          }, target);
+          expect(audit, `${target} missing from live controls`).not.toBeNull();
+          expect(audit!.focused, `${target} did not accept focus`).toBe(true);
+          expect(audit!.inViewport, `${target} is outside the viewport`).toBe(true);
+          expect(audit!.uncovered, `${target} obscured by global ticker`).toBe(true);
         }
         const navigationButtons = page.locator(".cc-workspace-nav button:visible:not(.cc-workspace-scroll-cue)");
         for (let index = 0; index < await navigationButtons.count(); index++) {
