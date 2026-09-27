@@ -29,6 +29,8 @@ jobs:
       - name: Full browser regression
         run: npm run test:e2e -- --grep-invert "ZK-813" --workers=1
       - name: Cross-engine clean-profile path
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
         run: npm run test:release:browsers -- --grep-invert "ZK-813" --workers=1
       - name: Long-form balance matrix
         run: npm run test:balance
@@ -78,4 +80,6 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: ZK-813 Firefox and WebKit certification
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
         run: npm run test:release:browsers -- --grep "ZK-813" --project=firefox --project=webkit-safari-proxy --workers=1
