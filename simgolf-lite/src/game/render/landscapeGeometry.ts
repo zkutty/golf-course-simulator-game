@@ -71,6 +71,20 @@ export interface VisualHeightfield {
   vertices: Float32Array;
 }
 
+/**
+ * The joined maintained-surface mesh owns internal elevation transitions.
+ * Legacy dirt faces remain valid at real terrain boundaries and whenever the
+ * connected presentation is unavailable.
+ */
+export function shouldRenderLegacyElevationFace(
+  terrain: Terrain,
+  neighbor: Terrain,
+  connectedPresentation: boolean,
+): boolean {
+  return !connectedPresentation || terrain !== neighbor ||
+    (terrain !== "fairway" && terrain !== "green" && terrain !== "tee");
+}
+
 export interface RecessedLandformRibbonPoint {
   top: SurfacePoint;
   bottom: SurfacePoint;
@@ -570,16 +584,14 @@ function deriveFlatGroups(course: Course): FlatGroup[] {
   for (const component of components) {
     if (
       component.terrain !== "water" &&
-      component.terrain !== "wetland" &&
-      component.terrain !== "green" &&
-      component.terrain !== "tee"
+      component.terrain !== "wetland"
     ) continue;
     const elevations = component.cells.map((index) => course.elevations[index] ?? 0);
     const inset = terrainSurfaceInsetPx(component.terrain) / ELEVATION_STEP_PX;
     groups.push({
       cells: component.cells,
       target: median(elevations) - inset,
-      priority: component.terrain === "water" || component.terrain === "wetland" ? 2 : 3,
+      priority: 2,
     });
   }
   for (const building of course.buildings ?? []) {
@@ -615,8 +627,10 @@ function deriveFlatGroups(course: Course): FlatGroup[] {
 /**
  * Produces one presentation-only shared-vertex field from authoritative
  * integer tile elevations. Compatible slopes are gently averaged, while
- * water, tee/green components, and building footprints are levelled as
- * visual pads. No gameplay/economic data is mutated.
+ * water components and building footprints are levelled as visual pads.
+ * Maintained turf keeps the authored coarse grade so a connected green, tee,
+ * or fairway can span a readable tier without exposing a per-tile cliff.
+ * No gameplay/economic data is mutated.
  */
 export function buildVisualHeightfield(
   course: Course,

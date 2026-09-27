@@ -167,6 +167,7 @@ interface Window {
     unrelatedObjectCountProbe(): { before: number; after: number };
     setZoomForTest(zoom: number): void;
     focusTileForTest(x: number, y: number, zoom: number): void;
+    surfaceHeightAt(x: number, y: number): number;
     golferGrounding(id: number): {
       golfer: { x: number; y: number; segKind: string | null; segT: number };
       sample: { x: number; y: number; elevation: number };

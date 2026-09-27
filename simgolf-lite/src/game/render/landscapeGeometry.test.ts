@@ -10,6 +10,7 @@ import {
   roundLandscapeRing,
   sampleLandscapeSurfaceHeight,
   sampleVisualHeight,
+  shouldRenderLegacyElevationFace,
 } from "./landscapeGeometry";
 
 function courseWith(
@@ -161,6 +162,15 @@ describe("connected landscape geometry", () => {
 });
 
 describe("shared visual heightfield", () => {
+  it("gives joined maintained turf sole ownership of its internal elevation transition", () => {
+    for (const terrain of ["green", "tee", "fairway"] as const) {
+      expect(shouldRenderLegacyElevationFace(terrain, terrain, true)).toBe(false);
+      expect(shouldRenderLegacyElevationFace(terrain, terrain, false)).toBe(true);
+      expect(shouldRenderLegacyElevationFace(terrain, "rough", true)).toBe(true);
+    }
+    expect(shouldRenderLegacyElevationFace("rough", "rough", true)).toBe(true);
+  });
+
   it("shares the connected water floor level without changing Low or course authority", () => {
     const course = courseWith(3, 3, new Array(9).fill("water"));
     const before = JSON.stringify(course);
@@ -193,6 +203,26 @@ describe("shared visual heightfield", () => {
     expect(Math.max(...waterSamples) - Math.min(...waterSamples)).toBeLessThan(1e-6);
     expect(waterSamples[0]).toBeLessThan(2.5);
   });
+
+  it.each(["green", "tee", "fairway"] as const)(
+    "keeps a connected %s tier readable without a presentation crack",
+    (terrain) => {
+      const course = courseWith(4, 2, new Array(8).fill(terrain), [
+        0, 0, 3, 3,
+        0, 0, 3, 3,
+      ]);
+      const before = JSON.stringify(course);
+      const field = buildVisualHeightfield(course);
+      const low = sampleVisualHeight(field, 0.5, 1);
+      const high = sampleVisualHeight(field, 3.5, 1);
+      const seamLeft = sampleVisualHeight(field, 2 - 1e-5, 1);
+      const seamRight = sampleVisualHeight(field, 2 + 1e-5, 1);
+
+      expect(high - low).toBeGreaterThan(2);
+      expect(Math.abs(seamRight - seamLeft)).toBeLessThan(1e-3);
+      expect(JSON.stringify(course)).toBe(before);
+    },
+  );
 
   it("levels building footprints without changing authoritative elevations", () => {
     const course = courseWith(
