@@ -279,8 +279,10 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
     timeout: 90_000,
   }).toBe("game");
   await page.waitForFunction(() => Boolean(window.__coursecraftPixiTest));
+  await page.evaluate(() => window.__coursecraftTest!.setGraphicsQualityFixture("medium"));
   await expect.poll(() => page.evaluate(() => (
     window.__coursecraftPixiTest!.rendererAtlasState().parklandComposable.active
+      && window.__coursecraftPixiTest!.rendererAtlasState().parklandComposable.quality === "medium"
   )), { timeout: 90_000 }).toBe(true);
   const afterRepeat = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState());
   expect(deterministicPresentationProjection(afterRepeat)).toEqual(beforeRepeat);
@@ -298,15 +300,32 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screenBase), {
     timeout: 90_000,
   }).toBe("in-game");
-  await page.waitForFunction(() => Boolean(window.__coursecraftPixiTest));
-  await expect.poll(() => page.evaluate(() => (
-    window.__coursecraftPixiTest!.rendererAtlasState().parklandComposable.pairFringes?.exactlyOnceOwnerKeys
-      ?? false
-  )), { timeout: 90_000 }).toBe(true);
-  const afterLoad = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState());
-  expect(deterministicPresentationProjection(afterLoad)).toEqual(beforeRepeat);
   const postLoadState = await page.evaluate(() => window.__coursecraftTest!.state());
   expect(postLoadState.terrainCounts).toEqual(initialState.terrainCounts);
+
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), {
+    timeout: 90_000,
+  }).toBe("game");
+  await page.waitForFunction(() => Boolean(window.__coursecraftPixiTest));
+  await expect.poll(() => page.evaluate(() => {
+    window.__coursecraftTest!.setGraphicsQualityFixture("medium");
+    window.__coursecraftPixiTest!.focusTileForTest(24, 18, 1);
+    const renderer = window.__coursecraftPixiTest!.rendererAtlasState();
+    return {
+      quality: renderer.parklandComposable.quality,
+      active: renderer.parklandComposable.active,
+      source: renderer.parklandComposable.source,
+      pairFringes: renderer.parklandComposable.pairFringes,
+      counts: renderer.counts,
+    };
+  }), { timeout: 90_000 }).toMatchObject({
+    quality: "medium",
+    active: true,
+    pairFringes: { exactlyOnceOwnerKeys: true },
+  });
+  const afterLoad = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState());
+  expect(deterministicPresentationProjection(afterLoad)).toEqual(beforeRepeat);
 
   // The fixture's state hash includes world/live state that the save loader
   // normalizes. Restore the exact canonical fixture after proving terrain and
@@ -315,8 +334,15 @@ test("ZK-1200 dependency-complete presentation is deterministic across the nativ
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().courseHash), {
     timeout: 90_000,
   }).toBe(initialCourseHash);
+  await page.waitForFunction(() => Boolean(window.__coursecraftPixiTest));
+  await page.evaluate(() => {
+    window.__coursecraftTest!.setGraphicsQualityFixture("medium");
+    window.__coursecraftPixiTest!.focusTileForTest(24, 18, 1);
+  });
   await page.waitForFunction(() => Boolean(
-    window.__coursecraftPixiTest?.rendererAtlasState().parklandComposable.pairFringes?.exactlyOnceOwnerKeys,
+    window.__coursecraftPixiTest?.rendererAtlasState().parklandComposable.quality === "medium"
+      && window.__coursecraftPixiTest?.rendererAtlasState().parklandComposable.pairFringes
+        ?.exactlyOnceOwnerKeys,
   ));
   const finalRenderer = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState());
   expect(deterministicPresentationProjection(finalRenderer)).toEqual(beforeRepeat);

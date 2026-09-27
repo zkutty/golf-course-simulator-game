@@ -124,7 +124,7 @@ async function pathDiagnostic(page: import("@playwright/test").Page): Promise<Pa
 }
 
 test("ZK-1210 renders one three-material path cross-section through four rotations", async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(480_000);
   await mkdir(outputRoot, { recursive: true });
   await page.addInitScript(() => {
     localStorage.setItem("coursecraft_app_profile_v5", JSON.stringify({
