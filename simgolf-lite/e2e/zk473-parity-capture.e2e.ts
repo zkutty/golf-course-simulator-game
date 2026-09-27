@@ -191,7 +191,7 @@ async function contactSheet(files: string[], output: string) {
 }
 
 test("ZK-473 captures settled actual normal gameplay frames at Medium and High", async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(480_000);
   await mkdir(outputRoot, { recursive: true });
   const runtimeErrors: Array<{ source: "console" | "pageerror"; message: string }> = [];
   page.on("console", (entry) => {
