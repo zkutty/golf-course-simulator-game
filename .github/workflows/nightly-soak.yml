@@ -34,7 +34,7 @@ jobs:
       - name: Run full browser suite shard
         run: >-
           npm run test:e2e --
-          --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$|ZK-571 publishes a versioned machine-only screenshot/state matrix$|M27 reports architecture for a live 36-hole, two-course estate$|M27 report remains usable with pseudo locale, text scaling, reduced motion, and color-safe terrain$|M43 packages a course locally and test plays an isolated copy$|manual reporter sends only the previewed, consented payload$|React crash boundary hands bounded crash context to an opt-in report$|terrain strokes preview and commit atomically, cancel safely, and reject unaffordable work$|M30 pace history exposes identity, local bottlenecks, and multi-course reports$|Classic completes three-hole public operations through weekly results and graduation$|single-cell bunker and natural detail render as organic landscape$|M35 click spline and post-commit node/tangent editing stay atomic$|painting water automatically commits a flat excavated basin$|M36-M37 Player Pro aims, resolves, progresses, and returns to design$|manual reporter sends only required fields when optional evidence is off$|diagnostics and renderer screenshot require separate explicit consent$|keyboard close restores focus to the launcher$|canceling an in-flight submission keeps one report ID for a safe retry$'
+          --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$|ZK-571 publishes a versioned machine-only screenshot/state matrix$|M27 reports architecture for a live 36-hole, two-course estate$|M27 report remains usable with pseudo locale, text scaling, reduced motion, and color-safe terrain$|M43 packages a course locally and test plays an isolated copy$|manual reporter sends only the previewed, consented payload$|React crash boundary hands bounded crash context to an opt-in report$|terrain strokes preview and commit atomically, cancel safely, and reject unaffordable work$|M30 pace history exposes identity, local bottlenecks, and multi-course reports$|Classic completes three-hole public operations through weekly results and graduation$|single-cell bunker and natural detail render as organic landscape$|M35 click spline and post-commit node/tangent editing stay atomic$|painting water automatically commits a flat excavated basin$|M36-M37 Player Pro aims, resolves, progresses, and returns to design$|manual reporter sends only required fields when optional evidence is off$|diagnostics and renderer screenshot require separate explicit consent$|keyboard close restores focus to the launcher$|canceling an in-flight submission keeps one report ID for a safe retry$|ZK-1205 exact 144-row real-pointer placement matrix$|ZK-674 keeps (parkland|links|desert) atlas generations atomic through tier and zoom reversals$'
           --shard=${{ matrix.shard }}/21
           --workers=1
           --trace retain-on-failure-and-retries
@@ -108,6 +108,91 @@ jobs:
           name: nightly-browser-shard-${{ matrix.shard }}
           path: |
             simgolf-lite/browser-shard-${{ matrix.shard }}.log
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  zk1205_pointer_matrix:
+    name: ZK-1205 pointer matrix (rows ${{ matrix.start }}-${{ matrix.end }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { start: 0, end: 5, count: 6, integrated: "1", skip_persistence: "0" }
+          - { start: 6, end: 23, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 24, end: 41, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 42, end: 59, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 60, end: 77, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 78, end: 95, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 96, end: 113, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 114, end: 131, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 132, end: 143, count: 12, integrated: "0", skip_persistence: "1" }
+    env:
+      ZK1205_START_ROW: ${{ matrix.start }}
+      ZK1205_MAX_ROWS: ${{ matrix.count }}
+      ZK1205_RUN_INTEGRATED: ${{ matrix.integrated }}
+      ZK1205_SKIP_PERSISTENCE: ${{ matrix.skip_persistence }}
+      ZK1205_EVIDENCE_DIR: artifacts/zk1205-${{ matrix.start }}-${{ matrix.end }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Run deterministic pointer-matrix chunk
+        run: >-
+          npm run test:e2e -- e2e/zk1205-pointer-placement-matrix.e2e.ts
+          --workers=1
+          --trace retain-on-failure-and-retries
+      - name: Upload pointer-matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-zk1205-${{ matrix.start }}-${{ matrix.end }}
+          path: |
+            simgolf-lite/artifacts/zk1205-${{ matrix.start }}-${{ matrix.end }}
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  zk674_biome_zoom_cache:
+    name: ZK-674 ${{ matrix.theme }} atlas/zoom certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        theme: [parkland, links, desert]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Run biome-specific atlas and zoom certification
+        run: >-
+          npm run test:e2e -- e2e/zk674-biome-zoom-cache.e2e.ts
+          --grep 'ZK-674 keeps ${{ matrix.theme }} atlas generations atomic through tier and zoom reversals$'
+          --workers=1
+          --trace retain-on-failure-and-retries
+      - name: Upload biome certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-zk674-${{ matrix.theme }}
+          path: |
             simgolf-lite/playwright-report
             simgolf-lite/test-results
           if-no-files-found: ignore
@@ -707,6 +792,8 @@ jobs:
     if: always()
     needs:
       - browser
+      - zk1205_pointer_matrix
+      - zk674_biome_zoom_cache
       - m27_architecture
       - m43_m45_reporting
       - m28_terrain_stroke
@@ -726,6 +813,8 @@ jobs:
         working-directory: .
         env:
           BROWSER_RESULT: ${{ needs.browser.result }}
+          ZK1205_POINTER_MATRIX_RESULT: ${{ needs.zk1205_pointer_matrix.result }}
+          ZK674_BIOME_ZOOM_CACHE_RESULT: ${{ needs.zk674_biome_zoom_cache.result }}
           M27_ARCHITECTURE_RESULT: ${{ needs.m27_architecture.result }}
           M43_M45_REPORTING_RESULT: ${{ needs.m43_m45_reporting.result }}
           M28_TERRAIN_STROKE_RESULT: ${{ needs.m28_terrain_stroke.result }}
@@ -740,6 +829,8 @@ jobs:
           SIMULATION_SOAK_RESULT: ${{ needs.simulation_soak.result }}
         run: |
           echo "Browser suite result: $BROWSER_RESULT"
+          echo "ZK-1205 pointer-matrix result: $ZK1205_POINTER_MATRIX_RESULT"
+          echo "ZK-674 biome/zoom-cache result: $ZK674_BIOME_ZOOM_CACHE_RESULT"
           echo "M27 architecture result: $M27_ARCHITECTURE_RESULT"
           echo "M43/M45 reporting result: $M43_M45_REPORTING_RESULT"
           echo "M28 terrain stroke result: $M28_TERRAIN_STROKE_RESULT"
@@ -753,6 +844,12 @@ jobs:
           echo "Renderer performance result: $RENDERER_PERFORMANCE_RESULT"
           echo "Simulation soak result: $SIMULATION_SOAK_RESULT"
           if [[ "$BROWSER_RESULT" != "success" ]]; then
+            exit 1
+          fi
+          if [[ "$ZK1205_POINTER_MATRIX_RESULT" != "success" ]]; then
+            exit 1
+          fi
+          if [[ "$ZK674_BIOME_ZOOM_CACHE_RESULT" != "success" ]]; then
             exit 1
           fi
           if [[ "$M27_ARCHITECTURE_RESULT" != "success" ]]; then
