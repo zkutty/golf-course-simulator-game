@@ -27,7 +27,7 @@ jobs:
       - name: Reducer fuzz
         run: npm run test:fuzz
       - name: Full browser regression
-        run: npm run test:e2e -- --grep-invert "ZK-813" --workers=1
+        run: npm run test:e2e -- --grep-invert "ZK-813|ZK-1205 exact 144-row real-pointer placement matrix$|ZK-674 keeps (parkland|links|desert) atlas generations atomic through tier and zoom reversals$" --workers=1
       - name: Chrome and WebKit clean-profile path
         run: npm run test:release:browsers -- --grep-invert "ZK-813" --project=chrome-stable --project=webkit-safari-proxy --workers=1
       - name: Firefox headed clean-profile path
@@ -54,6 +54,89 @@ jobs:
           name: m28-release-candidate-evidence
           path: |
             simgolf-lite/artifacts/m28
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+          if-no-files-found: ignore
+          retention-days: 90
+
+  zk1205-pointer-matrix:
+    name: ZK-1205 pointer matrix (rows ${{ matrix.start }}-${{ matrix.end }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { start: 0, end: 5, count: 6, integrated: "1", skip_persistence: "0" }
+          - { start: 6, end: 23, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 24, end: 41, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 42, end: 59, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 60, end: 77, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 78, end: 95, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 96, end: 113, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 114, end: 131, count: 18, integrated: "0", skip_persistence: "1" }
+          - { start: 132, end: 143, count: 12, integrated: "0", skip_persistence: "1" }
+    env:
+      ZK1205_START_ROW: ${{ matrix.start }}
+      ZK1205_MAX_ROWS: ${{ matrix.count }}
+      ZK1205_RUN_INTEGRATED: ${{ matrix.integrated }}
+      ZK1205_SKIP_PERSISTENCE: ${{ matrix.skip_persistence }}
+      ZK1205_EVIDENCE_DIR: artifacts/zk1205-${{ matrix.start }}-${{ matrix.end }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run deterministic pointer-matrix chunk
+        run: >-
+          npm run test:e2e -- e2e/zk1205-pointer-placement-matrix.e2e.ts
+          --workers=1
+          --trace retain-on-failure-and-retries
+      - name: Upload pointer-matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-zk1205-${{ matrix.start }}-${{ matrix.end }}
+          path: |
+            simgolf-lite/artifacts/zk1205-${{ matrix.start }}-${{ matrix.end }}
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+          if-no-files-found: ignore
+          retention-days: 90
+
+  zk674-biome-zoom-cache:
+    name: ZK-674 ${{ matrix.theme }} atlas/zoom certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        theme: [parkland, links, desert]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run biome-specific atlas and zoom certification
+        run: >-
+          npm run test:e2e -- e2e/zk674-biome-zoom-cache.e2e.ts
+          --grep 'ZK-674 keeps ${{ matrix.theme }} atlas generations atomic through tier and zoom reversals$'
+          --workers=1
+          --trace retain-on-failure-and-retries
+      - name: Upload biome certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-zk674-${{ matrix.theme }}
+          path: |
             simgolf-lite/playwright-report
             simgolf-lite/test-results
           if-no-files-found: ignore

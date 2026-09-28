@@ -152,6 +152,7 @@ test("ZK-1205 exact 144-row real-pointer placement matrix", async ({ page }) => 
   const report: {
     candidate: string;
     expectedRows: number;
+    chunk: { startRow: number; maxRows: number; skipPersistence: boolean; runIntegrated: boolean };
     rows: unknown[];
     persistence: unknown[];
     integrated: unknown | null;
@@ -160,6 +161,12 @@ test("ZK-1205 exact 144-row real-pointer placement matrix", async ({ page }) => 
   } = {
     candidate: "878cb8118cbd4d94ffb1b62285b8ee5a0c8c7327+working-tree",
     expectedRows: 144,
+    chunk: {
+      startRow: START_ROW,
+      maxRows: MAX_ROWS,
+      skipPersistence: SKIP_PERSISTENCE,
+      runIntegrated: RUN_INTEGRATED,
+    },
     rows: [],
     persistence: [],
     integrated: null,
@@ -313,6 +320,12 @@ test("ZK-1205 exact 144-row real-pointer placement matrix", async ({ page }) => 
         throw error;
       }
     }
+  }
+
+  const expectedChunkRows = Math.max(0, Math.min(MAX_ROWS, 144 - START_ROW));
+  expect(report.rows).toHaveLength(expectedChunkRows);
+  if (!SKIP_PERSISTENCE && START_ROW === 0 && expectedChunkRows >= ACTIONS.length) {
+    expect(probed).toEqual(new Set(ACTIONS));
   }
 
   if (MAX_ROWS >= 144 || RUN_INTEGRATED) {
