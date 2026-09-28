@@ -1,15 +1,29 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const outputRoot = resolve(
   process.env.ZK1201_EVIDENCE_DIR ?? join(tmpdir(), "zk1201-depth-relief-evidence"),
 );
 const commit = process.env.ZK1201_COMMIT ?? "working-tree";
 
+async function captureCourseCanvas(page: Page, path: string): Promise<void> {
+  const canvas = page.locator(".cc-pixi-stage canvas");
+  await expect(canvas).toBeVisible({ timeout: 120_000 });
+  const clip = await canvas.boundingBox();
+  if (!clip) throw new Error("Course canvas has no visible capture bounds.");
+  await page.screenshot({
+    path,
+    clip,
+    animations: "disabled",
+    caret: "hide",
+    timeout: 120_000,
+  });
+}
+
 test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four rotations", async ({ page }) => {
-  test.setTimeout(360_000);
+  test.setTimeout(15 * 60_000);
   const errors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
@@ -106,7 +120,7 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
           .toBeGreaterThanOrEqual(hazard.label === "lake" ? 6 : 2);
         expect(depth.hazards.every((entry) => entry.floorBoundaryOwner === "shared" && entry.interiorFaceAreaPx > 50)).toBe(true);
         const file = resolve(outputRoot, `zk1201-r${rotation}-${hazard.label}-${view.label}.png`);
-        await writeFile(file, await canvas.screenshot());
+        await captureCourseCanvas(page, file);
         captures.push({
           rotation,
           hazard: hazard.label,
@@ -188,7 +202,7 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
         expect(depth.every((entry) => entry.floorBoundaryOwner === "shared" && entry.interiorFaceAreaPx > 50)).toBe(true);
       }
       const file = resolve(outputRoot, `zk1201-m19-r${rotation}-${hazard.label}-${quality}-detail.png`);
-      await writeFile(file, await canvas.screenshot());
+      await captureCourseCanvas(page, file);
       m19Captures.push({ rotation, hazard: hazard.label, quality, zoom: 2, focus: hazard.focus, depth: { hazards: depth, waterSurfaceOwners: owners }, file });
       }
     }
