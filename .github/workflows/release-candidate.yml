@@ -26,8 +26,6 @@ jobs:
         run: npm run lint && npx tsc -b && npm run test:ci
       - name: Reducer fuzz
         run: npm run test:fuzz
-      - name: Full browser regression
-        run: npm run test:e2e -- --grep-invert "ZK-813|ZK-1205 exact 144-row real-pointer placement matrix$|ZK-674 keeps (parkland|links|desert) atlas generations atomic through tier and zoom reversals$" --workers=1
       - name: Chrome and WebKit clean-profile path
         run: npm run test:release:browsers -- --grep-invert "ZK-813" --project=chrome-stable --project=webkit-safari-proxy --workers=1
       - name: Firefox headed clean-profile path
@@ -54,6 +52,42 @@ jobs:
           name: m28-release-candidate-evidence
           path: |
             simgolf-lite/artifacts/m28
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+          if-no-files-found: ignore
+          retention-days: 90
+
+  browser-regression:
+    name: Browser regression (shard ${{ matrix.shard }}/21)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run full browser regression shard
+        run: >-
+          npm run test:e2e --
+          --grep-invert 'ZK-813|ZK-1205 exact 144-row real-pointer placement matrix$|ZK-674 keeps (parkland|links|desert) atlas generations atomic through tier and zoom reversals$'
+          --shard=${{ matrix.shard }}/21
+          --workers=1
+          --trace retain-on-failure-and-retries
+          --reporter=github,html
+      - name: Upload browser regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-browser-shard-${{ matrix.shard }}
+          path: |
             simgolf-lite/playwright-report
             simgolf-lite/test-results
           if-no-files-found: ignore
