@@ -100,7 +100,7 @@ const fixtureStartedAt = performance.now();
 await page.goto(`http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 console.log("[perf-smoke] document loaded; waiting for the visible course canvas …");
 await sleep(500);
-const canvas = page.locator(".cc-course-pane canvas").first();
+const canvas = page.locator(".cc-pixi-stage canvas");
 try {
   await canvas.waitFor({ state: "visible", timeout: FIXTURE_READY_TIMEOUT_MS });
 } catch (error) {
@@ -120,7 +120,7 @@ try {
   throw error;
 }
 await page.waitForFunction(() => {
-  const target = document.querySelector(".cc-course-pane canvas");
+  const target = document.querySelector(".cc-pixi-stage canvas");
   return target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
 }, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
 const box = await canvas.boundingBox();
