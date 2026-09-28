@@ -1,5 +1,15 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-775 connected starter arrival execution — 2026-09-28
+
+- Replaced the fixed `(4,4)` starter road/parking rectangles with one deterministic arrival planner that joins an owned parcel-edge gateway, terrain-aware gravel driveway, clubhouse parking court, and pedestrian path to the real engineered clubhouse entrance.
+- The authoritative route avoids water, wetlands, obstacles, unowned land, building footprints, and grade jumps above two elevation steps. Stable route and asset IDs persist through property normalization; starter access remains free and existing non-starter/custom property assets are preserved.
+- Arrival capacity now validates the planned graph. Closing or removing its road/parking pauses arrivals with an explicit impact message, and a move that would break the graph is rejected with a reroute explanation instead of silently disconnecting the property.
+- Added DEV-only deterministic browser fixtures and machine-readable route evidence. Parkland, Links, and Desert at seed 424242 pass clean three-biome Playwright coverage, and inspected final captures show the full gateway → driveway → parking → footpath → clubhouse chain. The required two-iteration web-game client also completed with matching 64-capacity structured state and no error artifact.
+- Focused certification passes TypeScript plus 5 files / 33 tests covering 24 biome/seed combinations, determinism, hazards/ownership/grade, save normalization, graph failure, access gating, later edits, generation regressions, and renderer joins. A separate 300-run three-biome seed matrix has zero route failures.
+- Full release gates pass: CI 270 files / 2,161 passed / one intentional skip plus audio audit 5/5; lint/i18n with zero errors and nine inherited Hook warnings; production build and all asset/residency/delivery audits; desktop 12/12; M31 plus three-biome browser acceptance 4/4; PWA strict-CSP/offline/cache/persistence smoke; and performance smoke at 1.01 ms tick work against the 8 ms ceiling, 919 ms cold start, and 5.67 s fixture load. Cacheable site-planning/property-scene chunks keep initial JavaScript at 1,601,865 / 1,608,719 bytes and initial critical transfer at 3,789,420 / 4,194,304 bytes.
+- NEXT: commit the exact scoped candidate, verify it on development, then promote only that verified commit from current production and complete the hosted/production monitoring and Linear reconciliation.
+
 ## ZK-1240 habitat topology execution — 2026-09-24
 
 - Packets A+B are reviewer-accepted after the bounded third visual correction: 89 deterministic frames per tier, 47 normalized masks through 14 D4 classes, zero dense alpha outside tile diamonds, world-space grain, and a proof board with a real tree-source hole and narrow bridge.

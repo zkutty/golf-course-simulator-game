@@ -270,4 +270,28 @@ describe("property asset scene ownership", () => {
     expect(siblingBefore.destroyed).toBe(false);
     expect(siblingAfter.destroyed).toBe(false);
   });
+
+  it("renders the authoritative starter driveway and pedestrian connection as finished joined routes", () => {
+    const objects = container();
+    const created: FakeGraphics[] = [];
+    const road = asset("property-road-starter", "road", "access", 2, {
+      surface: "gravel",
+      route: { id: "starter-arrival-driveway", points: [{ x: 2, y: 2 }, { x: 3, y: 2 }, { x: 4, y: 2 }] },
+    });
+    const parking = asset("property-parking-starter", "parking", "access", 4, {
+      surface: "gravel",
+      pedestrianRoute: { id: "starter-arrival-pedestrian", points: [{ x: 4, y: 2 }, { x: 4, y: 3 }] },
+    });
+    const scene = createPropertyAssetsSceneSystem(objects as unknown as PIXI.Container, { createGraphics: () => {
+      const value = graphics();
+      created.push(value);
+      return value as unknown as PIXI.Graphics;
+    } });
+
+    scene.create?.(snapshot(1, [road, parking]));
+
+    expect(hasOperation(created[0], "stroke", { width: 13, color: 0x655f55, cap: "round", join: "round" })).toBe(true);
+    expect(hasOperation(created[0], "stroke", { width: 8, color: 0x8b8b83, cap: "round", join: "round" })).toBe(true);
+    expect(hasOperation(created[1], "stroke", { width: 4, color: 0x9a8068, cap: "round", join: "round" })).toBe(true);
+  });
 });

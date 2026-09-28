@@ -34,6 +34,7 @@ import type {
   ResortOperations,
   ResortTravelerSegment,
 } from "./types";
+import { validateStarterArrival } from "./starterArrival";
 import { isOwnedTile } from "../estate/estate";
 import { buildingFootprintSet } from "../models/buildings";
 import { lastItem } from "../../utils/array";
@@ -239,6 +240,7 @@ export function normalizePropertyCourse(raw: unknown): PropertyCourseState {
   const teeSets = new Set(["championship", "member", "forward"]);
   return {
     version: 2,
+    ...(candidate.arrivalVersion === 1 ? { arrivalVersion: 1 as const } : {}),
     assets: [...unique.values()],
     developments: normalizedDevelopments,
     units,
@@ -584,9 +586,11 @@ function assetOf(course: Course, kind: PropertyAssetKind): PropertyAsset | undef
 }
 
 export function propertyAccessCapacity(course: Course, world?: World): number {
-  const assets = normalizePropertyCourse(course.property).assets;
+  const property = normalizePropertyCourse(course.property);
+  const assets = property.assets;
   const road = assets.find((asset) => asset.kind === "road" && asset.enabled);
   const parking = assets.find((asset) => asset.kind === "parking" && asset.enabled);
+  if (property.arrivalVersion === 1 && !validateStarterArrival({ ...course, property }).ok) return 0;
   // Before the player formalizes access, limited roadside/grass overflow keeps
   // existing courses playable while creating a clear capacity pressure.
   if (!road || !parking) return 18;
@@ -602,7 +606,8 @@ export function propertyAccessCapacity(course: Course, world?: World): number {
 
 export function propertyAccessMultiplier(course: Course, plannedGolfers: number, world?: World): number {
   if (plannedGolfers <= 0) return 1;
-  return clamp(propertyAccessCapacity(course, world) / plannedGolfers, 0.55, 1.15);
+  const capacity = propertyAccessCapacity(course, world);
+  return capacity <= 0 ? 0 : clamp(capacity / plannedGolfers, 0.55, 1.15);
 }
 
 function surfaceLevel(surface: InfrastructureSurface | undefined): number {
@@ -1333,7 +1338,10 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
   }
   if (command.type === "TOGGLE") {
     assets[index] = { ...asset, enabled: !asset.enabled };
-    return outcome(true, { ...course, property: { ...property, assets } }, world, `${asset.name} ${assets[index].enabled ? "reopened" : "closed"}.`);
+    const disconnectsArrival = property.arrivalVersion === 1 && (asset.kind === "road" || asset.kind === "parking") && !assets[index].enabled;
+    return outcome(true, { ...course, property: { ...property, assets } }, world, disconnectsArrival
+      ? `${asset.name} closed. Starter arrival access is disconnected; new arrivals pause until both the driveway and parking reopen.`
+      : `${asset.name} ${assets[index].enabled ? "reopened" : "closed"}.`);
   }
   if (command.type === "RENAME") {
     const name = command.name.trim().replace(/\s+/g, " ").slice(0, 40);
@@ -1369,6 +1377,11 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
     };
     const blocker = propertySiteBlocker(course, property.assets, next, asset.id);
     if (blocker) return outcome(false, course, world, `Cannot move ${asset.name}: ${blocker}.`);
+    if (property.arrivalVersion === 1 && (asset.kind === "road" || asset.kind === "parking")) {
+      const candidateAssets = assets.map((candidate, candidateIndex) => candidateIndex === index ? next : candidate);
+      const validation = validateStarterArrival({ ...course, property: { ...property, assets: candidateAssets } });
+      if (!validation.ok) return outcome(false, course, world, `Cannot move ${asset.name}: this would disconnect starter arrival access (${validation.reason}). Reroute the connected access plan before moving it.`);
+    }
     const cost = 150 * asset.tier;
     if (world.cash < cost) return outcome(false, course, world, `Need $${cost.toLocaleString()} to revise the site plan.`);
     assets[index] = withPracticeGeometry(next);
@@ -1377,7 +1390,10 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
   if (command.type === "REMOVE") {
     if ((asset.kind === "houses" || asset.kind === "condos") && enterprise.residents.some((resident) => resident.assetId === asset.id && resident.occupied > 0)) return outcome(false, course, world, "Occupied homes cannot be removed; a negotiated buyback is required.");
     const salvage = Math.round(PROPERTY_ASSET_SPECS[asset.kind].buildCost * 0.3 * asset.condition);
-    return outcome(true, { ...course, property: { ...property, assets: assets.filter((candidate) => candidate.id !== asset.id) } }, { ...world, cash: world.cash + salvage }, `${asset.name} removed; ${salvage.toLocaleString()} recovered.`);
+    const disconnectsArrival = property.arrivalVersion === 1 && (asset.kind === "road" || asset.kind === "parking");
+    return outcome(true, { ...course, property: { ...property, assets: assets.filter((candidate) => candidate.id !== asset.id) } }, { ...world, cash: world.cash + salvage }, disconnectsArrival
+      ? `${asset.name} removed; ${salvage.toLocaleString()} recovered. Starter arrival access is disconnected and new arrivals pause until a connected replacement is built.`
+      : `${asset.name} removed; ${salvage.toLocaleString()} recovered.`);
   }
   if (command.type === "SET_PRICE") {
     assets[index] = { ...asset, price: Math.max(0, Math.round(command.price)) };

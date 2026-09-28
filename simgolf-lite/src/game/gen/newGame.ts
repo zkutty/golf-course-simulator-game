@@ -14,6 +14,7 @@ import { createDefaultPlayerPro } from "../playerPro/playerPro";
 import { createSeasonalState } from "../seasons/seasons";
 import { biomeCompatibilityMetadataFor } from "../models/biomes";
 import { createSystemControlState, reconcileSystemControlWorld } from "../experience/systemControl";
+import { installStarterArrival } from "../property/starterArrival";
 
 /**
  * THE new-game path (ZKU-162): every fresh run — wizard, quick start, defeat
@@ -69,11 +70,17 @@ export function createNewGame(
   const installed = installStarterClubhouse(course);
   course.elevations = installed.elevations;
   course.buildings = installed.buildings;
+  course.property = installStarterArrival({ ...course, elevations: installed.elevations, buildings: installed.buildings }).property;
   const clubhouseSpot = course.buildings.find((building) => building.type === "clubhouse");
   if (clubhouseSpot) {
     // Deterministic cultivated planting ring. It decorates the arrival area
     // without entering the 3x3 building footprint or semantic golf surfaces.
     const occupied = new Set(course.obstacles.map((obstacle) => `${obstacle.x},${obstacle.y}`));
+    for (const asset of course.property?.assets ?? []) {
+      for (let y = asset.y; y < asset.y + asset.height; y++) for (let x = asset.x; x < asset.x + asset.width; x++) occupied.add(`${x},${y}`);
+      for (const point of asset.route?.points ?? []) occupied.add(`${point.x},${point.y}`);
+      for (const point of asset.pedestrianRoute?.points ?? []) occupied.add(`${point.x},${point.y}`);
+    }
     const candidates: Point[] = [];
     for (let dy = -6; dy <= 8; dy++) for (let dx = -6; dx <= 8; dx++) {
       const x = clubhouseSpot.x + dx;
