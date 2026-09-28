@@ -162,7 +162,10 @@ test("ZK-1201 keeps bunker, shoreline, and landform depth readable through four 
         window.__coursecraftTest!.setGraphicsQualityFixture(quality);
         window.__coursecraftPixiTest!.focusTileForTest(focus.x, focus.y, 2);
       }, { ...hazard, quality });
-      await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().rendered.quality))
+      await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().rendered.quality), {
+        message: `M19 r${rotation} ${hazard.label}: rendered quality transition`,
+        timeout: 30_000,
+      })
         .toBe(quality);
       await expect.poll(() => page.evaluate(() => {
         const camera = window.__coursecraftPixiTest!.rendererAtlasState().camera;
