@@ -30,14 +30,14 @@
         },
         {
           "path": "src/game/testing/zk813ProfileCertification.test.ts",
-          "sha256": "8063f378e39012d551c4c872f7e4bcdaabc0e1384290d58d7bcb083083cf4ecd"
+          "sha256": "10f08c8a77cdf0081f9f0ebaf4036f25abf3303d2e01517f294ba97ebc0c0cab"
         }
       ],
       "expected": {
         "tests": 1,
         "checks": 7,
         "rows": 9,
-        "determinismHash": "37b1eb1d"
+        "determinismHash": "0f18ca6b"
       },
       "scope": "Observed semantic assertions cover exact legacy axes and policies, exact monotonic graduation edges, exact campaign receipts, canonical save-carrier hashes, and multi-week replay."
     },
@@ -73,7 +73,7 @@
         },
         {
           "path": "src/game/testing/zk813ProfileCertification.test.ts",
-          "sha256": "8063f378e39012d551c4c872f7e4bcdaabc0e1384290d58d7bcb083083cf4ecd"
+          "sha256": "10f08c8a77cdf0081f9f0ebaf4036f25abf3303d2e01517f294ba97ebc0c0cab"
         }
       ],
       "expected": {
