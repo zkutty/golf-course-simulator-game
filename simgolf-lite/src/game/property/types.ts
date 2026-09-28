@@ -82,6 +82,8 @@ export interface PropertyAsset {
   mitigationKind?: SafetyMitigationKind;
   coverageHeight?: number;
   route?: PracticeRoute;
+  /** Persisted pedestrian connection for arrival assets such as parking. */
+  pedestrianRoute?: PracticeRoute;
   stations?: PracticeStation[];
   modules?: FacilityModule[];
   upkeepPolicy?: FacilityUpkeepPolicy;
@@ -160,6 +162,8 @@ export interface SafetyOperatingPolicy {
 
 export interface PropertyCourseState {
   version: 1 | 2;
+  /** Enables authoritative graph validation for jointly planned starter access. */
+  arrivalVersion?: 1;
   assets: PropertyAsset[];
   developments: ResidentialDevelopment[];
   units: ResidentialUnit[];

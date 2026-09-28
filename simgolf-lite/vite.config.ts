@@ -87,12 +87,16 @@ export default defineConfig({
         // systems and visual tuning iterate. Keep Pixi isolated because its
         // renderer backends already fan out into their own lazy chunks.
         manualChunks(id) {
+          // Property overlays are a stable scene system and include the
+          // arrival graph renderer; keep them cacheable across game updates.
+          if (id.endsWith("/src/ui/renderer/scenes/propertyAssetsScene.ts")) return "property-assets";
           // Engineered multi-tile site planning is shared by setup, reducer,
           // save, and deferred rendering. Keep that stable contract in one
           // cacheable chunk instead of regressing the delivery-budgeted entry.
           if (
             id.endsWith("/src/game/models/buildings.ts")
             || id.endsWith("/src/game/models/buildingSiteGrade.ts")
+            || id.endsWith("/src/game/property/starterArrival.ts")
           ) return "building-sites";
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("/pixi.js/") || id.includes("/@pixi/")) return "pixi";

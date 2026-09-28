@@ -1792,6 +1792,7 @@ export default function App() {
     const isM52Fixture = fixtureParams.get("m52Fixture") === "1";
     const isM53Fixture = fixtureParams.get("m53Fixture") === "1";
     const isZk689Fixture = fixtureParams.get("zk689Fixture") === "1";
+    const isZk775ArrivalFixture = fixtureParams.get("zk775ArrivalFixture") === "1";
     const m53Fixture = isM53Fixture ? m53SeasonalTerrainFixture(fixtureParams) : null;
     const requestedM52View = fixtureParams.get("m52View");
     const m52View: BiomeReferenceView = BIOME_REFERENCE_VIEWS.includes(requestedM52View as BiomeReferenceView)
@@ -1803,15 +1804,17 @@ export default function App() {
       : 0;
     const isPropertyFixture = fixtureParams.get("propertyFixture") === "1";
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isMacroLandformFixture && !isZk677TieredGreenFixture && !isZk1202Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isM53Fixture && !isZk689Fixture && !isPropertyFixture) return;
+    if (!isPerfFixture && !isM19Fixture && !isMacroLandformFixture && !isZk677TieredGreenFixture && !isZk1202Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isM53Fixture && !isZk689Fixture && !isZk775ArrivalFixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
     const m25SeedParam = fixtureParams.get("m25Seed");
     const parsedM25Seed = m25SeedParam == null ? Number.NaN : Number(m25SeedParam);
     const m25Seed = Number.isInteger(parsedM25Seed) ? parsedM25Seed | 0 : 250025;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
-    const requestedTheme = fixtureParams.get("zk677Theme") ?? fixtureParams.get("m53Theme") ?? fixtureParams.get("m52Theme") ?? fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
+    const requestedTheme = fixtureParams.get("zk775Theme") ?? fixtureParams.get("zk677Theme") ?? fixtureParams.get("m53Theme") ?? fixtureParams.get("m52Theme") ?? fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = isLandTheme(requestedTheme) ? requestedTheme : BIOME_KEYS[0];
+    const parsedZk775Seed = Number(fixtureParams.get("zk775Seed"));
+    const zk775Seed = Number.isInteger(parsedZk775Seed) ? parsedZk775Seed | 0 : 424242;
     let fixtureCourse = isZk677TieredGreenFixture
       ? createZk677TieredGreenFixture(fixtureTheme)
       : isMacroLandformFixture
@@ -1820,6 +1823,8 @@ export default function App() {
       ? createZk1202HabitatReferenceCourse()
       : isPropertyFixture
       ? { ...createReferenceCourse(), property: starterPropertyCourse() }
+      : isZk775ArrivalFixture
+      ? createNewGame({ mode: "sandbox", courseName: "Starter Arrival", seed: zk775Seed, theme: fixtureTheme, experienceProfile: "classic", economicPressure: "balanced" }).course
       : isM38Fixture
       ? createPlayerProReferenceCourse()
       : isM27Fixture
@@ -1880,7 +1885,7 @@ export default function App() {
       week: 1,
       cash: isPropertyFixture ? 1_000_000 : isM25Fixture ? 500_000 : 250_000,
       reputation: Number.isFinite(fixtureRep) ? Math.max(0, Math.min(100, fixtureRep)) : 95,
-      runSeed: isM25Fixture ? m25Seed : m53Fixture?.seed ?? 12160,
+      runSeed: isZk775ArrivalFixture ? zk775Seed : isM25Fixture ? m25Seed : m53Fixture?.seed ?? 12160,
       isBankrupt: false,
       distressWeeks: 0,
       mode: "sandbox" as const,
@@ -2087,6 +2092,27 @@ export default function App() {
       setViewMode(m52View === "overview" || m52View === "build" ? "ARCHITECT" : "COZY");
       setHoleEditMode("global");
       setActiveHoleIndex(0);
+    }
+    if (isZk775ArrivalFixture) {
+      const route = fixtureCourse.property?.assets.find((asset) => asset.id === "property-road-starter")?.route?.points ?? [];
+      if (route.length > 0) {
+        const xs = route.map((point) => point.x);
+        const ys = route.map((point) => point.y);
+        const clubhouse = fixtureCourse.buildings.find((building) => building.type === "clubhouse");
+        if (clubhouse) {
+          xs.push(clubhouse.x + 3);
+          ys.push(clubhouse.y + 3);
+        }
+        holeEditCameraManualRef.current = true;
+        setHoleEditCamera({
+          mode: "global",
+          center: { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 },
+          zoom: 0.65,
+          rotationDeg: 0,
+        });
+      }
+      setViewMode("ARCHITECT");
+      setHoleEditMode("global");
     }
     if (isM27Fixture && !isPerfMeasurement) setShowCourseManager(true);
     if (isZk689Fixture) {
@@ -3132,6 +3158,8 @@ export default function App() {
               tenure: asset.tenure ?? "operating",
               developmentId: asset.developmentId ?? null,
               mitigation: asset.mitigationKind ? { kind: asset.mitigationKind, height: asset.coverageHeight ?? 0 } : null,
+              route: asset.route?.points ?? [],
+              pedestrianRoute: asset.pedestrianRoute?.points ?? [],
             })),
             professionals: summary.enterprise.professionals.length,
             membership: summary.enterprise.membership,

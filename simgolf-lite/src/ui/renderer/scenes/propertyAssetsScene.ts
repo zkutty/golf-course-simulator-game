@@ -61,6 +61,27 @@ export function createPropertyAssetsSceneSystem(
       graphic.poly(corners.flatMap((point) => [point.x, point.y]));
       graphic.fill({ color: asset.surface ? surfaceColors[asset.surface] : colors[asset.category], alpha: asset.enabled ? 0.88 : 0.38 });
       graphic.stroke({ width: asset.enabled ? 2 : 1, color: asset.enabled ? 0xfff6d7 : 0x5d625e, alpha: 0.9 });
+      if (asset.kind === "road" && asset.route?.points.length) {
+        const drawRoute = () => asset.route!.points.map((point) => {
+          const height = surfaceHeightAt(point.x + 0.5, point.y + 0.5);
+          return worldToIso(point.x + 0.5, point.y + 0.5, height, rotation);
+        });
+        const points = drawRoute();
+        points.forEach((point, index) => index === 0 ? graphic.moveTo(point.x, point.y) : graphic.lineTo(point.x, point.y));
+        graphic.stroke({ width: 13, color: 0x655f55, alpha: asset.enabled ? 0.82 : 0.32, cap: "round", join: "round" });
+        points.forEach((point, index) => index === 0 ? graphic.moveTo(point.x, point.y) : graphic.lineTo(point.x, point.y));
+        graphic.stroke({ width: 8, color: asset.surface ? surfaceColors[asset.surface] : colors.access, alpha: asset.enabled ? 0.98 : 0.38, cap: "round", join: "round" });
+      }
+      if (asset.pedestrianRoute?.points.length) {
+        const points = asset.pedestrianRoute.points.map((point) => worldToIso(
+          point.x + 0.5,
+          point.y + 0.5,
+          surfaceHeightAt(point.x + 0.5, point.y + 0.5),
+          rotation,
+        ));
+        points.forEach((point, index) => index === 0 ? graphic.moveTo(point.x, point.y) : graphic.lineTo(point.x, point.y));
+        graphic.stroke({ width: 4, color: surfaceColors.paver, alpha: asset.enabled ? 0.98 : 0.38, cap: "round", join: "round" });
+      }
       if (asset.category === "community" && (asset.kind === "houses" || asset.kind === "condos")) {
         const unitState = (course.property?.units ?? []).filter((unit) => unit.assetId === asset.id);
         const occupiedRatio = unitState.length ? unitState.filter((unit) => !!unit.householdId).length / unitState.length : asset.tenure === "sold" ? 0.72 : 0;
