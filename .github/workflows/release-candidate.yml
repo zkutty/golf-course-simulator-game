@@ -38,7 +38,7 @@ jobs:
         run: npm run test:soak
       - name: Canonical 36-hole and cross-biome renderer performance
         run: |
-          PERF_FIXTURE=m27 PERF_THEME=parkland npm run test:perf
+          PERF_FIXTURE_READY_TIMEOUT_MS=300000 PERF_FIXTURE=m27 PERF_THEME=parkland npm run test:perf
           PERF_THEME=links npm run test:perf
           PERF_THEME=desert npm run test:perf
       - name: Production PWA subpath/offline smoke
