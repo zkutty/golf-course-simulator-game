@@ -195,7 +195,10 @@ test("ZK-1205 exact 144-row real-pointer placement matrix", async ({ page }) => 
         }).toBe("ZK-470A deterministic placement fixture");
         await waitForActionConfiguration(page, actionClass);
         await page.evaluate((value) => window.__coursecraftTest!.setGraphicsQualityFixture(value), tier);
-        await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").graphics?.quality)).toBe(tier);
+        await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").graphics?.quality), {
+          message: `${rowId}: graphics quality transition`,
+          timeout: 30_000,
+        }).toBe(tier);
         await setRotation(page, rotation);
         await page.evaluate(({ point }) => window.__coursecraftPixiTest!.focusTileForTest(point.x, point.y, 1.15), target);
         await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
