@@ -78,6 +78,18 @@ interface Window {
       rebuilds: number;
       items: readonly { label: string; x: number; y: number; zIndex: number }[];
     };
+    resourceSnapshot(): {
+      displayObjects: number;
+      containers: number;
+      sprites: number;
+      graphics: number;
+      meshes: number;
+      text: number;
+      attachedTextures: number;
+      attachedTextureSources: number;
+      managedTextureSources: number;
+      canvasConnected: boolean;
+    } | null;
     rendererAtlasState(): {
       requested: {
         biome: import("./game/models/types").LandTheme;

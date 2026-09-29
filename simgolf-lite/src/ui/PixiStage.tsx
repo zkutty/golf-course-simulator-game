@@ -2144,6 +2144,48 @@ export function PixiStage(requestedProps: PixiStageProps) {
             zIndex: child.zIndex,
           })) ?? [],
       }),
+      // Read-only, E2E-only renderer ownership evidence. Count the live Pixi
+      // tree plus the renderer's actual GPU-managed texture sources; do not
+      // infer resource health from simulation objects or synthetic heap data.
+      resourceSnapshot: () => {
+        const app = appRef.current;
+        if (!app) return null;
+        const textures = new Set<PIXI.Texture>();
+        const textureSources = new Set<PIXI.TextureSource>();
+        const counts = {
+          displayObjects: 0,
+          containers: 0,
+          sprites: 0,
+          graphics: 0,
+          meshes: 0,
+          text: 0,
+        };
+        const visit = (displayObject: PIXI.Container) => {
+          counts.displayObjects++;
+          if (displayObject instanceof PIXI.Container) counts.containers++;
+          if (displayObject instanceof PIXI.Sprite) counts.sprites++;
+          if (displayObject instanceof PIXI.Graphics) counts.graphics++;
+          if (displayObject instanceof PIXI.Mesh) counts.meshes++;
+          if (displayObject instanceof PIXI.Text) counts.text++;
+          const texture = (displayObject as PIXI.Container & { texture?: PIXI.Texture }).texture;
+          if (texture) {
+            textures.add(texture);
+            textureSources.add(texture.source);
+          }
+          for (const child of displayObject.children) visit(child);
+        };
+        visit(app.stage);
+        const textureSystem = app.renderer.texture as unknown as {
+          managedTextures?: readonly PIXI.TextureSource[];
+        };
+        return {
+          ...counts,
+          attachedTextures: textures.size,
+          attachedTextureSources: textureSources.size,
+          managedTextureSources: textureSystem.managedTextures?.length ?? -1,
+          canvasConnected: app.canvas.isConnected,
+        };
+      },
       rendererAtlasState: () => {
         const layers = layersRef.current;
         const world = layers?.world;
