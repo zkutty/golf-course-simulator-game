@@ -90,6 +90,7 @@ export type RenderSceneId =
   | "structuresProps"
   | "playerProCollection"
   | "mobilityEntities"
+  | "liveEntities"
   | "naturalProps"
   | "habitatField"
   | "propertyAssets"
@@ -102,7 +103,7 @@ export type RenderSceneId =
 
 type LegacyRenderSceneId = Exclude<
   RenderSceneId,
-  "holeMarkers" | "surfaceEditor" | "architectureOverlay" | "propertyAssets" | "mobilityEntities" | "openingPreview" | "habitatField"
+  "holeMarkers" | "surfaceEditor" | "architectureOverlay" | "propertyAssets" | "mobilityEntities" | "liveEntities" | "openingPreview" | "habitatField"
 >;
 
 /** New bounded scenes stay optional for compatibility with older test fixtures. */
