@@ -1,5 +1,35 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-09-29 — ZK-682B offline PWA IndexedDB persistence
+
+- Bounded implementation scope: close only ZK-682's machine-evidence gap for
+  a real browser game save surviving an offline installed-PWA reload. The
+  existing localStorage sentinel remains shell-continuity evidence and is not
+  accepted as proof of game persistence.
+- The PWA smoke now pauses gameplay, invokes the production Ctrl+S quick-save
+  route, verifies the exact revisioned `quick-save` payload and manifest live
+  in the production `coursecraft-saves` IndexedDB database (with no save-store
+  fallback keys in localStorage), disconnects the browser, reloads under the
+  controlling service worker, loads that exact slot through the visible Load
+  Game UI, and compares the canonical game hash plus its stable observable
+  projection before continuing the existing offline export checks.
+- Added a small fail-closed evidence contract with focused positive, fallback,
+  and state-drift tests. Product/gameplay state, save schema, IndexedDB driver,
+  and persistence implementation are unchanged.
+- Validation:
+  - `node --test scripts/pwa-save-evidence.test.mjs` — 4/4 passed, including
+    rejection of localStorage fallback, gameplay drift, and offline payload
+    byte drift.
+  - `npm run test:pwa` — passed the full production build/audit plus offline
+    browser path. The observed schema-v31 payload was 355,280 bytes; its
+    SHA-256 survived the disconnected reload exactly, and the UI-loaded state
+    matched canonical course hash `77f64915` and the stable observable
+    projection. Session-local terrain/economy invalidation counters reset in
+    the fresh page as designed and are recorded, not treated as save identity.
+  - The `develop-web-game` Playwright client completed two short input loops
+    against `?perfFixture=1`; both screenshots and text states rendered the
+    deterministic M12 course, and it emitted no browser error artifact.
+
 ## 2026-09-17 — ZK-674 controlled recurrence packet
 
 - Independent acceptance changed the prior GO to **NO-GO** with two P1s and
