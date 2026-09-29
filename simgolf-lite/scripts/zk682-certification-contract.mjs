@@ -1,10 +1,20 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
+import { certifyOfflineIndexedDbSave, PWA_PERSISTENCE_REPORT_SCHEMA_VERSION } from "./pwa-save-evidence.mjs";
+import {
+  ZK682_DESKTOP_PERSISTENCE_REPORT_SCHEMA_VERSION,
+  validateZk682DesktopPersistenceSequence,
+} from "./zk682-desktop-persistence-contract.mjs";
+import {
+  evaluateZk682ResourceGrowth,
+  ZK682_RESOURCE_GROWTH_SCHEMA_VERSION,
+  ZK682_RESOURCE_GROWTH_THRESHOLDS,
+} from "./zk682-resource-growth-contract.mjs";
 
-export const ZK682_SCHEMA_VERSION = 1;
-export const ZK682_CERTIFICATION_ID = "zk682-architecture-slice-certification-v1";
-export const ZK682_REPORT_VERSION = 1;
+export const ZK682_SCHEMA_VERSION = 2;
+export const ZK682_CERTIFICATION_ID = "zk682-architecture-slice-certification-v2";
+export const ZK682_REPORT_VERSION = 2;
 
 const MiB = 1024 * 1024;
 export const ZK682_BUDGETS = Object.freeze({
@@ -113,6 +123,166 @@ function validSha(value) {
   return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 }
 
+function validCommit(value) {
+  return typeof value === "string" && /^[0-9a-f]{40}$/.test(value);
+}
+
+function validCapturedAt(value) {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+function artifactIsBound(gate, artifact) {
+  return gate.artifacts.some((entry) => entry.path === artifact.path && entry.sha256 === artifact.sha256);
+}
+
+function readTypedArtifact(reference, gate, root, label, errors) {
+  if (!exactKeys(reference, ["path", "sha256"], label, errors)) return null;
+  if (!safeRelativePath(reference.path)) {
+    errors.push(`${label}.path is unsafe`);
+    return null;
+  }
+  if (!validSha(reference.sha256)) {
+    errors.push(`${label}.sha256 is invalid`);
+    return null;
+  }
+  if (!artifactIsBound(gate, reference)) {
+    errors.push(`${label} must match a raw artifact binding by path and SHA-256`);
+    return null;
+  }
+  let bytes;
+  try {
+    bytes = readBoundFile(root, reference.path);
+  } catch (error) {
+    errors.push(`${label}: missing typed evidence ${reference.path}: ${error.message}`);
+    return null;
+  }
+  if (sha256(bytes) !== reference.sha256) {
+    errors.push(`${label}: typed evidence SHA-256 mismatch: ${reference.path}`);
+    return null;
+  }
+  try {
+    return JSON.parse(bytes);
+  } catch (error) {
+    errors.push(`${label}: typed evidence must be JSON: ${error.message}`);
+    return null;
+  }
+}
+
+function validatePwaPersistenceEvidence(report, manifest, label, errors) {
+  if (!exactKeys(report, ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "environment", "roundTrip", "evidence", "passed"], label, errors)) return false;
+  if (report.schemaVersion !== PWA_PERSISTENCE_REPORT_SCHEMA_VERSION) errors.push(`${label}: wrong PWA persistence schema`);
+  if (report.gate !== "offline-indexeddb-pwa") errors.push(`${label}: wrong PWA persistence gate`);
+  if (!validCommit(report.candidateCommit) || report.candidateCommit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
+  if (!validCapturedAt(report.capturedAt)) errors.push(`${label}: capturedAt is invalid`);
+  if (typeof report.command !== "string" || !report.command) errors.push(`${label}: command is required`);
+  if (exactKeys(report.environment, ["baseUrl", "browser", "browserVersion", "buildCommit"], `${label}.environment`, errors)) {
+    if (typeof report.environment.baseUrl !== "string" || !report.environment.baseUrl) errors.push(`${label}: baseUrl is required`);
+    if (report.environment.browser !== "chromium") errors.push(`${label}: browser must be chromium`);
+    if (typeof report.environment.browserVersion !== "string" || !report.environment.browserVersion) errors.push(`${label}: browserVersion is required`);
+    if (report.environment.buildCommit !== manifest.candidateCommit) errors.push(`${label}: runtime build commit mismatch`);
+  }
+  let recomputed = null;
+  try {
+    recomputed = certifyOfflineIndexedDbSave(report.roundTrip);
+  } catch (error) {
+    errors.push(`${label}: offline IndexedDB round trip is invalid: ${error.message}`);
+  }
+  if (recomputed && stableJson(recomputed) !== stableJson(report.evidence)) errors.push(`${label}: declared evidence does not match the raw round trip`);
+  if (report.passed !== true || report.evidence?.passed !== true) errors.push(`${label}: PWA persistence report did not pass`);
+  return report.passed === true && report.evidence?.passed === true && recomputed !== null;
+}
+
+function validateDesktopPersistenceEvidence(report, manifest, gate, root, label, errors) {
+  if (!exactKeys(report, ["schemaVersion", "gate", "issue", "candidateCommit", "capturedAt", "platform", "architecture", "command", "package", "executable", "userDataLifecycle", "summary", "filesystem", "phases", "passed"], label, errors)) return false;
+  if (report.schemaVersion !== ZK682_DESKTOP_PERSISTENCE_REPORT_SCHEMA_VERSION) errors.push(`${label}: wrong desktop persistence schema`);
+  if (report.gate !== "packaged-desktop-persistence" || report.issue !== "ZK-682") errors.push(`${label}: wrong desktop persistence gate`);
+  if (!validCommit(report.candidateCommit) || report.candidateCommit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
+  if (!validCapturedAt(report.capturedAt)) errors.push(`${label}: capturedAt is invalid`);
+  if (!new Set(["darwin", "win32"]).has(report.platform)) errors.push(`${label}: platform must be darwin or win32`);
+  if (typeof report.architecture !== "string" || !report.architecture) errors.push(`${label}: architecture is required`);
+  if (typeof report.command !== "string" || !report.command) errors.push(`${label}: command is required`);
+  const packageKeys = ["path", "sha256", "manifestPath", "manifestSha256"];
+  if (exactKeys(report.package, packageKeys, `${label}.package`, errors)) {
+    const packageArtifact = { path: report.package.path, sha256: report.package.sha256 };
+    const manifestArtifact = { path: report.package.manifestPath, sha256: report.package.manifestSha256 };
+    for (const [kind, artifact] of [["package", packageArtifact], ["package manifest", manifestArtifact]]) {
+      if (!safeRelativePath(artifact.path) || !validSha(artifact.sha256)) errors.push(`${label}: ${kind} binding is invalid`);
+      else if (!artifactIsBound(gate, artifact)) errors.push(`${label}: ${kind} must be a hash-bound raw artifact`);
+    }
+    try {
+      const packageManifest = JSON.parse(readBoundFile(root, report.package.manifestPath));
+      if (sha256(readBoundFile(root, report.package.manifestPath)) !== report.package.manifestSha256) errors.push(`${label}: package manifest SHA-256 mismatch`);
+      if (packageManifest.sourceCommit !== manifest.candidateCommit) errors.push(`${label}: package manifest candidate commit mismatch`);
+      if (packageManifest.platform !== report.platform || packageManifest.architecture !== report.architecture) errors.push(`${label}: package manifest platform/architecture mismatch`);
+      if (!packageManifest.files?.some((entry) => entry.path === report.package.path.replace(/^desktop-dist\//, "") && entry.sha256 === report.package.sha256)) {
+        errors.push(`${label}: package artifact is absent from the package manifest`);
+      }
+    } catch (error) {
+      errors.push(`${label}: package manifest is invalid: ${error.message}`);
+    }
+  }
+  if (exactKeys(report.executable, ["path", "sha256"], `${label}.executable`, errors)) {
+    if (!safeRelativePath(report.executable.path) || !validSha(report.executable.sha256)) errors.push(`${label}: executable binding is invalid`);
+    else if (!artifactIsBound(gate, report.executable)) errors.push(`${label}: executable must be a hash-bound raw artifact`);
+  }
+  let recomputed = null;
+  try {
+    recomputed = validateZk682DesktopPersistenceSequence({
+      ...report.phases,
+      userDataPath: report.phases?.write?.userDataPath,
+    });
+  } catch (error) {
+    errors.push(`${label}: desktop persistence sequence is invalid: ${error.message}`);
+  }
+  if (recomputed && stableJson(recomputed) !== stableJson(report.summary)) errors.push(`${label}: declared desktop summary does not match phase evidence`);
+  if (report.passed !== true || report.summary?.decision !== "PASS") errors.push(`${label}: desktop persistence report did not pass`);
+  return report.passed === true && report.summary?.decision === "PASS" && recomputed !== null;
+}
+
+function validateResourceGrowthEvidence(report, manifest, label, errors) {
+  if (!exactKeys(report, ["schemaVersion", "gate", "source", "capturedAt", "command", "browser", "thresholds", "warmup", "samples", "summary", "errors", "passed"], label, errors)) return false;
+  if (report.schemaVersion !== ZK682_RESOURCE_GROWTH_SCHEMA_VERSION) errors.push(`${label}: wrong renderer resource-growth schema`);
+  if (report.gate !== "renderer-resource-growth") errors.push(`${label}: wrong renderer resource-growth gate`);
+  if (!exactKeys(report.source, ["commit", "mode"], `${label}.source`, errors)) return false;
+  if (!validCommit(report.source.commit) || report.source.commit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
+  if (report.source.mode !== "e2e") errors.push(`${label}: source mode must be e2e`);
+  if (!validCapturedAt(report.capturedAt)) errors.push(`${label}: capturedAt is invalid`);
+  if (typeof report.command !== "string" || !report.command) errors.push(`${label}: command is required`);
+  if (report.browser?.name !== "chromium" || report.browser?.cdpHeap !== true || typeof report.browser?.version !== "string" || !report.browser.version) errors.push(`${label}: real Chromium CDP heap evidence is required`);
+  if (stableJson(report.thresholds) !== stableJson(ZK682_RESOURCE_GROWTH_THRESHOLDS)) errors.push(`${label}: resource-growth thresholds differ from the certification contract`);
+  const recomputed = evaluateZk682ResourceGrowth(report.samples, ZK682_RESOURCE_GROWTH_THRESHOLDS);
+  if (stableJson(recomputed.metrics) !== stableJson(report.summary) || stableJson(recomputed.errors) !== stableJson(report.errors) || recomputed.passed !== report.passed) {
+    errors.push(`${label}: declared renderer result does not match raw samples`);
+  }
+  if (report.passed !== true) errors.push(`${label}: renderer resource-growth report did not pass`);
+  return report.passed === true && recomputed.passed === true;
+}
+
+const SUPPLEMENTAL_STABILITY_GATES = Object.freeze({
+  "save-load-resource-stability": ["saveLoads", "resourceGrowthBounded"],
+  "long-session-resource-stability": ["sessionMinutes", "resourceGrowthBounded"],
+  "editing-overlay-sleep-recovery": ["scenarios", "recoveryPassed"],
+});
+
+function validateSupplementalStabilityEvidence(report, expectedGate, manifest, label, errors) {
+  if (!exactKeys(report, ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "observations", "passed"], label, errors)) return false;
+  if (report.schemaVersion !== 1 || report.gate !== expectedGate) errors.push(`${label}: wrong supplemental stability schema/gate`);
+  if (!validCommit(report.candidateCommit) || report.candidateCommit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
+  if (!validCapturedAt(report.capturedAt)) errors.push(`${label}: capturedAt is invalid`);
+  if (typeof report.command !== "string" || !report.command) errors.push(`${label}: command is required`);
+  const keys = SUPPLEMENTAL_STABILITY_GATES[expectedGate];
+  if (exactKeys(report.observations, keys, `${label}.observations`, errors)) {
+    if (expectedGate === "save-load-resource-stability" && (!Number.isFinite(report.observations.saveLoads) || report.observations.saveLoads <= 0 || report.observations.resourceGrowthBounded !== true)) errors.push(`${label}: save-load observations did not pass`);
+    if (expectedGate === "long-session-resource-stability" && (!Number.isFinite(report.observations.sessionMinutes) || report.observations.sessionMinutes <= 0 || report.observations.resourceGrowthBounded !== true)) errors.push(`${label}: long-session observations did not pass`);
+    if (expectedGate === "editing-overlay-sleep-recovery") {
+      const scenarios = Array.isArray(report.observations.scenarios) ? [...report.observations.scenarios].sort() : [];
+      if (stableJson(scenarios) !== stableJson(["editing", "overlay", "recovery", "sleep-wake"]) || report.observations.recoveryPassed !== true) errors.push(`${label}: interaction recovery observations did not pass`);
+    }
+  }
+  if (report.passed !== true) errors.push(`${label}: supplemental stability report did not pass`);
+  return report.passed === true;
+}
+
 function validateCriterionResults(gateId, results, errors) {
   const expected = CRITERIA_BY_GATE.get(gateId) ?? [];
   if (!Array.isArray(results)) {
@@ -142,7 +312,7 @@ function expectBooleanObservation(observations, key, criterion, criteria, errors
   }
 }
 
-function validateGateObservations(gate, manifest, errors) {
+function validateGateObservations(gate, manifest, root, errors) {
   const observations = gate.observations;
   if (!isRecord(observations)) {
     errors.push(`${gate.gateId}: observations must be an object`);
@@ -176,15 +346,37 @@ function validateGateObservations(gate, manifest, errors) {
     expectBooleanObservation(observations, "historicalMigrationsPassed", "historical-save-migrations", criteria, errors);
     expectBooleanObservation(observations, "platformServicesPassed", "platform-services", criteria, errors);
   } else if (gate.gateId === "browser-pwa") {
+    exactKeys(observations, ["browserPassed", "goldenE2ePassed", "offlineLaunchPassed", "browsers", "offlineIndexedDbEvidence"], "browser-pwa.observations", errors);
     expectBooleanObservation(observations, "browserPassed", "browser-pwa-certification", criteria, errors);
     expectBooleanObservation(observations, "goldenE2ePassed", "golden-e2e", criteria, errors);
     expectBooleanObservation(observations, "offlineLaunchPassed", "offline-launch", criteria, errors);
     if (!Array.isArray(observations.browsers) || observations.browsers.length === 0) errors.push("browser-pwa: browsers must be recorded");
+    const report = readTypedArtifact(observations.offlineIndexedDbEvidence, gate, root, "browser-pwa.offlineIndexedDbEvidence", errors);
+    const passed = report ? validatePwaPersistenceEvidence(report, manifest, "browser-pwa.offlineIndexedDbEvidence", errors) : false;
+    if (observations.offlineLaunchPassed !== passed) errors.push("offline-launch: declared status disagrees with typed IndexedDB evidence");
   } else if (gate.gateId === "packaged-desktop") {
+    exactKeys(observations, ["packagedElectronPassed", "desktopPersistencePassed", "platforms", "persistenceEvidence"], "packaged-desktop.observations", errors);
     expectBooleanObservation(observations, "packagedElectronPassed", "packaged-electron-certification", criteria, errors);
     expectBooleanObservation(observations, "desktopPersistencePassed", "desktop-persistence", criteria, errors);
     const platforms = Array.isArray(observations.platforms) ? [...observations.platforms].sort() : [];
     if (stableJson(platforms) !== stableJson(["darwin", "win32"])) errors.push("packaged-desktop: platforms must contain darwin and win32");
+    const persistenceEvidence = observations.persistenceEvidence;
+    const evidencePlatforms = [];
+    let evidencePassed = Array.isArray(persistenceEvidence) && persistenceEvidence.length === 2;
+    if (!Array.isArray(persistenceEvidence)) errors.push("packaged-desktop: persistenceEvidence must be an array");
+    else for (const [index, reference] of persistenceEvidence.entries()) {
+      const label = `packaged-desktop.persistenceEvidence[${index}]`;
+      if (!exactKeys(reference, ["platform", "architecture", "path", "sha256"], label, errors)) { evidencePassed = false; continue; }
+      evidencePlatforms.push(reference.platform);
+      if (typeof reference.architecture !== "string" || !reference.architecture) errors.push(`${label}: architecture is required`);
+      const report = readTypedArtifact({ path: reference.path, sha256: reference.sha256 }, gate, root, label, errors);
+      if (!report || report.platform !== reference.platform || report.architecture !== reference.architecture || !validateDesktopPersistenceEvidence(report, manifest, gate, root, label, errors)) evidencePassed = false;
+    }
+    if (stableJson([...evidencePlatforms].sort()) !== stableJson(["darwin", "win32"])) {
+      errors.push("packaged-desktop: typed persistence evidence must contain exactly darwin and win32");
+      evidencePassed = false;
+    }
+    if (observations.desktopPersistencePassed !== evidencePassed) errors.push("desktop-persistence: declared status disagrees with typed platform evidence");
   } else if (gate.gateId === "asset-delivery") {
     const checks = [
       ["initial-critical-assets", "initialCriticalBytes", ZK682_BUDGETS.initialCriticalBytes],
@@ -213,11 +405,27 @@ function validateGateObservations(gate, manifest, errors) {
       && observations.fixtureLoadMs <= observations.fixtureLoadBudgetMs;
     if ((criteria.find((entry) => entry.id === "startup-and-fixture-load")?.status === "pass") !== startupPassed) errors.push("startup-and-fixture-load: declared status disagrees with observed timings and budgets");
   } else if (gate.gateId === "stability") {
+    exactKeys(observations, ["routeChangesStable", "saveLoadsStable", "longSessionStable", "interactionRecoveryPassed", "routeChanges", "saveLoads", "sessionMinutes", "resourceGrowthEvidence", "saveLoadEvidence", "longSessionEvidence", "interactionRecoveryEvidence"], "stability.observations", errors);
     expectBooleanObservation(observations, "routeChangesStable", "route-change-resource-stability", criteria, errors);
     expectBooleanObservation(observations, "saveLoadsStable", "save-load-resource-stability", criteria, errors);
     expectBooleanObservation(observations, "longSessionStable", "long-session-resource-stability", criteria, errors);
     expectBooleanObservation(observations, "interactionRecoveryPassed", "editing-overlay-sleep-recovery", criteria, errors);
     for (const key of ["routeChanges", "saveLoads", "sessionMinutes"]) if (!Number.isFinite(observations[key]) || observations[key] <= 0) errors.push(`stability: observations.${key} must be positive`);
+    const resourceReport = readTypedArtifact(observations.resourceGrowthEvidence, gate, root, "stability.resourceGrowthEvidence", errors);
+    const resourcePassed = resourceReport ? validateResourceGrowthEvidence(resourceReport, manifest, "stability.resourceGrowthEvidence", errors) : false;
+    if (observations.routeChangesStable !== resourcePassed) errors.push("route-change-resource-stability: declared status disagrees with typed renderer resource-growth evidence");
+    const supplemental = [
+      ["saveLoadEvidence", "save-load-resource-stability", "saveLoadsStable", "saveLoads"],
+      ["longSessionEvidence", "long-session-resource-stability", "longSessionStable", "sessionMinutes"],
+      ["interactionRecoveryEvidence", "editing-overlay-sleep-recovery", "interactionRecoveryPassed", null],
+    ];
+    for (const [referenceKey, expectedGate, observationKey, countKey] of supplemental) {
+      const label = `stability.${referenceKey}`;
+      const report = readTypedArtifact(observations[referenceKey], gate, root, label, errors);
+      const passed = report ? validateSupplementalStabilityEvidence(report, expectedGate, manifest, label, errors) : false;
+      if (countKey && report?.observations?.[countKey] !== observations[countKey]) errors.push(`${label}: normalized count disagrees with typed evidence`);
+      if (observations[observationKey] !== passed) errors.push(`${expectedGate}: declared status disagrees with typed evidence`);
+    }
   } else if (gate.gateId === "physical-midrange" || gate.gateId === "physical-lowend") {
     if (observations.physicalDevice !== true) errors.push(`${gate.gateId}: physicalDevice must be true`);
     if (observations.scenario?.holes !== 36 || observations.scenario?.golfers !== 100) errors.push(`${gate.gateId}: scenario must be 36 holes and 100 golfers`);
@@ -261,7 +469,7 @@ function validateGateResult(gate, manifest, root, errors) {
       errors.push(`${gateId}: ${error.message}`);
     }
   }
-  validateGateObservations(gate, manifest, errors);
+  validateGateObservations(gate, manifest, root, errors);
 }
 
 function validateExceptions(exceptions, errors) {
@@ -398,7 +606,8 @@ export function buildZk682Report(manifest, options) {
     limitations: [
       "Headless frame p95 is report-only and never satisfies either physical-device criterion.",
       "GO requires both physical midrange and low-end evidence; absent physical evidence produces HOLD.",
-      "This report aggregates evidence and does not implement missing PWA IndexedDB, packaged native-save, or renderer-leak gates.",
+      "Offline IndexedDB, packaged native persistence, and renderer resource-growth evidence are schema-validated and candidate-bound.",
+      "Renderer resource-growth satisfies only route/resource stability; save-load, long-session, and interaction recovery retain separate typed machine evidence.",
     ],
   };
   return { ...reportWithoutDigest, reportDigest: sha256(`${stableJson(reportWithoutDigest)}\n`) };

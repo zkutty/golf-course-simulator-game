@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateZk682DesktopPersistenceSequence } from "./zk682-desktop-persistence-contract.mjs";
+import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence-contract.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const marker = "COURSECRAFT_DESKTOP_PERSISTENCE_CERT=";
@@ -14,16 +14,28 @@ const timeoutMs = 120_000;
 const args = process.argv.slice(2);
 let executableArg;
 let outputArg;
+let expectedCommitArg;
 for (let index = 0; index < args.length; index += 1) {
   if (args[index] === "--output") outputArg = args[++index];
+  else if (args[index] === "--expected-commit") expectedCommitArg = args[++index];
   else if (!args[index].startsWith("--") && !executableArg) executableArg = args[index];
   else throw new Error(`Unknown argument: ${args[index]}`);
+}
+const currentCommit = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+if (currentCommit.status !== 0) throw new Error(`Unable to resolve candidate commit: ${currentCommit.stderr}`);
+const expectedCommit = expectedCommitArg ?? process.env.ZK682_EXPECTED_COMMIT ?? process.env.GITHUB_SHA ?? process.env.COMMIT_SHA ?? currentCommit.stdout.trim();
+if (!/^[0-9a-f]{40}$/.test(expectedCommit ?? "")) {
+  throw new Error("Packaged persistence certification requires --expected-commit with a full 40-character SHA");
+}
+if (expectedCommit !== currentCommit.stdout.trim()) {
+  throw new Error(`Expected candidate ${expectedCommit} does not match checked-out HEAD ${currentCommit.stdout.trim()}`);
 }
 const candidates = process.platform === "win32"
   ? [path.join(root, "desktop-dist", "win-unpacked", "CourseCraft.exe")]
   : ["mac-arm64", "mac-universal", "mac"].map((directory) => path.join(root, "desktop-dist", directory, "CourseCraft.app", "Contents", "MacOS", "CourseCraft"));
 const executable = path.resolve(executableArg ?? candidates.find(existsSync) ?? candidates[0]);
 if (!existsSync(executable)) throw new Error(`Missing packaged CourseCraft executable: ${executable}`);
+const reportOutput = path.resolve(outputArg ?? `artifacts/zk682/raw/desktop-${process.platform}-${process.arch}.json`);
 
 async function launch(phase, userDataPath) {
   const result = await new Promise((resolve, reject) => {
@@ -55,6 +67,27 @@ async function launch(phase, userDataPath) {
 }
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+async function sha256File(file) {
+  const hash = createHash("sha256");
+  await new Promise((resolvePromise, reject) => {
+    const stream = createReadStream(file);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.once("error", reject);
+    stream.once("end", resolvePromise);
+  });
+  return hash.digest("hex");
+}
+
+const packageManifestPath = path.join(root, "desktop-dist", "coursecraft-desktop-manifest.json");
+const packageManifestBytes = await readFile(packageManifestPath);
+const packageManifest = JSON.parse(packageManifestBytes);
+assert.equal(packageManifest.sourceCommit, expectedCommit, "desktop package manifest candidate commit mismatch");
+assert.equal(packageManifest.platform, process.platform, "desktop package manifest platform mismatch");
+assert.equal(packageManifest.architecture, process.arch, "desktop package manifest architecture mismatch");
+const executableRelative = path.relative(root, executable).split(path.sep).join("/");
+const packagePrefix = path.relative(path.join(root, "desktop-dist"), executable).split(path.sep)[0];
+const packageArchive = packageManifest.files.find((file) => file.path.startsWith(`${packagePrefix}/`));
+assert(packageArchive, `desktop package manifest has no archive for ${packagePrefix}`);
 const userDataPath = await mkdtemp(path.join(os.tmpdir(), "coursecraft-zk682-persistence-"));
 let completed = false;
 try {
@@ -70,14 +103,23 @@ try {
   assert.equal(sha256(activeBefore), sha256(backupBefore));
   await writeFile(activePath, "{controlled-corrupt-active", { encoding: "utf8", mode: 0o600 });
   const recover = await launch("recover", userDataPath);
-  const summary = validateZk682DesktopPersistenceSequence({ write, verify, recover, userDataPath });
-  const evidence = {
-    schemaVersion: 1,
-    issue: "ZK-682",
+  const evidence = createZk682DesktopPersistenceReport({
+    candidateCommit: expectedCommit,
     capturedAt: new Date().toISOString(),
-    executable,
-    userDataLifecycle: "temporary-and-removed-after-success",
-    summary,
+    platform: process.platform,
+    architecture: process.arch,
+    command: "npm run desktop:package:persistence",
+    packageArtifact: {
+      path: `desktop-dist/${packageArchive.path}`,
+      sha256: packageArchive.sha256,
+      manifestPath: "desktop-dist/coursecraft-desktop-manifest.json",
+      manifestSha256: sha256(packageManifestBytes),
+    },
+    executable: {
+      path: executableRelative,
+      sha256: await sha256File(executable),
+    },
+    userDataPath,
     filesystem: {
       activeRelativePath: path.relative(userDataPath, activePath),
       activeMode: (await stat(activePath)).mode & 0o777,
@@ -86,14 +128,10 @@ try {
       corruptedActiveSha256: sha256(await readFile(activePath)),
     },
     phases: { write, verify, recover },
-  };
-  evidence.evidenceSha256 = sha256(Buffer.from(JSON.stringify(evidence)));
-  if (outputArg) {
-    const output = path.resolve(outputArg);
-    await mkdir(path.dirname(output), { recursive: true });
-    await writeFile(output, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
-  }
-  process.stdout.write(`${JSON.stringify({ ok: true, decision: summary.decision, canonicalHash: summary.canonicalHash, saveSchemaVersion: summary.saveSchemaVersion, relaunchVerified: summary.relaunchVerified, nativeRecoveryVerified: summary.nativeRecoveryVerified, evidenceSha256: evidence.evidenceSha256, output: outputArg ? path.resolve(outputArg) : null })}\n`);
+  });
+  await mkdir(path.dirname(reportOutput), { recursive: true });
+  await writeFile(reportOutput, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+  process.stdout.write(`${JSON.stringify({ ok: true, decision: evidence.summary.decision, canonicalHash: evidence.summary.canonicalHash, saveSchemaVersion: evidence.summary.saveSchemaVersion, relaunchVerified: evidence.summary.relaunchVerified, nativeRecoveryVerified: evidence.summary.nativeRecoveryVerified, candidateCommit: evidence.candidateCommit, platform: evidence.platform, output: reportOutput })}\n`);
   completed = true;
 } finally {
   if (completed) await rm(userDataPath, { recursive: true, force: true });

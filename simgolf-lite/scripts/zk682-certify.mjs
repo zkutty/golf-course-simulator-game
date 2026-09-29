@@ -17,8 +17,8 @@ const valueFor = (flag) => {
 const inputArg = valueFor("--input");
 const outputArg = valueFor("--output-dir");
 const expectedCommit = valueFor("--expected-commit") ?? process.env.ZK682_EXPECTED_COMMIT;
-if (!inputArg || !outputArg || args.some((arg) => arg.startsWith("--") && !["--input", "--output-dir", "--expected-commit"].includes(arg))) {
-  throw new Error("Usage: node scripts/zk682-certify.mjs --input <manifest.json> --output-dir <directory> [--expected-commit <full-sha>]");
+if (!inputArg || !outputArg || !/^[0-9a-f]{40}$/.test(expectedCommit ?? "") || args.some((arg) => arg.startsWith("--") && !["--input", "--output-dir", "--expected-commit"].includes(arg))) {
+  throw new Error("Usage: node scripts/zk682-certify.mjs --input <manifest.json> --output-dir <directory> --expected-commit <full-sha>");
 }
 
 function git(args, encoding = "utf8") {

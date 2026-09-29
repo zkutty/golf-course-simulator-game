@@ -112,8 +112,10 @@ test("rejects atlas residency growth after warmup", () => {
 test("builds a versioned aggregation-ready report", () => {
   const samples = Array.from({ length: 6 }, (_, index) => sample(index + 1));
   const report = createZk682ResourceGrowthReport({
-    source: { commit: "abc123", mode: "e2e" },
-    browser: { name: "chromium", version: "test" },
+    source: { commit: "a".repeat(40), mode: "e2e" },
+    capturedAt: "2026-09-29T12:00:00.000Z",
+    command: "fixture resource growth",
+    browser: { name: "chromium", version: "test", cdpHeap: true },
     thresholds: ZK682_RESOURCE_GROWTH_THRESHOLDS,
     warmup: { baseBundles: residency.baseBundles },
     samples,
@@ -121,4 +123,19 @@ test("builds a versioned aggregation-ready report", () => {
   assert.equal(report.schemaVersion, ZK682_RESOURCE_GROWTH_SCHEMA_VERSION);
   assert.equal(report.gate, "renderer-resource-growth");
   assert.equal(report.passed, true);
+});
+
+test("rejects local and abbreviated source identities", () => {
+  const samples = Array.from({ length: 6 }, (_, index) => sample(index + 1));
+  for (const commit of ["local", "abc123"]) {
+    assert.throws(() => createZk682ResourceGrowthReport({
+      source: { commit, mode: "e2e" },
+      capturedAt: "2026-09-29T12:00:00.000Z",
+      command: "fixture resource growth",
+      browser: { name: "chromium", version: "test", cdpHeap: true },
+      thresholds: ZK682_RESOURCE_GROWTH_THRESHOLDS,
+      warmup: { baseBundles: residency.baseBundles },
+      samples,
+    }), /full candidate SHA/);
+  }
 });
