@@ -29,7 +29,6 @@ import {
   atlasActivationSnapshot,
   atlasFallbackDiagnostics,
   atlasResidencySnapshot,
-  getGolferFrame,
   getLandscapeMaterialField,
   getParklandComposableField,
   getParklandComposableRuntime,
@@ -37,7 +36,6 @@ import {
   getPropFrame,
   getTerrainDetailFrame,
   getTerrainFrame,
-  golfersAtlasReady,
   loadAtlases,
   supersedePendingAtlasLoad,
   type AtlasRenderContext,
@@ -56,42 +54,7 @@ import { formatCurrency } from "../i18n/format";
 import type { MessageKey } from "../i18n/catalog";
 import { useI18n } from "../i18n/useI18n";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
-import { entityDepth } from "../game/render/objectPlacement";
-import {
-  GOLFER_CONTACT_SHADOW,
-  advanceGroundedWalkPhase,
-  groundedGolferFrame,
-} from "../game/render/golferGrounding";
-import {
-  GOLFER_DISPLAY_W,
-  GOLFER_FEET_Y,
-  GOLFER_FRAME_H,
-  GOLFER_FRAME_W,
-  REACTION_SEC,
-  WALK_STRIDES_PER_TILE,
-  facingOctant,
-  golferFrameName,
-  golferPose,
-  golferTint,
-  golferVariant,
-  reactionFor,
-  type GolferReaction,
-} from "../game/render/golferSprites";
-import { ballFlightPose, landingBehavior, retainedPreviewShotPose } from "../game/render/ballFlight";
-import {
-  EMOTE_STALL_MS,
-  createEmoteScheduler,
-  emotePresentation,
-  feeEmote,
-  hazardEmote,
-  holeOutEmote,
-  moodEmote,
-  pruneEmotes,
-  resolveOverlaps,
-  tryShowEmote,
-  type EmoteKind,
-} from "../game/render/emotes";
-import { forgetGolfer, recordEmote } from "../game/render/emoteFeed";
+import { retainedPreviewShotPose } from "../game/render/ballFlight";
 import { TERRAIN_PALETTES, terrainPattern } from "../accessibility/terrainPalettes";
 import type { ColorVisionMode } from "../game/onboarding/profile";
 import type { ResortOperations } from "../game/property/types";
@@ -100,11 +63,6 @@ import { FLYOVER_DURATION_MS, buildFlyoverKeys, sampleFlyover, type FlyoverKey }
 import { PerfWindow } from "../game/render/perfStats";
 import { recordM35Metric } from "../game/render/m35Telemetry";
 import type { CourseSceneCompositionPlanV1 } from "../game/render/courseSceneComposition";
-import {
-  MAX_ACTIVE_IMPACTS,
-  MAX_ACTIVE_RIPPLES,
-  appendBoundedEffect,
-} from "../game/render/worldEffects";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import {
   decorationTiles,
@@ -232,6 +190,10 @@ import {
   createMobilityEntitiesSceneSystem,
   type MobilityEntitiesSceneSystem,
 } from "./renderer/scenes/mobilityEntitiesScene";
+import {
+  createLiveEntitiesSceneSystem,
+  type LiveEntitiesSceneSystem,
+} from "./renderer/scenes/liveEntitiesScene";
 
 type DeferredWorldScenes = typeof import("./renderer/scenes/deferredWorldScenes");
 type DeriveCourseSceneComposition = typeof import("../game/render/courseSceneComposition")["deriveCourseSceneComposition"];
@@ -625,91 +587,6 @@ function createCompactedPathCoreTexture(
 // Cliff face colors (exposed earth), lit by the fixed NW sun: the SW-facing
 // (screen lower-left) face sits in shadow, the SE-facing face catches more.
 
-/**
- * Build a thought-bubble display object (ZKU-155): rounded white bubble +
- * tail dots + a comic icon. Lives in the screen overlay at fixed screen
- * size, so it reads at every zoom and rotation. Origin (0,0) is the anchor
- * point just above the golfer's head; the bubble body floats above it.
- */
-function buildEmoteBubble(kind: EmoteKind): PIXI.Container {
-  const c = new PIXI.Container();
-  const g = new PIXI.Graphics();
-  // Tail dots walking up toward the bubble body.
-  g.circle(-5, -2, 1.6);
-  g.fill({ color: 0xffffff, alpha: 0.95 });
-  g.stroke({ width: 1, color: 0x4a4a40, alpha: 0.9 });
-  g.circle(-8, -7, 2.4);
-  g.fill({ color: 0xffffff, alpha: 0.95 });
-  g.stroke({ width: 1, color: 0x4a4a40, alpha: 0.9 });
-  // Body.
-  g.roundRect(-16, -38, 32, 26, 9);
-  g.fill({ color: 0xffffff, alpha: 0.96 });
-  g.stroke({ width: 1.5, color: 0x4a4a40, alpha: 0.95 });
-  c.addChild(g);
-
-  const icon = new PIXI.Graphics();
-  const cy = -25; // icon center inside the body
-  switch (kind) {
-    case "star":
-      icon.star(0, cy, 5, 9, 4.2);
-      icon.fill(0xe8c15a);
-      icon.stroke({ width: 1, color: 0x8a6d2a });
-      break;
-    case "happy":
-    case "angry": {
-      const face = kind === "happy" ? 0xffd75e : 0xef8354;
-      icon.circle(0, cy, 8);
-      icon.fill(face);
-      icon.stroke({ width: 1, color: 0x8a6d2a });
-      icon.circle(-2.8, cy - 2, 1.2);
-      icon.circle(2.8, cy - 2, 1.2);
-      icon.fill(0x4a3b1e);
-      // moveTo first: arc() would otherwise connect from the last path
-      // point (the eye), drawing a stray line through the face.
-      if (kind === "happy") {
-        const a0 = Math.PI * 0.15;
-        icon.moveTo(4.2 * Math.cos(a0), cy + 0.5 + 4.2 * Math.sin(a0));
-        icon.arc(0, cy + 0.5, 4.2, a0, Math.PI * 0.85);
-      } else {
-        const a0 = Math.PI * 1.2;
-        icon.moveTo(4.2 * Math.cos(a0), cy + 6 + 4.2 * Math.sin(a0));
-        icon.arc(0, cy + 6, 4.2, a0, Math.PI * 1.8);
-      }
-      icon.stroke({ width: 1.4, color: 0x4a3b1e });
-      break;
-    }
-    case "storm":
-      icon.circle(-4, cy - 1, 4.4);
-      icon.circle(1.5, cy - 3, 5);
-      icon.circle(5.5, cy, 3.6);
-      icon.fill(0x6b7280);
-      icon.stroke({ width: 1, color: 0x3f4650 });
-      icon.poly([1.5, cy + 2, -1.5, cy + 7, 0.5, cy + 7, -1.5, cy + 12, 3.5, cy + 6, 1.5, cy + 6, 3.5, cy + 2]);
-      icon.fill(0xffd75e);
-      break;
-    default: {
-      // Text glyphs: Zz / $ / !
-      const style: Partial<PIXI.TextStyle> = {
-        fontFamily: "Arial, sans-serif",
-        fontWeight: "900",
-        fontSize: kind === "zzz" ? 13 : 16,
-        fill:
-          kind === "cashGood" ? 0x2f8a4a : kind === "cashBad" ? 0xc0392b : kind === "alert" ? 0xc0392b : 0x4a5568,
-      };
-      const text = new PIXI.Text({
-        text: kind === "zzz" ? "Zz" : kind === "alert" ? "!" : "$",
-        style: style as PIXI.TextStyle,
-      });
-      text.anchor.set(0.5);
-      text.position.set(0, cy);
-      c.addChild(text);
-      break;
-    }
-  }
-  c.addChild(icon);
-  return c;
-}
-
 export interface PixiStageProps {
   course: Course;
   holes: Hole[];
@@ -1083,56 +960,6 @@ function visualHeightfieldForRenderer(
 }
 
 /**
- * Pooled per-golfer render objects (ZKU-153). Two tiers, chosen once at
- * creation: animated character sprites when the golfers atlas is loaded
- * (shadow + base sprite + tinted clothing twin + selection ring), or the
- * legacy colored dot when it isn't.
- */
-interface GolferEntry {
-  holder: PIXI.Container;
-  ball: PIXI.Graphics;
-  /** Ground shadow that tracks the ball's ground path (ZKU-154). */
-  ballShadow: PIXI.Graphics;
-  lastBall: { x: number; y: number } | null;
-  /** Previous airborne ball screen position, for the motion trail. */
-  prevBallIso: { x: number; y: number } | null;
-  /** Touchdown FX already fired for the current flight. */
-  ballLanded: boolean;
-  /** Edge-trigger state for emote bubbles (ZKU-155). */
-  emote: {
-    lastScored: number;
-    prevMood: number;
-    feeChecked: boolean;
-    lastPos: { x: number; y: number };
-    stillSinceMs: number;
-  };
-  sprite: {
-    shadow: PIXI.Graphics;
-    ring: PIXI.Graphics;
-    base: PIXI.Sprite;
-    tintLayer: PIXI.Sprite;
-    variant: number;
-    tint: number;
-    /** Last applied atlas frame, to skip redundant texture swaps. */
-    lastFrame: string;
-    /** Accumulated stride cycles (advanced by ground distance walked). */
-    walkPhase: number;
-    lastPos: { x: number; y: number } | null;
-    /** Last non-zero facing, world space (survives pauses/rotation). */
-    dirX: number;
-    dirY: number;
-    reaction: GolferReaction | null;
-    reactionUntil: number;
-    lastScored: number;
-  } | null;
-  dot: {
-    body: PIXI.Graphics;
-    lastColor: string;
-    lastMoodBucket: number;
-  } | null;
-}
-
-/**
  * Chunked terrain (ZKU-142): the map is partitioned into CHUNK_TILES²-tile
  * chunks, each a static container rebuilt only when one of its tiles (or a
  * bordering tile — shading/cliffs read neighbors) changes, and culled when
@@ -1261,6 +1088,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const playerProCollectionSceneRef = useRef<PlayerProCollectionSceneSystem | null>(null);
   const holeMarkersSceneRef = useRef<HoleMarkersSceneSystem | null>(null);
   const mobilityEntitiesSceneRef = useRef<MobilityEntitiesSceneSystem | null>(null);
+  const liveEntitiesSceneRef = useRef<LiveEntitiesSceneSystem | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
   const sceneCameraDeriversRef = useRef<readonly [DeriveCourseSceneComposition, DeriveCourseSceneCamera] | null>(null);
   const [courseSceneCompositionEntry, setCourseSceneCompositionEntry] = useState<readonly [
@@ -1321,16 +1149,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     gx: number;
     gy: number;
   }>>([]);
-  const ripplesRef = useRef<Array<{ x: number; y: number; t0: number }>>([]);
-  const rippleGraphicsRef = useRef<PIXI.Graphics | null>(null);
-  // Touchdown particle bursts (ZKU-154): sand puffs, grass flecks, green
-  // check ticks. Tile coords + elevation so rotation re-projects them.
-  const impactsRef = useRef<Array<{ kind: "sand" | "grass" | "check"; x: number; y: number; e: number; t0: number }>>([]);
-  // Emote bubbles (ZKU-155): scheduler decides what shows, the map holds
-  // the screen-overlay display objects per golfer.
-  const emoteSchedulerRef = useRef(createEmoteScheduler());
-  const emoteSpritesRef = useRef<Map<number, PIXI.Container>>(new Map());
-  const simMovingAtRef = useRef(0);
   const dayMinuteRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     dayMinuteRef.current = props.dayMinute;
@@ -1345,7 +1163,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     text: PIXI.Text | null;
     sections: Record<string, number>;
   }>({ win: new PerfWindow(180), enabled: false, lastPollMs: 0, lastHudMs: 0, text: null, sections: {} });
-  const golferPoolRef = useRef<Map<number, GolferEntry>>(new Map());
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
   const terrainPreviewRenderRef = useRef<{
@@ -1699,6 +1516,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       rotation,
       surfaceHeightAt,
     }),
+    liveEntities: [course, effectiveTiles, rotation, surfaceHeightAt],
     naturalProps: [
       atlasRevision,
       course.buildings,
@@ -2494,24 +2312,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
         camRef.current.initialized = true;
         applyCamera();
       },
-      golferGrounding: (id: number) => {
-        const golfer = golfersRef?.current?.find((candidate) => candidate.id === id);
-        const entry = golferPoolRef.current.get(id);
-        if (!golfer || !entry) return null;
-        const frame = groundedGolferFrame(golfer.x, golfer.y, rotation, surfaceHeightAt);
-        const shadow = entry.sprite?.shadow;
-        return {
-          golfer: { x: golfer.x, y: golfer.y, segKind: golfer.segKind, segT: golfer.segT },
-          sample: { x: golfer.x + .5, y: golfer.y + .5, elevation: frame.elevation },
-          expected: { x: frame.screen.x, y: frame.screen.y, depth: frame.depth },
-          holder: { x: entry.holder.position.x, y: entry.holder.position.y, depth: entry.holder.zIndex, visible: entry.holder.visible },
-          feet: entry.sprite ? { x: entry.sprite.base.position.x, y: entry.sprite.base.position.y, anchorY: entry.sprite.base.anchor.y } : null,
-          shadow: shadow ? { label: shadow.label, x: shadow.position.x, y: shadow.position.y, alpha: shadow.alpha } : null,
-          sprite: entry.sprite ? { walkPhase: entry.sprite.walkPhase, frame: entry.sprite.lastFrame } : null,
-          poolCount: golferPoolRef.current.size,
-          activeEffects: impactsRef.current.length + ripplesRef.current.length,
-        };
-      },
+      golferGrounding: (id: number) => liveEntitiesSceneRef.current?.golferGrounding(
+        id,
+        golfersRef?.current ?? [],
+      ) ?? null,
       surfaceHeightAt: (x: number, y: number) => surfaceHeightAt(x, y),
       screenToTile,
       screenToWorld: screenToWorldPoint,
@@ -2562,8 +2366,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     let cancelled = false;
     const container = containerRef.current;
     if (!container) return;
-    // These ref objects are stable for the app's lifetime.
-    const emoteSprites = emoteSpritesRef.current;
     const perfState = perfRef.current;
 
     const app = new PIXI.Application();
@@ -2696,6 +2498,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       playerProCollectionSceneRef.current = null;
       holeMarkersSceneRef.current = null;
       mobilityEntitiesSceneRef.current = null;
+      liveEntitiesSceneRef.current = null;
       deferredWorldScenesRef.current = null;
       layersRef.current = null;
       chunksRef.current = [];
@@ -2706,13 +2509,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       structureSpriteCountRef.current = 0;
       hoverLineRef.current = null;
       hoverHighlightRef.current = null;
-      golferPoolRef.current.clear();
       surfaceCareWorkersRef.current = [];
-      rippleGraphicsRef.current = null;
-      ripplesRef.current = [];
-      impactsRef.current = [];
-      emoteSprites.clear();
-      emoteSchedulerRef.current = createEmoteScheduler();
       perfState.text = null;
       perfState.win.reset();
       waterAnimRef.current = { last: 0, wasAnimating: false };
@@ -4924,6 +4721,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
       layers.objects,
     );
     const mobilityEntities = createMobilityEntitiesSceneSystem(layers.objects);
+    const liveEntities = createLiveEntitiesSceneSystem({
+      objects: layers.objects,
+      terrainDecals: layers.terrainDecals,
+      fx: layers.fx,
+      screenOverlay: layers.screenOverlay,
+    });
     const host = new SceneSystemHost([
       atmosphere,
       createSurfaceCareSceneSystem(
@@ -4939,6 +4742,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       playerProCollection,
       holeMarkers,
       mobilityEntities,
+      liveEntities,
       createArchitectureOverlaySceneSystem(layers.terrainDecals, () => app.render()),
       createPlayerShotOverlaySceneSystem(layers.fx),
       createOpeningPreviewSceneSystem(layers.fx),
@@ -4955,6 +4759,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     playerProCollectionSceneRef.current = playerProCollection;
     holeMarkersSceneRef.current = holeMarkers;
     mobilityEntitiesSceneRef.current = mobilityEntities;
+    liveEntitiesSceneRef.current = liveEntities;
     sceneSystemHostRef.current = host;
     return () => {
       if (sceneSystemHostRef.current === host) sceneSystemHostRef.current = null;
@@ -4964,6 +4769,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (playerProCollectionSceneRef.current === playerProCollection) playerProCollectionSceneRef.current = null;
       if (holeMarkersSceneRef.current === holeMarkers) holeMarkersSceneRef.current = null;
       if (mobilityEntitiesSceneRef.current === mobilityEntities) mobilityEntitiesSceneRef.current = null;
+      if (liveEntitiesSceneRef.current === liveEntities) liveEntitiesSceneRef.current = null;
       host.dispose();
     };
   }, [appReady]);
@@ -5437,67 +5243,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
       perfMark("ambient");
 
-      // Splash ripples: expanding rings where a ball landed in water. Kept
-      // on even with animations off — it communicates a penalty event.
-      if (!rippleGraphicsRef.current) {
-        const rg = new PIXI.Graphics();
-        layers.fx.addChild(rg);
-        rippleGraphicsRef.current = rg;
-      }
-      const rg = rippleGraphicsRef.current;
-      rg.clear();
-      if (ripplesRef.current.length > 0) {
-        ripplesRef.current = ripplesRef.current.filter((r) => nowMs - r.t0 < 750);
-        for (const r of ripplesRef.current) {
-          const rt = props.animationsEnabled ? (nowMs - r.t0) / 750 : 0.45;
-          const c = tileCenterIso(r.x, r.y, 0, rotation); // water is base level
-          const radius = 4 + rt * 12;
-          rg.ellipse(c.x, c.y, radius, radius / 2);
-          rg.stroke({ width: 1.5 * (1 - rt) + 0.5, color: 0xe9f4ff, alpha: 0.8 * (1 - rt) });
-          if (rt < 0.3) {
-            rg.circle(c.x, c.y - 2, 2.5 * (1 - rt / 0.3));
-            rg.fill({ color: 0xffffff, alpha: 0.7 });
-          }
-        }
-      }
-
-      // Touchdown particles (ZKU-154): short bursts keyed to the surface the
-      // ball hit. Deterministic per-particle offsets from the impact index.
-      if (impactsRef.current.length > 0) {
-        impactsRef.current = impactsRef.current.filter((p) => nowMs - p.t0 < 600);
-        for (const p of impactsRef.current) {
-          const pt = (nowMs - p.t0) / 600;
-          const c = tileCenterIso(p.x, p.y, p.e, rotation);
-          const fade = 1 - pt;
-          if (p.kind === "sand") {
-            for (let i = 0; i < 6; i++) {
-              const a = (i / 6) * Math.PI * 2 + 0.5;
-              const r = 2 + pt * 9;
-              rg.circle(c.x + Math.cos(a) * r, c.y - 2 - pt * 7 + Math.sin(a) * r * 0.4, 1.6 * fade + 0.4);
-              rg.fill({ color: 0xd7c48a, alpha: 0.85 * fade });
-            }
-          } else if (p.kind === "grass") {
-            for (let i = 0; i < 4; i++) {
-              const a = (i / 4) * Math.PI * 2 + 1.1;
-              const r = 1.5 + pt * 6;
-              rg.circle(c.x + Math.cos(a) * r, c.y - 1 - pt * 5 + Math.sin(a) * r * 0.4, 1.1 * fade + 0.3);
-              rg.fill({ color: 0x3e8a44, alpha: 0.8 * fade });
-            }
-          } else {
-            // Green check-up: a small white skid tick that fades quickly.
-            rg.ellipse(c.x, c.y - 1, 3.5 * fade + 1, 1.4 * fade + 0.4);
-            rg.stroke({ width: 1, color: 0xffffff, alpha: 0.8 * fade });
-          }
-        }
-      }
+      const liveEntities = liveEntitiesSceneRef.current;
+      liveEntities?.tickEffects(nowMs, props.animationsEnabled);
 
       perfMark("fx");
 
-      // Live golfers/balls: pooled per-golfer objects in the depth-sorted
-      // objects layer so props occlude them correctly (ZKU-140). Character
-      // sprites (ZKU-153) when the golfers atlas is loaded; legacy dots
-      // otherwise.
-      const pool = golferPoolRef.current;
       const list = liveActive && props.showGolfers !== false ? golfersRef?.current ?? [] : [];
       const terrainPreview = terrainStrokePreviewRef.current;
       habitatFieldSceneRef.current?.tick({
@@ -5512,414 +5262,42 @@ export function PixiStage(requestedProps: PixiStageProps) {
             : terrainPreview?.acceptedTiles ?? []),
         ].filter((point): point is Point => point != null),
       });
-      const seen = new Set<number>();
-      const golferById = new Map<number, GolferRenderData>();
-      // Entity culling bounds (ZKU-160): golfers outside the viewport skip
-      // all animation/texture work, mirroring the chunk culler. Disabled
-      // during the rotation tween (bounds don't model the spin).
+
+      // Preserve the legacy entity culling and tick ordering while the scene
+      // owns every golfer, ball, emote, and transient display object.
       let cullL = -Infinity;
       let cullR = Infinity;
       let cullT = -Infinity;
       let cullB = Infinity;
       const worldCull = layers.world;
-      if (worldCull.rotation === 0 && app) {
-        const m = 96;
+      if (worldCull.rotation === 0) {
+        const margin = 96;
         const halfW = app.screen.width / 2 / worldCull.scale.x;
         const halfH = app.screen.height / 2 / worldCull.scale.y;
-        cullL = worldCull.pivot.x - halfW - m;
-        cullR = worldCull.pivot.x + halfW + m;
-        cullT = worldCull.pivot.y - halfH - m;
-        cullB = worldCull.pivot.y + halfH + m;
+        cullL = worldCull.pivot.x - halfW - margin;
+        cullR = worldCull.pivot.x + halfW + margin;
+        cullT = worldCull.pivot.y - halfH - margin;
+        cullB = worldCull.pivot.y + halfH + margin;
       }
-      if (list.length > 0) {
-        for (const golfer of list) {
-          seen.add(golfer.id);
-          let entry = pool.get(golfer.id);
-          if (!entry) {
-            const holder = new PIXI.Container();
-            const ball = new PIXI.Graphics();
-            ball.circle(0, -2, 2.2);
-            ball.fill(0xffffff);
-            ball.stroke({ width: 0.8, color: 0x555555 });
-            ball.visible = false;
-            // Ball ground shadow (ZKU-154): in the decals layer so it hugs
-            // the terrain under every object.
-            const ballShadow = new PIXI.Graphics();
-            ballShadow.ellipse(0, 0, 3.2, 1.5);
-            ballShadow.fill({ color: 0x000000, alpha: 0.4 });
-            ballShadow.visible = false;
-            layers.terrainDecals.addChild(ballShadow);
-            layers.objects.addChild(holder, ball);
-            entry = {
-              holder,
-              ball,
-              ballShadow,
-              lastBall: null,
-              prevBallIso: null,
-              ballLanded: false,
-              emote: {
-                lastScored: golfer.scoredHoles,
-                prevMood: golfer.mood,
-                feeChecked: false,
-                lastPos: { x: golfer.x, y: golfer.y },
-                stillSinceMs: nowMs,
-              },
-              sprite: null,
-              dot: null,
-            };
-            if (golfersAtlasReady()) {
-              // Drop shadow at the feet, then selection ring, then the two
-              // sprite layers (base colors + tinted grayscale clothing).
-              const shadow = new PIXI.Graphics();
-              shadow.label = "golfer-contact-shadow";
-              shadow.position.set(GOLFER_CONTACT_SHADOW.x, GOLFER_CONTACT_SHADOW.y);
-              shadow.ellipse(0, 0, GOLFER_CONTACT_SHADOW.radiusX, GOLFER_CONTACT_SHADOW.radiusY);
-              shadow.fill({ color: 0x000000, alpha: GOLFER_CONTACT_SHADOW.alpha });
-              const ring = new PIXI.Graphics();
-              ring.visible = false;
-              const scale = GOLFER_DISPLAY_W / GOLFER_FRAME_W;
-              const base = new PIXI.Sprite();
-              base.anchor.set(0.5, GOLFER_FEET_Y / GOLFER_FRAME_H);
-              base.scale.set(scale);
-              const tintLayer = new PIXI.Sprite();
-              tintLayer.anchor.set(0.5, GOLFER_FEET_Y / GOLFER_FRAME_H);
-              tintLayer.scale.set(scale);
-              tintLayer.tint = golferTint(golfer.color, golfer.id);
-              holder.addChild(shadow, ring, base, tintLayer);
-              entry.sprite = {
-                shadow,
-                ring,
-                base,
-                tintLayer,
-                variant: golferVariant(golfer.archetype, golfer.id),
-                tint: tintLayer.tint,
-                lastFrame: "",
-                walkPhase: 0,
-                lastPos: null,
-                dirX: golfer.dirX,
-                dirY: golfer.dirY,
-                reaction: null,
-                reactionUntil: 0,
-                lastScored: golfer.scoredHoles,
-              };
-            } else {
-              const body = new PIXI.Graphics();
-              holder.addChild(body);
-              entry.dot = { body, lastColor: "", lastMoodBucket: -1 };
-            }
-            pool.set(golfer.id, entry);
-          }
-          golferById.set(golfer.id, golfer);
-
-          // --- Emote bubble triggers (ZKU-155): edges from observable
-          // render facts; the scheduler enforces cap + cooldowns.
-          const em = entry.emote;
-          const isSel = props.selectedGolferId === golfer.id;
-          const showEmote = (kind: EmoteKind | null) => {
-            if (kind && tryShowEmote(emoteSchedulerRef.current, golfer.id, kind, nowMs, isSel)) {
-              recordEmote(golfer.id, kind, nowMs);
-            }
-          };
-          if (Math.hypot(golfer.x - em.lastPos.x, golfer.y - em.lastPos.y) > 1e-4) {
-            em.lastPos = { x: golfer.x, y: golfer.y };
-            em.stillSinceMs = nowMs;
-            simMovingAtRef.current = nowMs;
-          }
-          if (golfer.scoredHoles > em.lastScored) {
-            em.lastScored = golfer.scoredHoles;
-            showEmote(holeOutEmote(golfer.lastHoleDelta));
-          }
-          showEmote(moodEmote(em.prevMood, golfer.mood));
-          em.prevMood = golfer.mood;
-          if (!em.feeChecked) {
-            em.feeChecked = true;
-            // Walk-in fee opinion — only for golfers actually starting out.
-            if (golfer.scoredHoles === 0) showEmote(feeEmote(course.baseGreenFee, golfer.id));
-          }
-          // Zzz: standing dead-still while the rest of the sim moves.
-          if (
-            golfer.segKind !== "flight" &&
-            !golfer.shot &&
-            nowMs - em.stillSinceMs > EMOTE_STALL_MS &&
-            nowMs - simMovingAtRef.current < 400
-          ) {
-            em.stillSinceMs = nowMs; // re-arm; the cooldown gates repeats
-            showEmote("zzz");
-          }
-
-          // Position + entity culling first: an offscreen golfer keeps its
-          // trigger bookkeeping (above) but skips all visual work.
-          const grounded = groundedGolferFrame(golfer.x, golfer.y, rotation, surfaceHeightAt);
-          const { screen: c } = grounded;
-          entry.holder.position.set(c.x, c.y);
-          const offscreen = c.x < cullL || c.x > cullR || c.y < cullT || c.y > cullB;
-          entry.holder.visible = !offscreen;
-          if (!offscreen) {
-            // Quantize the depth key so the container only re-sorts when the
-            // golfer crosses a meaningful slice of a tile row, not per frame.
-            if (entry.holder.zIndex !== grounded.depth) entry.holder.zIndex = grounded.depth;
-          }
-
-          if (!offscreen && entry.sprite) {
-            const sp = entry.sprite;
-            // Hole-out reactions: a scored-holes tick means "just holed out".
-            if (golfer.scoredHoles > sp.lastScored) {
-              sp.lastScored = golfer.scoredHoles;
-              const r = reactionFor(golfer.lastHoleDelta);
-              if (r) {
-                sp.reaction = r;
-                sp.reactionUntil = nowMs + REACTION_SEC * 1000;
-              }
-            }
-            if (sp.reaction && nowMs >= sp.reactionUntil) sp.reaction = null;
-            // Stride phase advances with actual ground covered, so the walk
-            // cycle tracks every sim speed for free.
-            sp.walkPhase = advanceGroundedWalkPhase(
-              sp.walkPhase,
-              sp.lastPos,
-              golfer,
-              golfer.segKind,
-              WALK_STRIDES_PER_TILE,
-            );
-            sp.lastPos = { x: golfer.x, y: golfer.y };
-            // Keep the last real facing through pauses; stored in world space
-            // so camera rotation re-resolves it naturally.
-            if (golfer.dirX !== 0 || golfer.dirY !== 0) {
-              sp.dirX = golfer.dirX;
-              sp.dirY = golfer.dirY;
-            }
-            const pose = golferPose({
-              segKind: golfer.segKind,
-              segT: golfer.segT,
-              shot: golfer.shot,
-              facingOct: facingOctant(sp.dirX, sp.dirY, rotation),
-              walkPhase: props.animationsEnabled ? sp.walkPhase : 0,
-              timeSec: props.animationsEnabled ? nowMs / 1000 : 0,
-              reaction: sp.reaction,
-            });
-            const frame = golferFrameName(sp.variant, pose, false);
-            if (frame !== sp.lastFrame) {
-              sp.lastFrame = frame;
-              const baseTex = getGolferFrame(frame);
-              const tintTex = getGolferFrame(golferFrameName(sp.variant, pose, true));
-              if (baseTex) sp.base.texture = baseTex;
-              if (tintTex) sp.tintLayer.texture = tintTex;
-            }
-            // Mirror can flip while the frame name stays put (sw→se keeps
-            // the same row), so apply it outside the frame-change guard.
-            const flip = pose.mirror ? -1 : 1;
-            if (Math.sign(sp.base.scale.x) !== flip) {
-              sp.base.scale.x = Math.abs(sp.base.scale.x) * flip;
-              sp.tintLayer.scale.x = Math.abs(sp.tintLayer.scale.x) * flip;
-            }
-            // Selection ring (ZKU-134): pulsing ellipse under the feet.
-            const isSelected = props.selectedGolferId === golfer.id;
-            if (isSelected) {
-              const pulse = props.animationsEnabled
-                ? 1 + Math.sin(nowMs * 0.006) * 0.12
-                : 1;
-              sp.ring.clear();
-              sp.ring.ellipse(0, 0, 11 * pulse, 5.5 * pulse);
-              sp.ring.stroke({ width: 1.8, color: 0xffffff, alpha: 0.95 });
-              sp.ring.visible = true;
-            } else if (sp.ring.visible) {
-              sp.ring.visible = false;
-            }
-          } else if (!offscreen && entry.dot) {
-            // Legacy dot tier: redraw only when color or mood bucket changes.
-            const dot = entry.dot;
-            const moodBucket = Math.round(Math.max(0, Math.min(1, golfer.mood)) * 10);
-            if (dot.lastColor !== golfer.color || dot.lastMoodBucket !== moodBucket) {
-              dot.lastColor = golfer.color;
-              dot.lastMoodBucket = moodBucket;
-              const body = dot.body;
-              body.clear();
-              body.ellipse(0, 0, 7, 3.2); // ground shadow at the feet
-              body.fill({ color: 0x000000, alpha: 0.2 });
-              body.circle(0, -7, 5.5);
-              body.fill(golfer.color);
-              body.stroke({ width: 1.5, color: `hsl(${moodBucket * 12}, 80%, 45%)` });
-            }
-          }
-
-          if (golfer.ballX != null && golfer.ballY != null) {
-            // Ball flight 2.0 (ZKU-154): the render layer replaces the sim's
-            // straight ground track with an arc + shadow + bounce/roll
-            // profile, all driven by segment progress so game speed scales
-            // it and it converges on the sim's rest point exactly.
-            const from = { x: golfer.x, y: golfer.y };
-            const to =
-              golfer.ballToX != null && golfer.ballToY != null
-                ? { x: golfer.ballToX, y: golfer.ballToY }
-                : { x: golfer.ballX, y: golfer.ballY };
-            const distTiles = Math.hypot(to.x - from.x, to.y - from.y);
-            const impact = golfer.ballLandingX != null && golfer.ballLandingY != null
-              ? { x: golfer.ballLandingX, y: golfer.ballLandingY }
-              : to;
-            const restTx = Math.floor(impact.x + 0.5);
-            const restTy = Math.floor(impact.y + 0.5);
-            const restTerrain =
-              restTx >= 0 && restTy >= 0 && restTx < course.width && restTy < course.height
-                ? effectiveTiles[restTy * course.width + restTx]
-                : null;
-            const behavior = landingBehavior(restTerrain);
-            const shot = golfer.shot ?? "swing";
-            let gx = golfer.ballX;
-            let gy = golfer.ballY;
-            let heightPx = 0;
-            let shadowK = 1;
-            let hidden = false;
-            if (props.animationsEnabled && golfer.segKind === "flight") {
-              const pose = ballFlightPose(golfer.segT, distTiles, shot, behavior);
-              if (!golfer.ballUsesResolvedRollout) {
-                gx = from.x + (to.x - from.x) * pose.groundFrac;
-                gy = from.y + (to.y - from.y) * pose.groundFrac;
-              }
-              heightPx = pose.heightPx;
-              shadowK = pose.shadow;
-              hidden = pose.hidden;
-              // Touchdown FX, once per flight, on the surface actually hit.
-              const resolvedLanded = golfer.ballUsesResolvedRollout
-                ? golfer.segT >= (golfer.ballRolloutStartT ?? (shot === "putt" ? 0 : 0.72))
-                : pose.landed;
-              if (resolvedLanded && !entry.ballLanded) {
-                entry.ballLanded = true;
-                if (behavior.fx === "splash") {
-                  appendBoundedEffect(
-                    ripplesRef.current,
-                    { x: impact.x, y: impact.y, t0: nowMs },
-                    MAX_ACTIVE_RIPPLES,
-                  );
-                } else if (behavior.fx) {
-                  const e = surfaceHeightAt(gx + 0.5, gy + 0.5);
-                  appendBoundedEffect(
-                    impactsRef.current,
-                    { kind: behavior.fx, x: gx, y: gy, e, t0: nowMs },
-                    MAX_ACTIVE_IMPACTS,
-                  );
-                }
-                // Hazard drama bubble (ZKU-155).
-                showEmote(hazardEmote(behavior.fx));
-                // Startle the shoreline heron through atmosphere ownership.
-                atmosphereSceneRef.current?.startleAt(impact, nowMs);
-              }
-            }
-            const be = surfaceHeightAt(gx + 0.5, gy + 0.5);
-            const ground = tileCenterIso(gx, gy, be, rotation);
-            entry.ball.position.set(ground.x, ground.y - heightPx);
-            const bz = Math.round(entityDepth(gx, gy, be, rotation) * 10) / 10;
-            if (entry.ball.zIndex !== bz) entry.ball.zIndex = bz;
-            entry.ball.visible = !hidden;
-            // Shadow hugs the terrain under the ball and fades as it climbs.
-            entry.ballShadow.position.set(ground.x, ground.y);
-            entry.ballShadow.scale.set(0.55 + 0.45 * shadowK);
-            entry.ballShadow.alpha = 0.45 + 0.55 * shadowK;
-            entry.ballShadow.visible = !hidden && heightPx >= 0 && shadowK > 0;
-            // Comet trail while airborne (drawn into the shared fx pass).
-            if (props.animationsEnabled && heightPx > 2 && entry.prevBallIso && rippleGraphicsRef.current) {
-              const rgTrail = rippleGraphicsRef.current;
-              rgTrail.moveTo(entry.prevBallIso.x, entry.prevBallIso.y);
-              rgTrail.lineTo(ground.x, ground.y - heightPx);
-              rgTrail.stroke({ width: 1.2, color: 0xffffff, alpha: 0.3 });
-            }
-            entry.prevBallIso = heightPx > 2 ? { x: ground.x, y: ground.y - heightPx } : null;
-            entry.lastBall = { x: golfer.ballX, y: golfer.ballY };
-          } else {
-            // Flight over. With animations on, touchdown FX already fired at
-            // the landing moment; the legacy end-of-flight water ripple
-            // (ZKU-150) still covers the animations-off path.
-            if (entry.lastBall) {
-              if (!props.animationsEnabled) {
-                const tx = Math.floor(entry.lastBall.x + 0.5);
-                const ty = Math.floor(entry.lastBall.y + 0.5);
-                if (
-                  tx >= 0 && ty >= 0 && tx < course.width && ty < course.height &&
-                  (effectiveTiles[ty * course.width + tx] === "water" || effectiveTiles[ty * course.width + tx] === "wetland")
-                ) {
-                  appendBoundedEffect(
-                    ripplesRef.current,
-                    { x: entry.lastBall.x, y: entry.lastBall.y, t0: performance.now() },
-                    MAX_ACTIVE_RIPPLES,
-                  );
-                }
-              }
-              entry.lastBall = null;
-            }
-            entry.ballLanded = false;
-            entry.prevBallIso = null;
-            entry.ball.visible = false;
-            entry.ballShadow.visible = false;
-          }
-          // M7 live-view follow: hold the selected golfer through the whole
-          // round, switching to the ball while it is airborne.
-          if (props.followSelected && props.selectedGolferId === golfer.id) {
-            const cam = camRef.current;
-            const targetX = golfer.segKind === "flight" && golfer.ballX != null ? golfer.ballX : golfer.x;
-            const targetY = golfer.segKind === "flight" && golfer.ballY != null ? golfer.ballY : golfer.y;
-            const clamped = clampCenter(targetX, targetY);
-            cam.tcx = clamped.x;
-            cam.tcy = clamped.y;
-          }
-        }
-      }
-      // Retire golfers who finished/left.
-      for (const [id, entry] of pool) {
-        if (!seen.has(id)) {
-          layers.objects.removeChild(entry.holder, entry.ball);
-          layers.terrainDecals.removeChild(entry.ballShadow);
-          entry.holder.destroy({ children: true });
-          entry.ball.destroy();
-          entry.ballShadow.destroy();
-          pool.delete(id);
-          forgetGolfer(id);
-        }
-      }
-
-      mobilityEntitiesSceneRef.current?.tick({
+      liveEntities?.tickEntities({
+        nowMs,
+        animationsEnabled: props.animationsEnabled,
         golfers: list,
+        selectedGolferId: props.selectedGolferId,
+        followSelected: props.followSelected,
         cullBounds: { left: cullL, right: cullR, top: cullT, bottom: cullB },
+        worldPointToScreen,
+        followCamera: (x, y) => {
+          const next = clampCenter(x, y);
+          camRef.current.tcx = next.x;
+          camRef.current.tcy = next.y;
+        },
+        startleAtmosphere: (point, atMs) => atmosphereSceneRef.current?.startleAt(point, atMs),
+        tickMobilityEntities: () => mobilityEntitiesSceneRef.current?.tick({
+          golfers: list,
+          cullBounds: { left: cullL, right: cullR, top: cullT, bottom: cullB },
+        }),
       });
-
-      // --- Emote bubble pass (ZKU-155): screen overlay, fixed screen size
-      // (clamped anchor height), fanned out horizontally on collisions.
-      const sched = emoteSchedulerRef.current;
-      pruneEmotes(sched, nowMs, seen);
-      const bubbles = emoteSpritesRef.current;
-      for (const [id, cont] of bubbles) {
-        if (!sched.active.some((e) => e.golferId === id)) {
-          layers.screenOverlay.removeChild(cont);
-          cont.destroy({ children: true });
-          bubbles.delete(id);
-        }
-      }
-      if (sched.active.length > 0) {
-        const zoomScale = layers.world.scale.x;
-        const headPx = Math.max(16, Math.min(64, 42 * zoomScale));
-        const anchors = sched.active.map((e) => {
-          const g = golferById.get(e.golferId);
-          if (!g) return { x: -9999, y: -9999 };
-          const ge2 = surfaceHeightAt(g.x + 0.5, g.y + 0.5);
-          const p = worldPointToScreen(g.x + 0.5, g.y + 0.5, ge2);
-          return { x: p.x, y: p.y - headPx };
-        });
-        const offsets = resolveOverlaps(anchors);
-        for (let i = 0; i < sched.active.length; i++) {
-          const e = sched.active[i];
-          let cont = bubbles.get(e.golferId);
-          if (!cont) {
-            cont = buildEmoteBubble(e.kind);
-            layers.screenOverlay.addChild(cont);
-            bubbles.set(e.golferId, cont);
-          }
-          const pres = props.animationsEnabled
-            ? emotePresentation(nowMs - e.t0)
-            : { scale: 1, alpha: 1, rise: 0 };
-          cont.position.set(anchors[i].x + offsets[i], anchors[i].y - pres.rise);
-          cont.scale.set(pres.scale);
-          cont.alpha = pres.alpha;
-          cont.visible = anchors[i].x > -9000;
-        }
-      }
 
       // Perf HUD: fold this frame in and refresh the readout ~4x/s.
       if (perf.enabled) {
@@ -5932,6 +5310,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
           for (const ch of chunksRef.current) if (ch.container.visible) visibleChunks++;
           let work = 0;
           for (const v of Object.values(s.sections)) work += v;
+          const liveDiagnostics = liveEntitiesSceneRef.current?.diagnostics() ?? {
+            golfers: 0,
+            bubbles: 0,
+            ripples: 0,
+            impacts: 0,
+          };
           const info = {
             fps: s.fps,
             meanMs: s.meanMs,
@@ -5939,10 +5323,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
             maxMs: s.maxMs,
             workMs: work,
             sections: s.sections,
-            golfers: golferPoolRef.current.size,
-            bubbles: emoteSpritesRef.current.size,
-            ripples: ripplesRef.current.length,
-            impacts: impactsRef.current.length,
+            ...liveDiagnostics,
             ambientObjects: atmosphereSceneRef.current?.objectCount() ?? 0,
             chunksVisible: visibleChunks,
             chunksTotal: chunksRef.current.length,
@@ -5956,7 +5337,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
               .join("  ");
             perf.text.text =
               `${s.fps.toFixed(0)} fps  mean ${s.meanMs.toFixed(2)}ms  p95 ${s.p95Ms.toFixed(2)}ms  max ${s.maxMs.toFixed(1)}ms\n` +
-              `tick work ${work.toFixed(2)}ms  chunks ${visibleChunks}/${chunksRef.current.length}  golfers ${golferPoolRef.current.size}  bubbles ${emoteSpritesRef.current.size}  objects ${layers.objects.children.length}\n` +
+              `tick work ${work.toFixed(2)}ms  chunks ${visibleChunks}/${chunksRef.current.length}  golfers ${liveDiagnostics.golfers}  bubbles ${liveDiagnostics.bubbles}  objects ${layers.objects.children.length}\n` +
               secStr;
           }
         }
