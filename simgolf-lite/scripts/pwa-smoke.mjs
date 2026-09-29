@@ -6,6 +6,7 @@ import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { PNG } from "pngjs";
+import { certifyOfflineIndexedDbSave } from "./pwa-save-evidence.mjs";
 
 const STRICT_CSP = "default-src 'self'; base-uri 'self'; connect-src 'self' https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://cloudflareinsights.com; font-src 'self' data:; frame-ancestors 'none'; img-src 'self' data: blob:; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:";
 
@@ -39,6 +40,53 @@ async function serializedCourseBytes(page) {
     const { presentation: _presentation, ...surfaceCare } = course.surfaceCare ?? {};
     return JSON.stringify({ ...course, ...(course.surfaceCare ? { surfaceCare } : {}) });
   });
+}
+
+async function indexedDbSaveEvidence(page, slotId) {
+  return page.evaluate(async (requestedSlotId) => {
+    const requestResult = (request) => new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"));
+    });
+    const open = indexedDB.open("coursecraft-saves", 1);
+    const database = await requestResult(open);
+    try {
+      const transaction = database.transaction("kv", "readonly");
+      const store = transaction.objectStore("kv");
+      const manifestText = await requestResult(store.get("coursecraft_saves_manifest_v1"));
+      if (typeof manifestText !== "string") throw new Error("IndexedDB save manifest is missing");
+      const manifest = JSON.parse(manifestText);
+      const slot = manifest.find((entry) => entry.id === requestedSlotId);
+      if (!slot) throw new Error(`IndexedDB manifest has no ${requestedSlotId} slot`);
+      if (typeof slot.storageKey !== "string") throw new Error(`${requestedSlotId} has no revisioned payload key`);
+      const payloadText = await requestResult(store.get(slot.storageKey));
+      if (typeof payloadText !== "string") throw new Error(`IndexedDB payload ${slot.storageKey} is missing`);
+      const payload = JSON.parse(payloadText);
+      const payloadBytes = new TextEncoder().encode(payloadText);
+      const payloadDigest = await crypto.subtle.digest("SHA-256", payloadBytes);
+      const payloadSha256 = Array.from(new Uint8Array(payloadDigest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      const localStorageFallbackKeys = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (key === "coursecraft_saves_manifest_v1" || key?.startsWith("coursecraft_save_")) {
+          localStorageFallbackKeys.push(key);
+        }
+      }
+      return {
+        driver: "indexeddb",
+        database: database.name,
+        objectStore: store.name,
+        slotId: slot.id,
+        storageKey: slot.storageKey,
+        saveSchemaVersion: payload.schemaVersion,
+        payloadBytes: payloadBytes.byteLength,
+        payloadSha256,
+        localStorageFallbackKeys: localStorageFallbackKeys.sort(),
+      };
+    } finally {
+      database.close();
+    }
+  }, slotId);
 }
 
 let preview = null;
@@ -244,6 +292,28 @@ try {
     return matches.every(Boolean);
   }, hudChunkUrls, { timeout: 15_000 });
 
+  // Exercise the production quick-save route while paused so the canonical
+  // identity cannot advance between observation and the durable write. This
+  // is the actual game repository, not the independent localStorage sentinel
+  // retained below for shell continuity evidence.
+  const courseBox = await courseCanvas.boundingBox();
+  if (!courseBox) throw new Error("Course canvas has no bounds for the quick-save persistence probe");
+  await page.mouse.click(courseBox.x + courseBox.width / 2, courseBox.y + courseBox.height / 2);
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() => window.__coursecraftTest?.state().speed === "paused", undefined, { timeout: 10_000 });
+  const offlineSaveBefore = await page.evaluate(() => window.__coursecraftTest?.state());
+  if (!offlineSaveBefore) throw new Error("Game-state identity was unavailable before the PWA quick save");
+  const priorAnnouncementSequence = await page.locator('.sr-only[role="status"]').getAttribute("data-announcement-sequence");
+  await page.keyboard.press("Control+KeyS");
+  await page.waitForFunction((priorSequence) => {
+    const status = document.querySelector('.sr-only[role="status"]');
+    return status?.textContent?.includes("Quick save complete")
+      && status.getAttribute("data-announcement-sequence") !== priorSequence;
+  }, priorAnnouncementSequence, { timeout: 15_000 });
+  const indexedDbSave = await indexedDbSaveEvidence(page, "quick-save");
+  const afterSaveHash = await page.evaluate(() => window.__coursecraftTest?.state().courseHash);
+  if (afterSaveHash !== offlineSaveBefore.courseHash) throw new Error("Paused game identity changed while committing the PWA quick save");
+
   await page.evaluate(() => localStorage.setItem("coursecraft_pwa_probe", "offline-save"));
   await context.setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -252,9 +322,21 @@ try {
   if (!offlineController) throw new Error("Service worker no longer controlled the page after the offline reload");
   const saved = await page.evaluate(() => localStorage.getItem("coursecraft_pwa_probe"));
   if (saved !== "offline-save") throw new Error("Offline local save probe was lost");
-  await page.getByRole("button", { name: "Quick Start" }).click();
-  const offlineExportTutorial = page.getByRole("dialog", { name: "First-launch tutorial" });
-  if (await offlineExportTutorial.count()) await offlineExportTutorial.getByRole("button", { name: "Skip tutorial" }).click();
+  const offlineIndexedDbSave = await indexedDbSaveEvidence(page, "quick-save");
+  await page.getByRole("button", { name: "Load Game" }).click();
+  const quickSaveSlot = page.getByTestId("save-slot-quick-save");
+  await quickSaveSlot.waitFor({ state: "visible", timeout: 15_000 });
+  await quickSaveSlot.getByRole("button", { name: "Load", exact: true }).click();
+  await page.waitForFunction(() => window.__coursecraftTest?.state().screen === "game", undefined, { timeout: 30_000 });
+  await page.waitForFunction((expectedHash) => window.__coursecraftTest?.state().courseHash === expectedHash, offlineSaveBefore.courseHash, { timeout: 30_000 });
+  const offlineSaveAfter = await page.evaluate(() => window.__coursecraftTest?.state());
+  if (!offlineSaveAfter) throw new Error("Game-state identity was unavailable after the offline PWA load");
+  const indexedDbCertification = certifyOfflineIndexedDbSave({
+    before: offlineSaveBefore,
+    storedBefore: indexedDbSave,
+    storedAfter: offlineIndexedDbSave,
+    after: offlineSaveAfter,
+  });
   await courseCanvas.waitFor({ state: "visible", timeout: 15_000 });
   await page.waitForFunction(() => typeof window.__coursecraftTest?.setPropertyFixture === "function", undefined, { timeout: 15_000 });
   await page.evaluate(() => window.__coursecraftTest.setPropertyFixture());
@@ -347,7 +429,8 @@ try {
   if (offlineCourseAfter !== offlineCourseBefore) throw new Error("Offline illustration delivery changed serialized course bytes.");
   if (externalRequestLedger.length) throw new Error(`PWA made external requests: ${JSON.stringify(externalRequestLedger)}`);
   if (pageErrors.length) throw new Error(`Offline illustration export emitted page errors: ${pageErrors.join(" | ")}`);
-  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, Vision cache-on-demand, selected-biome cache isolation, scoped install, external-request ledger empty, service-worker-controlled offline reload, course-byte-preserving keyboard illustration SVG/PNG delivery, deferred HUD, and local save persistence`);
+  console.log(`[pwa-smoke] IndexedDB game-save evidence: ${JSON.stringify(indexedDbCertification)}`);
+  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, Vision cache-on-demand, selected-biome cache isolation, scoped install, external-request ledger empty, service-worker-controlled offline reload, exact IndexedDB game-save survival, course-byte-preserving keyboard illustration SVG/PNG delivery, deferred HUD, and localStorage shell continuity`);
 } finally {
   await browser.close();
   preview?.close?.();
