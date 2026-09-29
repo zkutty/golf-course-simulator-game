@@ -16,9 +16,16 @@ const reportAppError = createDeferredReporter(() => import('./monitoring')
   .catch(() => undefined))
 installMonitoringBootstrap(reportAppError.load)
 
-if (new URLSearchParams(window.location.search).get("fixture") === "zk681-analysis-worker") {
+const fixture = new URLSearchParams(window.location.search).get("fixture")
+if (fixture === "zk681-analysis-worker") {
   void import("./game/analysis/benchmark").then(({ installAnalysisWorkerBenchmarkFixture }) => {
     installAnalysisWorkerBenchmarkFixture()
+  })
+} else if (fixture === "zk682-desktop-persistence") {
+  // Reuse the existing deferred packaged-diagnostic entry so certification
+  // code never enters the normal launch bundle or its critical budget.
+  void import("./game/analysis/benchmark").then(({ installZk682DesktopPersistenceCertificationFixture }) => {
+    installZk682DesktopPersistenceCertificationFixture()
   })
 } else {
   createRoot(document.getElementById('root')!).render(

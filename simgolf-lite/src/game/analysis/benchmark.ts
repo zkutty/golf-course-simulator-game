@@ -19,6 +19,8 @@ import {
   type SurfaceHabitatPayload,
 } from "./workloads";
 
+export { installZk682DesktopPersistenceCertificationFixture } from "../testing/zk682DesktopPersistenceCertification";
+
 const FIXTURE_VERSION = 1;
 const RESPONSE_TIMEOUT_MS = 120_000;
 
