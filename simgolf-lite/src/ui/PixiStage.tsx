@@ -17,9 +17,6 @@ import {
   TILE_H,
   TILE_W,
   isoDepth,
-  isoToTile,
-  isoToWorld,
-  nextRotation,
   tileCenterIso,
   unrotateWorld,
   worldToIso,
@@ -46,10 +43,6 @@ import type {
   FineGreenRadius,
   FineGreenSculptPreview,
 } from "../game/greens/fineGreenSculpt";
-import {
-  defaultSurfaceTangents,
-  withDefaultSurfaceTangents,
-} from "../game/models/surfaceIntent";
 import { formatCurrency } from "../i18n/format";
 import type { MessageKey } from "../i18n/catalog";
 import { useI18n } from "../i18n/useI18n";
@@ -58,8 +51,8 @@ import { retainedPreviewShotPose } from "../game/render/ballFlight";
 import { TERRAIN_PALETTES, terrainPattern } from "../accessibility/terrainPalettes";
 import type { ColorVisionMode } from "../game/onboarding/profile";
 import type { ResortOperations } from "../game/property/types";
-import { bindingFromEvent, type BindingAction, type Keybindings } from "../accessibility/keybindings";
-import { FLYOVER_DURATION_MS, buildFlyoverKeys, sampleFlyover, type FlyoverKey } from "../game/render/flyover";
+import type { Keybindings } from "../accessibility/keybindings";
+import { buildFlyoverKeys } from "../game/render/flyover";
 import { recordM35Metric } from "../game/render/m35Telemetry";
 import type { CourseSceneCompositionPlanV1 } from "../game/render/courseSceneComposition";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
@@ -122,11 +115,6 @@ import {
 import { T } from "../i18n/T";
 import type { ArchitectureWarning } from "../game/architecture/architecture";
 import type { ArchitectureOverlayRender } from "../game/architecture/reviewTypes";
-import {
-  gestureScaleToWheelDelta,
-  nextWheelZoomTarget,
-  normalizeWheelDelta,
-} from "../game/render/wheelZoom";
 import {
   SCENIC_CAMERA_MARGIN_TILES,
   SCENIC_GENERATION_BLEED_TILES,
@@ -194,8 +182,13 @@ import type {
   TerrainWaterChunk,
   TerrainWaterSceneSystem,
 } from "./renderer/scenes/terrainWaterScene";
+import type {
+  ViewportInputController,
+  ViewportInputConfig,
+} from "./renderer/viewportInputController";
 
 type DeferredWorldScenes = typeof import("./renderer/scenes/deferredWorldScenes");
+type ViewportInputControllerModule = typeof import("./renderer/viewportInputController");
 type DeriveCourseSceneComposition = typeof import("../game/render/courseSceneComposition")["deriveCourseSceneComposition"];
 type DeriveCourseSceneCamera = typeof import("../game/render/courseSceneCamera")["deriveCourseSceneCamera"];
 
@@ -284,8 +277,6 @@ const EDGE_DARKEN = 0.88;
 const ROUTE_LABEL = "route-overlay";
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 8;
-const ROTATE_TWEEN_MS = 250;
-const KEY_PAN_SPEED = 900; // screen px/sec at zoom 1
 
 const SCENIC_COLORS: Record<NonNullable<Course["theme"]>, {
   base: number;
@@ -686,153 +677,6 @@ export interface PixiStageProps {
   playerProWorldDisplay?: PlayerProWorldDisplayPresentation | null;
 }
 
-function resampleWorldLine(from: Point, to: Point, step = 0.25): Point[] {
-  const distance = Math.hypot(to.x - from.x, to.y - from.y);
-  if (distance < 0.04) return [];
-  const divisions = Math.max(1, Math.ceil(distance / step));
-  return Array.from({ length: divisions }, (_, index) => {
-    const t = (index + 1) / divisions;
-    return {
-      x: from.x + (to.x - from.x) * t,
-      y: from.y + (to.y - from.y) * t,
-    };
-  });
-}
-
-function surfaceFeaturePoints(feature: SurfaceFeature): Point[] {
-  return feature.geometry.kind === "corridor"
-    ? feature.geometry.knots
-    : feature.geometry.ring;
-}
-
-function moveSurfaceNode(feature: SurfaceFeature, nodeIndex: number, point: Point): SurfaceFeature {
-  const previous = surfaceFeaturePoints(feature)[nodeIndex];
-  if (!previous) return feature;
-  const dx = point.x - previous.x;
-  const dy = point.y - previous.y;
-  if (feature.geometry.kind === "corridor") {
-    const knots = feature.geometry.knots.map((node, index) => index === nodeIndex ? point : node);
-    const tangents = feature.geometry.tangents?.map((handles, index) => index === nodeIndex
-      ? {
-        in: { x: handles.in.x + dx, y: handles.in.y + dy },
-        out: { x: handles.out.x + dx, y: handles.out.y + dy },
-      }
-      : handles);
-    return { ...feature, geometry: { ...feature.geometry, knots, tangents } };
-  }
-  const ring = feature.geometry.ring.map((node, index) => index === nodeIndex ? point : node);
-  const tangents = feature.geometry.tangents?.map((handles, index) => index === nodeIndex
-    ? {
-      in: { x: handles.in.x + dx, y: handles.in.y + dy },
-      out: { x: handles.out.x + dx, y: handles.out.y + dy },
-    }
-    : handles);
-  return { ...feature, geometry: { ...feature.geometry, ring, tangents } };
-}
-
-function moveSurfaceHandle(
-  feature: SurfaceFeature,
-  nodeIndex: number,
-  target: "in" | "out",
-  point: Point,
-  mirror: boolean,
-): SurfaceFeature {
-  const editable = withDefaultSurfaceTangents(feature);
-  const node = surfaceFeaturePoints(editable)[nodeIndex];
-  if (!node || !editable.geometry.tangents) return feature;
-  const tangents = editable.geometry.tangents.map((handles, index) => {
-    if (index !== nodeIndex) return handles;
-    const opposite = {
-      x: node.x * 2 - point.x,
-      y: node.y * 2 - point.y,
-    };
-    return target === "in"
-      ? { in: point, out: mirror ? opposite : handles.out }
-      : { in: mirror ? opposite : handles.in, out: point };
-  });
-  return editable.geometry.kind === "corridor"
-    ? { ...editable, geometry: { ...editable.geometry, tangents } }
-    : { ...editable, geometry: { ...editable.geometry, tangents } };
-}
-
-function insertSurfaceNode(feature: SurfaceFeature, afterIndex: number, point: Point): SurfaceFeature {
-  const insertIndex = afterIndex + 1;
-  if (feature.geometry.kind === "corridor") {
-    const knots = [
-      ...feature.geometry.knots.slice(0, insertIndex),
-      point,
-      ...feature.geometry.knots.slice(insertIndex),
-    ];
-    const tangents = feature.geometry.tangents
-      ? [
-        ...feature.geometry.tangents.slice(0, insertIndex),
-        defaultSurfaceTangents(knots)[insertIndex],
-        ...feature.geometry.tangents.slice(insertIndex),
-      ]
-      : undefined;
-    return { ...feature, geometry: { ...feature.geometry, knots, tangents } };
-  }
-  const ring = [
-    ...feature.geometry.ring.slice(0, insertIndex),
-    point,
-    ...feature.geometry.ring.slice(insertIndex),
-  ];
-  const tangents = feature.geometry.tangents
-    ? [
-      ...feature.geometry.tangents.slice(0, insertIndex),
-      defaultSurfaceTangents(ring, true)[insertIndex],
-      ...feature.geometry.tangents.slice(insertIndex),
-    ]
-    : undefined;
-  return { ...feature, geometry: { ...feature.geometry, ring, tangents } };
-}
-
-function deleteSurfaceNode(feature: SurfaceFeature, nodeIndex: number): SurfaceFeature | null {
-  const points = surfaceFeaturePoints(feature);
-  const minimum = feature.geometry.kind === "corridor" ? 2 : 3;
-  if (points.length <= minimum || !points[nodeIndex]) return null;
-  if (feature.geometry.kind === "corridor") {
-    return {
-      ...feature,
-      geometry: {
-        ...feature.geometry,
-        knots: feature.geometry.knots.filter((_, index) => index !== nodeIndex),
-        tangents: feature.geometry.tangents?.filter((_, index) => index !== nodeIndex),
-      },
-    };
-  }
-  return {
-    ...feature,
-    geometry: {
-      ...feature.geometry,
-      ring: feature.geometry.ring.filter((_, index) => index !== nodeIndex),
-      tangents: feature.geometry.tangents?.filter((_, index) => index !== nodeIndex),
-    },
-  };
-}
-
-function nearestSurfaceSegment(feature: SurfaceFeature, point: Point): { index: number; distance: number } {
-  const points = surfaceFeaturePoints(feature);
-  const segmentCount = feature.geometry.kind === "region" ? points.length : Math.max(0, points.length - 1);
-  let best = { index: 0, distance: Number.POSITIVE_INFINITY };
-  for (let index = 0; index < segmentCount; index++) {
-    const start = points[index];
-    const end = points[(index + 1) % points.length];
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const length2 = dx * dx + dy * dy;
-    const t = length2 <= 1e-9
-      ? 0
-      : Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / length2));
-    const distance = Math.hypot(
-      point.x - (start.x + dx * t),
-      point.y - (start.y + dy * t),
-    );
-    if (distance < best.distance) best = { index, distance };
-  }
-  return best;
-}
-
 interface Layers {
   world: PIXI.Container;
   surround: PIXI.Container;
@@ -1009,13 +853,12 @@ function fitZoomForTileBounds(
     worldToIso(maxX + 1, maxY + 1, 0, rotation),
     worldToIso(minX, maxY + 1, 0, rotation),
   ];
-  const xs = corners.map((c) => c.x);
-  const ys = corners.map((c) => c.y);
-  const w = Math.max(...xs) - Math.min(...xs);
-  const h = Math.max(...ys) - Math.min(...ys);
-  if (w <= 0 || h <= 0 || screenW <= 0 || screenH <= 0) return 1;
-  const zoom = Math.min((screenW * 0.95) / w, (screenH * 0.95) / h);
-  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+  const xs = corners.map((point) => point.x);
+  const ys = corners.map((point) => point.y);
+  const width = Math.max(...xs) - Math.min(...xs);
+  const height = Math.max(...ys) - Math.min(...ys);
+  if (width <= 0 || height <= 0 || screenW <= 0 || screenH <= 0) return 1;
+  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min((screenW * 0.95) / width, (screenH * 0.95) / height)));
 }
 
 export function PixiStage(requestedProps: PixiStageProps) {
@@ -1077,6 +920,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const overlaysDiagnosticsSceneRef = useRef<OverlaysDiagnosticsSceneSystem | null>(null);
   const terrainWaterSceneRef = useRef<TerrainWaterSceneSystem | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
+  const viewportInputControllerModuleRef = useRef<ViewportInputControllerModule | null>(null);
   const sceneCameraDeriversRef = useRef<readonly [DeriveCourseSceneComposition, DeriveCourseSceneCamera] | null>(null);
   const [courseSceneCompositionEntry, setCourseSceneCompositionEntry] = useState<readonly [
     Course,
@@ -1123,64 +967,16 @@ export function PixiStage(requestedProps: PixiStageProps) {
   // Free camera (ZKU-141): current values lerp toward targets each frame.
   // Center is in world tile coordinates so it survives rotation changes.
   const [rotation, setRotation] = useState<IsoRotation>(0);
-  // Cinematic hole flyover (ZKU-157): keyframes + the camera state to
-  // restore on finish/skip; the card is the only chrome shown meanwhile.
-  const flyoverRef = useRef<{
-    keys: FlyoverKey[];
-    t0: number;
-    saved: { cx: number; cy: number; zoom: number };
-  } | null>(null);
-  const openingFollowCameraRef = useRef<{ cx: number; cy: number; zoom: number } | null>(null);
-  const openingMarkerRef = useRef(props.openingMarker);
-  const openingFollowRef = useRef(Boolean(props.openingFollow));
-  const openingFollowCanceledRef = useRef(props.onOpeningFollowCanceled);
-  openingMarkerRef.current = props.openingMarker;
-  openingFollowRef.current = Boolean(props.openingFollow);
-  openingFollowCanceledRef.current = props.onOpeningFollowCanceled;
-  const hasOpeningMarker = Boolean(props.openingMarker);
+  const viewportInputControllerRef = useRef<ViewportInputController | null>(null);
   const [flyoverCard, setFlyoverCard] = useState<{ hole: number; par: number; yards: number } | null>(null);
   const [rendererError, setRendererError] = useState(false);
   const [terrainStrokePreview, setTerrainStrokePreview] = useState<TerrainStrokePreview | null>(null);
-  const terrainStrokePreviewRef = useRef<TerrainStrokePreview | null>(null);
-  const terrainStrokeRef = useRef<{
-    pointerId: number;
-    points: Point[];
-    last: Point;
-  } | null>(null);
-  const terrainStrokePointerDownCellRef = useRef<Point | null>(null);
   const [fineGreenStrokePreview, setFineGreenStrokePreview] = useState<FineGreenSculptPreview | null>(null);
-  const fineGreenStrokeRef = useRef<{
-    pointerId: number;
-    points: Point[];
-    last: Point;
-  } | null>(null);
   const [clickSplineDraft, setClickSplineDraft] = useState<Point[]>([]);
-  const clickSplineDraftRef = useRef<Point[]>([]);
   const [clickSplineHover, setClickSplineHover] = useState<Point | null>(null);
-  const clickSplineHoverRef = useRef<Point | null>(null);
   const [selectedSurfaceFeatureId, setSelectedSurfaceFeatureId] = useState<string | null>(null);
-  const selectedSurfaceFeatureIdRef = useRef<string | null>(null);
   const [selectedSurfaceNode, setSelectedSurfaceNode] = useState<number | null>(null);
-  const selectedSurfaceNodeRef = useRef<number | null>(null);
   const [surfaceEditDraft, setSurfaceEditDraft] = useState<SurfaceFeature | null>(null);
-  const surfaceEditDraftRef = useRef<SurfaceFeature | null>(null);
-  const surfaceEditDragRef = useRef<{
-    pointerId: number;
-    feature: SurfaceFeature;
-    nodeIndex: number;
-    target: "node" | "in" | "out";
-  } | null>(null);
-  const camRef = useRef({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tzoom: 1, initialized: false });
-  const rotTweenRef = useRef<{ start: number; toDeg: number; next: IsoRotation } | null>(null);
-  const keysRef = useRef<Set<string>>(new Set());
-  const pointerRef = useRef<{ x: number; y: number } | null>(null);
-  const lastReportedCameraStateRef = useRef<CameraState | null>(null);
-  const lastAmbientReportAtRef = useRef(0);
-  const lastCameraStateRef = useRef<CameraState | null | undefined>(undefined);
-  // Reference fixtures establish their bookmarked camera once. Subsequent
-  // free-camera input (including F fit) owns its current cardinal rotation.
-  const lastReferenceCameraRef = useRef<typeof props.referenceCamera | undefined>(undefined);
-  const lastAutoFitSignatureRef = useRef<string | null>(null);
 
   const {
     course,
@@ -1256,51 +1052,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
     [course],
   );
   const terrainTool = props.terrainTool ?? "curve";
-  const updateClickSplineDraft = useCallback((points: Point[]) => {
-    clickSplineDraftRef.current = points;
-    setClickSplineDraft(points);
-  }, []);
-  const updateClickSplineHover = useCallback((point: Point | null) => {
-    clickSplineHoverRef.current = point;
-    setClickSplineHover(point);
-  }, []);
-  const updateSelectedSurface = useCallback((featureId: string | null, nodeIndex: number | null = null) => {
-    selectedSurfaceFeatureIdRef.current = featureId;
-    selectedSurfaceNodeRef.current = nodeIndex;
-    setSelectedSurfaceFeatureId(featureId);
-    setSelectedSurfaceNode(nodeIndex);
-  }, []);
-  const updateSurfaceEditDraft = useCallback((feature: SurfaceFeature | null) => {
-    surfaceEditDraftRef.current = feature;
-    setSurfaceEditDraft(feature);
-  }, []);
   const selectedSurfaceFeature = useMemo(() => (
     surfaceEditDraft
     ?? course.surfaceIntent?.features.find((feature) => feature.id === selectedSurfaceFeatureId)
     ?? null
   ), [course.surfaceIntent, selectedSurfaceFeatureId, surfaceEditDraft]);
-
-  useEffect(() => {
-    if (terrainTool === "spline") return;
-    updateClickSplineDraft([]);
-    updateClickSplineHover(null);
-    terrainStrokePreviewRef.current = null;
-    setTerrainStrokePreview(null);
-  }, [terrainTool, updateClickSplineDraft, updateClickSplineHover]);
-
-  useEffect(() => {
-    if (terrainTool === "edit") return;
-    updateSelectedSurface(null);
-    updateSurfaceEditDraft(null);
-    surfaceEditDragRef.current = null;
-  }, [terrainTool, updateSelectedSurface, updateSurfaceEditDraft]);
-
-  useEffect(() => {
-    if (
-      selectedSurfaceFeatureId &&
-      !course.surfaceIntent?.features.some((feature) => feature.id === selectedSurfaceFeatureId)
-    ) updateSelectedSurface(null);
-  }, [course.surfaceIntent, selectedSurfaceFeatureId, updateSelectedSurface]);
 
   const visualHeightfield = useMemo(() => visualHeightfieldForRenderer(
     course.tiles,
@@ -1638,204 +1394,29 @@ export function PixiStage(requestedProps: PixiStageProps) {
   // Camera: world container transform + screen↔world mapping
   // ---------------------------------------------------------------------
 
-  const clampCenter = useCallback(
-    (x: number, y: number, zoom = camRef.current.tzoom): Point => {
-      const app = appRef.current;
-      if (!app || zoom <= 0) {
-        return clampScenicCameraCenter(
-          { x, y }, course.width, course.height,
-          SCENIC_CAMERA_MARGIN_TILES, SCENIC_CAMERA_MARGIN_TILES,
-        );
-      }
-      const centerIso = worldToIso(0, 0, 0, rotation);
-      const halfW = app.screen.width / (2 * zoom);
-      const halfH = app.screen.height / (2 * zoom);
-      const corners = [
-        isoToWorld(centerIso.x - halfW, centerIso.y - halfH, rotation),
-        isoToWorld(centerIso.x + halfW, centerIso.y - halfH, rotation),
-        isoToWorld(centerIso.x + halfW, centerIso.y + halfH, rotation),
-        isoToWorld(centerIso.x - halfW, centerIso.y + halfH, rotation),
-      ];
-      const visibleX = Math.max(...corners.map((point) => Math.abs(point.x)));
-      const visibleY = Math.max(...corners.map((point) => Math.abs(point.y)));
-      // At close zoom the estate edge remains in frame; overview zoom earns
-      // the full regional margin without allowing the course to become lost.
-      return clampScenicCameraCenter(
-        { x, y }, course.width, course.height,
-        visibleX * 0.72, visibleY * 0.72,
-      );
-    },
-    [course.width, course.height, rotation]
-  );
-
-  /** Frustum culling: hide chunks whose iso-plane bounds miss the viewport. */
-  const cullChunks = useCallback(() => {
+  const viewportCamera = useCallback(() => viewportInputControllerRef.current?.cameraSnapshot() ?? {
+    cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tzoom: 1, initialized: false,
+  }, []);
+  const clampCenter = useCallback((x: number, y: number): Point => {
+    const controller = viewportInputControllerRef.current;
+    if (!controller) return clampScenicCameraCenter(
+      { x, y }, course.width, course.height,
+      SCENIC_CAMERA_MARGIN_TILES, SCENIC_CAMERA_MARGIN_TILES,
+    );
+    return controller.clampTarget({ x, y });
+  }, [course.height, course.width]);
+  const cullChunks = useCallback(() => viewportInputControllerRef.current?.reconcileCulling(), []);
+  const applyCamera = useCallback(() => viewportInputControllerRef.current?.applyCameraNow(), []);
+  const minimumZoom = useCallback(() => {
     const app = appRef.current;
-    const layers = layersRef.current;
-    const terrainScene = terrainWaterSceneRef.current;
-    if (!app || !layers || !terrainScene) return;
-    const { world } = layers;
-    const visible = terrainScene.cull({
-      rotation: world.rotation,
-      pivotX: world.pivot.x,
-      pivotY: world.pivot.y,
-      scale: world.scale.x,
-      screenWidth: app.screen.width,
-      screenHeight: app.screen.height,
-      graphicsQuality: props.graphicsQuality,
-      resolutionScale: props.resolutionScale,
-    });
-    if (CHUNK_DEBUG) devLog(`chunks visible: ${visible}/${terrainScene.chunks.length}`);
-  }, [props.graphicsQuality, props.resolutionScale]);
-
-  /** Push the camera's CURRENT values into the world container transform. */
-  const applyCamera = useCallback(() => {
-    const app = appRef.current;
-    const layers = layersRef.current;
-    if (!app || !layers) return;
-    const { world } = layers;
-    const cam = camRef.current;
-    const centerIso = worldToIso(cam.cx, cam.cy, 0, rotation);
-    // Pivot at the camera center so the rotation tween spins around the view
-    // center; position pins the pivot to the screen center.
-    world.pivot.set(centerIso.x, centerIso.y);
-    world.position.set(app.screen.width / 2, app.screen.height / 2);
-    world.scale.set(cam.zoom);
-    cullChunks();
-  }, [rotation, cullChunks]);
-
-  /** Keep the estate legible on very large/ultrawide displays while still
-   * allowing a generous overview ring around it. */
-  const minimumZoom = useCallback((): number => {
-    const app = appRef.current;
-    if (!app) return MIN_ZOOM;
-    const estateFit = fitZoomForTileBounds(
+    if (!app) return 0.15;
+    return Math.max(0.15, Math.min(MAX_ZOOM, fitZoomForTileBounds(
       0, 0, course.width - 1, course.height - 1,
       app.screen.width, app.screen.height, rotation,
-    );
-    return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, estateFit * 0.62));
-  }, [course.width, course.height, rotation]);
-
-  /** Default whole-course fit (used at init and when no CameraState). */
-  const fitWholeCourse = useCallback(
-    (snap: boolean) => {
-      const app = appRef.current;
-      const deriveCamera = sceneCameraDeriversRef.current?.[1];
-      if (!app || !courseSceneComposition || !deriveCamera) return;
-      const cam = camRef.current;
-      const frame = deriveCamera({
-        course,
-        composition: courseSceneComposition,
-        activeHoleIndex,
-        teeSet: selectedTeeSet,
-        viewport: { width: app.screen.width, height: app.screen.height },
-        rotation,
-        mode: "overview",
-      });
-      cam.tcx = frame.center.x;
-      cam.tcy = frame.center.y;
-      cam.tzoom = frame.zoom;
-      if (snap) {
-        cam.cx = cam.tcx;
-        cam.cy = cam.tcy;
-        cam.zoom = cam.tzoom;
-      }
-      applyCamera();
-      onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
-    },
-    [
-      activeHoleIndex,
-      applyCamera,
-      course,
-      courseSceneComposition,
-      onCameraCenter,
-      selectedTeeSet,
-      rotation,
-    ]
-  );
-
-  /**
-   * COZY opens at a playable SimGolf-like framing; Architect remains the
-   * explicit estate overview. F always restores the overview on demand.
-   */
-  const fitDefaultView = useCallback(
-    (snap: boolean) => {
-      if (showGridOverlays) {
-        fitWholeCourse(snap);
-        return;
-      }
-      const app = appRef.current;
-      const deriveCamera = sceneCameraDeriversRef.current?.[1];
-      if (!app || !courseSceneComposition || !deriveCamera) return;
-      const cam = camRef.current;
-      const frame = deriveCamera({
-        course,
-        composition: courseSceneComposition,
-        activeHoleIndex,
-        teeSet: selectedTeeSet,
-        viewport: { width: app.screen.width, height: app.screen.height },
-        rotation,
-        mode: "normal",
-      });
-      cam.tcx = frame.center.x;
-      cam.tcy = frame.center.y;
-      cam.tzoom = Math.min(MAX_ZOOM, Math.max(minimumZoom(), frame.zoom));
-      const centered = clampCenter(cam.tcx, cam.tcy, cam.tzoom);
-      cam.tcx = centered.x;
-      cam.tcy = centered.y;
-      if (snap) {
-        cam.cx = cam.tcx;
-        cam.cy = cam.tcy;
-        cam.zoom = cam.tzoom;
-      }
-      applyCamera();
-      onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
-    },
-    [
-      activeHoleIndex,
-      applyCamera,
-      clampCenter,
-      course,
-      courseSceneComposition,
-      fitWholeCourse,
-      minimumZoom,
-      onCameraCenter,
-      selectedTeeSet,
-      showGridOverlays,
-      rotation,
-    ],
-  );
-
-  /** End (or skip) the flyover: restore the exact pre-flyover camera. */
-  const endFlyover = useCallback(() => {
-    const f = flyoverRef.current;
-    if (!f) return;
-    const cam = camRef.current;
-    cam.tcx = f.saved.cx;
-    cam.tcy = f.saved.cy;
-    cam.tzoom = f.saved.zoom;
-    flyoverRef.current = null;
-    setFlyoverCard(null);
-  }, []);
-
-  // Opening playback follow is renderer-only and opt-in. Exiting through the
-  // control restores the exact prior view; direct camera input cancels follow
-  // and keeps the user's newly chosen view.
-  useEffect(() => {
-    if (!appReady) return;
-    const cam = camRef.current;
-    if (props.openingFollow && openingMarkerRef.current) {
-      if (!openingFollowCameraRef.current) openingFollowCameraRef.current = { cx: cam.tcx, cy: cam.tcy, zoom: cam.tzoom };
-      return;
-    }
-    const saved = openingFollowCameraRef.current;
-    if (!saved) return;
-    cam.tcx = saved.cx;
-    cam.tcy = saved.cy;
-    cam.tzoom = saved.zoom;
-    openingFollowCameraRef.current = null;
-    overlaysDiagnosticsSceneRef.current?.invalidate();
-  }, [appReady, hasOpeningMarker, props.openingFollow]);
+    ) * 0.62));
+  }, [course.height, course.width, rotation]);
+  const fitWholeCourse = useCallback((snap: boolean) => viewportInputControllerRef.current?.fitWholeCourse(snap), []);
+  const fitDefaultView = useCallback((snap: boolean) => viewportInputControllerRef.current?.fitDefaultView(snap), []);
 
   // Flyover trigger: the shared flyoverNonce contract (HUD button, wizard
   // confirm, hole inspector). Needs a complete active hole.
@@ -1854,7 +1435,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const tee = referencePlan?.tee ?? hole?.tee;
       const green = referencePlan?.pin ?? hole?.green;
       if (!app || !hole || !tee || !green) return;
-      const cam = camRef.current;
       const corridor = referencePlan?.segments.map((segment) => segment.to) ?? (activeShotRoute?.destinations ?? []);
       const referencePoints = [tee, ...corridor, green];
       const minX = Math.min(...referencePoints.map((point) => point.x)) - 5;
@@ -1863,11 +1443,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const maxY = Math.max(...referencePoints.map((point) => point.y)) + 5;
       const wide = fitZoomForTileBounds(minX, minY, maxX, maxY, app.screen.width, app.screen.height, rotation);
       const tight = Math.min(MAX_ZOOM * 0.6, Math.max(wide * 2.4, wide + 0.4));
-      flyoverRef.current = {
-        keys: buildFlyoverKeys(tee, green, corridor, wide, tight),
-        t0: performance.now(),
-        saved: flyoverRef.current?.saved ?? { cx: cam.tcx, cy: cam.tcy, zoom: cam.tzoom },
-      };
+      viewportInputControllerRef.current?.startFlyover(
+        buildFlyoverKeys(tee, green, corridor, wide, tight),
+      );
       const distanceTiles = computeHoleDistanceTiles(tee, green);
       const autoPar = computeAutoPar(distanceTiles);
       setFlyoverCard({
@@ -1881,129 +1459,136 @@ export function PixiStage(requestedProps: PixiStageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.flyoverNonce, appReady]);
 
-  /**
-   * Inverse camera transform: global pointer coords → integer tile, or null.
-   * Elevation-aware: tests elevation levels front-to-back so a raised tile's
-   * visible top wins over the tile geometrically behind it at base level.
-   */
-  const screenToIsoPlane = useCallback((globalX: number, globalY: number): Point | null => {
-    const world = layersRef.current?.world;
-    if (!world) return null;
-    return {
-      x: (globalX - world.position.x) / world.scale.x + world.pivot.x,
-      y: (globalY - world.position.y) / world.scale.y + world.pivot.y,
-    };
-  }, []);
+  const screenToTile = useCallback((x: number, y: number) =>
+    viewportInputControllerRef.current?.screenToTile(x, y) ?? null, []);
+  const screenToWorldPoint = useCallback((x: number, y: number) =>
+    viewportInputControllerRef.current?.screenToWorldPoint(x, y) ?? null, []);
+  const worldPointToScreen = useCallback((x: number, y: number, elevation = 0) =>
+    viewportInputControllerRef.current?.worldPointToScreen(x, y, elevation) ?? { x: 0, y: 0 }, []);
 
-  const reportView = useCallback(() => {
-    const app = appRef.current;
-    const cam = camRef.current;
-    if (!app || !onViewChange || cam.zoom <= 0) return;
-    const centerIso = worldToIso(cam.cx, cam.cy, 0, rotation);
-    const halfW = app.screen.width / (2 * cam.zoom);
-    const halfH = app.screen.height / (2 * cam.zoom);
-    const corners = [
-      isoToWorld(centerIso.x - halfW, centerIso.y - halfH, rotation),
-      isoToWorld(centerIso.x + halfW, centerIso.y - halfH, rotation),
-      isoToWorld(centerIso.x + halfW, centerIso.y + halfH, rotation),
-      isoToWorld(centerIso.x - halfW, centerIso.y + halfH, rotation),
-    ];
-    onViewChange({
-      center: { x: cam.cx, y: cam.cy },
-      zoom: cam.zoom,
-      rotation,
-      bounds: {
-        minX: Math.max(0, Math.min(...corners.map((p) => p.x))),
-        minY: Math.max(0, Math.min(...corners.map((p) => p.y))),
-        maxX: Math.min(course.width - 1, Math.max(...corners.map((p) => p.x))),
-        maxY: Math.min(course.height - 1, Math.max(...corners.map((p) => p.y))),
-      },
-    });
-  }, [course.height, course.width, onViewChange, rotation]);
-
-  useEffect(() => {
-    if (!appReady || !props.cameraJump) return;
-    const cam = camRef.current;
-    const next = clampCenter(props.cameraJump.center.x, props.cameraJump.center.y);
-    cam.tcx = next.x;
-    cam.tcy = next.y;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appReady, props.cameraJump?.nonce]);
-
-  useEffect(() => {
-    const reference = props.referenceCamera;
-    if (!appReady || lastReferenceCameraRef.current === reference) return;
-    lastReferenceCameraRef.current = reference;
-    if (!reference) return;
-    const cam = camRef.current;
-    const center = clampCenter(reference.center.x, reference.center.y);
-    cam.initialized = true;
-    setRotation((reference.rotation * 90) as IsoRotation);
-    cam.cx = cam.tcx = center.x;
-    cam.cy = cam.tcy = center.y;
-    cam.zoom = cam.tzoom = Math.max(minimumZoom(), Math.min(MAX_ZOOM, reference.zoom));
-    applyCamera();
-    reportView();
-  }, [
-    appReady,
-    applyCamera,
-    clampCenter,
-    minimumZoom,
-    props.referenceCamera,
-    reportView,
-  ]);
-
-  const screenToTile = useCallback(
-    (globalX: number, globalY: number): { x: number; y: number } | null => {
-      const iso = screenToIsoPlane(globalX, globalY);
-      if (!iso) return null;
-      for (let e = ELEVATION_MAX; e >= 0; e--) {
-        const t = isoToTile(iso.x, iso.y + e * ELEVATION_STEP_PX, rotation);
-        if (t.x < 0 || t.y < 0 || t.x >= course.width || t.y >= course.height) continue;
-        if (getElevation(course, t.x, t.y) === e) return t;
+  const viewportInputConfig = useMemo<ViewportInputConfig>(() => ({
+    course,
+    rotation,
+    animationsEnabled: props.animationsEnabled,
+    cameraSmoothing: props.cameraSmoothing,
+    edgeScroll: props.edgeScroll,
+    edgeScrollSpeed: props.edgeScrollSpeed,
+    keybindings: props.keybindings,
+    graphicsQuality: props.graphicsQuality,
+    resolutionScale: props.resolutionScale,
+    showGridOverlays,
+    cameraState,
+    openingFollow: props.openingFollow,
+    openingFocus: props.openingMarker
+      ? retainedPreviewShotPose(props.openingMarker.shot, props.openingMarker.progress).ball ?? props.openingMarker.golfer
+      : null,
+    onOpeningFollowCanceled: props.onOpeningFollowCanceled,
+    onRotationCommit: setRotation,
+    onCameraUpdate: props.onCameraUpdate,
+    onCameraCenter,
+    onViewChange,
+    onFlyoverEnd: () => setFlyoverCard(null),
+    onPrimaryPointer: (event, controller) => {
+      if (props.showGolfers !== false && onPickGolfer && !cameraState && liveActive && golfersRef?.current?.length) {
+        const iso = controller.screenToIsoPlane(event.global.x, event.global.y);
+        if (iso) {
+          let bestId: number | null = null;
+          let bestDistance = TILE_W * 0.45;
+          for (const golfer of golfersRef.current) {
+            const elevation = surfaceHeightAt(golfer.x + 0.5, golfer.y + 0.5);
+            const center = tileCenterIso(golfer.x, golfer.y, elevation, rotation);
+            const distance = Math.hypot(iso.x - center.x, (iso.y - center.y) * 2);
+            if (distance < bestDistance) { bestDistance = distance; bestId = golfer.id; }
+          }
+          if (bestId != null) { onPickGolfer(bestId); return; }
+        }
       }
-      return null;
+      const tile = controller.screenToTile(event.global.x, event.global.y);
+      if (!tile) return;
+      if (editorMode === "PAINT" && !props.playableShotMode) return;
+      if (editorMode === "SCULPT" && !props.playableShotMode
+        && course.tiles[tile.y * course.width + tile.x] === "green") return;
+      onClickTile(tile.x, tile.y);
     },
-    [course, rotation, screenToIsoPlane]
-  );
+    updateCursor: (tile) => {
+      const element = containerRef.current;
+      if (!element) return;
+      let cursor = "crosshair";
+      if (tile && editorMode === "PAINT" && selectedTerrain && worldCash !== undefined) {
+        const preview = onPreviewTerrainStroke?.([tile]);
+        if (preview && !preview.affordable) cursor = "not-allowed";
+      }
+      element.style.cursor = cursor;
+    },
+    editor: {
+      mode: editorMode,
+      terrainTool,
+      playableShotMode: Boolean(props.playableShotMode),
+      selectedTerrain,
+      worldCash,
+      onClickTile,
+      onPreviewTerrainStroke,
+      onCommitTerrainStroke,
+      onPreviewSurfaceFeatureEdit,
+      onCommitSurfaceFeatureEdit,
+      onPreviewFineGreenStroke,
+      onCommitFineGreenStroke,
+      onPresentationChange: (presentation) => {
+        setTerrainStrokePreview(presentation.terrainPreview);
+        setFineGreenStrokePreview(presentation.fineGreenPreview);
+        setClickSplineDraft(presentation.splineDraft);
+        setClickSplineHover(presentation.splineHover);
+        setSelectedSurfaceFeatureId(presentation.selectedFeatureId);
+        setSelectedSurfaceNode(presentation.selectedNode);
+        setSurfaceEditDraft(presentation.surfaceDraft);
+      },
+    },
+    deriveFrame: (mode, viewport, nextRotation) => {
+      const deriveCamera = sceneCameraDeriversRef.current?.[1];
+      if (!courseSceneComposition || !deriveCamera) return null;
+      return deriveCamera({ course, composition: courseSceneComposition, activeHoleIndex,
+        teeSet: selectedTeeSet, viewport, rotation: nextRotation, mode });
+    },
+  }), [activeHoleIndex, cameraState, course, courseSceneComposition, editorMode,
+    onCameraCenter, onClickTile, onCommitFineGreenStroke, onCommitSurfaceFeatureEdit,
+    onCommitTerrainStroke, onPreviewFineGreenStroke, onPreviewSurfaceFeatureEdit,
+    onPreviewTerrainStroke, onViewChange, onPickGolfer, props.animationsEnabled, props.cameraSmoothing, props.edgeScroll,
+    props.edgeScrollSpeed, props.graphicsQuality, props.keybindings, props.onCameraUpdate,
+    props.onOpeningFollowCanceled, props.openingFollow, props.openingMarker,
+    props.playableShotMode, props.resolutionScale, props.showGolfers, rotation,
+    selectedTeeSet, selectedTerrain, showGridOverlays, surfaceHeightAt, terrainTool,
+    liveActive, golfersRef, worldCash]);
+  const viewportInputConfigRef = useRef(viewportInputConfig);
+  viewportInputConfigRef.current = viewportInputConfig;
 
-  /**
-   * Elevation-aware continuous world position for terrain gestures. Tile
-   * picking remains integer-based elsewhere, but authoring must retain
-   * sub-tile motion and revisit order so loops can close and fill correctly.
-   */
-  const screenToWorldPoint = useCallback(
-    (globalX: number, globalY: number): Point | null => {
-      const iso = screenToIsoPlane(globalX, globalY);
-      const tile = screenToTile(globalX, globalY);
-      if (!iso || !tile) return null;
-      const elevation = getElevation(course, tile.x, tile.y);
-      const point = isoToWorld(iso.x, iso.y + elevation * ELEVATION_STEP_PX, rotation);
-      return {
-        x: Math.max(0, Math.min(course.width - 1e-6, point.x)),
-        y: Math.max(0, Math.min(course.height - 1e-6, point.y)),
-      };
-    },
-    [course, rotation, screenToIsoPlane, screenToTile],
-  );
+  useEffect(() => {
+    if (!appReady) return;
+    const app = appRef.current;
+    const world = layersRef.current?.world;
+    const element = containerRef.current;
+    const Controller = viewportInputControllerModuleRef.current?.ViewportInputController;
+    if (!app || !world || !element || !Controller) return;
+    const controller = new Controller(viewportInputConfigRef.current, {
+      app, world, element,
+      overlay: () => overlaysDiagnosticsSceneRef.current,
+      terrain: () => terrainWaterSceneRef.current,
+    });
+    viewportInputControllerRef.current = controller;
+    return () => {
+      if (viewportInputControllerRef.current !== controller) return;
+      controller.destroy();
+      viewportInputControllerRef.current = null;
+    };
+  }, [appReady]);
 
-  /** Continuous world tile coords → global screen coords (for screen overlays). */
-  const worldPointToScreen = useCallback(
-    (wx: number, wy: number, elevation = 0): { x: number; y: number } => {
-      const world = layersRef.current?.world;
-      if (!world) return { x: 0, y: 0 };
-      const p = worldToIso(wx, wy, elevation, rotation);
-      return {
-        x: world.position.x + (p.x - world.pivot.x) * world.scale.x,
-        y: world.position.y + (p.y - world.pivot.y) * world.scale.y,
-      };
-    },
-    [rotation]
-  );
+  useEffect(() => {
+    viewportInputControllerRef.current?.update(viewportInputConfig);
+  }, [viewportInputConfig]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e" || !appReady) return;
     const api = {
+      viewportInputState: () => viewportInputControllerRef.current?.snapshot() ?? null,
       fitWholeCourse: () => fitWholeCourse(true),
       fitDefaultView: () => fitDefaultView(true),
       sceneComposition: () => courseSceneComposition ?? null,
@@ -2025,7 +1610,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       cameraTransform: () => {
         const world = layersRef.current?.world;
         if (!world) return null;
-        const camera = camRef.current;
+        const camera = viewportCamera();
         return {
           world: {
             position: { x: world.position.x, y: world.position.y },
@@ -2162,7 +1747,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const requestedTheme = getBiomeDefinition(requestedProps.course.theme).key;
         const requestedQuality = requestedProps.graphicsQuality;
         const renderedTier = visibleGroundCoverTier(
-          world?.scale.x ?? camRef.current.zoom,
+          world?.scale.x ?? viewportCamera().zoom,
           renderContext.resolutionScale,
         );
         const coverTier = atlasContext.quality === "high"
@@ -2188,8 +1773,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
           residency: atlasResidencySnapshot(),
           fallbacks: atlasFallbackDiagnostics(),
           camera: {
-            zoom: camRef.current.zoom,
-            targetZoom: camRef.current.tzoom,
+            zoom: viewportCamera().zoom,
+            targetZoom: viewportCamera().tzoom,
             groundCoverTier: coverTier,
           },
           pathMaterialCrossSection: {
@@ -2197,16 +1782,16 @@ export function PixiStage(requestedProps: PixiStageProps) {
             commit: __COMMIT_SHA__,
             camera: {
               rotation,
-              zoom: camRef.current.zoom,
-              targetZoom: camRef.current.tzoom,
+              zoom: viewportCamera().zoom,
+              targetZoom: viewportCamera().tzoom,
             },
           },
           parklandComposable: {
             ...parklandComposableDiagnosticsRef.current,
             camera: {
               rotation,
-              zoom: camRef.current.zoom,
-              targetZoom: camRef.current.tzoom,
+              zoom: viewportCamera().zoom,
+              targetZoom: viewportCamera().tzoom,
             },
           },
           landformDepth: {
@@ -2218,8 +1803,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
             },
             camera: {
               rotation,
-              zoom: camRef.current.zoom,
-              targetZoom: camRef.current.tzoom,
+              zoom: viewportCamera().zoom,
+              targetZoom: viewportCamera().tzoom,
             },
           },
           habitatField: {
@@ -2281,18 +1866,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
         return true;
       },
       setZoomForTest: (zoom: number) => {
-        const next = Math.max(minimumZoom(), Math.min(MAX_ZOOM, zoom));
-        camRef.current.zoom = next;
-        camRef.current.tzoom = next;
-        applyCamera();
+        viewportInputControllerRef.current?.setZoomForTest(zoom);
       },
       focusTileForTest: (x: number, y: number, zoom: number) => {
-        const next = Math.max(minimumZoom(), Math.min(MAX_ZOOM, zoom));
-        camRef.current.cx = camRef.current.tcx = x;
-        camRef.current.cy = camRef.current.tcy = y;
-        camRef.current.zoom = camRef.current.tzoom = next;
-        camRef.current.initialized = true;
-        applyCamera();
+        viewportInputControllerRef.current?.focusTileForTest(x, y, zoom);
       },
       golferGrounding: (id: number) => liveEntitiesSceneRef.current?.golferGrounding(
         id,
@@ -2302,12 +1879,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
       screenToTile,
       screenToWorld: screenToWorldPoint,
       terrainStrokePointerDownCell: () => (
-        terrainStrokePointerDownCellRef.current
-          ? { ...terrainStrokePointerDownCellRef.current }
-          : null
+        viewportInputControllerRef.current?.terrainStrokePointerCell() ?? null
       ),
       resetTerrainStrokePointerDownCell: () => {
-        terrainStrokePointerDownCellRef.current = null;
+        viewportInputControllerRef.current?.resetTerrainStrokePointerCell();
       },
     };
     window.__coursecraftPixiTest = api;
@@ -2338,6 +1913,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     screenToWorldPoint,
     surfaceHeightAt,
     worldPointToScreen,
+    golfersRef,
+    viewportCamera,
   ]);
 
   // ---------------------------------------------------------------------
@@ -2369,11 +1946,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
         app.destroy(true, { children: true, texture: true });
         return;
       }
-      const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule] = await Promise.all([
+      const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule] = await Promise.all([
         import("./renderer/scenes/deferredWorldScenes"),
         import("./renderer/scenes/terrainWaterScene"),
         import("../game/render/courseSceneComposition"),
         import("../game/render/courseSceneCamera"),
+        import("./renderer/viewportInputController"),
       ]);
       if (cancelled) {
         app.destroy(true, { children: true, texture: true });
@@ -2390,6 +1968,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         return;
       }
       deferredWorldScenesRef.current = deferredWorldScenes;
+      viewportInputControllerModuleRef.current = viewportInputControllerModule;
       sceneCameraDeriversRef.current = [
         compositionModule.deriveCourseSceneComposition,
         cameraModule.deriveCourseSceneCamera,
@@ -2471,6 +2050,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
       console.error("[PixiStage] Course renderer initialization failed", error);
       deferredWorldScenesRef.current = null;
+      viewportInputControllerModuleRef.current = null;
       sceneCameraDeriversRef.current = null;
       setRendererError(true);
       terrainWaterSceneRef.current?.destroy();
@@ -2482,6 +2062,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       cancelled = true;
       supersedePendingAtlasLoad();
       setAppReady(false);
+      viewportInputControllerRef.current?.destroy();
+      viewportInputControllerRef.current = null;
       // Scene-owned display objects and fallback textures must be released
       // before the application recursively tears down the shared layer tree.
       sceneSystemHostRef.current?.dispose();
@@ -2497,6 +2079,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       terrainWaterSceneRef.current?.destroy();
       terrainWaterSceneRef.current = null;
       deferredWorldScenesRef.current = null;
+      viewportInputControllerModuleRef.current = null;
       layersRef.current = null;
       structureSpriteCountRef.current = 0;
       surfaceCareWorkersRef.current = [];
@@ -2611,446 +2194,32 @@ export function PixiStage(requestedProps: PixiStageProps) {
     requestedProps.seasonalVisualState,
   ]);
 
-  // Resize with ResizeObserver
-  useEffect(() => {
-    if (!appReady) return;
-    const container = containerRef.current;
-    if (!container) return;
-
-    const resize = () => {
-      if (!appRef.current || !containerRef.current) return;
-      const width = Math.max(containerRef.current.clientWidth || 100, 100);
-      const height = Math.max(containerRef.current.clientHeight || 100, 100);
-      appRef.current.renderer.resize(width, height);
-      appRef.current.stage.hitArea = appRef.current.screen;
-      const cam = camRef.current;
-      const minZoom = minimumZoom();
-      cam.tzoom = Math.max(minZoom, cam.tzoom);
-      cam.zoom = Math.max(minZoom, cam.zoom);
-      const center = clampCenter(cam.tcx, cam.tcy, cam.tzoom);
-      cam.tcx = center.x;
-      cam.tcy = center.y;
-      applyCamera();
-    };
-
-    const ro = new ResizeObserver(resize);
-    ro.observe(container);
-    resize();
-    return () => ro.disconnect();
-  }, [appReady, applyCamera, clampCenter, minimumZoom]);
-
-  // One-time camera init: snap to the selected normal/overview framing.
+  // Controller owns resize, initialization, external camera and reporting.
   useEffect(() => {
     if (!appReady || !courseSceneComposition) return;
-    const cam = camRef.current;
-    if (!cam.initialized) {
-      cam.initialized = true;
-      fitDefaultView(true);
-    }
-  }, [appReady, courseSceneComposition, fitDefaultView]);
-
-  // Loading another fixture/save can replace a 220×140 course with a much
-  // smaller one after Pixi has initialized. Refit once per course/view
-  // signature so the new estate cannot appear as a tiny object off-center.
-  useEffect(() => {
-    if (!appReady || !courseSceneComposition || cameraState || props.referenceCamera) return;
+    const controller = viewportInputControllerRef.current;
+    if (!controller) return;
+    controller.initializeDefault();
     const signature = [
-      course.name,
-      course.width,
-      course.height,
-      activeHoleIndex,
-      course.activePinRotation ?? "A",
-      selectedTeeSet ?? "member",
-      courseSceneComposition.courseHash,
-      courseSceneComposition.obstacleHash,
-      courseSceneComposition.semanticSeed,
-      showGridOverlays ? "overview" : "normal",
+      course.name, course.width, course.height, activeHoleIndex,
+      course.activePinRotation ?? "A", selectedTeeSet ?? "member",
+      courseSceneComposition.courseHash, courseSceneComposition.obstacleHash,
+      courseSceneComposition.semanticSeed, showGridOverlays ? "overview" : "normal",
     ].join(":");
-    if (lastAutoFitSignatureRef.current === signature) return;
-    lastAutoFitSignatureRef.current = signature;
-    fitDefaultView(true);
+    if (!cameraState && !props.referenceCamera) controller.autoFit(signature);
+    controller.applyReferenceCamera(props.referenceCamera ?? null);
   }, [
-    activeHoleIndex,
-    appReady,
-    cameraState,
-    course.activePinRotation,
-    course.height,
-    course.name,
-    course.width,
-    courseSceneComposition,
-    fitDefaultView,
-    selectedTeeSet,
-    showGridOverlays,
-    props.referenceCamera,
+    activeHoleIndex, appReady, cameraState, course.activePinRotation,
+    course.height, course.name, course.width, courseSceneComposition,
+    props.referenceCamera, selectedTeeSet, showGridOverlays,
   ]);
 
   useEffect(() => {
-    if (!appReady) return;
-    reportView();
-  }, [appReady, reportView]);
+    if (appReady && props.cameraJump) viewportInputControllerRef.current?.jump(props.cameraJump.center);
+  }, [appReady, props.cameraJump]);
 
-  // CameraState prop → glide targets. Skips echoes of centers we reported
-  // ourselves so user pan/zoom isn't fought by the round-trip through App.
-  useEffect(() => {
-    if (!appReady || props.referenceCamera) return;
-    const app = appRef.current;
-    const cam = camRef.current;
-    if (!app || !cam.initialized) return;
-    // Only react to an actual CameraState change; rotation changes re-run
-    // this effect (dep for the bounds fit below) but must not re-target.
-    if (lastCameraStateRef.current === cameraState) return;
-    lastCameraStateRef.current = cameraState;
-
-    if (!cameraState) {
-      fitDefaultView(false);
-      return;
-    }
-    // App stores the exact object we report after manual input. Ignore that
-    // identity echo, but never mistake a later explicit Fit command for one
-    // merely because it happens to share the same center.
-    if (lastReportedCameraStateRef.current === cameraState) return;
-
-    cam.tcx = cameraState.center.x;
-    cam.tcy = cameraState.center.y;
-    const b = cameraState.bounds;
-    if (b) {
-      cam.tzoom = fitZoomForTileBounds(
-        b.minX, b.minY, b.maxX, b.maxY,
-        app.screen.width, app.screen.height, rotation
-      );
-    } else if (Number.isFinite(cameraState.zoom)) {
-      cam.tzoom = Math.max(minimumZoom(), Math.min(MAX_ZOOM, cameraState.zoom));
-    }
-  }, [appReady, cameraState, rotation, fitDefaultView, minimumZoom, props.referenceCamera]);
-
-  // Camera controls: wheel zoom-to-cursor, drag pan, WASD/QE, smoothing.
-  useEffect(() => {
-    if (!appReady) return;
-    const app = appRef.current;
-    const el = containerRef.current;
-    if (!app || !el) return;
-
-    const reportCamera = () => {
-      const cam = camRef.current;
-      const center = { x: cam.tcx, y: cam.tcy };
-      props.onCameraCenter?.(center);
-      if (!cameraState || !props.onCameraUpdate) return;
-      const reported = {
-        ...cameraState,
-        center,
-        zoom: cam.tzoom,
-        // Manual camera ownership must not carry an auto-fit box that a later
-        // state round-trip could reapply over the user's chosen zoom.
-        bounds: undefined,
-      };
-      lastReportedCameraStateRef.current = reported;
-      props.onCameraUpdate(reported);
-    };
-
-    const applyZoomInput = (deltaPixels: number, clientX: number, clientY: number) => {
-      const cam = camRef.current;
-      const rect = el.getBoundingClientRect();
-      const gx = clientX - rect.left;
-      const gy = clientY - rect.top;
-      const target = nextWheelZoomTarget({
-        camera: { cx: cam.tcx, cy: cam.tcy, zoom: cam.tzoom },
-        cursor: { x: gx, y: gy },
-        viewport: { width: app.screen.width, height: app.screen.height },
-        deltaPixels,
-        rotation,
-        minZoom: minimumZoom(),
-        maxZoom: MAX_ZOOM,
-      });
-      const clamped = clampCenter(target.cx, target.cy, target.zoom);
-      cam.tcx = clamped.x;
-      cam.tcy = clamped.y;
-      cam.tzoom = target.zoom;
-      overlaysDiagnosticsSceneRef.current?.invalidate();
-      reportCamera();
-    };
-
-    const cancelOpeningFollow = () => {
-      if (!openingFollowCameraRef.current) return;
-      openingFollowCameraRef.current = null;
-      openingFollowCanceledRef.current?.();
-    };
-
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      if (flyoverRef.current) {
-        endFlyover(); // any input skips the flyover
-        return;
-      }
-      cancelOpeningFollow();
-      applyZoomInput(
-        normalizeWheelDelta(e.deltaY, e.deltaMode, app.screen.height),
-        e.clientX,
-        e.clientY,
-      );
-    };
-
-    type SafariGestureEvent = Event & {
-      scale?: number;
-      clientX?: number;
-      clientY?: number;
-    };
-    let gestureScale = 1;
-    const handleGestureStart = (event: Event) => {
-      event.preventDefault();
-      const gesture = event as SafariGestureEvent;
-      gestureScale = Number.isFinite(gesture.scale) && gesture.scale! > 0 ? gesture.scale! : 1;
-      if (flyoverRef.current) endFlyover();
-      cancelOpeningFollow();
-    };
-    const handleGestureChange = (event: Event) => {
-      event.preventDefault();
-      if (flyoverRef.current) {
-        endFlyover();
-        return;
-      }
-      cancelOpeningFollow();
-      const gesture = event as SafariGestureEvent;
-      const nextScale = Number.isFinite(gesture.scale) && gesture.scale! > 0 ? gesture.scale! : gestureScale;
-      const rect = el.getBoundingClientRect();
-      applyZoomInput(
-        gestureScaleToWheelDelta(nextScale / gestureScale),
-        gesture.clientX ?? rect.left + rect.width / 2,
-        gesture.clientY ?? rect.top + rect.height / 2,
-      );
-      gestureScale = nextScale;
-    };
-    const handleGestureEnd = (event: Event) => {
-      event.preventDefault();
-      gestureScale = 1;
-    };
-
-    // Drag-to-pan with middle or right button (left stays editing).
-    let panState: { gx: number; gy: number; cx: number; cy: number } | null = null;
-    const handlePointerDown = (e: PointerEvent) => {
-      if (e.button !== 1 && e.button !== 2) return;
-      e.preventDefault();
-      if (flyoverRef.current) {
-        endFlyover();
-        return;
-      }
-      cancelOpeningFollow();
-      const cam = camRef.current;
-      panState = { gx: e.clientX, gy: e.clientY, cx: cam.cx, cy: cam.cy };
-      el.setPointerCapture(e.pointerId);
-      el.style.cursor = "grabbing";
-    };
-    const handlePointerMove = (e: PointerEvent) => {
-      const rect = el.getBoundingClientRect();
-      pointerRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-      if (!panState) return;
-      const cam = camRef.current;
-      const startIso = worldToIso(panState.cx, panState.cy, 0, rotation);
-      const isoX = startIso.x - (e.clientX - panState.gx) / cam.zoom;
-      const isoY = startIso.y - (e.clientY - panState.gy) / cam.zoom;
-      const tile = isoToWorld(isoX, isoY, rotation);
-      const clamped = clampCenter(tile.x, tile.y, cam.zoom);
-      cam.cx = cam.tcx = clamped.x;
-      cam.cy = cam.tcy = clamped.y;
-      applyCamera();
-      overlaysDiagnosticsSceneRef.current?.invalidate();
-    };
-    const handlePointerUp = (e: PointerEvent) => {
-      if (!panState) return;
-      panState = null;
-      el.releasePointerCapture?.(e.pointerId);
-      el.style.cursor = "crosshair";
-      reportCamera();
-    };
-    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
-
-    // Keyboard: WASD/arrows pan (held), Q/E rotate.
-    const isTyping = (t: EventTarget | null) =>
-      t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement ||
-      (t instanceof HTMLElement && t.isContentEditable);
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (isTyping(e.target)) return;
-      const binding = bindingFromEvent(e);
-      const panActions: BindingAction[] = ["panUp", "panDown", "panLeft", "panRight"];
-      const panAction = panActions.find((action) => props.keybindings[action] === binding);
-      if (flyoverRef.current) {
-        if (e.code === "Escape" || panAction || binding === props.keybindings.rotateLeft || binding === props.keybindings.rotateRight) {
-          endFlyover();
-          e.preventDefault();
-          e.stopImmediatePropagation();
-        }
-        return;
-      }
-      if (panAction || binding === props.keybindings.rotateLeft || binding === props.keybindings.rotateRight) cancelOpeningFollow();
-      if (!cameraState && !e.repeat && e.code === "KeyF") {
-        fitWholeCourse(false);
-        e.preventDefault();
-      } else if (panAction) {
-        keysRef.current.add(panAction);
-        e.preventDefault();
-      } else if (!e.repeat && !rotTweenRef.current && (binding === props.keybindings.rotateLeft || binding === props.keybindings.rotateRight)) {
-        const right = binding === props.keybindings.rotateRight;
-        const next = nextRotation(rotation, right ? 1 : -1);
-        if (!props.animationsEnabled) setRotation(next);
-        else {
-          rotTweenRef.current = {
-            start: performance.now(),
-            toDeg: right ? -90 : 90,
-            next,
-          };
-        }
-      }
-    };
-    const handleKeyUp = (e: KeyboardEvent) => {
-      const released = (["panUp", "panDown", "panLeft", "panRight"] as BindingAction[]).filter((action) => props.keybindings[action].endsWith(e.code));
-      for (const action of released) keysRef.current.delete(action);
-    };
-    const handleBlur = () => keysRef.current.clear();
-    const handlePointerLeave = () => { pointerRef.current = null; };
-
-    // Per-frame: keyboard pan, target smoothing, rotation tween.
-    const tickCamera = (ticker: PIXI.Ticker) => {
-      const cam = camRef.current;
-      const world = layersRef.current?.world;
-      const dtMs = ticker.deltaMS;
-      let moved = false;
-
-      // Flyover (ZKU-157): drive the camera targets along the keyframes;
-      // the smoothing below adds the final organic ease.
-      const flyover = flyoverRef.current;
-      if (flyover) {
-        const t = (performance.now() - flyover.t0) / FLYOVER_DURATION_MS;
-        if (t >= 1.08) {
-          endFlyover();
-        } else {
-          const s = sampleFlyover(flyover.keys, t);
-          const clamped = clampCenter(s.x, s.y, s.zoom);
-          cam.tcx = clamped.x;
-          cam.tcy = clamped.y;
-          cam.tzoom = Math.max(minimumZoom(), Math.min(MAX_ZOOM, s.zoom));
-          moved = true;
-        }
-      }
-
-      const openingMarker = openingMarkerRef.current;
-      if (!flyover && openingFollowRef.current && openingMarker && !rotTweenRef.current) {
-        // Preserve the ZK-1141 opt-in/restore behavior, while ensuring a
-        // penalty's relief marker never becomes an animated camera target.
-        const focus = retainedPreviewShotPose(openingMarker.shot, openingMarker.progress).ball ?? openingMarker.golfer;
-        const clamped = clampCenter(focus.x, focus.y);
-        cam.tcx = clamped.x;
-        cam.tcy = clamped.y;
-        moved = true;
-      }
-
-      // Keyboard pan in screen space → iso plane → tile space.
-      const keys = keysRef.current;
-      if (!flyover && keys.size > 0 && !rotTweenRef.current) {
-        let dx = 0;
-        let dy = 0;
-        if (keys.has("panLeft")) dx -= 1;
-        if (keys.has("panRight")) dx += 1;
-        if (keys.has("panUp")) dy -= 1;
-        if (keys.has("panDown")) dy += 1;
-        if (dx !== 0 || dy !== 0) {
-          const step = (KEY_PAN_SPEED * dtMs) / 1000 / cam.zoom;
-          const centerIso = worldToIso(cam.tcx, cam.tcy, 0, rotation);
-          const tile = isoToWorld(centerIso.x + dx * step, centerIso.y + dy * step, rotation);
-          const clamped = clampCenter(tile.x, tile.y);
-          cam.tcx = clamped.x;
-          cam.tcy = clamped.y;
-          moved = true;
-        }
-      }
-
-      // Optional screen-edge pan uses the same camera targets as keyboard
-      // input, so changing the option takes effect without reloading Pixi.
-      const pointer = pointerRef.current;
-      if (!flyover && props.edgeScroll && pointer && !rotTweenRef.current) {
-        const margin = 28;
-        const dx = pointer.x < margin ? -1 : pointer.x > el.clientWidth - margin ? 1 : 0;
-        const dy = pointer.y < margin ? -1 : pointer.y > el.clientHeight - margin ? 1 : 0;
-        if (dx || dy) {
-          const step = (KEY_PAN_SPEED * props.edgeScrollSpeed * dtMs) / 1000 / cam.zoom;
-          const centerIso = worldToIso(cam.tcx, cam.tcy, 0, rotation);
-          const tile = isoToWorld(centerIso.x + dx * step, centerIso.y + dy * step, rotation);
-          const clamped = clampCenter(tile.x, tile.y);
-          cam.tcx = clamped.x;
-          cam.tcy = clamped.y;
-          moved = true;
-        }
-      }
-
-      // Smooth toward targets.
-      const k = props.cameraSmoothing ? 1 - Math.exp(-dtMs / 90) : 1;
-      const snap = (a: number, b: number) => (Math.abs(a - b) < 1e-4 ? b : a + (b - a) * k);
-      const ncx = snap(cam.cx, cam.tcx);
-      const ncy = snap(cam.cy, cam.tcy);
-      const nz = snap(cam.zoom, cam.tzoom);
-      if (ncx !== cam.cx || ncy !== cam.cy || nz !== cam.zoom) {
-        cam.cx = ncx;
-        cam.cy = ncy;
-        cam.zoom = nz;
-        moved = true;
-      }
-
-      // Rotation tween: rigid spin around the pivot, then snap to the true
-      // re-projection (effects rebuild via the rotation state change).
-      const tween = rotTweenRef.current;
-      if (tween && world) {
-        const t = Math.min(1, (performance.now() - tween.start) / ROTATE_TWEEN_MS);
-        const ease = t * t * (3 - 2 * t);
-        world.rotation = (tween.toDeg * ease * Math.PI) / 180;
-        if (t >= 1) {
-          rotTweenRef.current = null;
-          world.rotation = 0;
-          setRotation(tween.next);
-        }
-        moved = true;
-      }
-
-      if (moved) {
-        applyCamera();
-        overlaysDiagnosticsSceneRef.current?.invalidate();
-        const now = performance.now();
-        if (now - lastAmbientReportAtRef.current >= 250) {
-          lastAmbientReportAtRef.current = now;
-          props.onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
-          reportView();
-        }
-      }
-    };
-
-    el.addEventListener("wheel", handleWheel, { passive: false });
-    el.addEventListener("gesturestart", handleGestureStart, { passive: false });
-    el.addEventListener("gesturechange", handleGestureChange, { passive: false });
-    el.addEventListener("gestureend", handleGestureEnd, { passive: false });
-    el.addEventListener("pointerdown", handlePointerDown);
-    el.addEventListener("pointermove", handlePointerMove);
-    el.addEventListener("pointerup", handlePointerUp);
-    el.addEventListener("contextmenu", handleContextMenu);
-    window.addEventListener("keydown", handleKeyDown, true);
-    window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("blur", handleBlur);
-    el.addEventListener("pointerleave", handlePointerLeave);
-    app.ticker.add(tickCamera);
-
-    return () => {
-      el.removeEventListener("wheel", handleWheel);
-      el.removeEventListener("gesturestart", handleGestureStart);
-      el.removeEventListener("gesturechange", handleGestureChange);
-      el.removeEventListener("gestureend", handleGestureEnd);
-      el.removeEventListener("pointerdown", handlePointerDown);
-      el.removeEventListener("pointermove", handlePointerMove);
-      el.removeEventListener("pointerup", handlePointerUp);
-      el.removeEventListener("contextmenu", handleContextMenu);
-      window.removeEventListener("keydown", handleKeyDown, true);
-      window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("blur", handleBlur);
-      el.removeEventListener("pointerleave", handlePointerLeave);
-      app.ticker?.remove(tickCamera);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appReady, rotation, cameraState, applyCamera, clampCenter, minimumZoom, props.animationsEnabled, props.edgeScroll, props.edgeScrollSpeed, props.cameraSmoothing, props.keybindings, reportView, fitWholeCourse]);
+  // Wheel, gesture, pan, key, edge-scroll, smoothing and rotation input
+  // are attached exactly once by ViewportInputController.
 
   // ---------------------------------------------------------------------
   // Regional surround — deterministic scenery beyond the playable estate
@@ -4670,6 +3839,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     appReady,
     atlasRevision,
     effectiveTiles,
+    course,
     course.buildings,
     course.elevations,
     course.width,
@@ -4849,7 +4019,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         surfaceHeightAt,
         editorMode,
         selectedTerrain,
-        terrainStrokePreview: terrainStrokePreviewRef.current,
+        terrainStrokePreview,
         colorVision: props.colorVision,
         graphicsQuality: props.graphicsQuality,
         seasonalVisualState: props.seasonalVisualState,
@@ -4924,14 +4094,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
       perfMark("fx");
 
       const list = liveActive && props.showGolfers !== false ? golfersRef?.current ?? [] : [];
-      const terrainPreview = terrainStrokePreviewRef.current;
+      const terrainPreview = terrainStrokePreview;
       habitatFieldSceneRef.current?.tick({
         golfers: list,
         editorPreviewPoints: [
           draftTee,
           draftGreen,
-          ...clickSplineDraftRef.current,
-          clickSplineHoverRef.current,
+          ...clickSplineDraft,
+          clickSplineHover,
           ...(terrainPreview?.previewKind === "surface-edit"
             ? terrainPreview.tiles
             : terrainPreview?.acceptedTiles ?? []),
@@ -4964,8 +4134,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         worldPointToScreen,
         followCamera: (x, y) => {
           const next = clampCenter(x, y);
-          camRef.current.tcx = next.x;
-          camRef.current.tcy = next.y;
+          viewportInputControllerRef.current?.followTarget(next);
         },
         startleAtmosphere: (point, atMs) => atmosphereSceneRef.current?.startleAt(point, atMs),
         tickMobilityEntities: () => mobilityEntitiesSceneRef.current?.tick({
@@ -4998,541 +4167,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     return () => {
       app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, draftGreen, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, props.colorVision, props.graphicsQuality, props.reducedMotion, props.seasonalVisualState, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, props.onFrameTime, clampCenter, surfaceHeightAt]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, draftGreen, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, terrainStrokePreview, clickSplineDraft, clickSplineHover, props.colorVision, props.graphicsQuality, props.reducedMotion, props.seasonalVisualState, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, props.onFrameTime, clampCenter, surfaceHeightAt]);
 
-  // ---------------------------------------------------------------------
-  // Input — pointer events through the inverse camera transform
-  // ---------------------------------------------------------------------
-
-  useEffect(() => {
-    if (!appReady) return;
-    const app = appRef.current;
-    if (!app) return;
-    const pointerSurface = containerRef.current;
-    if (!pointerSurface) return;
-
-    const updateCursor = (t: { x: number; y: number } | null) => {
-      const el = containerRef.current;
-      if (!el) return;
-      let cursor = "crosshair";
-      if (t && editorMode === "PAINT" && selectedTerrain && worldCash !== undefined) {
-        const preview = onPreviewTerrainStroke?.([t]);
-        if (preview && !preview.affordable) cursor = "not-allowed";
-      }
-      el.style.cursor = cursor;
-    };
-
-    const cancelTerrainStroke = () => {
-      terrainStrokeRef.current = null;
-      terrainStrokePreviewRef.current = null;
-      setTerrainStrokePreview(null);
-      overlaysDiagnosticsSceneRef.current?.invalidate();
-    };
-
-    const showTerrainPreview = (preview: TerrainStrokePreview | null) => {
-      terrainStrokePreviewRef.current = preview;
-      setTerrainStrokePreview(preview);
-      overlaysDiagnosticsSceneRef.current?.invalidate();
-    };
-
-    const beginTerrainStroke = (point: Point, pointerId: number) => {
-      if (!onPreviewTerrainStroke) return;
-      if (import.meta.env.MODE === "e2e") {
-        terrainStrokePointerDownCellRef.current = {
-          x: Math.floor(point.x),
-          y: Math.floor(point.y),
-        };
-      }
-      const points = [point];
-      terrainStrokeRef.current = {
-        pointerId,
-        points,
-        last: point,
-      };
-      const preview = onPreviewTerrainStroke(points);
-      showTerrainPreview(preview);
-    };
-
-    const extendTerrainStroke = (point: Point, pointerId: number) => {
-      const stroke = terrainStrokeRef.current;
-      if (!stroke || stroke.pointerId !== pointerId || !onPreviewTerrainStroke) return;
-      const nextPoints = resampleWorldLine(stroke.last, point);
-      if (nextPoints.length === 0) return;
-      stroke.points.push(...nextPoints);
-      if (stroke.points.length > 2048) {
-        stroke.points = stroke.points.filter((_, index) => index % 2 === 0 || index === stroke.points.length - 1);
-      }
-      stroke.last = point;
-      const preview = onPreviewTerrainStroke(stroke.points);
-      showTerrainPreview(preview);
-    };
-
-    const finishTerrainStroke = (pointerId: number) => {
-      const stroke = terrainStrokeRef.current;
-      if (!stroke || stroke.pointerId !== pointerId) return;
-      terrainStrokeRef.current = null;
-      terrainStrokePreviewRef.current = null;
-      setTerrainStrokePreview(null);
-      overlaysDiagnosticsSceneRef.current?.invalidate();
-      onCommitTerrainStroke?.(stroke.points);
-    };
-
-    const cancelFineGreenStroke = () => {
-      fineGreenStrokeRef.current = null;
-      setFineGreenStrokePreview(null);
-      overlaysDiagnosticsSceneRef.current?.invalidate();
-    };
-
-    const beginFineGreenStroke = (point: Point, pointerId: number) => {
-      if (!onPreviewFineGreenStroke) return;
-      const points = [point];
-      fineGreenStrokeRef.current = { pointerId, points, last: point };
-      setFineGreenStrokePreview(onPreviewFineGreenStroke(points));
-      overlaysDiagnosticsSceneRef.current?.invalidate();
-    };
-
-    const extendFineGreenStroke = (point: Point, pointerId: number) => {
-      const stroke = fineGreenStrokeRef.current;
-      if (!stroke || stroke.pointerId !== pointerId || !onPreviewFineGreenStroke) return;
-      const nextPoints = resampleWorldLine(stroke.last, point);
-      if (nextPoints.length === 0) return;
-      stroke.points.push(...nextPoints);
-      if (stroke.points.length > 2_048) {
-        stroke.points = stroke.points.filter((_, index) => index % 2 === 0 || index === stroke.points.length - 1);
-      }
-      stroke.last = point;
-      setFineGreenStrokePreview(onPreviewFineGreenStroke(stroke.points));
-      overlaysDiagnosticsSceneRef.current?.invalidate();
-    };
-
-    const finishFineGreenStroke = (pointerId: number) => {
-      const stroke = fineGreenStrokeRef.current;
-      if (!stroke || stroke.pointerId !== pointerId) return;
-      fineGreenStrokeRef.current = null;
-      setFineGreenStrokePreview(null);
-      overlaysDiagnosticsSceneRef.current?.invalidate();
-      onCommitFineGreenStroke?.(stroke.points);
-    };
-
-    const featureForId = (id: string | null): SurfaceFeature | null => {
-      if (!id) return null;
-      return surfaceEditDraftRef.current
-        ?? course.surfaceIntent?.features.find((feature) => feature.id === id)
-        ?? null;
-    };
-
-    const topFeatureAt = (point: Point): SurfaceFeature | null => {
-      const x = Math.floor(point.x);
-      const y = Math.floor(point.y);
-      const index = y * course.width + x;
-      return course.surfaceIntent?.features
-        .slice()
-        .sort((a, b) => b.order - a.order)
-        .find((feature) => feature.coverage.includes(index))
-        ?? null;
-    };
-
-    const nodeHitRadius = () => Math.max(0.18, 10 / Math.max(8, TILE_W * camRef.current.zoom));
-
-    const startSurfaceEditDrag = (
-      feature: SurfaceFeature,
-      nodeIndex: number,
-      target: "node" | "in" | "out",
-      pointerId: number,
-    ) => {
-      updateSelectedSurface(feature.id, nodeIndex);
-      surfaceEditDragRef.current = { pointerId, feature, nodeIndex, target };
-      updateSurfaceEditDraft(feature);
-    };
-
-    const extendSurfaceEdit = (point: Point, event: PointerEvent) => {
-      const drag = surfaceEditDragRef.current;
-      if (!drag || drag.pointerId !== event.pointerId) return;
-      const edited = drag.target === "node"
-        ? moveSurfaceNode(drag.feature, drag.nodeIndex, point)
-        : moveSurfaceHandle(drag.feature, drag.nodeIndex, drag.target, point, !event.altKey);
-      updateSurfaceEditDraft(edited);
-      showTerrainPreview(onPreviewSurfaceFeatureEdit?.(edited) ?? null);
-    };
-
-    const finishSurfaceEdit = (pointerId: number) => {
-      const drag = surfaceEditDragRef.current;
-      if (!drag || drag.pointerId !== pointerId) return;
-      const edited = surfaceEditDraftRef.current;
-      surfaceEditDragRef.current = null;
-      showTerrainPreview(null);
-      if (edited) onCommitSurfaceFeatureEdit?.(edited);
-      updateSurfaceEditDraft(null);
-    };
-
-    const cancelSurfaceEdit = () => {
-      surfaceEditDragRef.current = null;
-      updateSurfaceEditDraft(null);
-      showTerrainPreview(null);
-    };
-
-    const canvasPoint = (event: PointerEvent): Point | null => {
-      const rect = app.canvas.getBoundingClientRect();
-      return screenToWorldPoint(
-        (event.clientX - rect.left) * app.screen.width / rect.width,
-        (event.clientY - rect.top) * app.screen.height / rect.height
-      );
-    };
-
-    // Paint gestures use native pointer capture. Capturing before Pixi's
-    // federated event layer also guarantees release/cancel delivery when the
-    // pointer leaves the canvas or crosses an overlay.
-    const handleCanvasPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || props.playableShotMode) return;
-      if (flyoverRef.current) return;
-      const point = canvasPoint(event);
-      if (!point) return;
-
-      if (editorMode === "SCULPT") {
-        const x = Math.floor(point.x);
-        const y = Math.floor(point.y);
-        if (
-          x >= 0 && y >= 0 && x < course.width && y < course.height
-          && course.tiles[y * course.width + x] === "green"
-          && onPreviewFineGreenStroke && onCommitFineGreenStroke
-        ) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          beginFineGreenStroke(point, event.pointerId);
-          try { pointerSurface.setPointerCapture(event.pointerId); } catch { /* synthetic pointer */ }
-        }
-        return;
-      }
-
-      if (editorMode !== "PAINT" || !selectedTerrain) return;
-
-      if (terrainTool === "spline" && onPreviewTerrainStroke && onCommitTerrainStroke) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const existing = clickSplineDraftRef.current;
-        if (event.detail >= 2 && existing.length > 0) {
-          const last = existing[existing.length - 1];
-          const points = Math.hypot(last.x - point.x, last.y - point.y) < 0.2
-            ? existing
-            : [...existing, point];
-          if (points.length >= 2) onCommitTerrainStroke(points);
-          updateClickSplineDraft([]);
-          updateClickSplineHover(null);
-          showTerrainPreview(null);
-          return;
-        }
-        const points = [...existing, point];
-        updateClickSplineDraft(points);
-        updateClickSplineHover(null);
-        showTerrainPreview(onPreviewTerrainStroke(points));
-        return;
-      }
-
-      if (terrainTool === "edit" && onPreviewSurfaceFeatureEdit && onCommitSurfaceFeatureEdit) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const selected = featureForId(selectedSurfaceFeatureIdRef.current);
-        const candidate = selected ?? topFeatureAt(point);
-        if (!candidate) {
-          updateSelectedSurface(null);
-          return;
-        }
-        const points = surfaceFeaturePoints(candidate);
-        const radius = nodeHitRadius();
-
-        if (selected?.id === candidate.id && selectedSurfaceNodeRef.current != null) {
-          const nodeIndex = selectedSurfaceNodeRef.current;
-          const tangents = candidate.geometry.tangents
-            ?? defaultSurfaceTangents(points, candidate.geometry.kind === "region");
-          const handles = tangents[nodeIndex];
-          if (handles) {
-            if (Math.hypot(handles.in.x - point.x, handles.in.y - point.y) <= radius) {
-              startSurfaceEditDrag(candidate, nodeIndex, "in", event.pointerId);
-              try { pointerSurface.setPointerCapture(event.pointerId); } catch { /* synthetic pointer */ }
-              return;
-            }
-            if (Math.hypot(handles.out.x - point.x, handles.out.y - point.y) <= radius) {
-              startSurfaceEditDrag(candidate, nodeIndex, "out", event.pointerId);
-              try { pointerSurface.setPointerCapture(event.pointerId); } catch { /* synthetic pointer */ }
-              return;
-            }
-          }
-        }
-
-        let nearestNode = 0;
-        let nearestNodeDistance = Number.POSITIVE_INFINITY;
-        points.forEach((node, index) => {
-          const distance = Math.hypot(node.x - point.x, node.y - point.y);
-          if (distance < nearestNodeDistance) {
-            nearestNode = index;
-            nearestNodeDistance = distance;
-          }
-        });
-
-        if (event.detail >= 2) {
-          const segment = nearestSurfaceSegment(candidate, point);
-          if (segment.distance <= Math.max(1.25, radius * 4)) {
-            const edited = insertSurfaceNode(candidate, segment.index, point);
-            updateSelectedSurface(candidate.id, segment.index + 1);
-            showTerrainPreview(onPreviewSurfaceFeatureEdit(edited));
-            onCommitSurfaceFeatureEdit(edited);
-            showTerrainPreview(null);
-            return;
-          }
-        }
-
-        updateSelectedSurface(candidate.id, nearestNode);
-        if (nearestNodeDistance <= radius) {
-          startSurfaceEditDrag(candidate, nearestNode, "node", event.pointerId);
-          try { pointerSurface.setPointerCapture(event.pointerId); } catch { /* synthetic pointer */ }
-        }
-        return;
-      }
-
-      if (!onPreviewTerrainStroke || !onCommitTerrainStroke) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      beginTerrainStroke(point, event.pointerId);
-      try { pointerSurface.setPointerCapture(event.pointerId); } catch { /* synthetic/legacy pointer */ }
-    };
-
-    const handleCanvasPointerMove = (event: PointerEvent) => {
-      if (fineGreenStrokeRef.current?.pointerId === event.pointerId) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const point = canvasPoint(event);
-        if (point) extendFineGreenStroke(point, event.pointerId);
-        return;
-      }
-      if (surfaceEditDragRef.current?.pointerId === event.pointerId) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const point = canvasPoint(event);
-        if (point) extendSurfaceEdit(point, event);
-        return;
-      }
-      if (
-        terrainTool === "spline" &&
-        clickSplineDraftRef.current.length > 0 &&
-        onPreviewTerrainStroke
-      ) {
-        const point = canvasPoint(event);
-        if (point) {
-          updateClickSplineHover(point);
-          showTerrainPreview(onPreviewTerrainStroke([...clickSplineDraftRef.current, point]));
-        }
-        return;
-      }
-      if (!terrainStrokeRef.current || terrainStrokeRef.current.pointerId !== event.pointerId) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const point = canvasPoint(event);
-      if (point) extendTerrainStroke(point, event.pointerId);
-    };
-
-    const handleCanvasPointerUp = (event: PointerEvent) => {
-      if (fineGreenStrokeRef.current?.pointerId === event.pointerId) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const point = canvasPoint(event);
-        if (point) extendFineGreenStroke(point, event.pointerId);
-        finishFineGreenStroke(event.pointerId);
-        try {
-          if (pointerSurface.hasPointerCapture(event.pointerId)) pointerSurface.releasePointerCapture(event.pointerId);
-        } catch { /* capture may already be released */ }
-        return;
-      }
-      if (surfaceEditDragRef.current?.pointerId === event.pointerId) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const point = canvasPoint(event);
-        if (point) extendSurfaceEdit(point, event);
-        finishSurfaceEdit(event.pointerId);
-        try {
-          if (pointerSurface.hasPointerCapture(event.pointerId)) pointerSurface.releasePointerCapture(event.pointerId);
-        } catch { /* capture may already be released */ }
-        return;
-      }
-      if (!terrainStrokeRef.current || terrainStrokeRef.current.pointerId !== event.pointerId) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const point = canvasPoint(event);
-      if (point) extendTerrainStroke(point, event.pointerId);
-      finishTerrainStroke(event.pointerId);
-      try {
-        if (pointerSurface.hasPointerCapture(event.pointerId)) pointerSurface.releasePointerCapture(event.pointerId);
-      } catch { /* capture may already be released */ }
-    };
-
-    const handleCanvasPointerCancel = (event: PointerEvent) => {
-      if (fineGreenStrokeRef.current?.pointerId === event.pointerId) {
-        event.stopImmediatePropagation();
-        cancelFineGreenStroke();
-        return;
-      }
-      if (surfaceEditDragRef.current?.pointerId === event.pointerId) {
-        event.stopImmediatePropagation();
-        cancelSurfaceEdit();
-        return;
-      }
-      if (terrainStrokeRef.current?.pointerId !== event.pointerId) return;
-      event.stopImmediatePropagation();
-      cancelTerrainStroke();
-    };
-
-    const handlePointerDown = (e: PIXI.FederatedPointerEvent) => {
-      if (e.button !== 0) return; // middle/right are camera pan, not editing
-      // During a flyover, editor input is suspended — a click skips it.
-      if (flyoverRef.current) {
-        endFlyover();
-        return;
-      }
-      // In the global view, clicking a golfer selects them instead of
-      // painting (ZKU-134 parity). Iso-plane distance against each golfer's
-      // projected position keeps the hit test elevation-correct.
-      if (props.showGolfers !== false && onPickGolfer && !cameraState && liveActive && golfersRef?.current?.length) {
-        const iso = screenToIsoPlane(e.global.x, e.global.y);
-        if (iso) {
-          let bestId: number | null = null;
-          let bestD = TILE_W * 0.45; // ~0.9 tiles, matches the canvas picker
-          for (const g of golfersRef.current) {
-            const ge = surfaceHeightAt(g.x + 0.5, g.y + 0.5);
-            const c = tileCenterIso(g.x, g.y, ge, rotation);
-            // Compensate the 2:1 vertical squash so the radius is circular
-            // in tile space.
-            const d = Math.hypot(iso.x - c.x, (iso.y - c.y) * 2);
-            if (d < bestD) {
-              bestD = d;
-              bestId = g.id;
-            }
-          }
-          if (bestId != null) {
-            onPickGolfer(bestId);
-            return;
-          }
-        }
-      }
-      const t = screenToTile(e.global.x, e.global.y);
-      if (!t) return;
-      if (editorMode === "PAINT" && !props.playableShotMode) return; // handled by native captured pointer events above
-      if (
-        editorMode === "SCULPT"
-        && !props.playableShotMode
-        && t.x >= 0 && t.y >= 0 && t.x < course.width && t.y < course.height
-        && course.tiles[t.y * course.width + t.x] === "green"
-      ) return; // fine-green strokes are handled by native pointer capture
-      onClickTile(t.x, t.y);
-    };
-
-    const handleMove = (e: PIXI.FederatedPointerEvent) => {
-      const t = screenToTile(e.global.x, e.global.y);
-      const changed = overlaysDiagnosticsSceneRef.current?.setHover(t) ?? true;
-      if (changed) updateCursor(t);
-    };
-
-    const handlePointerUp = (e: PIXI.FederatedPointerEvent) => {
-      if (editorMode !== "PAINT") return;
-      finishTerrainStroke(e.pointerId);
-    };
-
-    const handlePointerCancel = (e: PIXI.FederatedPointerEvent) => {
-      const stroke = terrainStrokeRef.current;
-      if (stroke && stroke.pointerId === e.pointerId) cancelTerrainStroke();
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
-      if (event.key === "Escape") {
-        if (terrainStrokeRef.current) cancelTerrainStroke();
-        if (fineGreenStrokeRef.current) cancelFineGreenStroke();
-        if (surfaceEditDragRef.current) cancelSurfaceEdit();
-        if (clickSplineDraftRef.current.length > 0) {
-          updateClickSplineDraft([]);
-          updateClickSplineHover(null);
-          showTerrainPreview(null);
-        } else if (terrainTool === "edit" && selectedSurfaceFeatureIdRef.current) {
-          updateSelectedSurface(null);
-        }
-        return;
-      }
-      if (
-        terrainTool === "spline" &&
-        event.key === "Enter" &&
-        clickSplineDraftRef.current.length >= 2
-      ) {
-        event.preventDefault();
-        onCommitTerrainStroke?.(clickSplineDraftRef.current);
-        updateClickSplineDraft([]);
-        updateClickSplineHover(null);
-        showTerrainPreview(null);
-        return;
-      }
-      if (
-        terrainTool === "spline" &&
-        event.key === "Backspace" &&
-        clickSplineDraftRef.current.length > 0
-      ) {
-        event.preventDefault();
-        const points = clickSplineDraftRef.current.slice(0, -1);
-        updateClickSplineDraft(points);
-        const hover = clickSplineHoverRef.current;
-        showTerrainPreview(points.length > 0 && onPreviewTerrainStroke
-          ? onPreviewTerrainStroke(hover ? [...points, hover] : points)
-          : null);
-        return;
-      }
-      if (
-        terrainTool === "edit" &&
-        (event.key === "Delete" || event.key === "Backspace") &&
-        selectedSurfaceFeatureIdRef.current &&
-        selectedSurfaceNodeRef.current != null
-      ) {
-        const feature = featureForId(selectedSurfaceFeatureIdRef.current);
-        if (!feature) return;
-        const edited = deleteSurfaceNode(feature, selectedSurfaceNodeRef.current);
-        if (!edited) return;
-        event.preventDefault();
-        const preview = onPreviewSurfaceFeatureEdit?.(edited) ?? null;
-        showTerrainPreview(preview);
-        if (preview?.affordable) {
-          onCommitSurfaceFeatureEdit?.(edited);
-          updateSelectedSurface(
-            edited.id,
-            Math.min(
-              selectedSurfaceNodeRef.current,
-              surfaceFeaturePoints(edited).length - 1,
-            ),
-          );
-        }
-        showTerrainPreview(null);
-      }
-    };
-
-    const stage = app.stage;
-    stage.on("pointerdown", handlePointerDown);
-    stage.on("pointermove", handleMove);
-    stage.on("pointerup", handlePointerUp);
-    stage.on("pointerupoutside", handlePointerUp);
-    stage.on("pointercancel", handlePointerCancel);
-    pointerSurface.addEventListener("pointerdown", handleCanvasPointerDown, true);
-    pointerSurface.addEventListener("pointermove", handleCanvasPointerMove, true);
-    pointerSurface.addEventListener("pointerup", handleCanvasPointerUp, true);
-    pointerSurface.addEventListener("pointercancel", handleCanvasPointerCancel, true);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      stage.off("pointerdown", handlePointerDown);
-      stage.off("pointermove", handleMove);
-      stage.off("pointerup", handlePointerUp);
-      stage.off("pointerupoutside", handlePointerUp);
-      stage.off("pointercancel", handlePointerCancel);
-      pointerSurface.removeEventListener("pointerdown", handleCanvasPointerDown, true);
-      pointerSurface.removeEventListener("pointermove", handleCanvasPointerMove, true);
-      pointerSurface.removeEventListener("pointerup", handleCanvasPointerUp, true);
-      pointerSurface.removeEventListener("pointercancel", handleCanvasPointerCancel, true);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [appReady, screenToTile, screenToWorldPoint, screenToIsoPlane, onClickTile, onPreviewTerrainStroke, onCommitTerrainStroke, onPreviewSurfaceFeatureEdit, onCommitSurfaceFeatureEdit, onPreviewFineGreenStroke, onCommitFineGreenStroke, editorMode, terrainTool, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.graphicsQuality, props.showGolfers, props.playableShotMode, surfaceHeightAt, updateClickSplineDraft, updateClickSplineHover, updateSelectedSurface, updateSurfaceEditDraft]);
+  // Camera and editor input listeners are owned by ViewportInputController.
 
   return (
     <div

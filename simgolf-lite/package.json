@@ -16,6 +16,7 @@
     "test:e2e": "playwright test",
     "test:e2e:golden": "playwright test e2e/golden-path.e2e.ts e2e/vision-page.e2e.ts",
     "test:analysis-worker": "playwright test e2e/zk681-analysis-worker.e2e.ts",
+    "test:viewport-input": "playwright test e2e/zk679-viewport-input.e2e.ts e2e/zk679-editor-input.e2e.ts --workers=1 --retries=0",
     "test:release:browsers": "playwright test --config playwright.release.config.ts",
     "test:desktop": "node --test desktop/*.test.mjs",
     "test:desktop:persistence:contract": "node --test desktop/persistenceCertification.test.mjs scripts/zk682-desktop-persistence-contract.test.mjs",
