@@ -14,6 +14,7 @@ import {
   RenderRevisionTracker,
   structuresPropsRevisionDependencies,
   surfaceEditorRevisionDependencies,
+  terrainWaterRevisionDependencies,
 } from "./renderSnapshot";
 
 function snapshot(state: GameState, revisions: Partial<{
@@ -80,6 +81,46 @@ describe("RenderSnapshot invalidation contract", () => {
 
     expect(changedRenderSystems(null, first)).toEqual(RENDER_SYSTEMS);
     expect(changedRenderSystems(first, cashOnly)).toEqual([]);
+  });
+
+  it("does not invalidate terrain/water for cash, selection, or overlay-only state", () => {
+    const tracker = new RenderRevisionTracker();
+    const state = DEFAULT_STATE;
+    const terrainDependencies = (course: GameState["course"] = state.course) => terrainWaterRevisionDependencies({
+      atlasRevision: 4,
+      course,
+      effectiveTiles: course.tiles,
+      graphicsQuality: "high",
+      colorVision: "standard",
+      reducedMotion: false,
+      seasonalVisualState: undefined,
+      terrainPatterns: false,
+      worldSeed: 1202,
+      rotation: 0,
+    });
+    const required = {
+      atmosphere: [], surfaceCare: [], structuresProps: [], playerProCollection: [],
+      naturalProps: [], overlaysDiagnostics: [], estateSurvey: [],
+    };
+    const initial = tracker.update({ ...required, terrainWater: terrainDependencies() }).terrainWater;
+
+    const uiOnly = {
+      ...state,
+      selectedTerrain: state.selectedTerrain === "rough" ? "fairway" as const : "rough" as const,
+      world: { ...state.world, cash: state.world.cash + 500 },
+    };
+    expect(uiOnly.world.cash).not.toBe(state.world.cash);
+    expect(tracker.update({
+      ...required,
+      overlaysDiagnostics: ["panel-open"],
+      terrainWater: terrainDependencies(uiOnly.course),
+    }).terrainWater).toBe(initial);
+
+    expect(tracker.update({
+      ...required,
+      overlaysDiagnostics: ["panel-open"],
+      terrainWater: terrainDependencies({ ...uiOnly.course, tiles: [...uiOnly.course.tiles] }),
+    }).terrainWater).toBe((initial ?? 0) + 1);
   });
 
   it("keeps real authored-props dependencies stable across unrelated course state", () => {

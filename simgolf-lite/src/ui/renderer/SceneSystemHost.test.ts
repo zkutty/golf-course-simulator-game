@@ -38,17 +38,17 @@ describe("RenderRevisionTracker", () => {
     const season = {};
 
     const first = tracker.update(dependencies([course, season], [course, "high"]));
-    expect(first).toEqual({ atmosphere: 1, surfaceCare: 1, structuresProps: 1, playerProCollection: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
+    expect(first).toEqual({ terrainWater: 0, atmosphere: 1, surfaceCare: 1, structuresProps: 1, playerProCollection: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
 
     const unchanged = tracker.update(dependencies([course, season], [course, "high"]));
     expect(unchanged).toBe(first);
 
     const winter = {};
     const seasonalChange = tracker.update(dependencies([course, winter], [course, "high"]));
-    expect(seasonalChange).toEqual({ atmosphere: 2, surfaceCare: 1, structuresProps: 1, playerProCollection: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
+    expect(seasonalChange).toEqual({ terrainWater: 0, atmosphere: 2, surfaceCare: 1, structuresProps: 1, playerProCollection: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
 
     const careChange = tracker.update(dependencies([course, winter], [course, "medium"]));
-    expect(careChange).toEqual({ atmosphere: 2, surfaceCare: 2, structuresProps: 1, playerProCollection: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
+    expect(careChange).toEqual({ terrainWater: 0, atmosphere: 2, surfaceCare: 2, structuresProps: 1, playerProCollection: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
   });
 
   it("invalidates natural props only for their declared scene inputs", () => {

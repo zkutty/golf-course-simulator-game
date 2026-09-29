@@ -156,6 +156,7 @@ import {
   propertyAssetsRevisionDependencies,
   structuresPropsRevisionDependencies,
   surfaceEditorRevisionDependencies,
+  terrainWaterRevisionDependencies,
   type RenderSnapshot,
 } from "../game/render/renderSnapshot";
 import { SceneSystemHost } from "./renderer/SceneSystemHost";
@@ -189,6 +190,10 @@ import {
   createLiveEntitiesSceneSystem,
   type LiveEntitiesSceneSystem,
 } from "./renderer/scenes/liveEntitiesScene";
+import type {
+  TerrainWaterChunk,
+  TerrainWaterSceneSystem,
+} from "./renderer/scenes/terrainWaterScene";
 
 type DeferredWorldScenes = typeof import("./renderer/scenes/deferredWorldScenes");
 type DeriveCourseSceneComposition = typeof import("../game/render/courseSceneComposition")["deriveCourseSceneComposition"];
@@ -970,21 +975,6 @@ function visualHeightfieldForRenderer(
 const CHUNK_TILES = 16;
 const CHUNK_DEBUG = false; // dev flag: chunk borders + rebuild logging
 
-interface TerrainChunk {
-  container: PIXI.Container;
-  /** Iso-plane pixel bounds (elevation headroom included) for culling. */
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-  /** Animated water tiles in this chunk (ZKU-150): shimmer via throttled
-   * tint oscillation, so static chunk contents stay untouched. */
-  waterSprites: Array<{ sprite: PIXI.Sprite; baseTint: number; phase: number; gx: number; gy: number }>;
-  /** Shore-foam lips on water tiles along land edges, alpha-oscillated. */
-  foamSprites: Array<{ sprite: PIXI.Sprite; phase: number }>;
-  groundCoverSprites: Array<{ display: PIXI.Container; tier: 1 | 2 }>;
-}
-
 type AtlasStampedContainer = PIXI.Container & {
   __coursecraftAtlasGeneration?: number;
 };
@@ -1085,6 +1075,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const mobilityEntitiesSceneRef = useRef<MobilityEntitiesSceneSystem | null>(null);
   const liveEntitiesSceneRef = useRef<LiveEntitiesSceneSystem | null>(null);
   const overlaysDiagnosticsSceneRef = useRef<OverlaysDiagnosticsSceneSystem | null>(null);
+  const terrainWaterSceneRef = useRef<TerrainWaterSceneSystem | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
   const sceneCameraDeriversRef = useRef<readonly [DeriveCourseSceneComposition, DeriveCourseSceneCamera] | null>(null);
   const [courseSceneCompositionEntry, setCourseSceneCompositionEntry] = useState<readonly [
@@ -1102,17 +1093,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     (props.resortOperations?.dirtyRooms ?? 0)
     + (props.resortOperations?.outOfOrderRooms ?? 0) > 0;
 
-  const diamondTextureRef = useRef<PIXI.Texture | null>(null);
-  const chunksRef = useRef<TerrainChunk[]>([]);
-  const prevTilesRef = useRef<readonly Terrain[] | null>(null);
-  const prevCareVisualSignaturesRef = useRef<string[] | null>(null);
-  const prevElevationsRef = useRef<number[] | null>(null);
-  const builtRotationRef = useRef<IsoRotation | null>(null);
-  const builtSeasonalTerrainSignatureRef = useRef<string | null>(null);
-  const builtAtlasGenerationRef = useRef<number | null>(null);
-  const chunkRebuildsRef = useRef(0);
-  const landscapeMaterialTexturesRef = useRef<Map<string, PIXI.Texture>>(new Map());
-  const lowParklandPresentationLayerRef = useRef<PIXI.Container | null>(null);
   const pathMaterialDiagnosticsRef = useRef<PathMaterialRenderDiagnostics>({
     active: false,
     mode: "legacy",
@@ -1135,14 +1115,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
   );
   const structureSpriteCountRef = useRef(0);
   const surfaceCareWorkersRef = useRef<SurfaceCareWorkerSprite[]>([]);
-  const waterAnimRef = useRef({ last: 0, wasAnimating: false });
-  const surfaceWaterSpritesRef = useRef<Array<{
-    sprite: PIXI.Sprite | PIXI.Mesh;
-    baseTint: number;
-    phase: number;
-    gx: number;
-    gy: number;
-  }>>([]);
   const dayMinuteRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     dayMinuteRef.current = props.dayMinute;
@@ -1438,6 +1410,18 @@ export function PixiStage(requestedProps: PixiStageProps) {
     return routeDestinationHierarchy(hole, course.activePinRotation ?? "A", activeShotRoute?.destinations);
   }, [activeHoleIndex, activeShotRoute?.destinations, course.activePinRotation, holes]);
   const renderRevisions = renderRevisionTrackerRef.current.update({
+    terrainWater: terrainWaterRevisionDependencies({
+      atlasRevision,
+      course,
+      effectiveTiles,
+      graphicsQuality: props.graphicsQuality,
+      colorVision: props.colorVision,
+      reducedMotion: Boolean(props.reducedMotion),
+      seasonalVisualState: props.seasonalVisualState,
+      terrainPatterns: props.terrainPatterns,
+      worldSeed: props.worldSeed,
+      rotation,
+    }),
     atmosphere: [
       atlasRevision,
       course.elevations,
@@ -1688,34 +1672,20 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const cullChunks = useCallback(() => {
     const app = appRef.current;
     const layers = layersRef.current;
-    if (!app || !layers) return;
+    const terrainScene = terrainWaterSceneRef.current;
+    if (!app || !layers || !terrainScene) return;
     const { world } = layers;
-    // During the rotation tween the transform is a screen-space rotation the
-    // bounds don't model — show everything until it snaps.
-    if (world.rotation !== 0) {
-      for (const chunk of chunksRef.current) chunk.container.visible = true;
-      return;
-    }
-    const halfW = app.screen.width / 2 / world.scale.x;
-    const halfH = app.screen.height / 2 / world.scale.y;
-    const left = world.pivot.x - halfW;
-    const right = world.pivot.x + halfW;
-    const top = world.pivot.y - halfH;
-    const bottom = world.pivot.y + halfH;
-    let visible = 0;
-    for (const chunk of chunksRef.current) {
-      const v = chunk.maxX >= left && chunk.minX <= right && chunk.maxY >= top && chunk.minY <= bottom;
-      chunk.container.visible = v;
-      const requestedTier = visibleGroundCoverTier(world.scale.x, props.resolutionScale);
-      const coverTier = props.graphicsQuality === "high"
-        ? requestedTier
-        : props.graphicsQuality === "medium"
-          ? Math.min(1, requestedTier) as 0 | 1
-          : 0;
-      for (const cover of chunk.groundCoverSprites) cover.display.visible = v && cover.tier <= coverTier;
-      if (v) visible++;
-    }
-    if (CHUNK_DEBUG) devLog(`chunks visible: ${visible}/${chunksRef.current.length}`);
+    const visible = terrainScene.cull({
+      rotation: world.rotation,
+      pivotX: world.pivot.x,
+      pivotY: world.pivot.y,
+      scale: world.scale.x,
+      screenWidth: app.screen.width,
+      screenHeight: app.screen.height,
+      graphicsQuality: props.graphicsQuality,
+      resolutionScale: props.resolutionScale,
+    });
+    if (CHUNK_DEBUG) devLog(`chunks visible: ${visible}/${terrainScene.chunks.length}`);
   }, [props.graphicsQuality, props.resolutionScale]);
 
   /** Push the camera's CURRENT values into the world container transform. */
@@ -2242,9 +2212,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
           landformDepth: {
             ...landformDepthDiagnosticsRef.current,
             waterSurfaceOwners: {
-              chunkSprites: chunksRef.current.flatMap((chunk) => chunk.waterSprites).length,
-              chunkFoam: chunksRef.current.flatMap((chunk) => chunk.foamSprites).length,
-              joinedMeshes: surfaceWaterSpritesRef.current.length,
+              chunkSprites: terrainWaterSceneRef.current?.diagnostics().chunkWaterSprites ?? 0,
+              chunkFoam: terrainWaterSceneRef.current?.diagnostics().chunkFoamSprites ?? 0,
+              joinedMeshes: terrainWaterSceneRef.current?.diagnostics().joinedWaterSprites ?? 0,
             },
             camera: {
               rotation,
@@ -2259,6 +2229,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
               : 0,
           },
           sharedContours: { ...sharedContourDiagnosticsRef.current },
+          terrainWater: terrainWaterSceneRef.current?.diagnostics() ?? null,
           layers: layers ? {
             surround: stampedAtlasGeneration(layers.surround),
             terrain: stampedAtlasGeneration(layers.terrain),
@@ -2269,8 +2240,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
             objects: stampedAtlasGeneration(layers.objects),
           } : null,
           counts: layers ? {
-            terrainChunks: chunksRef.current.length,
-            terrainRebuilds: chunkRebuildsRef.current,
+            terrainChunks: terrainWaterSceneRef.current?.diagnostics().chunksTotal ?? 0,
+            terrainRebuilds: terrainWaterSceneRef.current?.diagnostics().chunkRebuilds ?? 0,
             connectedSurfaces: layers.smoothSurfaces.children.length,
             structuresAndProps: structureSpriteCountRef.current
               + (naturalPropsSceneRef.current?.contentCount() ?? 0),
@@ -2398,8 +2369,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
         app.destroy(true, { children: true, texture: true });
         return;
       }
-      const [deferredWorldScenes, compositionModule, cameraModule] = await Promise.all([
+      const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule] = await Promise.all([
         import("./renderer/scenes/deferredWorldScenes"),
+        import("./renderer/scenes/terrainWaterScene"),
         import("../game/render/courseSceneComposition"),
         import("../game/render/courseSceneCamera"),
       ]);
@@ -2443,7 +2415,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       g.poly([TILE_W / 2, 0, TILE_W, TILE_H / 2, TILE_W / 2, TILE_H, 0, TILE_H / 2]);
       g.fill(0xffffff);
       g.stroke({ width: 1, color: 0xffffff, alpha: 0.35 });
-      diamondTextureRef.current = app.renderer.generateTexture(g);
+      const diamondTexture = app.renderer.generateTexture(g);
       g.destroy();
 
       // Build the layer tree (see header comment for architecture).
@@ -2471,6 +2443,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
       appRef.current = app;
       layersRef.current = { world, surround, terrain, smoothSurfaces, seasonalTerrain, surfaceCare, estateSeam, terrainDecals, sceneDecals, surfaceEditor, objects, fx, screenOverlay };
+      const terrainWaterScene = terrainWaterScenes.createTerrainWaterSceneSystem({
+        surround,
+        terrain,
+        smoothSurfaces,
+        estateSeam,
+      });
+      terrainWaterScene.diamondTexture = terrainWaterScene.ownGeneratedTexture(diamondTexture);
+      terrainWaterSceneRef.current = terrainWaterScene;
       if (activation.context) {
         setRenderContext({
           atlas: activation.context,
@@ -2484,14 +2464,18 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
     void init().catch((error: unknown) => {
       if (cancelled) {
-        try { app.destroy(true, { children: true, texture: true }); } catch { /* partial initialization */ }
+        terrainWaterSceneRef.current?.destroy();
+        terrainWaterSceneRef.current = null;
+        try { app.destroy(true, { children: true, texture: false, textureSource: false }); } catch { /* partial initialization */ }
         return;
       }
       console.error("[PixiStage] Course renderer initialization failed", error);
       deferredWorldScenesRef.current = null;
       sceneCameraDeriversRef.current = null;
       setRendererError(true);
-      try { app.destroy(true, { children: true, texture: true }); } catch { /* partially initialized */ }
+      terrainWaterSceneRef.current?.destroy();
+      terrainWaterSceneRef.current = null;
+      try { app.destroy(true, { children: true, texture: false, textureSource: false }); } catch { /* partially initialized */ }
     });
 
     return () => {
@@ -2510,20 +2494,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
       mobilityEntitiesSceneRef.current = null;
       liveEntitiesSceneRef.current = null;
       overlaysDiagnosticsSceneRef.current = null;
+      terrainWaterSceneRef.current?.destroy();
+      terrainWaterSceneRef.current = null;
       deferredWorldScenesRef.current = null;
       layersRef.current = null;
-      chunksRef.current = [];
-      prevTilesRef.current = null;
-      prevElevationsRef.current = null;
-      builtSeasonalTerrainSignatureRef.current = null;
-      builtAtlasGenerationRef.current = null;
       structureSpriteCountRef.current = 0;
       surfaceCareWorkersRef.current = [];
-      waterAnimRef.current = { last: 0, wasAnimating: false };
-      diamondTextureRef.current = null;
-      landscapeMaterialTexturesRef.current.clear();
       if (appRef.current) {
-        appRef.current.destroy(true, { children: true, texture: true });
+        // Scene systems release generated textures explicitly. Atlas textures
+        // are borrowed residency resources and must never be recursively
+        // destroyed by the Pixi application.
+        appRef.current.destroy(true, { children: true, texture: false, textureSource: false });
         appRef.current = null;
       }
     };
@@ -3078,7 +3059,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
   useEffect(() => {
     if (!appReady) return;
     const layers = layersRef.current;
-    if (!layers) return;
+    const terrainScene = terrainWaterSceneRef.current;
+    if (!layers || !terrainScene) return;
+    terrainScene.setRenderer("surround", () => {
     layers.surround.removeChildren().forEach((child) => child.destroy({ children: true }));
     layers.estateSeam.removeChildren().forEach((child) => child.destroy({ children: true }));
 
@@ -3172,6 +3155,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         if (distance > band) continue;
         const texture = getTerrainFrame(model.theme, props.graphicsQuality, pickTerrainBaseFrame(material, x, y));
         if (!texture) continue;
+        terrainScene.borrowTexture(texture);
         const position = worldToIso(x + 0.5, y, 0, rotation);
         const tile = new PIXI.Sprite(texture);
         tile.anchor.set(0.5, 0);
@@ -3311,6 +3295,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     layers.estateSeam.addChild(seam, hedge);
     stampAtlasGeneration(layers.surround, atlasRevision);
     stampAtlasGeneration(layers.estateSeam, atlasRevision);
+    });
   }, [
     appReady,
     atlasRevision,
@@ -3329,8 +3314,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
   useEffect(() => {
     if (!appReady) return;
     const layers = layersRef.current;
-    const diamond = diamondTextureRef.current;
-    if (!layers || !diamond) return;
+    const terrainScene = terrainWaterSceneRef.current;
+    const diamond = terrainScene?.diamondTexture;
+    if (!layers || !terrainScene || !diamond) return;
+    terrainScene.setRenderer("terrain", () => {
     const presentationRenderCourse = { ...course, tiles: presentationTiles };
 
     const w = course.width;
@@ -3394,7 +3381,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const cliffFaces = getBiomeDefinition(course.theme).presentation.cliffFaces;
 
     /** Rebuild one chunk's contents in place (cliffs first, tops in depth order). */
-    const buildChunk = (chunk: TerrainChunk, cx: number, cy: number) => {
+    const buildChunk = (chunk: TerrainWaterChunk, cx: number, cy: number) => {
       const rebuildStartedAt = performance.now();
       const x0 = cx * CHUNK_TILES;
       const y0 = cy * CHUNK_TILES;
@@ -3528,6 +3515,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const authored = material.source === "atlas-2x"
           ? getTerrainFrame(course.theme, props.graphicsQuality, pickTerrainBaseFrame(material, x, y))
           : null;
+        if (authored) terrainScene.borrowTexture(authored);
         const sprite = new PIXI.Sprite(authored ?? diamond);
         sprite.anchor.set(0.5, 0);
         sprite.position.set(p.x, p.y);
@@ -3569,6 +3557,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const terrainDetailTexture = terrainDetail
           ? getTerrainDetailFrame(course.theme, props.graphicsQuality, terrainDetail.frame)
           : null;
+        if (terrainDetailTexture) terrainScene.borrowTexture(terrainDetailTexture);
         if (terrainDetail && terrainDetailTexture) {
           const detail = new PIXI.Sprite(terrainDetailTexture);
           detail.eventMode = "none";
@@ -3651,6 +3640,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
             ? getTerrainFrame(course.theme, props.graphicsQuality, terrainTransitionFrame(material, feature))
             : null;
           if (!transitionTexture) continue;
+          terrainScene.borrowTexture(transitionTexture);
           const lip = new PIXI.Sprite(transitionTexture);
           lip.anchor.set(0.5, 0);
           // Recessed hazards keep their lip on the surrounding ground plane;
@@ -3716,19 +3706,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
         border.stroke({ width: 1, color: 0xff00ff, alpha: 0.6 });
         chunk.container.addChild(border);
       }
-      chunkRebuildsRef.current++;
+      terrainScene.markChunkRebuild();
       recordM35Metric("chunkRebuild", performance.now() - rebuildStartedAt);
     };
 
     const chunkIndex = (cx: number, cy: number) => cy * cols + cx;
-    const prevTiles = prevTilesRef.current;
-    const prevCareVisualSignatures = prevCareVisualSignaturesRef.current;
-    const prevElevations = prevElevationsRef.current;
+    const prevTiles = terrainScene.previousTiles;
+    const prevCareVisualSignatures = terrainScene.previousCareVisualSignatures;
+    const prevElevations = terrainScene.previousElevations;
     const fullRebuild =
-      chunksRef.current.length !== cols * rows ||
-      builtRotationRef.current !== rotation ||
-      builtAtlasGenerationRef.current !== atlasRevision ||
-      builtSeasonalTerrainSignatureRef.current !== seasonalTerrainSignature ||
+      terrainScene.chunks.length !== cols * rows ||
+      terrainScene.builtRotation !== rotation ||
+      terrainScene.builtAtlasGeneration !== atlasRevision ||
+      terrainScene.builtSeasonalTerrainSignature !== seasonalTerrainSignature ||
       !prevTiles ||
       prevTiles.length !== presentationTiles.length ||
       !prevCareVisualSignatures ||
@@ -3736,11 +3726,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
     if (fullRebuild) {
       layers.terrain.removeChildren();
-      chunksRef.current.forEach((c) => c.container.destroy({ children: true }));
-      chunksRef.current = [];
-      builtRotationRef.current = rotation;
-      builtAtlasGenerationRef.current = atlasRevision;
-      builtSeasonalTerrainSignatureRef.current = seasonalTerrainSignature;
+      terrainScene.chunks.forEach((c) => c.container.destroy({ children: true }));
+      terrainScene.chunks = [];
+      terrainScene.builtRotation = rotation;
+      terrainScene.builtAtlasGeneration = atlasRevision;
+      terrainScene.builtSeasonalTerrainSignature = seasonalTerrainSignature;
 
       // Create chunk containers and add them back-to-front for this rotation.
       const chunkOrder: Array<{ cx: number; cy: number }> = [];
@@ -3750,9 +3740,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const db = isoDepth((b.cx + 0.5) * CHUNK_TILES, (b.cy + 0.5) * CHUNK_TILES, 0, rotation);
         return da - db;
       });
-      const chunks: TerrainChunk[] = new Array(cols * rows);
+      const chunks: TerrainWaterChunk[] = new Array(cols * rows);
       for (const { cx, cy } of chunkOrder) {
-        const chunk: TerrainChunk = {
+        const chunk: TerrainWaterChunk = {
           container: new PIXI.Container(),
           minX: 0, minY: 0, maxX: 0, maxY: 0,
           waterSprites: [],
@@ -3763,7 +3753,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         buildChunk(chunk, cx, cy);
         chunks[chunkIndex(cx, cy)] = chunk;
       }
-      chunksRef.current = chunks;
+      terrainScene.chunks = chunks;
       devLog(`full terrain rebuild: ${cols}x${rows} chunks (rot ${rotation})`);
     } else {
       // Incremental: diff tiles+elevations, mark touched chunks (expanded by
@@ -3786,16 +3776,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
         for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) dirty.add(chunkIndex(cx, cy));
       }
       dirty.forEach((ci) => {
-        buildChunk(chunksRef.current[ci], ci % cols, Math.floor(ci / cols));
+        buildChunk(terrainScene.chunks[ci], ci % cols, Math.floor(ci / cols));
       });
-      if (dirty.size > 0) devLog(`rebuilt ${dirty.size} dirty chunk(s), total rebuilds ${chunkRebuildsRef.current}`);
+      if (dirty.size > 0) devLog(`rebuilt ${dirty.size} dirty chunk(s), total rebuilds ${terrainScene.diagnostics().chunkRebuilds}`);
     }
 
-    prevTilesRef.current = presentationTiles;
-    prevCareVisualSignaturesRef.current = careVisualSignatures;
-    prevElevationsRef.current = course.elevations;
+    terrainScene.previousTiles = presentationTiles;
+    terrainScene.previousCareVisualSignatures = careVisualSignatures;
+    terrainScene.previousElevations = course.elevations;
     cullChunks();
     stampAtlasGeneration(layers.terrain, atlasRevision);
+    });
   }, [
     appReady,
     atlasRevision,
@@ -3822,15 +3813,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
     if (!appReady) return;
     const rebuildStartedAt = performance.now();
     const rendererLayers = layersRef.current;
+    const terrainScene = terrainWaterSceneRef.current;
     const layer = rendererLayers?.smoothSurfaces;
-    if (!layer || !rendererLayers) return;
+    if (!layer || !rendererLayers || !terrainScene) return;
+    terrainScene.setRenderer("connected", () => {
     layer.removeChildren().forEach((child) => child.destroy({ children: true }));
-    surfaceWaterSpritesRef.current = [];
+    terrainScene.surfaceWaterSprites = [];
     const quality = props.graphicsQuality;
     landformDepthDiagnosticsRef.current = emptyLandformDepthDiagnostics(quality);
     const composableRuntime = presentationRuntime;
-    lowParklandPresentationLayerRef.current = composableRuntime
-      ? composableRuntime.destroyParklandPresentationLayer(lowParklandPresentationLayerRef.current)
+    terrainScene.lowPresentationLayer = composableRuntime
+      ? composableRuntime.destroyParklandPresentationLayer(terrainScene.lowPresentationLayer)
       : null;
     const composableSources = composableRuntime?.resolveParklandComposableSources(
       course.theme,
@@ -3877,7 +3870,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const authored = quality !== "low" && !finePathCore && props.colorVision === "standard" && !props.terrainPatterns
         ? getLandscapeMaterialField(course.theme, terrain, quality)
         : null;
-      if (authored && !authored.destroyed) return authored;
+      if (authored && !authored.destroyed) return terrainScene.borrowTexture(authored);
       const key = [
         getBiomeDefinition(course.theme).key,
         terrain,
@@ -3887,12 +3880,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
         finePathCore ? "fine-compacted-core" : "standard",
         baseColor.toString(16),
       ].join(":");
-      let texture = landscapeMaterialTexturesRef.current.get(key);
+      let texture = terrainScene.landscapeMaterialTextures.get(key);
       if (!texture || texture.destroyed) {
         texture = finePathCore
           ? createCompactedPathCoreTexture(baseColor, quality)
           : createLandscapeMaterialTexture(terrain, baseColor, quality, props.terrainPatterns);
-        landscapeMaterialTexturesRef.current.set(key, texture);
+        terrainScene.ownGeneratedTexture(texture);
+        terrainScene.landscapeMaterialTextures.set(key, texture);
       }
       return texture;
     };
@@ -3926,7 +3920,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       maintainedLayer.eventMode = "none";
       maintainedLayer.label = "low-maintained-tier-surfaces";
       rendererLayers.terrain.addChild(maintainedLayer);
-      lowParklandPresentationLayerRef.current = maintainedLayer;
+      terrainScene.lowPresentationLayer = maintainedLayer;
       const maintained = components
         .filter((component) => isMaintained(component.terrain))
         .sort((a, b) => componentDepth(a) - componentDepth(b));
@@ -3992,6 +3986,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const pathEdgeTexture = props.colorVision === "standard" && !props.terrainPatterns
       ? getPathMaterialField(course.theme, "edge", quality)
       : null;
+    if (pathShoulderTexture) terrainScene.borrowTexture(pathShoulderTexture);
+    if (pathEdgeTexture) terrainScene.borrowTexture(pathEdgeTexture);
     const hasPathMaterialTextures = Boolean(
       pathShoulderTexture && !pathShoulderTexture.destroyed && pathEdgeTexture && !pathEdgeTexture.destroyed,
     );
@@ -4040,7 +4036,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         composableTrace,
       )
       : layer;
-    if (presentationLayer !== layer) lowParklandPresentationLayerRef.current = presentationLayer;
+    if (presentationLayer !== layer) terrainScene.lowPresentationLayer = presentationLayer;
     // Low owns only the composable turf overlay. Existing chunk rendering
     // continues to own hazards, paths, and elevation; do not route those
     // categories through the connected Medium/High presentation.
@@ -4283,7 +4279,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const firstCell = component.cells[0];
         const gx = firstCell % course.width;
         const gy = Math.floor(firstCell / course.width);
-        surfaceWaterSpritesRef.current.push({
+        terrainScene.surfaceWaterSprites.push({
           sprite: mesh!,
           baseTint: mesh!.tint,
           phase: waterShimmerPhase(gx, gy),
@@ -4587,7 +4583,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const generatedMacroTextures: PIXI.Texture[] = [];
     const shadowTexture = textureFromRgba(macroRaster.shadow);
     if (shadowTexture) {
-      generatedMacroTextures.push(shadowTexture);
+      generatedMacroTextures.push(terrainScene.ownGeneratedTexture(shadowTexture));
       const shadow = new PIXI.Mesh({ geometry: macroGeometry(), texture: shadowTexture });
       shadow.eventMode = "none";
       shadow.label = "macro-landform-shadow";
@@ -4596,7 +4592,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     }
     const highlightTexture = textureFromRgba(macroRaster.highlight);
     if (highlightTexture) {
-      generatedMacroTextures.push(highlightTexture);
+      generatedMacroTextures.push(terrainScene.ownGeneratedTexture(highlightTexture));
       const highlight = new PIXI.Mesh({ geometry: macroGeometry(), texture: highlightTexture });
       highlight.eventMode = "none";
       highlight.label = "macro-landform-highlight";
@@ -4667,8 +4663,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     stampAtlasGeneration(layer, atlasRevision);
     recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
     return () => {
-      for (const texture of generatedMacroTextures) texture.destroy(true);
+      for (const texture of generatedMacroTextures) terrainScene.releaseGeneratedTexture(texture);
     };
+    });
   }, [
     appReady,
     atlasRevision,
@@ -4739,7 +4736,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
       fx: layers.fx,
       screenOverlay: layers.screenOverlay,
     });
+    const terrainWater = terrainWaterSceneRef.current;
+    if (!terrainWater) {
+      console.error("[PixiStage] Renderer became ready without its terrain/water scene");
+      setRendererError(true);
+      return;
+    }
     const host = new SceneSystemHost([
+      terrainWater,
       atmosphere,
       createSurfaceCareSceneSystem(
         layers.surfaceCare,
@@ -4859,43 +4863,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
       holeMarkersSceneRef.current?.tick(nowMs);
 
-      // Water shimmer + shore foam (ZKU-150): throttled tint/alpha
-      // oscillation over the chunk-registered water sprites; visible chunks
-      // only; rare bright glints from a positional hash. Snaps back to the
-      // static base when animations are turned off.
       perfMark("hover+flags");
-      const waterAnim = waterAnimRef.current;
-      if (props.animationsEnabled && props.waterAnimation) {
-        if (nowMs - waterAnim.last > 140) {
-          waterAnim.last = nowMs;
-          waterAnim.wasAnimating = true;
-          const t = nowMs / 1000;
-          const bucket = Math.floor(nowMs / 700);
-          for (const chunk of chunksRef.current) {
-            if (!chunk.container.visible) continue;
-            for (const ws of chunk.waterSprites) {
-              let f = 1 + 0.05 * Math.sin(t * 1.6 + ws.phase);
-              if ((ws.gx * 31 + ws.gy * 57 + bucket) % 89 === 0) f = 1.22; // glint
-              ws.sprite.tint = shade(ws.baseTint, f);
-            }
-            for (const fs of chunk.foamSprites) {
-              fs.sprite.alpha = 0.16 + 0.14 * (0.5 + 0.5 * Math.sin(t * 2.1 + fs.phase));
-            }
-          }
-          for (const ws of surfaceWaterSpritesRef.current) {
-            let f = 1 + 0.05 * Math.sin(t * 1.6 + ws.phase);
-            if ((ws.gx * 31 + ws.gy * 57 + bucket) % 89 === 0) f = 1.22;
-            ws.sprite.tint = shade(ws.baseTint, f);
-          }
-        }
-      } else if (waterAnim.wasAnimating) {
-        waterAnim.wasAnimating = false;
-        for (const chunk of chunksRef.current) {
-          for (const ws of chunk.waterSprites) ws.sprite.tint = ws.baseTint;
-          for (const fs of chunk.foamSprites) fs.sprite.alpha = 0.26;
-        }
-        for (const ws of surfaceWaterSpritesRef.current) ws.sprite.tint = ws.baseTint;
-      }
+      terrainWaterSceneRef.current?.tickWater(
+        nowMs,
+        props.animationsEnabled && props.waterAnimation,
+      );
 
       // Repair workers are shown only when the observed care record reports
       // an active task and sufficient allocated service. Motion is cosmetic,
@@ -5003,8 +4975,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       });
 
       overlaysDiagnostics?.finishFrame(nowMs, dtMs, () => {
-        let visibleChunks = 0;
-        for (const chunk of chunksRef.current) if (chunk.container.visible) visibleChunks++;
+        const terrainDiagnostics = terrainWaterSceneRef.current?.diagnostics();
         return {
           ...(liveEntitiesSceneRef.current?.diagnostics() ?? {
             golfers: 0,
@@ -5013,8 +4984,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
             impacts: 0,
           }),
           ambientObjects: atmosphereSceneRef.current?.objectCount() ?? 0,
-          chunksVisible: visibleChunks,
-          chunksTotal: chunksRef.current.length,
+          chunksVisible: terrainDiagnostics?.chunksVisible ?? 0,
+          chunksTotal: terrainDiagnostics?.chunksTotal ?? 0,
           objects: layers.objects.children.length,
         };
       });

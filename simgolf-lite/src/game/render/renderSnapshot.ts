@@ -85,6 +85,7 @@ export function changedRenderSystems(
  * boundaries above without creating a second renderer snapshot authority.
  */
 export type RenderSceneId =
+  | "terrainWater"
   | "atmosphere"
   | "surfaceCare"
   | "structuresProps"
@@ -103,7 +104,7 @@ export type RenderSceneId =
 
 type LegacyRenderSceneId = Exclude<
   RenderSceneId,
-  "holeMarkers" | "surfaceEditor" | "architectureOverlay" | "propertyAssets" | "mobilityEntities" | "liveEntities" | "openingPreview" | "habitatField"
+  "terrainWater" | "holeMarkers" | "surfaceEditor" | "architectureOverlay" | "propertyAssets" | "mobilityEntities" | "liveEntities" | "openingPreview" | "habitatField"
 >;
 
 /** New bounded scenes stay optional for compatibility with older test fixtures. */
@@ -238,6 +239,61 @@ export interface HabitatFieldRevisionInput {
   readonly colorVision: ColorVisionMode;
   readonly rotation: IsoRotation;
   readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
+}
+
+export interface TerrainWaterRevisionInput {
+  readonly atlasRevision: number;
+  readonly course: Pick<
+    Course,
+    | "buildings"
+    | "elevations"
+    | "estate"
+    | "height"
+    | "holes"
+    | "property"
+    | "surfaceCare"
+    | "surfaceIntent"
+    | "theme"
+    | "tiles"
+    | "width"
+  >;
+  readonly effectiveTiles: readonly Terrain[];
+  readonly graphicsQuality: RenderSnapshot["graphicsQuality"];
+  readonly colorVision: ColorVisionMode;
+  readonly reducedMotion: boolean;
+  readonly seasonalVisualState?: SeasonalVisualState;
+  readonly terrainPatterns: boolean;
+  readonly worldSeed: number;
+  readonly rotation: IsoRotation;
+}
+
+/** Exact physical/material inputs owned by the atomic terrain+water scene. */
+export function terrainWaterRevisionDependencies(
+  input: TerrainWaterRevisionInput,
+): readonly unknown[] {
+  const { course } = input;
+  return [
+    input.atlasRevision,
+    course.buildings,
+    course.elevations,
+    course.estate,
+    course.height,
+    course.holes,
+    course.property?.assets,
+    course.surfaceCare,
+    course.surfaceIntent,
+    course.theme,
+    course.tiles,
+    course.width,
+    input.effectiveTiles,
+    input.graphicsQuality,
+    input.colorVision,
+    input.reducedMotion,
+    input.seasonalVisualState,
+    input.terrainPatterns,
+    input.worldSeed,
+    input.rotation,
+  ];
 }
 
 export type SurfaceEditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
@@ -429,6 +485,7 @@ function dependenciesChanged(
 export class RenderRevisionTracker {
   private dependencies: Partial<Record<RenderSceneId, readonly unknown[]>> = {};
   private revisions: RenderRevisions = {
+    terrainWater: 0,
     atmosphere: 0,
     surfaceCare: 0,
     structuresProps: 0,
