@@ -60,14 +60,9 @@ import type { ColorVisionMode } from "../game/onboarding/profile";
 import type { ResortOperations } from "../game/property/types";
 import { bindingFromEvent, type BindingAction, type Keybindings } from "../accessibility/keybindings";
 import { FLYOVER_DURATION_MS, buildFlyoverKeys, sampleFlyover, type FlyoverKey } from "../game/render/flyover";
-import { PerfWindow } from "../game/render/perfStats";
 import { recordM35Metric } from "../game/render/m35Telemetry";
 import type { CourseSceneCompositionPlanV1 } from "../game/render/courseSceneComposition";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
-import {
-  decorationTiles,
-  normalizedDecoration,
-} from "../game/models/decorations";
 import { getBiomeDefinition } from "../game/models/biomes";
 import type { ArchitectureReferencePlan } from "../game/architecture/referencePlan";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
@@ -93,7 +88,6 @@ import {
   terrainSurfaceInsetPx,
 } from "../game/render/terrainRelief";
 import {
-  buildLandscapeComponents,
   buildVisualHeightfield,
   createLandscapeComponentCache,
   maintainedChunkUnderlay,
@@ -106,7 +100,6 @@ import { buildHazardBankFacePlan, hazardChunkUnderlay, hazardDepthProfile, isInt
 import { buildLandscapeBoundaryRuns } from "../game/render/landscapeEdges";
 import { buildSignedContourRibbons, shouldProjectContourRibbon } from "../game/render/contourRibbons";
 import {
-  buildBunkerVisualRings,
   buildHazardVisualRings,
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
@@ -148,7 +141,6 @@ import {
 import type { PaceAdvisorFinding } from "../game/live/paceHistory";
 import {
   courseWithEffectiveSurfaces,
-  effectiveTerrainForPaintPreview,
   normalizeSurfaceCareState,
   surfaceCarePresentationSignature,
   surfaceCareTopology,
@@ -181,7 +173,10 @@ import type { NaturalPropsSceneSystem } from "./renderer/scenes/naturalPropsScen
 import type { HabitatFieldSceneSystem } from "./renderer/scenes/habitatFieldScene";
 import type { PlayerProCollectionSceneSystem } from "./renderer/scenes/playerProCollectionScene";
 import type { HoleMarkersSceneSystem } from "./renderer/scenes/holeMarkersScene";
-import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
+import {
+  createOverlaysDiagnosticsSceneSystem,
+  type OverlaysDiagnosticsSceneSystem,
+} from "./renderer/scenes/overlaysDiagnosticsScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
 import { createArchitectureOverlaySceneSystem, routeDestinationHierarchy } from "./renderer/scenes/architectureOverlayScene";
 import { createPropertyAssetsSceneSystem } from "./renderer/scenes/propertyAssetsScene";
@@ -1089,6 +1084,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const holeMarkersSceneRef = useRef<HoleMarkersSceneSystem | null>(null);
   const mobilityEntitiesSceneRef = useRef<MobilityEntitiesSceneSystem | null>(null);
   const liveEntitiesSceneRef = useRef<LiveEntitiesSceneSystem | null>(null);
+  const overlaysDiagnosticsSceneRef = useRef<OverlaysDiagnosticsSceneSystem | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
   const sceneCameraDeriversRef = useRef<readonly [DeriveCourseSceneComposition, DeriveCourseSceneCamera] | null>(null);
   const [courseSceneCompositionEntry, setCourseSceneCompositionEntry] = useState<readonly [
@@ -1138,8 +1134,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     emptyLandformDepthDiagnostics(initialRendererConfigRef.current.graphicsQuality),
   );
   const structureSpriteCountRef = useRef(0);
-  const hoverLineRef = useRef<PIXI.Graphics | null>(null);
-  const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
   const surfaceCareWorkersRef = useRef<SurfaceCareWorkerSprite[]>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
   const surfaceWaterSpritesRef = useRef<Array<{
@@ -1153,25 +1147,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
   useEffect(() => {
     dayMinuteRef.current = props.dayMinute;
   });
-  // Perf HUD (ZKU-160): rolling frame stats + per-section timings, enabled
-  // via localStorage "coursecraft_perfhud" = "on" (see README dev section).
-  const perfRef = useRef<{
-    win: PerfWindow;
-    enabled: boolean;
-    lastPollMs: number;
-    lastHudMs: number;
-    text: PIXI.Text | null;
-    sections: Record<string, number>;
-  }>({ win: new PerfWindow(180), enabled: false, lastPollMs: 0, lastHudMs: 0, text: null, sections: {} });
-  const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
-  const overlayDirtyRef = useRef(false);
-  const terrainPreviewRenderRef = useRef<{
-    revision: number;
-    previewKind: TerrainStrokePreview["previewKind"];
-    selectedTerrain: Terrain | null;
-    materials: Terrain[];
-    colors: Partial<Record<Terrain, number>>;
-  } | null>(null);
 
   // Free camera (ZKU-141): current values lerp toward targets each frame.
   // Center is in world tile coordinates so it survives rotation changes.
@@ -1889,7 +1864,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     cam.tcy = saved.cy;
     cam.tzoom = saved.zoom;
     openingFollowCameraRef.current = null;
-    overlayDirtyRef.current = true;
+    overlaysDiagnosticsSceneRef.current?.invalidate();
   }, [appReady, hasOpeningMarker, props.openingFollow]);
 
   // Flyover trigger: the shared flyoverNonce contract (HUD button, wizard
@@ -2150,13 +2125,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           objectsIndex: layers.world.getChildIndex(layers.objects),
         };
       },
-      terrainPreview: () => terrainPreviewRenderRef.current
-        ? {
-          ...terrainPreviewRenderRef.current,
-          materials: [...terrainPreviewRenderRef.current.materials],
-          colors: { ...terrainPreviewRenderRef.current.colors },
-        }
-        : null,
+      terrainPreview: () => overlaysDiagnosticsSceneRef.current?.terrainPreview() ?? null,
       routeOverlay: () => ({
         geometrySamples: activeShotRoute?.geometry.length ?? 0,
         semanticTargets: activeShotRoute?.destinations.length ?? 0,
@@ -2366,7 +2335,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     let cancelled = false;
     const container = containerRef.current;
     if (!container) return;
-    const perfState = perfRef.current;
 
     const app = new PIXI.Application();
     setRendererError(false);
@@ -2499,6 +2467,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       holeMarkersSceneRef.current = null;
       mobilityEntitiesSceneRef.current = null;
       liveEntitiesSceneRef.current = null;
+      overlaysDiagnosticsSceneRef.current = null;
       deferredWorldScenesRef.current = null;
       layersRef.current = null;
       chunksRef.current = [];
@@ -2507,11 +2476,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       builtSeasonalTerrainSignatureRef.current = null;
       builtAtlasGenerationRef.current = null;
       structureSpriteCountRef.current = 0;
-      hoverLineRef.current = null;
-      hoverHighlightRef.current = null;
       surfaceCareWorkersRef.current = [];
-      perfState.text = null;
-      perfState.win.reset();
       waterAnimRef.current = { last: 0, wasAnimating: false };
       diamondTextureRef.current = null;
       landscapeMaterialTexturesRef.current.clear();
@@ -2777,7 +2742,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       cam.tcx = clamped.x;
       cam.tcy = clamped.y;
       cam.tzoom = target.zoom;
-      overlayDirtyRef.current = true;
+      overlaysDiagnosticsSceneRef.current?.invalidate();
       reportCamera();
     };
 
@@ -2864,7 +2829,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       cam.cx = cam.tcx = clamped.x;
       cam.cy = cam.tcy = clamped.y;
       applyCamera();
-      overlayDirtyRef.current = true;
+      overlaysDiagnosticsSceneRef.current?.invalidate();
     };
     const handlePointerUp = (e: PointerEvent) => {
       if (!panState) return;
@@ -3022,7 +2987,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
       if (moved) {
         applyCamera();
-        overlayDirtyRef.current = true;
+        overlaysDiagnosticsSceneRef.current?.invalidate();
         const now = performance.now();
         if (now - lastAmbientReportAtRef.current >= 250) {
           lastAmbientReportAtRef.current = now;
@@ -4727,6 +4692,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
       fx: layers.fx,
       screenOverlay: layers.screenOverlay,
     });
+    const overlaysDiagnostics = createOverlaysDiagnosticsSceneSystem({
+      terrainDecals: layers.terrainDecals,
+      fx: layers.fx,
+      screenOverlay: layers.screenOverlay,
+    });
     const host = new SceneSystemHost([
       atmosphere,
       createSurfaceCareSceneSystem(
@@ -4744,7 +4714,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       mobilityEntities,
       liveEntities,
       createArchitectureOverlaySceneSystem(layers.terrainDecals, () => app.render()),
-      createPlayerShotOverlaySceneSystem(layers.fx),
+      overlaysDiagnostics,
       createOpeningPreviewSceneSystem(layers.fx),
       createEstateSurveySceneSystem(layers.sceneDecals.estateSurvey),
       // Keep host lifecycle order; fixed decal sublayers separately preserve
@@ -4760,6 +4730,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     holeMarkersSceneRef.current = holeMarkers;
     mobilityEntitiesSceneRef.current = mobilityEntities;
     liveEntitiesSceneRef.current = liveEntities;
+    overlaysDiagnosticsSceneRef.current = overlaysDiagnostics;
     sceneSystemHostRef.current = host;
     return () => {
       if (sceneSystemHostRef.current === host) sceneSystemHostRef.current = null;
@@ -4770,6 +4741,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (holeMarkersSceneRef.current === holeMarkers) holeMarkersSceneRef.current = null;
       if (mobilityEntitiesSceneRef.current === mobilityEntities) mobilityEntitiesSceneRef.current = null;
       if (liveEntitiesSceneRef.current === liveEntities) liveEntitiesSceneRef.current = null;
+      if (overlaysDiagnosticsSceneRef.current === overlaysDiagnostics) overlaysDiagnosticsSceneRef.current = null;
       host.dispose();
     };
   }, [appReady]);
@@ -4803,7 +4775,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   // Tee/cup/draft markers and live pin flags are owned by holeMarkersScene.
 
   // ---------------------------------------------------------------------
-  // Ticker pass — hover highlight/line + live golfer dots
+  // Ticker pass — ordered scene ticks and remaining animated world systems
   // ---------------------------------------------------------------------
 
   useEffect(() => {
@@ -4812,347 +4784,36 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const layers = layersRef.current;
     if (!app || !layers) return;
 
-    if (!hoverHighlightRef.current) {
-      const g = new PIXI.Graphics();
-      layers.terrainDecals.addChild(g);
-      hoverHighlightRef.current = g;
-    }
-    if (!hoverLineRef.current) {
-      const line = new PIXI.Graphics();
-      layers.screenOverlay.addChild(line);
-      hoverLineRef.current = line;
-    }
-
-
     const tick = (ticker: PIXI.Ticker) => {
       const dtMs = ticker.deltaMS;
       const nowMs = performance.now();
       props.onFrameTime?.(dtMs);
 
-      // Perf HUD (ZKU-160): poll the flag ~1/s; section marks are zero-cost
-      // when disabled.
-      const perf = perfRef.current;
-      if (nowMs - perf.lastPollMs > 1000) {
-        perf.lastPollMs = nowMs;
-        perf.enabled = localStorage.getItem("coursecraft_perfhud") === "on";
-        if (perf.enabled && !perf.text) {
-          const t = new PIXI.Text({
-            text: "",
-            style: {
-              fontFamily: "monospace",
-              fontSize: 11,
-              fill: 0xffffff,
-              stroke: { color: 0x000000, width: 3 },
-              lineHeight: 15,
-            },
-          });
-          t.position.set(8, 8);
-          layers.screenOverlay.addChild(t);
-          perf.text = t;
-        } else if (!perf.enabled && perf.text) {
-          layers.screenOverlay.removeChild(perf.text);
-          perf.text.destroy();
-          perf.text = null;
-          perf.win.reset();
-        }
-      }
-      if (perf.enabled) perf.sections = {};
-      let perfLast = perf.enabled ? performance.now() : 0;
-      const perfMark = (name: string) => {
-        if (!perf.enabled) return;
-        const t = performance.now();
-        perf.sections[name] = (perf.sections[name] ?? 0) + (t - perfLast);
-        perfLast = t;
-      };
-      // Hover visuals only redraw when dirty.
-      if (overlayDirtyRef.current) {
-        overlayDirtyRef.current = false;
-        const previewRevision =
-          (terrainPreviewRenderRef.current?.revision ?? 0) + 1;
-        terrainPreviewRenderRef.current = null;
-
-        const highlight = hoverHighlightRef.current;
-        const hover = hoverTileRef.current;
-        if (highlight) {
-          highlight.clear();
-          if (hover) {
-            const tileDiamond = (tx: number, ty: number) => {
-              const top = worldToIso(
-                tx + 0.5,
-                ty,
-                surfaceHeightAt(tx + 0.5, ty),
-                rotation,
-              );
-              return [
-                top.x, top.y,
-                top.x + TILE_W / 2, top.y + TILE_H / 2,
-                top.x, top.y + TILE_H,
-                top.x - TILE_W / 2, top.y + TILE_H / 2,
-              ];
-            };
-            const outlineTile = (tx: number, ty: number, alpha: number) => {
-              highlight.poly(tileDiamond(tx, ty));
-              highlight.stroke({ width: 2, color: 0xffffff, alpha });
-            };
-            const markTileState = (
-              tx: number,
-              ty: number,
-              state: "accepted" | "unaffordable" | "protected" | "excluded",
-              color: number,
-              pattern: ReturnType<typeof terrainPattern>,
-            ) => {
-              const diamond = tileDiamond(tx, ty);
-              highlight.poly(diamond);
-              highlight.fill({
-                color,
-                alpha: state === "accepted" ? 0.26 : 0.2,
-              });
-              highlight.stroke({
-                width: state === "accepted" ? 2 : 2.8,
-                color: state === "accepted" ? 0xffffff : 0xffe2b0,
-                alpha: 0.96,
-              });
-              const centerX = diamond[0];
-              const centerY = diamond[1] + TILE_H / 2;
-              if (pattern === "stripe" || pattern === "crosshatch") {
-                highlight.moveTo(centerX - 13, centerY + 2);
-                highlight.lineTo(centerX + 5, centerY - 7);
-                highlight.moveTo(centerX - 5, centerY + 7);
-                highlight.lineTo(centerX + 13, centerY - 2);
-                highlight.stroke({ width: 1.3, color: 0xffffff, alpha: 0.72 });
-              }
-              if (pattern === "crosshatch") {
-                highlight.moveTo(centerX - 12, centerY - 3);
-                highlight.lineTo(centerX + 6, centerY + 6);
-                highlight.stroke({ width: 1.2, color: 0x223024, alpha: 0.7 });
-              } else if (pattern === "dots") {
-                for (const offset of [-8, 0, 8]) {
-                  highlight.circle(centerX + offset, centerY, 1.5);
-                  highlight.fill({ color: 0xffffff, alpha: 0.85 });
-                }
-              }
-              if (state !== "accepted") {
-                highlight.moveTo(centerX - 8, centerY - 5);
-                highlight.lineTo(centerX + 8, centerY + 5);
-                highlight.moveTo(centerX + 8, centerY - 5);
-                highlight.lineTo(centerX - 8, centerY + 5);
-                highlight.stroke({ width: 2.4, color: 0xffffff, alpha: 0.98 });
-                if (state === "protected") {
-                  highlight.circle(centerX, centerY, 8.5);
-                  highlight.stroke({ width: 1.8, color: 0xffffff, alpha: 0.98 });
-                }
-              }
-            };
-            const strokePreview = terrainStrokePreviewRef.current;
-            const strokeMaterial = strokePreview?.acceptedTiles[0]?.terrain
-              ?? strokePreview?.excludedTiles[0]?.terrain;
-            const currentStrokePreview = strokePreview?.previewKind === "surface-edit"
-              || strokeMaterial == null
-              || strokeMaterial === selectedTerrain;
-            if (editorMode === "PAINT" && strokePreview && currentStrokePreview) {
-              const themedColors: Record<Terrain, number> = props.colorVision === "standard"
-                ? { ...COLORS, ...getBiomeDefinition(course.theme).presentation.tileTints }
-                : TERRAIN_PALETTES[props.colorVision];
-              const previewColor = (terrain: Terrain) =>
-                props.seasonalVisualState
-                  ? seasonalTerrainTreatment({
-                    state: props.seasonalVisualState,
-                    terrain,
-                    quality: props.graphicsQuality,
-                    colorVision: props.colorVision,
-                    baseColor: themedColors[terrain],
-                    reducedMotion: props.reducedMotion,
-                  }).color
-                  : themedColors[terrain];
-              const previewTiles = strokePreview.previewKind === "surface-edit"
-                ? strokePreview.tiles
-                : strokePreview.acceptedTiles;
-              const previewMaterials = [
-                ...new Set(previewTiles.map((tile) => tile.terrain)),
-              ];
-              terrainPreviewRenderRef.current = {
-                revision: previewRevision,
-                previewKind: strokePreview.previewKind,
-                selectedTerrain: selectedTerrain ?? null,
-                materials: previewMaterials,
-                colors: Object.fromEntries(
-                  previewMaterials.map((terrain) => [
-                    terrain,
-                    previewColor(terrain),
-                  ]),
-                ),
-              };
-              for (const tile of previewTiles) {
-                markTileState(
-                  tile.x,
-                  tile.y,
-                  strokePreview.affordable ? "accepted" : "unaffordable",
-                  strokePreview.affordable ? previewColor(tile.terrain) : 0x8f3528,
-                  terrainPattern(tile.terrain),
-                );
-              }
-              for (const tile of strokePreview.excludedTiles) {
-                if (
-                  tile.x < 0
-                  || tile.y < 0
-                  || tile.x >= course.width
-                  || tile.y >= course.height
-                ) continue;
-                markTileState(
-                  tile.x,
-                  tile.y,
-                  tile.reason === "protected" ? "protected" : "excluded",
-                  tile.reason === "protected" ? 0x6d5a2e : 0x555b60,
-                  "crosshatch",
-                );
-              }
-              if (
-                strokePreview.previewKind === "stroke" &&
-                props.graphicsQuality !== "low" &&
-                selectedTerrain &&
-                strokePreview.acceptedTiles.length > 0
-              ) {
-                const accepted = new Set(
-                  strokePreview.acceptedTiles.map((tile) => `${tile.x},${tile.y}`),
-                );
-                const minX = Math.max(
-                  0,
-                  Math.min(...strokePreview.acceptedTiles.map((tile) => tile.x)) - 2,
-                );
-                const minY = Math.max(
-                  0,
-                  Math.min(...strokePreview.acceptedTiles.map((tile) => tile.y)) - 2,
-                );
-                const maxX = Math.min(
-                  course.width,
-                  Math.max(...strokePreview.acceptedTiles.map((tile) => tile.x)) + 3,
-                );
-                const maxY = Math.min(
-                  course.height,
-                  Math.max(...strokePreview.acceptedTiles.map((tile) => tile.y)) + 3,
-                );
-                const localWidth = maxX - minX;
-                const localHeight = maxY - minY;
-                const localTiles: Terrain[] = [];
-                for (let ty = minY; ty < maxY; ty++) {
-                  for (let tx = minX; tx < maxX; tx++) {
-                    localTiles.push(effectiveTiles[ty * course.width + tx]);
-                  }
-                }
-                for (const tile of strokePreview.acceptedTiles) {
-                  const index = tile.y * course.width + tile.x;
-                  localTiles[(tile.y - minY) * localWidth + tile.x - minX] =
-                    effectiveTerrainForPaintPreview(course, index, tile.terrain);
-                }
-                const previewComponents = buildLandscapeComponents(
-                  localTiles,
-                  localWidth,
-                  localHeight,
-                  landscapeOptionsForQuality(props.graphicsQuality),
-                ).filter((component) => (
-                  component.terrain === selectedTerrain &&
-                  component.cells.some((index) => {
-                    const x = index % localWidth + minX;
-                    const y = Math.floor(index / localWidth) + minY;
-                    return accepted.has(`${x},${y}`);
-                  })
-                ));
-                for (const component of previewComponents) {
-                  const bunkerType = selectedTerrain === "sand"
-                    ? classifyBunkerVisualType(
-                      component.cells,
-                      localTiles,
-                      localWidth,
-                      localHeight,
-                    )
-                    : null;
-                  const rings = bunkerType
-                    ? buildBunkerVisualRings(
-                      component.rings,
-                      component.topologyKey,
-                      component.cells.length,
-                      bunkerType,
-                    )
-                    : component.rings;
-                  for (const ring of rings) {
-                    const points = ring.map((point) => {
-                      const worldX = point.x + minX;
-                      const worldY = point.y + minY;
-                      return worldToIso(
-                        worldX,
-                        worldY,
-                        surfaceHeightAt(worldX, worldY),
-                        rotation,
-                      );
-                    });
-                    if (points.length < 3) continue;
-                    highlight.poly(points.flatMap((point) => [point.x, point.y]));
-                    highlight.fill({
-                      color: strokePreview.affordable
-                        ? previewColor(selectedTerrain)
-                        : 0x8f3528,
-                      alpha: 0.16,
-                    });
-                    highlight.stroke({
-                      width: 2.4,
-                      color: strokePreview.affordable ? 0xffffff : 0xffd7c7,
-                      alpha: 0.88,
-                      join: "round",
-                      cap: "round",
-                    });
-                  }
-                }
-              }
-            } else if (editorMode === "SCULPT" && props.sculptRadius && props.sculptRadius > 1) {
-              // Brush footprint preview (matches brushFootprint in sculpt.ts).
-              const r = props.sculptRadius - 0.5;
-              for (let ty = hover.y - props.sculptRadius; ty <= hover.y + props.sculptRadius; ty++) {
-                for (let tx = hover.x - props.sculptRadius; tx <= hover.x + props.sculptRadius; tx++) {
-                  if (tx < 0 || ty < 0 || tx >= course.width || ty >= course.height) continue;
-                  const d2 = (tx - hover.x) ** 2 + (ty - hover.y) ** 2;
-                  if (d2 <= r * r + 1e-9) outlineTile(tx, ty, tx === hover.x && ty === hover.y ? 0.9 : 0.45);
-                }
-              }
-            } else if (editorMode === "DECOR" && props.selectedDecorationKind) {
-              const preview = decorationTiles(normalizedDecoration({
-                kind: props.selectedDecorationKind,
-                x: hover.x,
-                y: hover.y,
-                rotation: props.decorationRotation ?? 0,
-                ...((props.selectedDecorationKind === "bridge" || props.selectedDecorationKind === "boardwalk") ? { span: props.decorationSpan ?? 3 } : {}),
-              }));
-              for (const tile of preview) if (tile.x >= 0 && tile.y >= 0 && tile.x < course.width && tile.y < course.height) outlineTile(tile.x, tile.y, .75);
-            } else {
-              outlineTile(hover.x, hover.y, 0.9);
-            }
-          }
-        }
-
-        const line = hoverLineRef.current;
-        if (line) {
-          line.clear();
-          const isGreenPlacement = wizardStep === "GREEN" || wizardStep === "MOVE_GREEN";
-          if (isGreenPlacement && hover) {
-            const hole = holes[activeHoleIndex];
-            const fromPoint = hole?.tee || draftTee;
-            if (fromPoint) {
-              const from = worldPointToScreen(
-                fromPoint.x + 0.5,
-                fromPoint.y + 0.5,
-                surfaceHeightAt(fromPoint.x + 0.5, fromPoint.y + 0.5)
-              );
-              const to = worldPointToScreen(
-                hover.x + 0.5,
-                hover.y + 0.5,
-                surfaceHeightAt(hover.x + 0.5, hover.y + 0.5)
-              );
-              line.moveTo(from.x, from.y);
-              line.lineTo(to.x, to.y);
-              line.stroke({ width: 2, color: 0x6496ff, alpha: 0.6 });
-            }
-          }
-        }
-      }
+      const overlaysDiagnostics = overlaysDiagnosticsSceneRef.current;
+      overlaysDiagnostics?.beginFrame(nowMs);
+      overlaysDiagnostics?.tick({
+        wizardStep,
+        holes,
+        activeHoleIndex,
+        draftTee,
+        worldPointToScreen,
+        course,
+        effectiveTiles,
+        rotation,
+        surfaceHeightAt,
+        editorMode,
+        selectedTerrain,
+        terrainStrokePreview: terrainStrokePreviewRef.current,
+        colorVision: props.colorVision,
+        graphicsQuality: props.graphicsQuality,
+        seasonalVisualState: props.seasonalVisualState,
+        reducedMotion: props.reducedMotion,
+        sculptRadius: props.sculptRadius,
+        selectedDecorationKind: props.selectedDecorationKind,
+        decorationRotation: props.decorationRotation,
+        decorationSpan: props.decorationSpan,
+      });
+      const perfMark = (name: string) => overlaysDiagnostics?.markPerf(name);
 
       holeMarkersSceneRef.current?.tick(nowMs);
 
@@ -5299,54 +4960,27 @@ export function PixiStage(requestedProps: PixiStageProps) {
         }),
       });
 
-      // Perf HUD: fold this frame in and refresh the readout ~4x/s.
-      if (perf.enabled) {
-        perfMark("golfers+emotes");
-        perf.win.push({ totalMs: dtMs, sections: perf.sections });
-        if (nowMs - perf.lastHudMs > 250) {
-          perf.lastHudMs = nowMs;
-          const s = perf.win.summary();
-          let visibleChunks = 0;
-          for (const ch of chunksRef.current) if (ch.container.visible) visibleChunks++;
-          let work = 0;
-          for (const v of Object.values(s.sections)) work += v;
-          const liveDiagnostics = liveEntitiesSceneRef.current?.diagnostics() ?? {
+      overlaysDiagnostics?.finishFrame(nowMs, dtMs, () => {
+        let visibleChunks = 0;
+        for (const chunk of chunksRef.current) if (chunk.container.visible) visibleChunks++;
+        return {
+          ...(liveEntitiesSceneRef.current?.diagnostics() ?? {
             golfers: 0,
             bubbles: 0,
             ripples: 0,
             impacts: 0,
-          };
-          const info = {
-            fps: s.fps,
-            meanMs: s.meanMs,
-            p95Ms: s.p95Ms,
-            maxMs: s.maxMs,
-            workMs: work,
-            sections: s.sections,
-            ...liveDiagnostics,
-            ambientObjects: atmosphereSceneRef.current?.objectCount() ?? 0,
-            chunksVisible: visibleChunks,
-            chunksTotal: chunksRef.current.length,
-            objects: layers.objects.children.length,
-          };
-          (window as unknown as { __ccPerf?: object }).__ccPerf = info;
-          if (perf.text) {
-            const secStr = Object.entries(s.sections)
-              .sort((a, b) => b[1] - a[1])
-              .map(([k, v]) => `${k} ${v.toFixed(2)}`)
-              .join("  ");
-            perf.text.text =
-              `${s.fps.toFixed(0)} fps  mean ${s.meanMs.toFixed(2)}ms  p95 ${s.p95Ms.toFixed(2)}ms  max ${s.maxMs.toFixed(1)}ms\n` +
-              `tick work ${work.toFixed(2)}ms  chunks ${visibleChunks}/${chunksRef.current.length}  golfers ${liveDiagnostics.golfers}  bubbles ${liveDiagnostics.bubbles}  objects ${layers.objects.children.length}\n` +
-              secStr;
-          }
-        }
-      }
+          }),
+          ambientObjects: atmosphereSceneRef.current?.objectCount() ?? 0,
+          chunksVisible: visibleChunks,
+          chunksTotal: chunksRef.current.length,
+          objects: layers.objects.children.length,
+        };
+      });
     };
 
     // Every dependency below can change the material or non-color state of a
     // live ghost. Force the replacement closure to paint on its first tick.
-    overlayDirtyRef.current = true;
+    overlaysDiagnosticsSceneRef.current?.invalidate();
     app.ticker.add(tick);
     return () => {
       app.ticker?.remove(tick);
@@ -5379,13 +5013,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
       terrainStrokeRef.current = null;
       terrainStrokePreviewRef.current = null;
       setTerrainStrokePreview(null);
-      overlayDirtyRef.current = true;
+      overlaysDiagnosticsSceneRef.current?.invalidate();
     };
 
     const showTerrainPreview = (preview: TerrainStrokePreview | null) => {
       terrainStrokePreviewRef.current = preview;
       setTerrainStrokePreview(preview);
-      overlayDirtyRef.current = true;
+      overlaysDiagnosticsSceneRef.current?.invalidate();
     };
 
     const beginTerrainStroke = (point: Point, pointerId: number) => {
@@ -5426,14 +5060,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
       terrainStrokeRef.current = null;
       terrainStrokePreviewRef.current = null;
       setTerrainStrokePreview(null);
-      overlayDirtyRef.current = true;
+      overlaysDiagnosticsSceneRef.current?.invalidate();
       onCommitTerrainStroke?.(stroke.points);
     };
 
     const cancelFineGreenStroke = () => {
       fineGreenStrokeRef.current = null;
       setFineGreenStrokePreview(null);
-      overlayDirtyRef.current = true;
+      overlaysDiagnosticsSceneRef.current?.invalidate();
     };
 
     const beginFineGreenStroke = (point: Point, pointerId: number) => {
@@ -5441,7 +5075,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const points = [point];
       fineGreenStrokeRef.current = { pointerId, points, last: point };
       setFineGreenStrokePreview(onPreviewFineGreenStroke(points));
-      overlayDirtyRef.current = true;
+      overlaysDiagnosticsSceneRef.current?.invalidate();
     };
 
     const extendFineGreenStroke = (point: Point, pointerId: number) => {
@@ -5455,7 +5089,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
       stroke.last = point;
       setFineGreenStrokePreview(onPreviewFineGreenStroke(stroke.points));
-      overlayDirtyRef.current = true;
+      overlaysDiagnosticsSceneRef.current?.invalidate();
     };
 
     const finishFineGreenStroke = (pointerId: number) => {
@@ -5463,7 +5097,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (!stroke || stroke.pointerId !== pointerId) return;
       fineGreenStrokeRef.current = null;
       setFineGreenStrokePreview(null);
-      overlayDirtyRef.current = true;
+      overlaysDiagnosticsSceneRef.current?.invalidate();
       onCommitFineGreenStroke?.(stroke.points);
     };
 
@@ -5779,12 +5413,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
     const handleMove = (e: PIXI.FederatedPointerEvent) => {
       const t = screenToTile(e.global.x, e.global.y);
-      const prev = hoverTileRef.current;
-      hoverTileRef.current = t;
-      if (prev?.x !== t?.x || prev?.y !== t?.y) {
-        overlayDirtyRef.current = true;
-        updateCursor(t);
-      }
+      const changed = overlaysDiagnosticsSceneRef.current?.setHover(t) ?? true;
+      if (changed) updateCursor(t);
     };
 
     const handlePointerUp = (e: PIXI.FederatedPointerEvent) => {
