@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+const { contextBridge, ipcRenderer } = require("electron");
 
 const CHANNELS = new Set([
   "files:read", "files:recovery", "files:write", "files:delete", "files:list",

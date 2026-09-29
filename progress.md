@@ -30,6 +30,56 @@ Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and pus
     against `?perfFixture=1`; both screenshots and text states rendered the
     deterministic M12 course, and it emitted no browser error artifact.
 
+## 2026-09-29 — ZK-682 packaged desktop persistence certification
+
+- Started a native-persistence-only packet from exact `origin/develop`
+  `12d31adc05bb229bfcfbe803c55651d9938479af` in isolated branch
+  `codex/zk682-desktop-persistence-sep29`. The report aggregator, PWA storage,
+  renderer resource-growth gates, gameplay behavior, and production save
+  schema are out of scope.
+- The existing production chain is renderer `saveStore` -> desktop
+  `PlatformServices` -> sandboxed preload bridge -> IPC -> `NativeStore`.
+  The planned packaged-only certification keeps context isolation, sandboxing,
+  no Node integration, web security, and the real preload enabled. It writes a
+  deterministic current-schema save into a temporary Electron user-data
+  directory, exits cleanly, relaunches against the same directory, and proves
+  canonical equality. A third relaunch after controlled active-file corruption
+  will exercise normal `.bak1` recovery without mocks.
+- Implemented the packaged-only three-phase harness and strict contract. The
+  write phase saves a current-schema fixed-point game through the real renderer
+  APIs, then the runner relaunches the packaged app against the same isolated
+  user-data directory for verification, corrupts only the active revision, and
+  relaunches once more to require real `NativeStore` `.bak1` recovery. The
+  contract rejects non-packaged runs, weakened BrowserWindow security, a
+  substituted preload, browser/fallback storage, safe mode, schema drift,
+  canonical mismatches, storage-key/path changes, byte-count changes, and
+  recovery claims that do not select `.bak1` while identifying the active file
+  as invalid.
+- The first real package run found a pre-existing production defect: Electron
+  43 executes the sandboxed preload as a classic CommonJS preload, so the
+  checked-in `preload.mjs` failed before installing the bridge with `Cannot use
+  import statement outside a module`. Replaced it with functionally identical
+  `preload.cjs`; the IPC allowlist and frozen bridge are unchanged. Normal
+  launch behavior is unchanged when the certification flag is absent, and
+  context isolation, sandboxing and web security remain enabled while Node
+  integration remains disabled. Focused tests also reject each weakened
+  preference and any wrong preload path.
+- Final local certification is **PASS** on the unsigned macOS arm64 unpacked
+  package: three separate launches report schema v31, native desktop storage,
+  safe mode false, identical canonical hash `7790b82c`, identical 323,639-byte
+  revision and storage key, successful relaunch, and recovery selecting
+  `.json.bak1` with the corrupted active `.json` reported invalid. Evidence is
+  `/private/tmp/zk682-desktop-persistence-evidence.json` with SHA-256
+  `e410d5879c26edf2e7795bb8f017db38ecb1045faf21fd76c9f7cc4e6fa088f9`.
+  `npm run test:desktop:persistence:contract` passes 4/4, `npm run
+  test:desktop` passes 14/14, TypeScript and scoped ESLint pass, and `npm run
+  build:desktop` passes every production asset/delivery gate (initial JS
+  1,602,819 bytes, 5,900 bytes below the fixed cap). The bundled web-game
+  client also reached normal Quick Start gameplay with structured game state,
+  no captured console-error artifact, and a visually coherent render at
+  `/private/tmp/zk682-desktop-client/shot-0.png`. Windows packaged execution is
+  not claimed by this macOS run; the runner locates Windows unpacked builds for
+  that platform's future CI/physical gate.
 ## 2026-09-17 — ZK-674 controlled recurrence packet
 
 - Independent acceptance changed the prior GO to **NO-GO** with two P1s and

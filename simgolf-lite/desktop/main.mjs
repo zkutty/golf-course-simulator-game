@@ -6,6 +6,12 @@ import { NativeStore } from "./nativeStore.mjs";
 import { createDesktopFileDeliveryHandlers } from "./fileDelivery.mjs";
 import { createSteamAdapter } from "./steamAdapter.mjs";
 import {
+  desktopPersistenceCertificationLoadOptions,
+  desktopPersistenceSecurityEvidence,
+  parseDesktopPersistenceCertificationArgs,
+  parseDesktopPersistenceUserDataArgs,
+} from "./persistenceCertification.mjs";
+import {
   isAllowedOverlayUrl,
   normalizeWindowMode,
   restoreWindowBounds,
@@ -20,10 +26,17 @@ let mainWindow = null;
 let store = null;
 let safeMode = process.argv.includes("--safe-mode");
 const analysisWorkerBenchmark = process.argv.includes("--analysis-worker-benchmark");
+const desktopPersistenceCertificationPhase = parseDesktopPersistenceCertificationArgs(process.argv);
+const desktopPersistenceUserDataPath = parseDesktopPersistenceUserDataArgs(process.argv, desktopPersistenceCertificationPhase);
+if (analysisWorkerBenchmark && desktopPersistenceCertificationPhase) {
+  throw new Error("Packaged benchmark and persistence certification modes are mutually exclusive.");
+}
+if (desktopPersistenceUserDataPath) app.setPath("userData", desktopPersistenceUserDataPath);
 if (analysisWorkerBenchmark) app.commandLine.appendSwitch("allow-file-access-from-files");
 let quitApproved = false;
 let quitRequestInFlight = false;
 let windowMode = "windowed";
+let configuredMainWindowPreload = null;
 const steam = createSteamAdapter({ logger: (message) => console.warn(message) });
 
 function object(value) {
@@ -178,7 +191,7 @@ function registerIpcHandlers() {
   });
 }
 
-async function createWindow({ benchmark = false } = {}) {
+async function createWindow({ benchmark = false, persistenceCertificationPhase = null } = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) return;
   if (!store) {
     store = new NativeStore(app.getPath("userData"));
@@ -187,6 +200,7 @@ async function createWindow({ benchmark = false } = {}) {
   }
   const savedState = readWindowState(await store.readText(WINDOW_STATE_KEY));
   windowMode = normalizeWindowMode(savedState?.mode, "windowed");
+  configuredMainWindowPreload = benchmark ? null : path.join(root, "preload.cjs");
   mainWindow = new BrowserWindow({
     ...restoreBounds(savedState),
     minWidth: 1024,
@@ -194,7 +208,7 @@ async function createWindow({ benchmark = false } = {}) {
     show: false,
     backgroundColor: "#28382f",
     webPreferences: {
-      ...(benchmark ? {} : { preload: path.join(root, "preload.mjs") }),
+      ...(configuredMainWindowPreload ? { preload: configuredMainWindowPreload } : {}),
       contextIsolation: true,
       sandbox: !benchmark,
       nodeIntegration: false,
@@ -218,16 +232,19 @@ async function createWindow({ benchmark = false } = {}) {
   for (const eventName of ["move", "resize", "maximize", "unmaximize", "enter-full-screen", "leave-full-screen"]) {
     mainWindow.on(eventName, () => void persistWindowState());
   }
-  if (!benchmark) mainWindow.once("ready-to-show", () => mainWindow?.show());
+  if (!benchmark && !persistenceCertificationPhase) mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("closed", () => { mainWindow = null; quitRequestInFlight = false; });
   const developmentUrl = process.env.COURSECRAFT_DEV_SERVER_URL;
-  if (developmentUrl && /^http:\/\/127\.0\.0\.1:\d+$/.test(developmentUrl)) {
+  if (!persistenceCertificationPhase && developmentUrl && /^http:\/\/127\.0\.0\.1:\d+$/.test(developmentUrl)) {
     const fixture = benchmark ? "?fixture=zk681-analysis-worker" : "";
     await mainWindow.loadURL(`${developmentUrl}/${fixture}`);
   } else {
-    await mainWindow.loadFile(path.join(root, "..", "dist", "index.html"), benchmark
+    const loadOptions = benchmark
       ? { query: { fixture: "zk681-analysis-worker" } }
-      : undefined);
+      : persistenceCertificationPhase
+        ? desktopPersistenceCertificationLoadOptions(persistenceCertificationPhase)
+        : undefined;
+    await mainWindow.loadFile(path.join(root, "..", "dist", "index.html"), loadOptions);
   }
   await steam.initialize();
 }
@@ -262,6 +279,38 @@ async function runPackagedAnalysisWorkerBenchmark() {
   app.quit();
 }
 
+async function runPackagedDesktopPersistenceCertification(phase) {
+  if (!app.isPackaged) throw new Error("ZK-682 desktop persistence certification requires packaged Electron.");
+  await createWindow({ persistenceCertificationPhase: phase });
+  const renderer = await mainWindow.webContents.executeJavaScript(`(async () => {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
+      if (window.__coursecraftDesktopPersistenceCertification) {
+        return await window.__coursecraftDesktopPersistenceCertification;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error("ZK-682 desktop persistence fixture did not install.");
+  })()`, true);
+  const preload = path.join(root, "preload.cjs");
+  const report = {
+    schemaVersion: 1,
+    phase,
+    packaged: app.isPackaged,
+    appVersion: app.getVersion(),
+    userDataPath: app.getPath("userData"),
+    security: desktopPersistenceSecurityEvidence(
+      mainWindow.webContents.getLastWebPreferences(),
+      configuredMainWindowPreload,
+      preload,
+    ),
+    renderer,
+  };
+  console.log(`COURSECRAFT_DESKTOP_PERSISTENCE_CERT=${JSON.stringify(report)}`);
+  await store.markCleanExit();
+  quitApproved = true;
+  app.quit();
+}
+
 app.whenReady().then(async () => {
   screen.on("display-metrics-changed", handleDisplayMetricsChanged);
   if (analysisWorkerBenchmark) {
@@ -269,6 +318,16 @@ app.whenReady().then(async () => {
       await runPackagedAnalysisWorkerBenchmark();
     } catch (error) {
       console.error("COURSECRAFT_ANALYSIS_WORKER_BENCHMARK_ERROR=", error);
+      quitApproved = true;
+      app.exit(1);
+    }
+    return;
+  }
+  if (desktopPersistenceCertificationPhase) {
+    try {
+      await runPackagedDesktopPersistenceCertification(desktopPersistenceCertificationPhase);
+    } catch (error) {
+      console.error("COURSECRAFT_DESKTOP_PERSISTENCE_CERT_ERROR=", error);
       quitApproved = true;
       app.exit(1);
     }
