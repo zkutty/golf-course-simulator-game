@@ -18,6 +18,7 @@ interface Window {
   render_game_to_text?: () => string;
   advanceTime?: (ms: number) => void;
   __coursecraftPixiTest?: {
+    viewportInputState(): import("./ui/renderer/viewportInputController").ViewportInputState | null;
     fitWholeCourse(): void;
     fitDefaultView(): void;
     sceneComposition(): import("./game/render/courseSceneComposition").CourseSceneCompositionPlanV1 | null;
