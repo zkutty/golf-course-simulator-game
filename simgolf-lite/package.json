@@ -37,6 +37,8 @@
     "test:cert:m65": "node --test scripts/m65-certification-contract.test.mjs && node scripts/m65-certify.mjs --check",
     "test:cert:m66": "vitest run src/game/testing/m66Certification.test.ts src/game/models/strokeIndexes.test.ts src/game/competition/scoring.test.ts src/game/competition/persistence.test.ts src/game/competition/teamAuthority.test.ts src/game/competition/challengeGroupRound.test.ts src/game/playerPro/confidence.test.ts src/game/playerPro/playerPro.test.ts --maxWorkers=1 --testTimeout=60000",
     "test:cert:m69": "vitest run src/game/testing/m69Performance.test.ts src/game/testing/m69Certification.test.ts --maxWorkers=1 --testTimeout=120000 && playwright test e2e/zk765-m69-certification.e2e.ts",
+    "test:cert:zk682:contract": "node --test scripts/zk682-certification-contract.test.mjs",
+    "release:certify:zk682": "node scripts/zk682-certify.mjs",
     "test:cert:m53:core": "node scripts/m53-core-certify.mjs",
     "release:certify:m53": "node scripts/zk571-certify.mjs",
     "test:balance": "vite build --ssr src/game/testing/releaseBalanceCli.ts --outDir balance-dist --emptyOutDir --minify false && node balance-dist/releaseBalanceCli.js",
