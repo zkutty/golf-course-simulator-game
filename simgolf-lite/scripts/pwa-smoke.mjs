@@ -1,12 +1,12 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { existsSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { PNG } from "pngjs";
-import { certifyOfflineIndexedDbSave } from "./pwa-save-evidence.mjs";
+import { createPwaPersistenceReport } from "./pwa-save-evidence.mjs";
 
 const STRICT_CSP = "default-src 'self'; base-uri 'self'; connect-src 'self' https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://cloudflareinsights.com; font-src 'self' data:; frame-ancestors 'none'; img-src 'self' data: blob:; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:";
 
@@ -15,6 +15,26 @@ const basePath = process.env.COURSECRAFT_PWA_BASE ?? "/";
 const trimmedBase = basePath.replace(/^\/+|\/+$/g, "");
 const normalizedBase = trimmedBase ? `/${trimmedBase}/` : "/";
 const baseURL = process.env.COURSECRAFT_PWA_URL ?? `http://127.0.0.1:${port}${normalizedBase}`;
+const args = process.argv.slice(2);
+const valueFor = (flag) => {
+  const index = args.indexOf(flag);
+  return index >= 0 ? args[index + 1] : undefined;
+};
+const outputArg = valueFor("--output");
+const currentCommit = outputArg
+  ? spawnSync("git", ["rev-parse", "HEAD"], { cwd: fileURLToPath(new URL("../", import.meta.url)), encoding: "utf8" }).stdout?.trim()
+  : undefined;
+const expectedCommit = valueFor("--expected-commit")
+  ?? process.env.ZK682_EXPECTED_COMMIT
+  ?? process.env.GITHUB_SHA
+  ?? process.env.VITE_COMMIT_SHA
+  ?? currentCommit;
+if (args.some((arg) => arg.startsWith("--") && !["--output", "--expected-commit"].includes(arg))) {
+  throw new Error(`Unknown argument: ${args.find((arg) => arg.startsWith("--") && !["--output", "--expected-commit"].includes(arg))}`);
+}
+if ((outputArg || expectedCommit) && !/^[0-9a-f]{40}$/.test(expectedCommit ?? "")) {
+  throw new Error("PWA certification output requires --expected-commit with a full 40-character SHA");
+}
 
 async function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -94,8 +114,13 @@ if (!process.env.COURSECRAFT_PWA_URL) {
   // The production bundle keeps the normal service-worker behavior, while the
   // existing e2e-mode test seam supplies a deterministic complete course only
   // after an offline reload. No release source path is changed for this probe.
-  await run("npm", ["run", "build"], { env: { ...process.env, VITE_BASE: normalizedBase } });
-  await run("npx", ["vite", "build", "--mode", "e2e"], { env: { ...process.env, VITE_BASE: normalizedBase } });
+  const buildEnvironment = {
+    ...process.env,
+    VITE_BASE: normalizedBase,
+    ...(expectedCommit ? { VITE_COMMIT_SHA: expectedCommit } : {}),
+  };
+  await run("npm", ["run", "build"], { env: buildEnvironment });
+  await run("npx", ["vite", "build", "--mode", "e2e"], { env: buildEnvironment });
   await run(process.execPath, ["scripts/inject-sw-assets.mjs"], { env: { ...process.env, VITE_BASE: normalizedBase } });
   const dist = fileURLToPath(new URL("../dist", import.meta.url));
   const types = { ".css": "text/css", ".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".png": "image/png", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json" };
@@ -140,6 +165,7 @@ await context.addInitScript(() => localStorage.setItem("coursecraft_app_profile_
 const page = await context.newPage();
 const pageErrors = [];
 const externalRequestLedger = [];
+let persistenceReport = null;
 page.on("pageerror", (error) => pageErrors.push(error.message));
 page.on("request", (request) => {
   const url = request.url();
@@ -216,6 +242,15 @@ try {
   if (await tutorial.count()) await tutorial.getByRole("button", { name: "Skip tutorial" }).click();
   const courseCanvas = page.locator(".cc-pixi-stage canvas");
   await courseCanvas.waitFor({ state: "visible", timeout: 15_000 });
+  await page.waitForFunction(() => Boolean(
+    window.__coursecraftPixiTest?.rendererAtlasState().pathMaterialCrossSection.commit,
+  ), undefined, { timeout: 15_000 });
+  const runtimeBuildCommit = await page.evaluate(() => (
+    window.__coursecraftPixiTest?.rendererAtlasState().pathMaterialCrossSection.commit ?? null
+  ));
+  if (expectedCommit && runtimeBuildCommit !== expectedCommit) {
+    throw new Error(`PWA runtime build commit ${String(runtimeBuildCommit)} does not match expected candidate ${expectedCommit}`);
+  }
   const pixels = PNG.sync.read(await courseCanvas.screenshot());
   const colors = new Set();
   const pixelStride = Math.max(1, Math.floor((pixels.width * pixels.height) / 20_000));
@@ -331,12 +366,25 @@ try {
   await page.waitForFunction((expectedHash) => window.__coursecraftTest?.state().courseHash === expectedHash, offlineSaveBefore.courseHash, { timeout: 30_000 });
   const offlineSaveAfter = await page.evaluate(() => window.__coursecraftTest?.state());
   if (!offlineSaveAfter) throw new Error("Game-state identity was unavailable after the offline PWA load");
-  const indexedDbCertification = certifyOfflineIndexedDbSave({
+  const certificationCommit = expectedCommit ?? runtimeBuildCommit;
+  if (outputArg && !/^[0-9a-f]{40}$/.test(certificationCommit ?? "")) {
+    throw new Error("PWA evidence cannot be written without a full runtime candidate SHA");
+  }
+  persistenceReport = certificationCommit ? createPwaPersistenceReport({
+    candidateCommit: certificationCommit,
+    capturedAt: new Date().toISOString(),
+    command: "npm run test:pwa:certification",
+    environment: {
+      baseUrl: baseURL,
+      browser: "chromium",
+      browserVersion: browser.version(),
+      buildCommit: runtimeBuildCommit,
+    },
     before: offlineSaveBefore,
     storedBefore: indexedDbSave,
     storedAfter: offlineIndexedDbSave,
     after: offlineSaveAfter,
-  });
+  }) : null;
   await courseCanvas.waitFor({ state: "visible", timeout: 15_000 });
   await page.waitForFunction(() => typeof window.__coursecraftTest?.setPropertyFixture === "function", undefined, { timeout: 15_000 });
   await page.evaluate(() => window.__coursecraftTest.setPropertyFixture());
@@ -429,7 +477,12 @@ try {
   if (offlineCourseAfter !== offlineCourseBefore) throw new Error("Offline illustration delivery changed serialized course bytes.");
   if (externalRequestLedger.length) throw new Error(`PWA made external requests: ${JSON.stringify(externalRequestLedger)}`);
   if (pageErrors.length) throw new Error(`Offline illustration export emitted page errors: ${pageErrors.join(" | ")}`);
-  console.log(`[pwa-smoke] IndexedDB game-save evidence: ${JSON.stringify(indexedDbCertification)}`);
+  if (outputArg) {
+    const outputPath = resolve(outputArg);
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, `${JSON.stringify(persistenceReport, null, 2)}\n`, "utf8");
+  }
+  console.log(`[pwa-smoke] IndexedDB game-save evidence: ${JSON.stringify(persistenceReport?.evidence ?? { passed: true })}`);
   console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, Vision cache-on-demand, selected-biome cache isolation, scoped install, external-request ledger empty, service-worker-controlled offline reload, exact IndexedDB game-save survival, course-byte-preserving keyboard illustration SVG/PNG delivery, deferred HUD, and localStorage shell continuity`);
 } finally {
   await browser.close();

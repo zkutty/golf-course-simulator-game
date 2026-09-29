@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 export const PWA_SAVE_EVIDENCE_VERSION = 1;
+export const PWA_PERSISTENCE_REPORT_SCHEMA_VERSION = 1;
 
 function gameStateProjection(snapshot) {
   return {
@@ -66,6 +67,39 @@ export function certifyOfflineIndexedDbSave({ before, storedBefore, storedAfter,
       before: { terrain: before.terrainVersion, economy: before.economyVersion },
       after: { terrain: after.terrainVersion, economy: after.economyVersion },
     },
+    passed: true,
+  };
+}
+
+export function createPwaPersistenceReport({
+  candidateCommit,
+  capturedAt,
+  command,
+  environment,
+  before,
+  storedBefore,
+  storedAfter,
+  after,
+}) {
+  assert.match(candidateCommit, /^[0-9a-f]{40}$/, "PWA evidence requires a full candidate commit SHA");
+  assert.ok(!Number.isNaN(Date.parse(capturedAt)), "PWA evidence requires a capture timestamp");
+  assert.equal(typeof command, "string", "PWA evidence command is required");
+  assert.ok(command.length > 0, "PWA evidence command is required");
+  assert.equal(environment?.buildCommit, candidateCommit, "PWA runtime build commit must match the candidate");
+  assert.equal(environment?.browser, "chromium", "PWA persistence evidence must use Chromium");
+  assert.equal(typeof environment?.browserVersion, "string", "PWA browser version is required");
+  assert.ok(environment.browserVersion.length > 0, "PWA browser version is required");
+  const roundTrip = { before, storedBefore, storedAfter, after };
+  const evidence = certifyOfflineIndexedDbSave(roundTrip);
+  return {
+    schemaVersion: PWA_PERSISTENCE_REPORT_SCHEMA_VERSION,
+    gate: "offline-indexeddb-pwa",
+    candidateCommit,
+    capturedAt,
+    command,
+    environment,
+    roundTrip,
+    evidence,
     passed: true,
   };
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 export const ZK682_DESKTOP_PERSISTENCE_SCHEMA_VERSION = 1;
+export const ZK682_DESKTOP_PERSISTENCE_REPORT_SCHEMA_VERSION = 2;
 export const ZK682_CURRENT_SAVE_SCHEMA_VERSION = 31;
 
 function assertPhaseReport(report, phase, userDataPath) {
@@ -57,5 +58,51 @@ export function validateZk682DesktopPersistenceSequence({ write, verify, recover
     relaunchVerified: true,
     nativeRecoveryVerified: true,
     security: write.security,
+  };
+}
+
+export function createZk682DesktopPersistenceReport({
+  candidateCommit,
+  capturedAt,
+  platform,
+  architecture,
+  command,
+  packageArtifact,
+  executable,
+  userDataPath,
+  filesystem,
+  phases,
+}) {
+  assert.match(candidateCommit, /^[0-9a-f]{40}$/, "desktop evidence requires a full candidate commit SHA");
+  assert.ok(!Number.isNaN(Date.parse(capturedAt)), "desktop evidence requires a capture timestamp");
+  assert.ok(["darwin", "win32"].includes(platform), "desktop evidence platform must be darwin or win32");
+  assert.equal(typeof architecture, "string");
+  assert.ok(architecture.length > 0, "desktop evidence architecture is required");
+  assert.equal(typeof command, "string");
+  assert.ok(command.length > 0, "desktop evidence command is required");
+  for (const [label, artifact] of [["package", packageArtifact], ["executable", executable]]) {
+    assert.equal(typeof artifact?.path, "string", `${label} path is required`);
+    assert.ok(artifact.path.length > 0, `${label} path is required`);
+    assert.match(artifact.sha256, /^[0-9a-f]{64}$/, `${label} SHA-256 is required`);
+  }
+  assert.equal(typeof packageArtifact.manifestPath, "string", "package manifest path is required");
+  assert.match(packageArtifact.manifestSha256, /^[0-9a-f]{64}$/, "package manifest SHA-256 is required");
+  const summary = validateZk682DesktopPersistenceSequence({ ...phases, userDataPath });
+  return {
+    schemaVersion: ZK682_DESKTOP_PERSISTENCE_REPORT_SCHEMA_VERSION,
+    gate: "packaged-desktop-persistence",
+    issue: "ZK-682",
+    candidateCommit,
+    capturedAt,
+    platform,
+    architecture,
+    command,
+    package: packageArtifact,
+    executable,
+    userDataLifecycle: "temporary-and-removed-after-success",
+    summary,
+    filesystem,
+    phases,
+    passed: true,
   };
 }

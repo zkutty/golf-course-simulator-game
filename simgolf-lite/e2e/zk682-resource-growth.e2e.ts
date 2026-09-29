@@ -155,6 +155,8 @@ async function collectPostGcCheckpoint(page: Page, cdp: CDPSession, cycle: numbe
 test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown", async ({ page, browserName }, testInfo) => {
   test.slow();
   expect(browserName).toBe("chromium");
+  const expectedCommit = process.env.ZK682_EXPECTED_COMMIT;
+  expect(expectedCommit, "ZK682_EXPECTED_COMMIT must be a full candidate SHA").toMatch(/^[0-9a-f]{40}$/);
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(`pageerror: ${error.message}`));
   page.on("console", (message) => {
@@ -221,8 +223,11 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
       pathMaterialCrossSection: { commit: string };
     }
   ));
+  expect(rendererState.pathMaterialCrossSection.commit).toBe(expectedCommit);
   const report = createZk682ResourceGrowthReport({
     source: { commit: rendererState.pathMaterialCrossSection.commit, mode: "e2e" },
+    capturedAt: new Date().toISOString(),
+    command: "npm run test:resource-growth",
     browser: {
       name: browserName,
       version: page.context().browser()?.version() ?? "unknown",

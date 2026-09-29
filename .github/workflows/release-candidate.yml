@@ -42,7 +42,9 @@ jobs:
           PERF_THEME=links npm run test:perf
           PERF_THEME=desert npm run test:perf
       - name: Production PWA subpath/offline smoke
-        run: npm run test:pwa
+        env:
+          ZK682_EXPECTED_COMMIT: ${{ github.sha }}
+        run: npm run test:pwa:certification -- --expected-commit "${GITHUB_SHA}"
       - name: Build and audit exact Pages artifact
         run: VITE_BASE=/ npm run build && npm run release:audit
       - name: Upload M28 evidence
@@ -52,6 +54,7 @@ jobs:
           name: m28-release-candidate-evidence
           path: |
             simgolf-lite/artifacts/m28
+            simgolf-lite/artifacts/zk682/raw/pwa-indexeddb.json
             simgolf-lite/playwright-report
             simgolf-lite/test-results
           if-no-files-found: ignore

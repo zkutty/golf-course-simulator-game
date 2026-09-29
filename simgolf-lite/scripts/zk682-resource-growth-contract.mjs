@@ -150,7 +150,10 @@ export function evaluateZk682ResourceGrowth(samples, thresholds = ZK682_RESOURCE
 
 export function createZk682ResourceGrowthReport(input) {
   assert.equal(typeof input?.source?.commit, "string", "report source commit is required");
-  assert.ok(input.source.commit.length > 0, "report source commit is required");
+  assert.match(input.source.commit, /^[0-9a-f]{40}$/, "report source commit must be a full candidate SHA");
+  assert.ok(!Number.isNaN(Date.parse(input.capturedAt)), "report capture timestamp is required");
+  assert.equal(typeof input.command, "string", "report command is required");
+  assert.ok(input.command.length > 0, "report command is required");
   assert.equal(typeof input?.browser?.version, "string", "browser version is required");
   assert.ok(Array.isArray(input?.warmup?.baseBundles), "warmup bundle evidence is required");
   const result = evaluateZk682ResourceGrowth(input.samples, input.thresholds);
@@ -158,6 +161,8 @@ export function createZk682ResourceGrowthReport(input) {
     schemaVersion: ZK682_RESOURCE_GROWTH_SCHEMA_VERSION,
     gate: "renderer-resource-growth",
     source: input.source,
+    capturedAt: input.capturedAt,
+    command: input.command,
     browser: input.browser,
     thresholds: input.thresholds,
     warmup: input.warmup,
