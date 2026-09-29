@@ -223,6 +223,35 @@ Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and pus
 ### ZK-679 handoff
 
 - Product implementation and bounded validation are ready for coordinator review. Remaining red acceptance files are the inherited M22 collapsed-dock selector and stale ZK-567/ZK-706 browser assertions described above; fixing them would exceed this packet's renderer-only scope.
+
+## 2026-09-29 — ZK-682 architecture certification evidence contract
+
+- Started an evidence-infrastructure-only packet from exact `origin/develop`
+  `12d31adc05bb229bfcfbe803c55651d9938479af` in the isolated
+  `codex/zk682-automation-sep29` worktree. No browser/PWA persistence,
+  packaged native-save, renderer-leak, gameplay, art, model, or save-format
+  implementation is in scope.
+- Added a versioned ZK-682 aggregator contract. It pins a full candidate commit
+  and candidate `package-lock.json` digest; verifies every normalized gate
+  result and raw artifact by SHA-256; rejects missing required machine gates,
+  wrong commits, stale hashes, missing raw artifacts, and incomplete exception
+  metadata; and enumerates every issue criterion in generated JSON and
+  Markdown.
+- Headless frame p95 is structurally `report-only`. A fully green machine
+  packet without real midrange and low-end physical evidence produces `HOLD`.
+  `GO` requires midrange p95 <=20 ms and low-end p95 <=33 ms, except that a
+  higher low-end result may pass only with a complete explicitly approved
+  minimum-spec adjustment linked to a ZK follow-up.
+- Focused Node contract coverage passes 6/6. It proves HOLD without physical
+  evidence, GO with valid physical evidence despite a 100 ms report-only
+  headless p95, fail-closed low-end thresholds/adjustments, and rejection of
+  wrong commits, lock drift, stale/missing or unbound artifacts, missing
+  machine gates, and incomplete exception records.
+- Scoped ESLint, full TypeScript project checking, and `git diff --check` pass.
+  The required bundled web-game client reached structured sandbox gameplay
+  with no error artifact; its captured 512px canvas was visually inspected and
+  shows the coherent Parkland course/minimap. No expensive certification gate
+  was run and no product behavior changed.
 ## 2026-08-11 — ZK-735 tournament team-event audit
 
 - Isolated lease: `codex/zk735-team-events` at exact released base `a7a45f35877be194f93688c55be88c5816e445ad`; the original worktree is out of scope.
