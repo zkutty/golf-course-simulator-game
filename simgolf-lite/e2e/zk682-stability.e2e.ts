@@ -93,6 +93,8 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
 
   // Repeated production quick-save loads, including real IndexedDB reads and
   // full App state restoration, are measured after a post-GC baseline.
+  if (await page.evaluate(() => window.__coursecraftTest!.state().speed) !== "paused") await page.keyboard.press("Space");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("paused");
   await page.keyboard.press("Control+KeyS");
   await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
   const savedCourseHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
