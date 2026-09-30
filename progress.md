@@ -1,5 +1,11 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-09-29 — ZK-682 supplemental stability evidence producers
+
+- Isolated branch `codex/zk682-stability-evidence` starts at exact `origin/develop` `af25a17879c5d1450414fa7af5727778a022decc` and is limited to repeated save/load, long-session live simulation, and editing/overlay/sleep-wake/recovery evidence.
+- Schema-v2 reports retain raw Chromium/CDP samples, immutable thresholds and full candidate identity; the aggregate contract recomputes them instead of trusting booleans. The real Playwright producer uses production quick-save/load UI, a 120+ minute live session, terrain editing, the recovery overlay, Chromium frozen/active lifecycle, and save recovery.
+- Pre-browser gates pass: contract tests 14/14, TypeScript and scoped ESLint. Candidate-bound browser execution is next; no threshold has been changed.
+
 ## 2026-09-29 — ZK-682B offline PWA IndexedDB persistence
 
 - Bounded implementation scope: close only ZK-682's machine-evidence gap for

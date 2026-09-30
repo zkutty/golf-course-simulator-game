@@ -6,6 +6,7 @@ import test from "node:test";
 import { createPwaPersistenceReport } from "./pwa-save-evidence.mjs";
 import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence-contract.mjs";
 import { ZK682_RESOURCE_GROWTH_THRESHOLDS, createZk682ResourceGrowthReport } from "./zk682-resource-growth-contract.mjs";
+import { ZK682_STABILITY_THRESHOLDS, createZk682StabilityReport } from "./zk682-stability-contract.mjs";
 import { ZK682_CERTIFICATION_ID, ZK682_CRITERIA, ZK682_GATE_CONTRACTS, ZK682_SCHEMA_VERSION, buildZk682Report, sha256, validateZk682EvidenceManifest } from "./zk682-certification-contract.mjs";
 
 const COMMIT = "1".repeat(40);
@@ -53,8 +54,18 @@ function resourceReport() {
   return createZk682ResourceGrowthReport({ source: { commit: COMMIT, mode: "e2e" }, capturedAt: NOW, command: "fixture resource", browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_RESOURCE_GROWTH_THRESHOLDS, warmup: { baseBundles: residency.baseBundles, transitions: 9, routeTeardowns: 1 }, samples });
 }
 function supplemental(gate) {
-  const observations = gate === "save-load-resource-stability" ? { saveLoads: 20, resourceGrowthBounded: true } : gate === "long-session-resource-stability" ? { sessionMinutes: 120, resourceGrowthBounded: true } : { scenarios: ["editing", "overlay", "recovery", "sleep-wake"], recoveryPassed: true };
-  return { schemaVersion: 1, gate, candidateCommit: COMMIT, capturedAt: NOW, command: `fixture ${gate}`, observations, passed: true };
+  const measured = (index) => ({ resources: { displayObjects: 2000, attachedTextures: 80, attachedTextureSources: 20, managedTextureSources: 48, canvasConnected: true }, heap: { runtimeUsedBytes: 40_000_000 + index * 20_000 } });
+  const samples = gate === "save-load-resource-stability"
+    ? Array.from({ length: 13 }, (_, cycle) => ({ cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef", state: { screen: "game", week: 2, cash: 42000, terrainVersion: 7 }, ...measured(cycle) }))
+    : gate === "long-session-resource-stability"
+      ? Array.from({ length: 7 }, (_, index) => ({ elapsedGameMinutes: index * 22.4, courseHash: "deadbeef", state: { dayMinute: 100 + index * 22.4, speed: "4x", onCourse: 12 }, ...measured(index) }))
+      : [
+        { scenario: "editing", passed: true, before: { terrainVersion: 7 }, after: { terrainVersion: 8, screen: "game" }, ...measured(0) },
+        { scenario: "overlay", passed: true, before: { kind: null }, after: { kind: "recovery", visible: true }, ...measured(1) },
+        { scenario: "sleep-wake", passed: true, before: { courseHash: "deadbeef" }, after: { courseHash: "deadbeef", lifecycle: "active", responsive: true }, ...measured(2) },
+        { scenario: "recovery", passed: true, before: { savedTerrainVersion: 7, mutatedTerrainVersion: 8, savedCourseHash: "deadbeef" }, after: { terrainVersion: 7, courseHash: "deadbeef", quickSaveLoaded: true }, ...measured(3) },
+      ];
+  return createZk682StabilityReport({ gate, candidateCommit: COMMIT, capturedAt: NOW, command: `fixture ${gate}`, browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_STABILITY_THRESHOLDS[gate], samples });
 }
 
 function genericObservations(gateId, lowEndP95) {
@@ -92,11 +103,14 @@ function fixture({ physical = false, lowEndP95 = 32, adjustment = false } = {}) 
       observations = { packagedElectronPassed: true, desktopPersistencePassed: true, platforms: ["darwin", "win32"], persistenceEvidence: evidence };
     } else if (gateId === "stability") {
       const resource = write(root, "raw/resource.json", resourceReport());
-      const saveLoad = write(root, "raw/save-load.json", supplemental("save-load-resource-stability"));
-      const longSession = write(root, "raw/long-session.json", supplemental("long-session-resource-stability"));
-      const interaction = write(root, "raw/interaction.json", supplemental("editing-overlay-sleep-recovery"));
+      const saveLoadReport = supplemental("save-load-resource-stability");
+      const longSessionReport = supplemental("long-session-resource-stability");
+      const interactionReport = supplemental("editing-overlay-sleep-recovery");
+      const saveLoad = write(root, "raw/save-load.json", saveLoadReport);
+      const longSession = write(root, "raw/long-session.json", longSessionReport);
+      const interaction = write(root, "raw/interaction.json", interactionReport);
       artifacts = [resource, saveLoad, longSession, interaction];
-      observations = { routeChangesStable: true, saveLoadsStable: true, longSessionStable: true, interactionRecoveryPassed: true, routeChanges: 6, saveLoads: 20, sessionMinutes: 120, resourceGrowthEvidence: resource, saveLoadEvidence: saveLoad, longSessionEvidence: longSession, interactionRecoveryEvidence: interaction };
+      observations = { routeChangesStable: true, saveLoadsStable: true, longSessionStable: true, interactionRecoveryPassed: true, routeChanges: 6, saveLoads: saveLoadReport.observations.saveLoads, sessionMinutes: longSessionReport.observations.sessionMinutes, resourceGrowthEvidence: resource, saveLoadEvidence: saveLoad, longSessionEvidence: longSession, interactionRecoveryEvidence: interaction };
     } else {
       artifacts = [write(root, `raw/${gateId}.txt`, `${gateId}\n`)];
       observations = genericObservations(gateId, lowEndP95);
