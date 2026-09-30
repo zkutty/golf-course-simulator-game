@@ -17,6 +17,7 @@ import {
   ZK682_STABILITY_SCHEMA_VERSION,
   ZK682_STABILITY_THRESHOLDS,
 } from "./zk682-stability-contract.mjs";
+import { inspectZk682CommandReceipt } from "./zk682-command-receipt.mjs";
 
 export const ZK682_SCHEMA_VERSION = 2;
 export const ZK682_CERTIFICATION_ID = "zk682-architecture-slice-certification-v2";
@@ -25,6 +26,8 @@ export const ZK682_REPORT_VERSION = 2;
 const MiB = 1024 * 1024;
 export const ZK682_BUDGETS = Object.freeze({
   rendererWorkMilliseconds: 8,
+  coldStartupMilliseconds: 5_000,
+  fixtureLoadMilliseconds: 6_000,
   midrangeP95Milliseconds: 20,
   lowEndP95Milliseconds: 33,
   initialCriticalBytes: 8 * MiB,
@@ -191,11 +194,12 @@ function validatePwaPersistenceEvidence(report, manifest, label, errors) {
   try {
     recomputed = certifyOfflineIndexedDbSave(report.roundTrip);
   } catch (error) {
-    errors.push(`${label}: offline IndexedDB round trip is invalid: ${error.message}`);
+    if (report.passed === true) errors.push(`${label}: claimed pass but the offline IndexedDB round trip failed: ${error.message}`);
   }
-  if (recomputed && stableJson(recomputed) !== stableJson(report.evidence)) errors.push(`${label}: declared evidence does not match the raw round trip`);
-  if (report.passed !== true || report.evidence?.passed !== true) errors.push(`${label}: PWA persistence report did not pass`);
-  return report.passed === true && report.evidence?.passed === true && recomputed !== null;
+  const passed = Boolean(recomputed && stableJson(recomputed) === stableJson(report.evidence));
+  if (recomputed && !passed) errors.push(`${label}: declared evidence does not match the raw round trip`);
+  if (report.passed !== passed) errors.push(`${label}: passed must agree with the recomputed round trip`);
+  return passed;
 }
 
 function validateDesktopPersistenceEvidence(report, manifest, gate, root, label, errors) {
@@ -238,11 +242,12 @@ function validateDesktopPersistenceEvidence(report, manifest, gate, root, label,
       userDataPath: report.phases?.write?.userDataPath,
     });
   } catch (error) {
-    errors.push(`${label}: desktop persistence sequence is invalid: ${error.message}`);
+    if (report.passed === true) errors.push(`${label}: claimed pass but the desktop persistence sequence failed: ${error.message}`);
   }
-  if (recomputed && stableJson(recomputed) !== stableJson(report.summary)) errors.push(`${label}: declared desktop summary does not match phase evidence`);
-  if (report.passed !== true || report.summary?.decision !== "PASS") errors.push(`${label}: desktop persistence report did not pass`);
-  return report.passed === true && report.summary?.decision === "PASS" && recomputed !== null;
+  const passed = Boolean(recomputed && stableJson(recomputed) === stableJson(report.summary));
+  if (recomputed && !passed) errors.push(`${label}: declared desktop summary does not match phase evidence`);
+  if (report.passed !== passed) errors.push(`${label}: passed must agree with the recomputed desktop sequence`);
+  return passed;
 }
 
 function validateResourceGrowthEvidence(report, manifest, label, errors) {
@@ -260,8 +265,7 @@ function validateResourceGrowthEvidence(report, manifest, label, errors) {
   if (stableJson(recomputed.metrics) !== stableJson(report.summary) || stableJson(recomputed.errors) !== stableJson(report.errors) || recomputed.passed !== report.passed) {
     errors.push(`${label}: declared renderer result does not match raw samples`);
   }
-  if (report.passed !== true) errors.push(`${label}: renderer resource-growth report did not pass`);
-  return report.passed === true && recomputed.passed === true;
+  return recomputed.passed === true;
 }
 
 const SUPPLEMENTAL_STABILITY_GATES = Object.freeze({
@@ -271,21 +275,37 @@ const SUPPLEMENTAL_STABILITY_GATES = Object.freeze({
 });
 
 function validateSupplementalStabilityEvidence(report, expectedGate, manifest, label, errors) {
-  if (!exactKeys(report, ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "browser", "thresholds", "samples", "observations", "summary", "errors", "passed"], label, errors)) return false;
-  if (report.schemaVersion !== ZK682_STABILITY_SCHEMA_VERSION || report.gate !== expectedGate) errors.push(`${label}: wrong supplemental stability schema/gate`);
+  const schemaV1 = report?.schemaVersion === 1;
+  const expectedKeys = schemaV1
+    ? ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "observations", "passed"]
+    : ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "browser", "thresholds", "samples", "observations", "summary", "errors", "passed"];
+  if (!exactKeys(report, expectedKeys, label, errors)) return false;
+  if (![1, ZK682_STABILITY_SCHEMA_VERSION].includes(report.schemaVersion) || report.gate !== expectedGate) errors.push(`${label}: wrong supplemental stability schema/gate`);
   if (!validCommit(report.candidateCommit) || report.candidateCommit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
   if (!validCapturedAt(report.capturedAt)) errors.push(`${label}: capturedAt is invalid`);
   if (typeof report.command !== "string" || !report.command) errors.push(`${label}: command is required`);
-  if (report.browser?.name !== "chromium" || report.browser?.cdpHeap !== true || typeof report.browser?.version !== "string" || !report.browser.version) errors.push(`${label}: real Chromium CDP heap evidence is required`);
-  if (stableStabilityJson(report.thresholds) !== stableStabilityJson(ZK682_STABILITY_THRESHOLDS[expectedGate])) errors.push(`${label}: thresholds differ from the immutable stability contract`);
+  if (!schemaV1 && (report.browser?.name !== "chromium" || report.browser?.cdpHeap !== true || typeof report.browser?.version !== "string" || !report.browser.version)) errors.push(`${label}: real Chromium CDP heap evidence is required`);
+  if (!schemaV1 && stableStabilityJson(report.thresholds) !== stableStabilityJson(ZK682_STABILITY_THRESHOLDS[expectedGate])) errors.push(`${label}: thresholds differ from the immutable stability contract`);
   const keys = SUPPLEMENTAL_STABILITY_GATES[expectedGate];
+  let passed = false;
   if (exactKeys(report.observations, keys, `${label}.observations`, errors)) {
-    if (expectedGate === "save-load-resource-stability" && (!Number.isFinite(report.observations.saveLoads) || report.observations.saveLoads <= 0 || report.observations.resourceGrowthBounded !== true)) errors.push(`${label}: save-load observations did not pass`);
-    if (expectedGate === "long-session-resource-stability" && (!Number.isFinite(report.observations.sessionMinutes) || report.observations.sessionMinutes <= 0 || report.observations.resourceGrowthBounded !== true)) errors.push(`${label}: long-session observations did not pass`);
+    if (expectedGate === "save-load-resource-stability") {
+      if (!Number.isFinite(report.observations.saveLoads) || report.observations.saveLoads <= 0 || typeof report.observations.resourceGrowthBounded !== "boolean") errors.push(`${label}: save-load observations are invalid`);
+      else passed = report.observations.resourceGrowthBounded;
+    }
+    if (expectedGate === "long-session-resource-stability") {
+      if (!Number.isFinite(report.observations.sessionMinutes) || report.observations.sessionMinutes <= 0 || typeof report.observations.resourceGrowthBounded !== "boolean") errors.push(`${label}: long-session observations are invalid`);
+      else passed = report.observations.resourceGrowthBounded;
+    }
     if (expectedGate === "editing-overlay-sleep-recovery") {
       const scenarios = Array.isArray(report.observations.scenarios) ? [...report.observations.scenarios].sort() : [];
-      if (stableJson(scenarios) !== stableJson(["editing", "overlay", "recovery", "sleep-wake"]) || report.observations.recoveryPassed !== true) errors.push(`${label}: interaction recovery observations did not pass`);
+      if (stableJson(scenarios) !== stableJson(["editing", "overlay", "recovery", "sleep-wake"]) || typeof report.observations.recoveryPassed !== "boolean") errors.push(`${label}: interaction recovery observations are invalid`);
+      else passed = report.observations.recoveryPassed;
     }
+  }
+  if (schemaV1) {
+    if (report.passed !== passed) errors.push(`${label}: passed must agree with the typed observations`);
+    return passed;
   }
   const recomputed = evaluateZk682Stability(expectedGate, report.samples, ZK682_STABILITY_THRESHOLDS[expectedGate]);
   if (stableJson(recomputed.observations) !== stableJson(report.observations)
@@ -294,8 +314,78 @@ function validateSupplementalStabilityEvidence(report, expectedGate, manifest, l
     || recomputed.passed !== report.passed) {
     errors.push(`${label}: declared supplemental result does not match raw samples`);
   }
-  if (report.passed !== true) errors.push(`${label}: supplemental stability report did not pass`);
-  return report.passed === true && recomputed.passed === true;
+  if (report.passed !== passed) errors.push(`${label}: passed must agree with the typed observations`);
+  return report.passed === true && recomputed.passed === true && passed;
+}
+
+const RECEIPT_IDS_BY_GATE = Object.freeze({
+  "core-compatibility": ["core-build", "core-unit", "core-determinism", "core-reducer", "core-save", "core-platform-services"],
+  "browser-pwa": ["browser-supported", "browser-golden", "browser-pwa"],
+  "asset-delivery": ["asset-package-audit", "asset-unselected-biomes"],
+  "headless-performance": ["headless-performance"],
+});
+
+function validateCommandReceipts(gate, manifest, root, errors) {
+  const expectedIds = RECEIPT_IDS_BY_GATE[gate.gateId];
+  if (!expectedIds) return new Map();
+  const references = gate.observations?.receipts;
+  if (!Array.isArray(references)) {
+    errors.push(`${gate.gateId}: observations.receipts must be an array`);
+    return new Map();
+  }
+  const ids = references.map((reference) => reference?.receiptId);
+  if (stableJson([...ids].sort()) !== stableJson([...expectedIds].sort())) errors.push(`${gate.gateId}: receipt IDs must be exactly ${expectedIds.join(", ")}`);
+  const receipts = new Map();
+  for (const [index, reference] of references.entries()) {
+    const label = `${gate.gateId}.receipts[${index}]`;
+    if (!exactKeys(reference, ["receiptId", "path", "sha256"], label, errors)) continue;
+    const report = readTypedArtifact({ path: reference.path, sha256: reference.sha256 }, gate, root, label, errors);
+    if (!report) continue;
+    const inspected = inspectZk682CommandReceipt(report, { candidateCommit: manifest.candidateCommit, receiptId: reference.receiptId });
+    if (!inspected.valid) errors.push(...inspected.errors.map((error) => `${label}: ${error}`));
+    else receipts.set(reference.receiptId, inspected.passed);
+  }
+  return receipts;
+}
+
+function validateAssetDeliveryEvidence(report, manifest, gate, root, label, errors) {
+  if (!exactKeys(report, ["schemaVersion", "gate", "candidateCommit", "capturedAt", "source", "browserBuild", "bundles", "atlases", "measurements", "passed"], label, errors)) return false;
+  if (report.schemaVersion !== 1 || report.gate !== "asset-delivery") errors.push(`${label}: wrong asset evidence schema/gate`);
+  if (report.candidateCommit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
+  if (!validCapturedAt(report.capturedAt)) errors.push(`${label}: capturedAt is invalid`);
+  const source = readTypedArtifact(report.source, gate, root, `${label}.source`, errors);
+  readTypedArtifact(report.browserBuild, gate, root, `${label}.browserBuild`, errors);
+  const expectedBundles = Object.entries(source?.dist?.bundles ?? {}).flatMap(([theme, tiers]) => Object.entries(tiers ?? {}).map(([tier, bundle]) => ({ theme, tier, bytes: Number(bundle?.bytes) }))).sort((left, right) => `${left.theme}:${left.tier}`.localeCompare(`${right.theme}:${right.tier}`));
+  if (stableJson(report.bundles) !== stableJson(expectedBundles)) errors.push(`${label}: bundle rows disagree with the M35 audit`);
+  if (!Array.isArray(report.atlases) || report.atlases.length === 0 || report.atlases.some((entry) => !exactKeys(entry, ["path", "bytes", "sha256"], `${label}.atlas`, errors) || !safeRelativePath(entry.path) || !Number.isFinite(entry.bytes) || entry.bytes < 0 || !validSha(entry.sha256))) errors.push(`${label}: atlas rows are invalid`);
+  const measurements = {
+    initialCriticalBytes: Number(source?.initialCritical?.bytes),
+    selectedBiomeMaxBytes: Math.max(...expectedBundles.map((entry) => entry.bytes)),
+    individualAtlasMaxBytes: Math.max(...(Array.isArray(report.atlases) ? report.atlases.map((entry) => entry.bytes) : [])),
+  };
+  if (stableJson(report.measurements) !== stableJson(measurements)) errors.push(`${label}: measurements disagree with raw rows`);
+  const passed = source?.ok === true
+    && measurements.initialCriticalBytes <= ZK682_BUDGETS.initialCriticalBytes
+    && measurements.selectedBiomeMaxBytes <= ZK682_BUDGETS.selectedBiomeBytes
+    && measurements.individualAtlasMaxBytes <= ZK682_BUDGETS.individualAtlasBytes;
+  if (report.passed !== passed) errors.push(`${label}: passed disagrees with recomputed asset evidence`);
+  return passed;
+}
+
+function validateHeadlessPerformanceEvidence(report, manifest, gate, root, label, errors) {
+  if (!exactKeys(report, ["schemaVersion", "gate", "candidateCommit", "capturedAt", "source", "budgets", "scenario", "measurements", "physicalDevice", "frameP95Asserted", "passed"], label, errors)) return false;
+  if (report.schemaVersion !== 1 || report.gate !== "headless-performance") errors.push(`${label}: wrong headless evidence schema/gate`);
+  if (report.candidateCommit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
+  const expectedBudgets = { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5_000, fixtureLoadMilliseconds: 6_000 };
+  if (stableJson(report.budgets) !== stableJson(expectedBudgets)) errors.push(`${label}: timing budgets differ from the pinned 8/5000/6000 contract`);
+  if (report.physicalDevice !== false || report.frameP95Asserted !== false) errors.push(`${label}: headless evidence cannot claim physical frame p95`);
+  const source = readTypedArtifact(report.source, gate, root, `${label}.source`, errors);
+  const measurements = { frameP95Ms: Number(source?.renderer?.p95Ms), rendererWorkMs: Number(source?.renderer?.workMs), coldStartupMs: Number(source?.coldStartupMs), fixtureLoadMs: Number(source?.fixtureLoadMs) };
+  if (stableJson(report.measurements) !== stableJson(measurements) || Object.values(measurements).some((value) => !Number.isFinite(value) || value < 0)) errors.push(`${label}: measurements disagree with the raw performance source`);
+  if (source?.effective?.fixture !== "m27Fixture" || source?.effective?.frameAssertion !== false || source?.effective?.budgets?.rendererWorkMilliseconds !== 8 || source?.effective?.budgets?.coldStartupMilliseconds !== 5_000) errors.push(`${label}: raw performance workload/budgets are not pinned`);
+  const passed = measurements.rendererWorkMs <= 8 && measurements.coldStartupMs <= 5_000 && measurements.fixtureLoadMs <= 6_000;
+  if (report.passed !== passed) errors.push(`${label}: passed disagrees with recomputed performance evidence`);
+  return passed;
 }
 
 function validateCriterionResults(gateId, results, errors) {
@@ -334,6 +424,7 @@ function validateGateObservations(gate, manifest, root, errors) {
     return;
   }
   const criteria = gate.criteria;
+  const receipts = validateCommandReceipts(gate, manifest, root, errors);
   if (gate.gateId === "provenance") {
     if (observations.dependencyLockSha256 !== manifest.dependencyLock.sha256) errors.push("provenance: dependency lock SHA-256 does not match the manifest");
     if (!Array.isArray(observations.buildArtifacts)) errors.push("provenance: buildArtifacts must be an array");
@@ -351,6 +442,7 @@ function validateGateObservations(gate, manifest, root, errors) {
       }
     }
   } else if (gate.gateId === "core-compatibility") {
+    exactKeys(observations, ["productionBuildPassed", "unitTestsPassed", "deterministicHashesPassed", "reducerPassed", "saveV25RoundTripPassed", "historicalMigrationsPassed", "platformServicesPassed", "receipts"], "core-compatibility.observations", errors);
     expectBooleanObservation(observations, "productionBuildPassed", "production-build-and-unit-gates", criteria, errors);
     if (typeof observations.unitTestsPassed !== "boolean") errors.push("production-build-and-unit-gates: observations.unitTestsPassed must be boolean");
     const buildAndUnitPass = observations.productionBuildPassed === true && observations.unitTestsPassed === true;
@@ -360,8 +452,18 @@ function validateGateObservations(gate, manifest, root, errors) {
     expectBooleanObservation(observations, "saveV25RoundTripPassed", "save-v25-round-trip", criteria, errors);
     expectBooleanObservation(observations, "historicalMigrationsPassed", "historical-save-migrations", criteria, errors);
     expectBooleanObservation(observations, "platformServicesPassed", "platform-services", criteria, errors);
+    const receiptExpectations = {
+      productionBuildPassed: receipts.get("core-build"),
+      unitTestsPassed: receipts.get("core-unit"),
+      deterministicHashesPassed: receipts.get("core-determinism"),
+      reducerPassed: receipts.get("core-reducer"),
+      saveV25RoundTripPassed: receipts.get("core-save"),
+      historicalMigrationsPassed: receipts.get("core-save"),
+      platformServicesPassed: receipts.get("core-platform-services"),
+    };
+    for (const [key, value] of Object.entries(receiptExpectations)) if (typeof value === "boolean" && observations[key] !== value) errors.push(`core-compatibility: ${key} disagrees with its command receipt`);
   } else if (gate.gateId === "browser-pwa") {
-    exactKeys(observations, ["browserPassed", "goldenE2ePassed", "offlineLaunchPassed", "browsers", "offlineIndexedDbEvidence"], "browser-pwa.observations", errors);
+    exactKeys(observations, ["browserPassed", "goldenE2ePassed", "offlineLaunchPassed", "browsers", "offlineIndexedDbEvidence", "receipts"], "browser-pwa.observations", errors);
     expectBooleanObservation(observations, "browserPassed", "browser-pwa-certification", criteria, errors);
     expectBooleanObservation(observations, "goldenE2ePassed", "golden-e2e", criteria, errors);
     expectBooleanObservation(observations, "offlineLaunchPassed", "offline-launch", criteria, errors);
@@ -369,6 +471,9 @@ function validateGateObservations(gate, manifest, root, errors) {
     const report = readTypedArtifact(observations.offlineIndexedDbEvidence, gate, root, "browser-pwa.offlineIndexedDbEvidence", errors);
     const passed = report ? validatePwaPersistenceEvidence(report, manifest, "browser-pwa.offlineIndexedDbEvidence", errors) : false;
     if (observations.offlineLaunchPassed !== passed) errors.push("offline-launch: declared status disagrees with typed IndexedDB evidence");
+    if (receipts.has("browser-supported") && receipts.has("browser-pwa") && observations.browserPassed !== (receipts.get("browser-supported") && receipts.get("browser-pwa"))) errors.push("browser-pwa-certification: declared status disagrees with command receipts");
+    if (receipts.has("browser-golden") && observations.goldenE2ePassed !== receipts.get("browser-golden")) errors.push("golden-e2e: declared status disagrees with command receipt");
+    if (receipts.has("browser-pwa") && observations.offlineLaunchPassed !== (passed && receipts.get("browser-pwa"))) errors.push("offline-launch: declared status disagrees with PWA command receipt");
   } else if (gate.gateId === "packaged-desktop") {
     exactKeys(observations, ["packagedElectronPassed", "desktopPersistencePassed", "platforms", "persistenceEvidence"], "packaged-desktop.observations", errors);
     expectBooleanObservation(observations, "packagedElectronPassed", "packaged-electron-certification", criteria, errors);
@@ -393,6 +498,7 @@ function validateGateObservations(gate, manifest, root, errors) {
     }
     if (observations.desktopPersistencePassed !== evidencePassed) errors.push("desktop-persistence: declared status disagrees with typed platform evidence");
   } else if (gate.gateId === "asset-delivery") {
+    exactKeys(observations, ["initialCriticalBytes", "selectedBiomeMaxBytes", "individualAtlasMaxBytes", "unselectedBiomeAtlasesUnloaded", "packageSizeAndAssetAuditPassed", "receipts", "typedEvidence"], "asset-delivery.observations", errors);
     const checks = [
       ["initial-critical-assets", "initialCriticalBytes", ZK682_BUDGETS.initialCriticalBytes],
       ["selected-biome-payload", "selectedBiomeMaxBytes", ZK682_BUDGETS.selectedBiomeBytes],
@@ -405,7 +511,18 @@ function validateGateObservations(gate, manifest, root, errors) {
     }
     expectBooleanObservation(observations, "unselectedBiomeAtlasesUnloaded", "unselected-biomes-unloaded", criteria, errors);
     expectBooleanObservation(observations, "packageSizeAndAssetAuditPassed", "package-size-and-asset-audit", criteria, errors);
+    const assetReport = readTypedArtifact(observations.typedEvidence, gate, root, "asset-delivery.typedEvidence", errors);
+    const assetPassed = assetReport ? validateAssetDeliveryEvidence(assetReport, manifest, gate, root, "asset-delivery.typedEvidence", errors) : false;
+    if (assetReport && (assetReport.measurements.initialCriticalBytes !== observations.initialCriticalBytes || assetReport.measurements.selectedBiomeMaxBytes !== observations.selectedBiomeMaxBytes || assetReport.measurements.individualAtlasMaxBytes !== observations.individualAtlasMaxBytes)) errors.push("asset-delivery: normalized measurements disagree with typed evidence");
+    if (observations.packageSizeAndAssetAuditPassed && !assetPassed) errors.push("package-size-and-asset-audit: cannot pass when typed asset evidence failed");
+    if (receipts.has("asset-unselected-biomes") && observations.unselectedBiomeAtlasesUnloaded !== receipts.get("asset-unselected-biomes")) errors.push("unselected-biomes-unloaded: declared status disagrees with command receipt");
+    if (receipts.has("asset-package-audit") && observations.packageSizeAndAssetAuditPassed && !receipts.get("asset-package-audit")) errors.push("package-size-and-asset-audit: cannot pass when its command receipt failed");
   } else if (gate.gateId === "headless-performance") {
+    const headlessReport = readTypedArtifact(observations.typedEvidence, gate, root, "headless-performance.typedEvidence", errors);
+    if (headlessReport) {
+      validateHeadlessPerformanceEvidence(headlessReport, manifest, gate, root, "headless-performance.typedEvidence", errors);
+      if (stableJson(headlessReport.scenario) !== stableJson(observations.scenario) || headlessReport.measurements.frameP95Ms !== observations.frameP95Ms || headlessReport.measurements.rendererWorkMs !== observations.rendererWorkMs || headlessReport.measurements.coldStartupMs !== observations.coldStartupMs || headlessReport.measurements.fixtureLoadMs !== observations.fixtureLoadMs) errors.push("headless-performance: normalized observations disagree with typed evidence");
+    }
     if (observations.physicalDevice !== false) errors.push("headless-performance: physicalDevice must be false");
     if (observations.frameP95Asserted !== false) errors.push("headless-performance: frameP95Asserted must be false");
     if (!Number.isFinite(observations.frameP95Ms) || observations.frameP95Ms < 0) errors.push("headless-performance: frameP95Ms must be reported");
@@ -416,6 +533,8 @@ function validateGateObservations(gate, manifest, root, errors) {
     if ((loadStatus === "pass") !== (observations.rendererWorkMs <= ZK682_BUDGETS.rendererWorkMilliseconds)) errors.push("representative-36-hole-100-golfer-load: declared status disagrees with the renderer-work budget");
     if (criteria.find((entry) => entry.id === "headless-frame-p95-report-only")?.status !== "report-only") errors.push("headless frame p95 must remain report-only");
     for (const key of ["coldStartupMs", "coldStartupBudgetMs", "fixtureLoadMs", "fixtureLoadBudgetMs"]) if (!Number.isFinite(observations[key]) || observations[key] < 0) errors.push(`headless-performance: observations.${key} must be non-negative`);
+    if (observations.coldStartupBudgetMs !== ZK682_BUDGETS.coldStartupMilliseconds) errors.push("headless-performance: cold startup budget must remain 5000 ms");
+    if (observations.fixtureLoadBudgetMs !== ZK682_BUDGETS.fixtureLoadMilliseconds) errors.push("headless-performance: fixture load budget must remain 6000 ms");
     const startupPassed = observations.coldStartupMs <= observations.coldStartupBudgetMs
       && observations.fixtureLoadMs <= observations.fixtureLoadBudgetMs;
     if ((criteria.find((entry) => entry.id === "startup-and-fixture-load")?.status === "pass") !== startupPassed) errors.push("startup-and-fixture-load: declared status disagrees with observed timings and budgets");
@@ -447,6 +566,10 @@ function validateGateObservations(gate, manifest, root, errors) {
     for (const key of ["hardwareClass", "device", "operatingSystem", "powerMode", "graphicsBackend"]) if (typeof observations[key] !== "string" || !observations[key]) errors.push(`${gate.gateId}: observations.${key} is required`);
     for (const key of ["biome", "season", "weather"]) if (typeof observations.scenario?.[key] !== "string" || !observations.scenario[key]) errors.push(`${gate.gateId}: scenario.${key} is required`);
     if (!Number.isFinite(observations.frameP95Ms) || observations.frameP95Ms < 0) errors.push(`${gate.gateId}: frameP95Ms must be reported`);
+    const expectedClass = gate.gateId === "physical-midrange" ? "midrange" : "low-end";
+    if (observations.hardwareClass !== expectedClass) errors.push(`${gate.gateId}: hardwareClass must be ${expectedClass}`);
+    const raw = readTypedArtifact(observations.physicalEvidence, gate, root, `${gate.gateId}.physicalEvidence`, errors);
+    if (raw && (raw.gate !== gate.gateId || raw.hardwareClass !== expectedClass || raw.candidateCommit !== manifest.candidateCommit || raw.frameP95Ms !== observations.frameP95Ms || stableJson(raw.scenario) !== stableJson(observations.scenario))) errors.push(`${gate.gateId}: normalized observations disagree with typed physical evidence`);
   }
 }
 
@@ -557,6 +680,11 @@ export function validateZk682EvidenceManifest(manifest, options) {
   }
   for (const [gateId, contract] of Object.entries(ZK682_GATE_CONTRACTS)) {
     if (contract.required && !gateResults.has(gateId)) errors.push(`missing required machine gate result: ${gateId}`);
+  }
+  const headlessScenario = gateResults.get("headless-performance")?.result?.observations?.scenario;
+  for (const gateId of ["physical-midrange", "physical-lowend"]) {
+    const physicalScenario = gateResults.get(gateId)?.result?.observations?.scenario;
+    if (physicalScenario && stableJson(physicalScenario) !== stableJson(headlessScenario)) errors.push(`${gateId}: physical scenario must exactly match headless performance evidence`);
   }
   validateExceptions(manifest.exceptions, errors);
   return { errors, gateResults };

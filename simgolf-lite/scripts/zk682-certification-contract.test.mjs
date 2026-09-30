@@ -68,10 +68,21 @@ function supplemental(gate) {
   return createZk682StabilityReport({ gate, candidateCommit: COMMIT, capturedAt: NOW, command: `fixture ${gate}`, browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_STABILITY_THRESHOLDS[gate], samples });
 }
 
+function commandReceipt(receiptId, passed = true) {
+  return { schemaVersion: 1, kind: "command-receipt", receiptId, candidateCommit: COMMIT, capturedAt: NOW, command: ["fixture", receiptId], exitCode: passed ? 0 : 1, durationMs: 10, passed };
+}
+
+const RECEIPTS = {
+  "core-compatibility": ["core-build", "core-unit", "core-determinism", "core-reducer", "core-save", "core-platform-services"],
+  "browser-pwa": ["browser-supported", "browser-golden", "browser-pwa"],
+  "asset-delivery": ["asset-package-audit", "asset-unselected-biomes"],
+  "headless-performance": ["headless-performance"],
+};
+
 function genericObservations(gateId, lowEndP95) {
   if (gateId === "core-compatibility") return { productionBuildPassed: true, unitTestsPassed: true, deterministicHashesPassed: true, reducerPassed: true, saveV25RoundTripPassed: true, historicalMigrationsPassed: true, platformServicesPassed: true };
   if (gateId === "asset-delivery") return { initialCriticalBytes: 7000000, selectedBiomeMaxBytes: 5000000, individualAtlasMaxBytes: 7000000, unselectedBiomeAtlasesUnloaded: true, packageSizeAndAssetAuditPassed: true };
-  if (gateId === "headless-performance") return { physicalDevice: false, frameP95Asserted: false, frameP95Ms: 100, rendererWorkMs: 0.68, coldStartupMs: 1160, coldStartupBudgetMs: 5000, fixtureLoadMs: 4030, fixtureLoadBudgetMs: 300000, scenario: { holes: 36, golfers: 100, biome: "parkland", season: "summer", weather: "storm" } };
+  if (gateId === "headless-performance") return { physicalDevice: false, frameP95Asserted: false, frameP95Ms: 100, rendererWorkMs: 0.68, coldStartupMs: 1160, coldStartupBudgetMs: 5000, fixtureLoadMs: 4030, fixtureLoadBudgetMs: 6000, scenario: { holes: 36, golfers: 100, biome: "parkland", season: "summer", weather: "storm" } };
   return { physicalDevice: true, hardwareClass: gateId === "physical-midrange" ? "midrange" : "low-end", device: "Fixture GPU", operatingSystem: "Fixture OS", powerMode: "plugged-in", graphicsBackend: "WebGL2", frameP95Ms: gateId === "physical-midrange" ? 19 : lowEndP95, scenario: { holes: 36, golfers: 100, biome: "parkland", season: "summer", weather: "storm" } };
 }
 
@@ -88,8 +99,9 @@ function fixture({ physical = false, lowEndP95 = 32, adjustment = false } = {}) 
       observations = { dependencyLockSha256: lockSha, buildArtifacts: [{ kind: "browser-build", ...artifacts[0] }, { kind: "packaged-electron", ...artifacts[1] }] };
     } else if (gateId === "browser-pwa") {
       const report = write(root, "raw/pwa.json", pwaReport());
-      artifacts = [report];
-      observations = { browserPassed: true, goldenE2ePassed: true, offlineLaunchPassed: true, browsers: ["chromium", "firefox", "webkit"], offlineIndexedDbEvidence: report };
+      const receipts = RECEIPTS[gateId].map((id) => ({ receiptId: id, ...write(root, `raw/receipt-${id}.json`, commandReceipt(id)) }));
+      artifacts = [report, ...receipts.map(({ receiptId: _receiptId, ...artifact }) => artifact)];
+      observations = { browserPassed: true, goldenE2ePassed: true, offlineLaunchPassed: true, browsers: ["chromium", "firefox", "webkit"], offlineIndexedDbEvidence: report, receipts };
     } else if (gateId === "packaged-desktop") {
       const evidence = [];
       for (const [platform, architecture] of [["darwin", "arm64"], ["win32", "x64"]]) {
@@ -115,6 +127,29 @@ function fixture({ physical = false, lowEndP95 = 32, adjustment = false } = {}) 
     } else {
       artifacts = [write(root, `raw/${gateId}.txt`, `${gateId}\n`)];
       observations = genericObservations(gateId, lowEndP95);
+      if (RECEIPTS[gateId]) {
+        const receipts = RECEIPTS[gateId].map((id) => ({ receiptId: id, ...write(root, `raw/receipt-${id}.json`, commandReceipt(id)) }));
+        artifacts.push(...receipts.map(({ receiptId: _receiptId, ...artifact }) => artifact));
+        observations.receipts = receipts;
+      }
+      if (gateId === "asset-delivery") {
+        const source = write(root, "raw/m35-asset-audit.json", { ok: true, initialCritical: { bytes: 7000000 }, dist: { bundles: { parkland: { high: { bytes: 5000000 } } } } });
+        const browserBuild = write(root, "raw/browser-build.json", { entry: "fixture" });
+        const typedEvidence = write(root, "raw/asset-delivery.json", { schemaVersion: 1, gate: "asset-delivery", candidateCommit: COMMIT, capturedAt: NOW, source, browserBuild, bundles: [{ theme: "parkland", tier: "high", bytes: 5000000 }], atlases: [{ path: "atlases/fixture.png", bytes: 7000000, sha256: "a".repeat(64) }], measurements: { initialCriticalBytes: 7000000, selectedBiomeMaxBytes: 5000000, individualAtlasMaxBytes: 7000000 }, passed: true });
+        artifacts.push(source, browserBuild, typedEvidence);
+        observations.typedEvidence = typedEvidence;
+      }
+      if (gateId === "headless-performance") {
+        const source = write(root, "raw/headless-source.json", { theme: "parkland", coldStartupMs: 1160, fixtureLoadMs: 4030, renderer: { p95Ms: 100, workMs: 0.68 }, effective: { fixture: "m27Fixture", frameAssertion: false, budgets: { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5000 } } });
+        const typedEvidence = write(root, "raw/headless-performance.json", { schemaVersion: 1, gate: "headless-performance", candidateCommit: COMMIT, capturedAt: NOW, source, budgets: { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5000, fixtureLoadMilliseconds: 6000 }, scenario: observations.scenario, measurements: { frameP95Ms: 100, rendererWorkMs: 0.68, coldStartupMs: 1160, fixtureLoadMs: 4030 }, physicalDevice: false, frameP95Asserted: false, passed: true });
+        artifacts.push(source, typedEvidence);
+        observations.typedEvidence = typedEvidence;
+      }
+      if (gateId === "physical-midrange" || gateId === "physical-lowend") {
+        const rawPhysical = write(root, `raw/${gateId}.json`, { gate: gateId, hardwareClass: observations.hardwareClass, candidateCommit: COMMIT, frameP95Ms: observations.frameP95Ms, scenario: observations.scenario });
+        artifacts.push(rawPhysical);
+        observations.physicalEvidence = rawPhysical;
+      }
     }
     const criteria = ZK682_CRITERIA.filter((entry) => entry.gate === gateId).map((entry) => criterion(entry.id, entry.requirement === "report-only" ? "report-only" : "pass"));
     const gate = { schemaVersion: ZK682_SCHEMA_VERSION, certificationId: ZK682_CERTIFICATION_ID, gateId, candidateCommit: COMMIT, classification: ZK682_GATE_CONTRACTS[gateId].classification, status: "pass", command: `fixture ${gateId}`, environment: { fixture: true }, criteria, observations, artifacts };
@@ -255,4 +290,73 @@ test("low-end evidence over budget needs a complete adjustment", () => {
   try { assert.equal(buildZk682Report(unapproved.manifest, unapproved.options).decision, "HOLD"); } finally { cleanup(unapproved); }
   const approved = fixture({ physical: true, lowEndP95: 40, adjustment: true });
   try { assert.equal(buildZk682Report(approved.manifest, approved.options).decision, "GO"); } finally { cleanup(approved); }
+});
+
+test("a structurally valid typed failure produces HOLD instead of manifest invalid", () => {
+  const value = fixture();
+  try {
+    rewriteGate(value, "stability", (gate) => {
+      const reference = gate.observations.resourceGrowthEvidence;
+      const prior = JSON.parse(readFileSync(join(value.root, reference.path), "utf8"));
+      prior.samples.at(-1).resources.displayObjects += 100;
+      const failed = createZk682ResourceGrowthReport({ source: prior.source, capturedAt: prior.capturedAt, command: prior.command, browser: prior.browser, thresholds: prior.thresholds, warmup: prior.warmup, samples: prior.samples });
+      assert.equal(failed.passed, false);
+      const rewritten = write(value.root, reference.path, failed);
+      reference.sha256 = rewritten.sha256;
+      gate.artifacts.find((entry) => entry.path === reference.path).sha256 = rewritten.sha256;
+      gate.observations.routeChangesStable = false;
+      gate.criteria.find((entry) => entry.id === "route-change-resource-stability").status = "fail";
+      gate.status = "fail";
+    });
+    const report = buildZk682Report(value.manifest, value.options);
+    assert.equal(report.decision, "HOLD");
+    assert.equal(report.machinePassed, false);
+    assert(report.blockers.some((blocker) => blocker.criterionId === "route-change-resource-stability"));
+  } finally { cleanup(value); }
+});
+
+test("a schema-v2 supplemental stability failure produces HOLD instead of manifest invalid", () => {
+  const value = fixture();
+  try {
+    rewriteGate(value, "stability", (gate) => {
+      const reference = gate.observations.saveLoadEvidence;
+      const prior = JSON.parse(readFileSync(join(value.root, reference.path), "utf8"));
+      prior.samples.at(-1).resources.attachedTextureSources += 2;
+      const failed = createZk682StabilityReport({
+        gate: prior.gate,
+        candidateCommit: prior.candidateCommit,
+        capturedAt: prior.capturedAt,
+        command: prior.command,
+        browser: prior.browser,
+        thresholds: prior.thresholds,
+        samples: prior.samples,
+      });
+      assert.equal(failed.passed, false);
+      const rewritten = write(value.root, reference.path, failed);
+      reference.sha256 = rewritten.sha256;
+      gate.artifacts.find((entry) => entry.path === reference.path).sha256 = rewritten.sha256;
+      gate.observations.saveLoadsStable = false;
+      gate.criteria.find((entry) => entry.id === "save-load-resource-stability").status = "fail";
+      gate.status = "fail";
+    });
+    const report = buildZk682Report(value.manifest, value.options);
+    assert.equal(report.decision, "HOLD");
+    assert.equal(report.machinePassed, false);
+    assert(report.blockers.some((blocker) => blocker.criterionId === "save-load-resource-stability"));
+  } finally { cleanup(value); }
+});
+
+test("rejects relaxed fixture budget and physical evidence that does not match its gate/scenario", () => {
+  const relaxed = fixture();
+  try {
+    rewriteGate(relaxed, "headless-performance", (gate) => { gate.observations.fixtureLoadBudgetMs = 6001; });
+    assert(validateZk682EvidenceManifest(relaxed.manifest, relaxed.options).errors.some((error) => error.includes("fixture load budget must remain 6000 ms")));
+  } finally { cleanup(relaxed); }
+  const mismatched = fixture({ physical: true });
+  try {
+    rewriteGate(mismatched, "physical-midrange", (gate) => { gate.observations.scenario.weather = "snow"; });
+    const errors = validateZk682EvidenceManifest(mismatched.manifest, mismatched.options).errors;
+    assert(errors.some((error) => error.includes("normalized observations disagree with typed physical evidence")));
+    assert(errors.some((error) => error.includes("physical scenario must exactly match headless")));
+  } finally { cleanup(mismatched); }
 });
