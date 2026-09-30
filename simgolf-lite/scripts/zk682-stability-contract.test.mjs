@@ -19,7 +19,7 @@ function saveSamples(count = 12) {
 }
 
 function longSamples(count = 7) {
-  return Array.from({ length: count }, (_, index) => ({ elapsedGameMinutes: index * 22.4, courseHash: "deadbeef", state: { dayMinute: 100 + index * 22.4, speed: "4x", onCourse: 12 }, ...measured(index) }));
+  return Array.from({ length: count }, (_, index) => ({ elapsedGameMinutes: index * 22.4, courseHash: index.toString(16).padStart(8, "0"), state: { dayMinute: 100 + index * 22.4, speed: "4x", onCourse: 12 }, ...measured(index) }));
 }
 
 function interactionSamples() {
@@ -58,7 +58,9 @@ test("long-session evidence requires a real-duration monotonic active simulation
   const tooBrief = longSamples(); tooBrief.at(-1).elapsedGameMinutes = 119;
   assert.match(evaluateZk682Stability("long-session-resource-stability", tooBrief).errors.join("\n"), /minimum 120/);
   const paused = longSamples(); paused[3].state.speed = "paused";
-  assert.match(evaluateZk682Stability("long-session-resource-stability", paused).errors.join("\n"), /active 4x clock/);
+  assert.match(evaluateZk682Stability("long-session-resource-stability", paused).errors.join("\n"), /active 4x simulation/);
+  const stalled = longSamples(); for (const sample of stalled) sample.courseHash = "deadbeef";
+  assert.match(evaluateZk682Stability("long-session-resource-stability", stalled).errors.join("\n"), /did not advance its game-state identity/);
 });
 
 test("interaction evidence requires exact real outcomes for every scenario", () => {

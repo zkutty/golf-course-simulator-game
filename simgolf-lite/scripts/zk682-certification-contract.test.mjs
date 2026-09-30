@@ -58,7 +58,7 @@ function supplemental(gate) {
   const samples = gate === "save-load-resource-stability"
     ? Array.from({ length: 13 }, (_, cycle) => ({ cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef", state: { screen: "game", week: 2, cash: 42000, terrainVersion: 7 }, ...measured(cycle) }))
     : gate === "long-session-resource-stability"
-      ? Array.from({ length: 7 }, (_, index) => ({ elapsedGameMinutes: index * 22.4, courseHash: "deadbeef", state: { dayMinute: 100 + index * 22.4, speed: "4x", onCourse: 12 }, ...measured(index) }))
+      ? Array.from({ length: 7 }, (_, index) => ({ elapsedGameMinutes: index * 22.4, courseHash: index.toString(16).padStart(8, "0"), state: { dayMinute: 100 + index * 22.4, speed: "4x", onCourse: 12 }, ...measured(index) }))
       : [
         { scenario: "editing", passed: true, before: { terrainVersion: 7 }, after: { terrainVersion: 8, screen: "game" }, ...measured(0) },
         { scenario: "overlay", passed: true, before: { panelOpen: false, kind: "traces" }, after: { kind: "recovery", visible: true }, ...measured(1) },
