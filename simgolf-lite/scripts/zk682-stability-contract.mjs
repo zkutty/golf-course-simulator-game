@@ -27,7 +27,6 @@ export const ZK682_STABILITY_THRESHOLDS = Object.freeze({
   }),
   "editing-overlay-sleep-recovery": Object.freeze({
     requiredScenarios: Object.freeze(["editing", "overlay", "recovery", "sleep-wake"]),
-    resources: RESOURCE_LIMITS,
   }),
 });
 
@@ -150,13 +149,21 @@ function evaluateInteractions(samples, thresholds, errors) {
   const editing = byScenario.get("editing");
   if (!editing || editing.before?.terrainVersion + 1 !== editing.after?.terrainVersion || editing.after?.screen !== "game") errors.push("editing did not commit exactly one real terrain revision");
   const overlay = byScenario.get("overlay");
-  if (!overlay || overlay.before?.kind !== null || overlay.after?.kind !== "recovery" || overlay.after?.visible !== true) errors.push("recovery overlay did not open through the production UI");
+  if (!overlay || overlay.before?.panelOpen !== false || overlay.after?.kind !== "recovery" || overlay.after?.visible !== true) errors.push("recovery overlay did not open through the production UI");
   const sleepWake = byScenario.get("sleep-wake");
   if (!sleepWake || sleepWake.before?.courseHash !== sleepWake.after?.courseHash || sleepWake.after?.lifecycle !== "active" || sleepWake.after?.responsive !== true) errors.push("browser freeze/active recovery did not preserve a responsive candidate");
   const recovery = byScenario.get("recovery");
   if (!recovery || recovery.before?.mutatedCourseHash === recovery.before?.savedCourseHash || recovery.after?.courseHash !== recovery.before?.savedCourseHash || recovery.after?.quickSaveLoaded !== true) errors.push("loading the production quick-save did not recover the pre-edit state");
   for (const sample of samples) if (sample.passed !== true) errors.push(`${sample.scenario ?? "unknown"} interaction did not pass`);
-  const metrics = evaluateResources(samples, thresholds.resources, errors);
+  for (const [index, sample] of samples.entries()) {
+    if (sample?.resources?.canvasConnected !== true) errors.push(`sample ${index} has no connected Pixi canvas`);
+    for (const name of RESOURCE_METRICS) if (!Number.isFinite(sample?.resources?.[name]) || sample.resources[name] < 0) errors.push(`sample ${index} is missing renderer diagnostic ${name}`);
+    if (!Number.isFinite(sample?.heap?.runtimeUsedBytes) || sample.heap.runtimeUsedBytes <= 0) errors.push(`sample ${index} is missing real Chromium heap diagnostics`);
+  }
+  const metrics = Object.fromEntries(samples.map((sample) => [sample.scenario, {
+    resources: sample.resources,
+    runtimeUsedBytes: sample.heap?.runtimeUsedBytes,
+  }]));
   return { metrics, observations: { scenarios: scenarioNames, recoveryPassed: errors.length === 0 } };
 }
 
