@@ -93,10 +93,11 @@ function fixture({ physical = false, lowEndP95 = 32, adjustment = false } = {}) 
     } else if (gateId === "packaged-desktop") {
       const evidence = [];
       for (const [platform, architecture] of [["darwin", "arm64"], ["win32", "x64"]]) {
-        const packageFile = write(root, `raw/${platform}/app.asar`, `${platform} package`);
-        const executable = write(root, `raw/${platform}/CourseCraft`, `${platform} executable`);
-        const manifest = write(root, `raw/${platform}/manifest.json`, { sourceCommit: COMMIT, platform, architecture, files: [{ path: packageFile.path, sha256: packageFile.sha256 }] });
-        const report = write(root, `raw/${platform}/persistence.json`, desktopReport(platform, architecture, { ...packageFile, manifestPath: manifest.path, manifestSha256: manifest.sha256 }, executable));
+        const bundle = `artifacts/zk682/raw/desktop-${platform}-${architecture}`;
+        const packageFile = write(root, `${bundle}/package/app.asar`, `${platform} package`);
+        const executable = write(root, `${bundle}/executable/CourseCraft${platform === "win32" ? ".exe" : ""}`, `${platform} executable`);
+        const manifest = write(root, `${bundle}/package-manifest.json`, { sourceCommit: COMMIT, platform, architecture, files: [{ path: packageFile.path, sha256: packageFile.sha256 }] });
+        const report = write(root, `${bundle}/persistence.json`, desktopReport(platform, architecture, { ...packageFile, manifestPath: manifest.path, manifestSha256: manifest.sha256 }, executable));
         artifacts.push(packageFile, executable, manifest, report);
         evidence.push({ platform, architecture, ...report });
       }

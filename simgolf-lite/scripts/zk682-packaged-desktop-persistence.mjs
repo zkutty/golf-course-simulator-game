@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createZk682DesktopEvidenceBundlePaths } from "./zk682-desktop-evidence-bundle.mjs";
 import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence-contract.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -35,7 +36,6 @@ const candidates = process.platform === "win32"
   : ["mac-arm64", "mac-universal", "mac"].map((directory) => path.join(root, "desktop-dist", directory, "CourseCraft.app", "Contents", "MacOS", "CourseCraft"));
 const executable = path.resolve(executableArg ?? candidates.find(existsSync) ?? candidates[0]);
 if (!existsSync(executable)) throw new Error(`Missing packaged CourseCraft executable: ${executable}`);
-const reportOutput = path.resolve(outputArg ?? `artifacts/zk682/raw/desktop-${process.platform}-${process.arch}.json`);
 
 async function launch(phase, userDataPath) {
   const result = await new Promise((resolve, reject) => {
@@ -88,6 +88,49 @@ const executableRelative = path.relative(root, executable).split(path.sep).join(
 const packagePrefix = path.relative(path.join(root, "desktop-dist"), executable).split(path.sep)[0];
 const packageArchive = packageManifest.files.find((file) => file.path.startsWith(`${packagePrefix}/`));
 assert(packageArchive, `desktop package manifest has no archive for ${packagePrefix}`);
+const evidencePaths = createZk682DesktopEvidenceBundlePaths({
+  platform: process.platform,
+  architecture: process.arch,
+  packageArchivePath: packageArchive.path,
+  executablePath: executableRelative,
+});
+const fromRoot = (relativePath) => path.join(root, ...relativePath.split("/"));
+const reportOutput = fromRoot(evidencePaths.report);
+if (outputArg && path.resolve(outputArg) !== reportOutput) {
+  throw new Error(`Desktop evidence report must be captured at its immutable platform-qualified path: ${evidencePaths.report}`);
+}
+const bundleRoot = fromRoot(evidencePaths.bundleRoot);
+await mkdir(path.dirname(bundleRoot), { recursive: true });
+await mkdir(bundleRoot).catch((error) => {
+  if (error?.code === "EEXIST") {
+    throw new Error(`Desktop evidence bundle already exists and will not be rewritten: ${evidencePaths.bundleRoot}`);
+  }
+  throw error;
+});
+
+const bundleArchives = [];
+for (const archive of packageManifest.files) {
+  const archivePaths = createZk682DesktopEvidenceBundlePaths({
+    platform: process.platform,
+    architecture: process.arch,
+    packageArchivePath: archive.path,
+    executablePath: executableRelative,
+  });
+  const source = path.join(root, "desktop-dist", ...archive.path.split("/"));
+  const destination = fromRoot(archivePaths.packageArchive);
+  await mkdir(path.dirname(destination), { recursive: true });
+  await copyFile(source, destination);
+  assert.equal(await sha256File(destination), archive.sha256, `copied package archive hash mismatch: ${archive.path}`);
+  bundleArchives.push({ ...archive, path: archivePaths.packageArchive });
+}
+const bundledPackageArchive = bundleArchives.find((file) => file.path === evidencePaths.packageArchive);
+assert(bundledPackageArchive, "platform package archive was not copied into the evidence bundle");
+const bundleExecutable = fromRoot(evidencePaths.executable);
+await mkdir(path.dirname(bundleExecutable), { recursive: true });
+await copyFile(executable, bundleExecutable);
+const bundleManifest = { ...packageManifest, files: bundleArchives };
+const bundleManifestBytes = Buffer.from(`${JSON.stringify(bundleManifest, null, 2)}\n`, "utf8");
+await writeFile(fromRoot(evidencePaths.manifest), bundleManifestBytes);
 const userDataPath = await mkdtemp(path.join(os.tmpdir(), "coursecraft-zk682-persistence-"));
 let completed = false;
 try {
@@ -110,14 +153,14 @@ try {
     architecture: process.arch,
     command: "npm run desktop:package:persistence",
     packageArtifact: {
-      path: `desktop-dist/${packageArchive.path}`,
-      sha256: packageArchive.sha256,
-      manifestPath: "desktop-dist/coursecraft-desktop-manifest.json",
-      manifestSha256: sha256(packageManifestBytes),
+      path: evidencePaths.packageArchive,
+      sha256: bundledPackageArchive.sha256,
+      manifestPath: evidencePaths.manifest,
+      manifestSha256: sha256(bundleManifestBytes),
     },
     executable: {
-      path: executableRelative,
-      sha256: await sha256File(executable),
+      path: evidencePaths.executable,
+      sha256: await sha256File(bundleExecutable),
     },
     userDataPath,
     filesystem: {
