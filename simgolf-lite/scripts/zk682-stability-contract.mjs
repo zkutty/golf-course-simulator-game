@@ -74,8 +74,31 @@ function metric(values) {
   };
 }
 
+function rendererTopologyMetric(samples, name) {
+  const overall = metric(samples.map((sample) => sample.resources[name]));
+  const groups = new Map();
+  for (const sample of samples) {
+    const values = groups.get(sample.rendererQuality) ?? [];
+    values.push(sample.resources[name]);
+    groups.set(sample.rendererQuality, values);
+  }
+  const byRendererQuality = Object.fromEntries(
+    [...groups.entries()].sort(([left], [right]) => left.localeCompare(right))
+      .map(([quality, values]) => [quality, metric(values)]),
+  );
+  const topologyMetrics = Object.values(byRendererQuality);
+  return {
+    ...overall,
+    crossTopologyEndGrowth: overall.endGrowth,
+    maxGrowth: Math.max(...topologyMetrics.map((value) => value.maxGrowth)),
+    endGrowth: Math.max(...topologyMetrics.map((value) => value.endGrowth)),
+    byRendererQuality,
+  };
+}
+
 function evaluateResources(samples, limits, errors) {
   for (const [index, sample] of samples.entries()) {
+    if (!["high", "medium", "low"].includes(sample?.rendererQuality)) errors.push(`sample ${index} is missing renderer topology identity`);
     if (sample?.resources?.canvasConnected !== true) errors.push(`sample ${index} has no connected Pixi canvas`);
     for (const name of RESOURCE_METRICS) {
       if (!Number.isFinite(sample?.resources?.[name]) || sample.resources[name] < 0) {
@@ -87,11 +110,11 @@ function evaluateResources(samples, limits, errors) {
     }
   }
   if (errors.length > 0) return {};
-  const metrics = Object.fromEntries(RESOURCE_METRICS.map((name) => [name, metric(samples.map((sample) => sample.resources[name]))]));
+  const metrics = Object.fromEntries(RESOURCE_METRICS.map((name) => [name, rendererTopologyMetric(samples, name)]));
   metrics.heap = metric(samples.map((sample) => sample.heap.runtimeUsedBytes));
   for (const name of RESOURCE_METRICS) {
-    if (metrics[name].maxGrowth > limits[name].maxGrowth) errors.push(`${name} grew ${metrics[name].maxGrowth}; limit ${limits[name].maxGrowth}`);
-    if (metrics[name].endGrowth > limits[name].maxEndGrowth) errors.push(`${name} ended ${metrics[name].endGrowth} above baseline; limit ${limits[name].maxEndGrowth}`);
+    if (metrics[name].maxGrowth > limits[name].maxGrowth) errors.push(`${name} grew ${metrics[name].maxGrowth} within one renderer topology; limit ${limits[name].maxGrowth}`);
+    if (metrics[name].endGrowth > limits[name].maxEndGrowth) errors.push(`${name} ended ${metrics[name].endGrowth} above its same-topology baseline; limit ${limits[name].maxEndGrowth}`);
   }
   if (metrics.heap.maxGrowth > limits.heap.maxGrowthBytes) errors.push(`post-GC JS heap grew ${metrics.heap.maxGrowth} bytes; limit ${limits.heap.maxGrowthBytes}`);
   if (metrics.heap.endGrowth > limits.heap.maxEndGrowthBytes) errors.push(`post-GC JS heap ended ${metrics.heap.endGrowth} bytes above baseline; limit ${limits.heap.maxEndGrowthBytes}`);
