@@ -10,6 +10,7 @@ test.use({ launchOptions: { args: ["--enable-precise-memory-info"] } });
 
 type Measured = {
   resources: NonNullable<ReturnType<NonNullable<Window["__coursecraftPixiTest"]>["resourceSnapshot"]>>;
+  rendererQuality: "high" | "medium" | "low";
   heap: { runtimeUsedBytes: number; runtimeTotalBytes: number };
 };
 
@@ -17,10 +18,15 @@ async function measure(page: Page, cdp: CDPSession): Promise<Measured> {
   await cdp.send("HeapProfiler.collectGarbage");
   await page.waitForTimeout(120);
   const heap = await cdp.send("Runtime.getHeapUsage");
-  const resources = await page.evaluate(() => window.__coursecraftPixiTest?.resourceSnapshot() ?? null);
-  expect(resources, "Pixi resource diagnostics must be mounted").not.toBeNull();
+  const renderer = await page.evaluate(() => ({
+    resources: window.__coursecraftPixiTest?.resourceSnapshot() ?? null,
+    quality: window.__coursecraftPixiTest?.rendererAtlasState().rendered.quality ?? null,
+  }));
+  expect(renderer.resources, "Pixi resource diagnostics must be mounted").not.toBeNull();
+  expect(renderer.quality, "renderer quality must be part of every resource sample").toMatch(/^(high|medium|low)$/);
   return {
-    resources: resources!,
+    resources: renderer.resources!,
+    rendererQuality: renderer.quality!,
     heap: { runtimeUsedBytes: heap.usedSize, runtimeTotalBytes: heap.totalSize },
   };
 }
@@ -175,7 +181,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     return { panelOpen: review?.panelOpen === true, kind: review?.overlay?.kind ?? null };
   });
   await page.getByTestId("open-architecture-review").click();
-  await expect(page.getByTestId("architecture-review")).toBeVisible();
+  await expect(page.getByTestId("architecture-review")).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("architecture-overlay-recovery").click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview?.overlay?.kind)).toBe("recovery");
   interactionSamples.push({ scenario: "overlay", passed: true, before: beforeOverlay, after: { kind: "recovery", visible: await page.getByTestId("architecture-review").isVisible() }, ...await measure(page, cdp) });

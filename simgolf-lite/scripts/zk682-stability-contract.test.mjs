@@ -10,7 +10,7 @@ import {
 const COMMIT = "a".repeat(40);
 const browser = { name: "chromium", version: "fixture", cdpHeap: true };
 const resources = { displayObjects: 2000, attachedTextures: 80, attachedTextureSources: 20, managedTextureSources: 48, canvasConnected: true };
-const measured = (index) => ({ resources: { ...resources }, heap: { runtimeUsedBytes: 40_000_000 + index * 20_000 } });
+const measured = (index) => ({ rendererQuality: "high", resources: { ...resources }, heap: { runtimeUsedBytes: 40_000_000 + index * 20_000 } });
 const baseInput = (gate, samples) => ({ candidateCommit: COMMIT, capturedAt: "2026-09-29T12:00:00.000Z", command: `fixture ${gate}`, browser, gate, thresholds: ZK682_STABILITY_THRESHOLDS[gate], samples });
 
 function saveSamples(count = 12) {
@@ -48,6 +48,16 @@ test("save-load evidence fails closed on short runs, drift, and heap growth", ()
   assert.match(evaluateZk682Stability("save-load-resource-stability", saveSamples(2)).errors.join("\n"), /at least 12/);
   const drift = saveSamples(); drift[8].state.cash += 1;
   assert.match(evaluateZk682Stability("save-load-resource-stability", drift).errors.join("\n"), /canonical projection/);
+  const topologyShift = saveSamples();
+  for (const sample of topologyShift.slice(8)) {
+    sample.rendererQuality = "low";
+    sample.resources.attachedTextureSources += 2;
+  }
+  assert.equal(evaluateZk682Stability("save-load-resource-stability", topologyShift).passed, true);
+  topologyShift.at(-1).resources.attachedTextureSources += 2;
+  assert.match(evaluateZk682Stability("save-load-resource-stability", topologyShift).errors.join("\n"), /within one renderer topology/);
+  const missingQuality = saveSamples(); delete missingQuality[0].rendererQuality;
+  assert.match(evaluateZk682Stability("save-load-resource-stability", missingQuality).errors.join("\n"), /renderer topology identity/);
   const heap = saveSamples(); heap.at(-1).heap.runtimeUsedBytes += 9 * 1024 * 1024;
   assert.match(evaluateZk682Stability("save-load-resource-stability", heap).errors.join("\n"), /post-GC JS heap/);
 });

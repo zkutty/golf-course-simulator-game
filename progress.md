@@ -1,5 +1,30 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-09-29 — ZK-1257 save/load renderer-topology evidence repair
+
+- Diagnosed the apparent attached texture-source growth from 24 to 26 across
+  repeated production quick-save loads. The retained source trace proved this
+  was not detached-resource accumulation: Auto quality moved High -> Medium ->
+  Low, fully replacing the live source set, and Low legitimately uses two more
+  small generated material sources than the other renderer topologies.
+- Correction 1/3 pinned High and proved both attached and managed sources were
+  exactly flat across all 13 samples, but it was rejected because changing the
+  workload exposed a separate High-only heap trend and a slow lazy-panel
+  timeout. No threshold or production renderer/gameplay behavior was changed.
+- Correction 2/3 records the active renderer quality on every schema-v2 raw
+  sample and applies the existing immutable resource-growth limits independently
+  within each topology. The full cross-topology difference remains visible as
+  `crossTopologyEndGrowth`; overall Chromium heap limits remain unchanged.
+  Adversarial contracts prove a +2 source increase within Low still fails and
+  missing topology identity fails closed.
+- Accepted browser gate: 12 production quick-save loads pass with zero
+  same-topology attached/managed source growth at High, Medium, and Low; the
+  24 -> 26 cross-tier difference remains retained. The same run passes 176
+  simulated minutes and editing/overlay/sleep-wake/recovery, with no browser
+  errors. TypeScript, scoped ESLint, production build/assets/budgets, and the
+  bundled web-game client smoke pass; the final evidence screenshot was
+  visually inspected and is coherent.
+
 ## 2026-09-29 — ZK-682 exact-candidate packet builder
 
 - Implemented the local fail-closed certification packet builder, typed command
