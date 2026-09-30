@@ -120,7 +120,6 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     thresholds: ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"],
     samples: saveLoadSamples,
   });
-  expect(saveLoadReport.errors, JSON.stringify(saveLoadReport.errors, null, 2)).toEqual([]);
   await writeFile(resolve(outputDirectory, "save-load-resource-stability.json"), `${JSON.stringify(saveLoadReport, null, 2)}\n`);
 
   // Run the actual mutable live simulation for at least two in-game hours.
@@ -144,7 +143,6 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     thresholds: ZK682_STABILITY_THRESHOLDS["long-session-resource-stability"],
     samples: longSessionSamples,
   });
-  expect(longSessionReport.errors, JSON.stringify(longSessionReport.errors, null, 2)).toEqual([]);
   await writeFile(resolve(outputDirectory, "long-session-resource-stability.json"), `${JSON.stringify(longSessionReport, null, 2)}\n`);
 
   // Save a recovery point, then exercise editing, diagnostic overlay,
@@ -199,11 +197,19 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     thresholds: ZK682_STABILITY_THRESHOLDS["editing-overlay-sleep-recovery"],
     samples: interactionSamples,
   });
-  expect(interactionReport.errors, JSON.stringify(interactionReport.errors, null, 2)).toEqual([]);
   await writeFile(resolve(outputDirectory, "editing-overlay-sleep-recovery.json"), `${JSON.stringify(interactionReport, null, 2)}\n`);
 
   const finalScreenshot = resolve(outputDirectory, "zk682-stability-final.png");
   await page.screenshot({ path: finalScreenshot, fullPage: true });
   await testInfo.attach("zk682-stability-final", { path: finalScreenshot, contentType: "image/png" });
   expect(errors).toEqual([]);
+  expect({
+    saveLoad: saveLoadReport.errors,
+    longSession: longSessionReport.errors,
+    interactions: interactionReport.errors,
+  }, "all supplemental reports are retained even when one gate fails").toEqual({
+    saveLoad: [],
+    longSession: [],
+    interactions: [],
+  });
 });
