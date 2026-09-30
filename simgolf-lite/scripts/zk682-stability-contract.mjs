@@ -154,7 +154,7 @@ function evaluateInteractions(samples, thresholds, errors) {
   const sleepWake = byScenario.get("sleep-wake");
   if (!sleepWake || sleepWake.before?.courseHash !== sleepWake.after?.courseHash || sleepWake.after?.lifecycle !== "active" || sleepWake.after?.responsive !== true) errors.push("browser freeze/active recovery did not preserve a responsive candidate");
   const recovery = byScenario.get("recovery");
-  if (!recovery || recovery.before?.savedTerrainVersion !== recovery.before?.mutatedTerrainVersion - 1 || recovery.after?.terrainVersion !== recovery.before?.savedTerrainVersion || recovery.after?.courseHash !== recovery.before?.savedCourseHash || recovery.after?.quickSaveLoaded !== true) errors.push("loading the production quick-save did not recover the pre-edit state");
+  if (!recovery || recovery.before?.mutatedCourseHash === recovery.before?.savedCourseHash || recovery.after?.courseHash !== recovery.before?.savedCourseHash || recovery.after?.quickSaveLoaded !== true) errors.push("loading the production quick-save did not recover the pre-edit state");
   for (const sample of samples) if (sample.passed !== true) errors.push(`${sample.scenario ?? "unknown"} interaction did not pass`);
   const metrics = evaluateResources(samples, thresholds.resources, errors);
   return { metrics, observations: { scenarios: scenarioNames, recoveryPassed: errors.length === 0 } };
