@@ -86,11 +86,29 @@ npm run desktop:package:persistence -- --expected-commit <full-sha>
 npm run test:resource-growth -- --expected-commit <full-sha>
 ```
 
-The PWA and resource commands write under `artifacts/zk682/raw/`. Desktop writes
-`desktop-<platform>-<arch>.json`; macOS and Windows must run on their native
-packaged outputs and both reports plus their referenced package files must be
-collected without renaming paths inside the evidence. These are long machine
-gates and are intentionally not run by the contract-only command.
+The PWA and resource commands write under `artifacts/zk682/raw/`. Every native
+desktop run creates one immutable, self-contained
+`desktop-<platform>-<arch>/` directory there. The directory contains
+`persistence.json`, `package-manifest.json`, the referenced packaged
+`app.asar`, and the referenced executable identity file. The report names
+those platform-qualified paths at capture time, and the producer refuses to
+rewrite an existing bundle. Copy the entire macOS and Windows directories into
+the combined evidence root without renaming their contents. This avoids a
+false collision between two different files both called
+`desktop-dist/coursecraft-desktop-manifest.json`.
+
+The `Desktop smoke` workflow preserves its pull-request smoke behavior. A
+manual dispatch additionally runs the native persistence gate on macOS arm64
+and Windows x64, binds the package manifest to the exact full `github.sha`, and
+uploads the full unsigned packages for 30 days plus the self-contained typed
+evidence directories for 90 days. These are long machine gates and are
+intentionally not run by the contract-only command.
+
+Download each named native-evidence artifact directly into
+`simgolf-lite/artifacts/zk682/raw/`. The artifact retains its
+`desktop-<platform>-<arch>/` directory, so downloading darwin and win32 into
+that same destination produces the combined tree expected by the report paths;
+do not add, remove, or rename another directory level.
 
 Aggregate a prepared evidence manifest and require a known candidate when the
 release coordinator has one:

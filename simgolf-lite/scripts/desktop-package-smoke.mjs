@@ -1,13 +1,23 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { collectDesktopPackageEvidence } from "./desktop-package-evidence.mjs";
+import { resolveDesktopPackageProvenance } from "./desktop-package-provenance.mjs";
 import { assertDeliveryBudgets, DELIVERY_BUDGETS } from "./zk680-delivery-evidence.mjs";
 
-const output = fileURLToPath(new URL("../desktop-dist/", import.meta.url));
+const root = fileURLToPath(new URL("../", import.meta.url));
+const output = path.join(root, "desktop-dist");
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+if (head.status !== 0) throw new Error(`Unable to resolve desktop package commit: ${head.stderr}`);
+const provenance = resolveDesktopPackageProvenance({
+  env: process.env,
+  currentCommit: head.stdout.trim(),
+  platform: process.platform,
+  architecture: process.arch,
+});
 const packageBaselines = {
   // ZK-680's retained baseline was recorded on the macOS desktop runner.
   darwin: 495_074_219,
@@ -68,9 +78,9 @@ const manifest = {
   packageKind: "electron-directory",
   unsigned: true,
   signing: "deferred-to-release-gate",
-  platform: process.platform,
-  architecture: process.arch,
-  sourceCommit: process.env.GITHUB_SHA ?? process.env.COMMIT_SHA ?? null,
+  platform: provenance.platform,
+  architecture: provenance.architecture,
+  sourceCommit: provenance.sourceCommit,
   packageBytes: evidence.packageBytes,
   asarBytes: evidence.asarBytes,
   deliveryBudget: delivery,

@@ -10,13 +10,24 @@ defaults:
 
 jobs:
   desktop:
-    name: ${{ matrix.os }} desktop
+    name: ${{ matrix.platform }}-${{ matrix.architecture }} desktop
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      COMMIT_SHA: ${{ github.sha }}
+      ZK682_EXPECTED_COMMIT: ${{ github.sha }}
+      ZK682_EXPECTED_PLATFORM: ${{ matrix.platform }}
+      ZK682_EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, windows-2022]
+        include:
+          - os: macos-14
+            platform: darwin
+            architecture: arm64
+          - os: windows-2022
+            platform: win32
+            architecture: x64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,8 +42,31 @@ jobs:
         run: npm run desktop:pack:dir
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - uses: actions/upload-artifact@v4
+      - name: Run candidate-bound native persistence and recovery certification
+        if: github.event_name == 'workflow_dispatch'
+        run: npm run desktop:package:persistence
+      - name: Upload pull-request unsigned smoke package
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
         with:
           name: coursecraft-${{ matrix.os }}-unsigned
           path: simgolf-lite/desktop-dist
+          if-no-files-found: error
           retention-days: 7
+      - name: Upload candidate-bound unsigned package
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coursecraft-${{ matrix.platform }}-${{ matrix.architecture }}-unsigned-${{ github.sha }}
+          path: simgolf-lite/desktop-dist
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload typed native persistence report and package manifest
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zk682-native-evidence-${{ matrix.platform }}-${{ matrix.architecture }}-${{ github.sha }}
+          # Preserve the platform-qualified bundle directory inside the artifact.
+          path: simgolf-lite/artifacts/zk682/raw
+          if-no-files-found: error
+          retention-days: 90
