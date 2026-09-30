@@ -11,6 +11,12 @@ import {
   ZK682_RESOURCE_GROWTH_SCHEMA_VERSION,
   ZK682_RESOURCE_GROWTH_THRESHOLDS,
 } from "./zk682-resource-growth-contract.mjs";
+import {
+  evaluateZk682Stability,
+  stableStabilityJson,
+  ZK682_STABILITY_SCHEMA_VERSION,
+  ZK682_STABILITY_THRESHOLDS,
+} from "./zk682-stability-contract.mjs";
 
 export const ZK682_SCHEMA_VERSION = 2;
 export const ZK682_CERTIFICATION_ID = "zk682-architecture-slice-certification-v2";
@@ -265,11 +271,13 @@ const SUPPLEMENTAL_STABILITY_GATES = Object.freeze({
 });
 
 function validateSupplementalStabilityEvidence(report, expectedGate, manifest, label, errors) {
-  if (!exactKeys(report, ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "observations", "passed"], label, errors)) return false;
-  if (report.schemaVersion !== 1 || report.gate !== expectedGate) errors.push(`${label}: wrong supplemental stability schema/gate`);
+  if (!exactKeys(report, ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "browser", "thresholds", "samples", "observations", "summary", "errors", "passed"], label, errors)) return false;
+  if (report.schemaVersion !== ZK682_STABILITY_SCHEMA_VERSION || report.gate !== expectedGate) errors.push(`${label}: wrong supplemental stability schema/gate`);
   if (!validCommit(report.candidateCommit) || report.candidateCommit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
   if (!validCapturedAt(report.capturedAt)) errors.push(`${label}: capturedAt is invalid`);
   if (typeof report.command !== "string" || !report.command) errors.push(`${label}: command is required`);
+  if (report.browser?.name !== "chromium" || report.browser?.cdpHeap !== true || typeof report.browser?.version !== "string" || !report.browser.version) errors.push(`${label}: real Chromium CDP heap evidence is required`);
+  if (stableStabilityJson(report.thresholds) !== stableStabilityJson(ZK682_STABILITY_THRESHOLDS[expectedGate])) errors.push(`${label}: thresholds differ from the immutable stability contract`);
   const keys = SUPPLEMENTAL_STABILITY_GATES[expectedGate];
   if (exactKeys(report.observations, keys, `${label}.observations`, errors)) {
     if (expectedGate === "save-load-resource-stability" && (!Number.isFinite(report.observations.saveLoads) || report.observations.saveLoads <= 0 || report.observations.resourceGrowthBounded !== true)) errors.push(`${label}: save-load observations did not pass`);
@@ -279,8 +287,15 @@ function validateSupplementalStabilityEvidence(report, expectedGate, manifest, l
       if (stableJson(scenarios) !== stableJson(["editing", "overlay", "recovery", "sleep-wake"]) || report.observations.recoveryPassed !== true) errors.push(`${label}: interaction recovery observations did not pass`);
     }
   }
+  const recomputed = evaluateZk682Stability(expectedGate, report.samples, ZK682_STABILITY_THRESHOLDS[expectedGate]);
+  if (stableJson(recomputed.observations) !== stableJson(report.observations)
+    || stableJson(recomputed.metrics) !== stableJson(report.summary)
+    || stableJson(recomputed.errors) !== stableJson(report.errors)
+    || recomputed.passed !== report.passed) {
+    errors.push(`${label}: declared supplemental result does not match raw samples`);
+  }
   if (report.passed !== true) errors.push(`${label}: supplemental stability report did not pass`);
-  return report.passed === true;
+  return report.passed === true && recomputed.passed === true;
 }
 
 function validateCriterionResults(gateId, results, errors) {
