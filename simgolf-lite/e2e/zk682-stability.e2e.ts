@@ -97,6 +97,13 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("paused");
   await page.keyboard.press("Control+KeyS");
   await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+  // The synthetic heavy fixture is not itself a save-round-trip fixed point:
+  // normal loading canonicalizes derived course fields. Warm that one-time
+  // normalization, then save the canonical production state before measuring
+  // repeated loads. No measured cycle may drift after this boundary.
+  await loadQuickSave(page);
+  await page.keyboard.press("Control+KeyS");
+  await page.waitForTimeout(250);
   const savedCourseHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
   const savedState = await canonicalState(page);
   const saveLoadSamples = [{ cycle: 0, slotId: "quick-save", loaded: false, courseHash: savedCourseHash, state: savedState, ...await measure(page, cdp) }];
