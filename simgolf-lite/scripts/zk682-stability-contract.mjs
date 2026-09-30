@@ -130,11 +130,19 @@ function evaluateLongSession(samples, thresholds, errors) {
   }
   const sessionMinutes = elapsed.at(-1) ?? 0;
   if (sessionMinutes < thresholds.minimumSessionMinutes) errors.push(`live simulation covered ${sessionMinutes} minutes; minimum ${thresholds.minimumSessionMinutes}`);
-  const baseline = samples[0];
+  const courseHashes = new Set();
   for (const [index, sample] of samples.entries()) {
-    if (sample.courseHash !== baseline.courseHash) errors.push(`live-simulation sample ${index} changed the course hash`);
-    if (!Number.isFinite(sample.state?.dayMinute) || sample.state?.speed !== "4x") errors.push(`live-simulation sample ${index} is missing an active 4x clock`);
+    if (!/^[0-9a-f]{8}$/.test(sample.courseHash ?? "")) errors.push(`live-simulation sample ${index} is missing a valid game-state hash`);
+    else courseHashes.add(sample.courseHash);
+    if (!Number.isFinite(sample.state?.dayMinute)
+      || sample.state?.speed !== "4x"
+      || !Number.isInteger(sample.state?.onCourse)
+      || sample.state.onCourse <= 0
+      || (index > 0 && sample.state.dayMinute <= samples[index - 1].state?.dayMinute)) {
+      errors.push(`live-simulation sample ${index} is missing an advancing active 4x simulation`);
+    }
   }
+  if (courseHashes.size < 2) errors.push("live simulation did not advance its game-state identity");
   const metrics = evaluateResources(samples, thresholds.resources, errors);
   return { metrics, observations: { sessionMinutes, resourceGrowthBounded: errors.length === 0 } };
 }
