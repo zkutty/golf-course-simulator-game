@@ -127,7 +127,8 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("4x");
   const startMinute = await page.evaluate(() => window.__coursecraftTest!.state().dayMinute);
   const longSessionSamples = [{ elapsedGameMinutes: 0, courseHash: await page.evaluate(() => window.__coursecraftTest!.state().courseHash), state: { ...(await page.evaluate(() => { const state = window.__coursecraftTest!.state(); return { dayMinute: state.dayMinute, speed: state.speed, onCourse: state.golferPositions.length }; })) }, ...await measure(page, cdp) }];
-  while ((longSessionSamples.at(-1)?.elapsedGameMinutes ?? 0) < ZK682_STABILITY_THRESHOLDS["long-session-resource-stability"].minimumSessionMinutes) {
+  while (longSessionSamples.length < ZK682_STABILITY_THRESHOLDS["long-session-resource-stability"].minimumSamples
+    || (longSessionSamples.at(-1)?.elapsedGameMinutes ?? 0) < ZK682_STABILITY_THRESHOLDS["long-session-resource-stability"].minimumSessionMinutes) {
     await page.evaluate(() => window.advanceTime!(2_000));
     await page.waitForTimeout(80);
     const state = await page.evaluate(() => window.__coursecraftTest!.state());
@@ -169,12 +170,15 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   const afterEdit = await page.evaluate(() => window.__coursecraftTest!.state());
   interactionSamples.push({ scenario: "editing", passed: true, before: { terrainVersion: beforeEdit.terrainVersion }, after: { terrainVersion: afterEdit.terrainVersion, screen: afterEdit.screen }, ...await measure(page, cdp) });
 
-  const beforeOverlayKind = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview?.overlay?.kind ?? null);
+  const beforeOverlay = await page.evaluate(() => {
+    const review = JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview;
+    return { panelOpen: review?.panelOpen === true, kind: review?.overlay?.kind ?? null };
+  });
   await page.getByTestId("open-architecture-review").click();
   await expect(page.getByTestId("architecture-review")).toBeVisible();
   await page.getByTestId("architecture-overlay-recovery").click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview?.overlay?.kind)).toBe("recovery");
-  interactionSamples.push({ scenario: "overlay", passed: true, before: { kind: beforeOverlayKind }, after: { kind: "recovery", visible: await page.getByTestId("architecture-review").isVisible() }, ...await measure(page, cdp) });
+  interactionSamples.push({ scenario: "overlay", passed: true, before: beforeOverlay, after: { kind: "recovery", visible: await page.getByTestId("architecture-review").isVisible() }, ...await measure(page, cdp) });
   await page.getByTestId("architecture-review").getByRole("button", { name: "Close" }).click();
 
   const beforeSleepHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
