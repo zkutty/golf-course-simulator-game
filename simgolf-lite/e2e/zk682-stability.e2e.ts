@@ -32,7 +32,7 @@ async function canonicalState(page: Page) {
       screen: state.screen,
       week: state.week,
       cash: state.cash,
-      terrainVersion: state.terrainVersion,
+      terrainCounts: state.terrainCounts,
     };
   });
 }
@@ -182,7 +182,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
 
   await loadQuickSave(page);
   const recovered = await page.evaluate(() => window.__coursecraftTest!.state());
-  interactionSamples.push({ scenario: "recovery", passed: true, before: { savedTerrainVersion: recoveryPoint.terrainVersion, mutatedTerrainVersion: afterEdit.terrainVersion, savedCourseHash: recoveryPoint.courseHash }, after: { terrainVersion: recovered.terrainVersion, courseHash: recovered.courseHash, quickSaveLoaded: true }, ...await measure(page, cdp) });
+  interactionSamples.push({ scenario: "recovery", passed: true, before: { savedCourseHash: recoveryPoint.courseHash, mutatedCourseHash: afterEdit.courseHash }, after: { courseHash: recovered.courseHash, quickSaveLoaded: true }, ...await measure(page, cdp) });
   const interactionReport = createZk682StabilityReport({
     gate: "editing-overlay-sleep-recovery",
     candidateCommit: expectedCommit!,

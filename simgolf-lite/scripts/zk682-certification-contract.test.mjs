@@ -63,7 +63,7 @@ function supplemental(gate) {
         { scenario: "editing", passed: true, before: { terrainVersion: 7 }, after: { terrainVersion: 8, screen: "game" }, ...measured(0) },
         { scenario: "overlay", passed: true, before: { kind: null }, after: { kind: "recovery", visible: true }, ...measured(1) },
         { scenario: "sleep-wake", passed: true, before: { courseHash: "deadbeef" }, after: { courseHash: "deadbeef", lifecycle: "active", responsive: true }, ...measured(2) },
-        { scenario: "recovery", passed: true, before: { savedTerrainVersion: 7, mutatedTerrainVersion: 8, savedCourseHash: "deadbeef" }, after: { terrainVersion: 7, courseHash: "deadbeef", quickSaveLoaded: true }, ...measured(3) },
+        { scenario: "recovery", passed: true, before: { savedCourseHash: "deadbeef", mutatedCourseHash: "cafef00d" }, after: { courseHash: "deadbeef", quickSaveLoaded: true }, ...measured(3) },
       ];
   return createZk682StabilityReport({ gate, candidateCommit: COMMIT, capturedAt: NOW, command: `fixture ${gate}`, browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_STABILITY_THRESHOLDS[gate], samples });
 }

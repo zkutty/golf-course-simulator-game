@@ -27,7 +27,7 @@ function interactionSamples() {
     { scenario: "editing", passed: true, before: { terrainVersion: 7 }, after: { terrainVersion: 8, screen: "game" }, ...measured(0) },
     { scenario: "overlay", passed: true, before: { kind: null }, after: { kind: "recovery", visible: true }, ...measured(1) },
     { scenario: "sleep-wake", passed: true, before: { courseHash: "deadbeef" }, after: { courseHash: "deadbeef", lifecycle: "active", responsive: true }, ...measured(2) },
-    { scenario: "recovery", passed: true, before: { savedTerrainVersion: 7, mutatedTerrainVersion: 8, savedCourseHash: "deadbeef" }, after: { terrainVersion: 7, courseHash: "deadbeef", quickSaveLoaded: true }, ...measured(3) },
+    { scenario: "recovery", passed: true, before: { savedCourseHash: "deadbeef", mutatedCourseHash: "cafef00d" }, after: { courseHash: "deadbeef", quickSaveLoaded: true }, ...measured(3) },
   ];
 }
 
@@ -68,7 +68,7 @@ test("interaction evidence requires exact real outcomes for every scenario", () 
   assert.match(evaluateZk682Stability("editing-overlay-sleep-recovery", fakeEdit).errors.join("\n"), /exactly one real terrain revision/);
   const fakeWake = interactionSamples(); fakeWake[2].after.responsive = false;
   assert.match(evaluateZk682Stability("editing-overlay-sleep-recovery", fakeWake).errors.join("\n"), /freeze\/active recovery/);
-  const fakeRecovery = interactionSamples(); fakeRecovery[3].after.terrainVersion = 8;
+  const fakeRecovery = interactionSamples(); fakeRecovery[3].after.courseHash = "cafef00d";
   assert.match(evaluateZk682Stability("editing-overlay-sleep-recovery", fakeRecovery).errors.join("\n"), /pre-edit state/);
 });
 

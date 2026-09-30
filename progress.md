@@ -6,6 +6,7 @@ Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and pus
 - Schema-v2 reports retain raw Chromium/CDP samples, immutable thresholds and full candidate identity; the aggregate contract recomputes them instead of trusting booleans. The real Playwright producer uses production quick-save/load UI, a 120+ minute live session, terrain editing, the recovery overlay, Chromium frozen/active lifecycle, and save recovery.
 - Pre-browser gates pass: contract tests 14/14, TypeScript and scoped ESLint. Candidate-bound browser execution is next; no threshold has been changed.
 - Browser correction 1/3: the first exact-candidate run showed the active 4x clock legitimately moving cash between the asynchronous quick-save acknowledgement and the baseline projection, so all twelve restores correctly differed from that post-save baseline. The producer now pauses through the save/load sequence, matching the stability contract's intended invariant; thresholds and product code remain unchanged.
+- Browser correction 2/3: the paused rerun isolated the remaining difference to session-local terrain invalidation versions, which are deliberately reset on load and are not save identity. Save/load equality now uses canonical course hash plus stable player-visible state/terrain counts; recovery proves the edit changed the course hash and loading restored the saved hash. This matches the existing PWA evidence boundary without weakening any resource threshold.
 
 ## 2026-09-29 — ZK-682B offline PWA IndexedDB persistence
 
