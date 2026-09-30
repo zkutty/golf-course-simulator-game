@@ -1,5 +1,31 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-682 exact-candidate certification packet — 2026-09-29
+
+- Added a fail-closed builder for the fixed `artifacts/zk682/raw` evidence
+  root. It asserts full candidate SHA, exact `HEAD`, and candidate lockfile
+  identity; validates/recomputes PWA, native desktop, renderer-resource,
+  supplemental-stability, asset, and headless reports; derives machine status;
+  hashes raw and normalized artifacts; writes all required v2 gates and
+  `release/zk682/evidence-manifest.json`; and invokes the existing certifier.
+- Added structured command receipts for generic core, browser, asset, and
+  headless commands. Pass/fail comes only from the child exit code. A
+  structurally valid failed report now becomes a failed criterion and HOLD
+  rather than a malformed-manifest error.
+- Pinned headless renderer/startup/fixture budgets to 8/5000/6000 ms. Physical
+  evidence must match its midrange/low-end gate and the exact headless scenario.
+- A persistent GitHub workflow was not added because a safety gate requires
+  explicit authorization for GitHub Actions artifact upload. The minimal
+  follow-up, exact destinations, and retention are documented in
+  `docs/ZK682_CERTIFICATION_PACKET.md`. No artifact was uploaded or dispatched.
+- Validation: existing ZK-682 typed contracts pass 25/25; packet/receipt tests
+  pass 16/16; scoped ESLint, Node syntax checks, all three TypeScript projects
+  (run without incremental writes), and `git diff --check` pass. The first
+  static attempt lacked dependencies; a lockfile install hit host ENOSPC, so
+  the partial untracked install was removed and the successful retry used the
+  repository's existing lockfile-compatible dependency tree via a temporary
+  symlink that was removed afterward.
+
 ## ZK-775 connected starter arrival execution — 2026-09-28
 
 - Replaced the fixed `(4,4)` starter road/parking rectangles with one deterministic arrival planner that joins an owned parcel-edge gateway, terrain-aware gravel driveway, clubhouse parking court, and pedestrian path to the real engineered clubhouse entrance.
