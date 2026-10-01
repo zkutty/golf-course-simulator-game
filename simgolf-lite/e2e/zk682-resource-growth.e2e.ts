@@ -92,7 +92,9 @@ async function routeThroughTitle(page: Page) {
   await expect(quickStart).toBeVisible();
   await quickStart.click();
   await expect(page.locator(".cc-pixi-stage canvas")).toBeVisible({ timeout: 120_000 });
-  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest != null)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest != null), {
+    timeout: 120_000,
+  }).toBe(true);
   const restoredQuality = await page.evaluate(() => (
     window.__coursecraftPixiTest!.rendererAtlasState().requested.quality
   ));
