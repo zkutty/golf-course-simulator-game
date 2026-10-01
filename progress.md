@@ -1,5 +1,18 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-10-01 — ZK-682 hosted exact-SHA certification workflow
+
+- Installed the explicitly approved manual workflow for one required full
+  candidate SHA. Every Linux, native, and aggregate job checks out and verifies
+  that SHA and binds evidence to the dispatch input rather than `github.sha`.
+- Same-run evidence and certification artifacts use exact SHA-suffixed names
+  and 90-day retention; approved unsigned macOS/Windows packages use 30-day
+  retention. The final packet is retained on HOLD, while the workflow fails for
+  any machine failure, candidate drift, invalid packet, or non-physical
+  blocker.
+- Added deterministic workflow-shape and verdict tests. No workflow was
+  dispatched and no artifact was uploaded by this implementation packet.
+
 ## 2026-09-29 — ZK-1257 save/load renderer-topology evidence repair
 
 - Diagnosed the apparent attached texture-source growth from 24 to 26 across

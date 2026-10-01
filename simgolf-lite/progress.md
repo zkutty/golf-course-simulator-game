@@ -1,5 +1,20 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-682 hosted exact-SHA certification workflow — 2026-10-01
+
+- Added the explicitly approved, manual-only GitHub Actions workflow for a
+  required full `candidate_sha`. Linux, macOS arm64, Windows x64, and aggregate
+  jobs each check out and verify that exact commit and bind
+  `ZK682_EXPECTED_COMMIT` directly to the dispatch input.
+- The workflow retains exact-name Linux and native evidence plus the final
+  certification packet for 90 days, and the approved unsigned native packages
+  for 30 days. Aggregation downloads only the three evidence artifacts from the
+  same run, retains GO/HOLD output, and fails unless every machine criterion
+  passes and every remaining blocker is physical-device-only.
+- Added deterministic workflow-shape and hosted-verdict tests. Dispatch,
+  artifact upload, branch push, deployment, and Linear mutation remain owned by
+  the promotion coordinator.
+
 ## ZK-682 exact-candidate certification packet — 2026-09-29
 
 - Added a fail-closed builder for the fixed `artifacts/zk682/raw` evidence
