@@ -35,6 +35,16 @@ test("every job checks out, verifies, and binds the requested full SHA", () => {
   }
 });
 
+test("Windows disables checkout newline conversion before the native checkout", () => {
+  const native = jobBlock("native-evidence", "aggregate");
+  const normalization = native.indexOf("- name: Disable Windows checkout newline conversion");
+  const checkout = native.indexOf("- name: Checkout exact candidate");
+  assert.notEqual(normalization, -1);
+  assert.notEqual(checkout, -1);
+  assert(normalization < checkout, "Windows newline normalization must run before checkout");
+  assert.match(native.slice(normalization, checkout), /if: runner\.os == 'Windows'[\s\S]*?working-directory: \$\{\{ github\.workspace \}\}[\s\S]*?git config --global core\.autocrlf false/);
+});
+
 test("same-run aggregation names and retention are exact", () => {
   const linux = jobBlock("linux-evidence", "native-evidence");
   const native = jobBlock("native-evidence", "aggregate");
