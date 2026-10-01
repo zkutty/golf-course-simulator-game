@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const workflow = readFileSync(new URL("../../.github/workflows/desktop-smoke.yml", import.meta.url), "utf8");
+const workflow = readFileSync(new URL("../../.github/workflows/desktop-smoke.yml", import.meta.url), "utf8")
+  .replace(/\r\n?/g, "\n");
 
 test("manual desktop smoke binds native evidence to the exact GitHub commit on both required runners", () => {
   assert.match(workflow, /COMMIT_SHA: \$\{\{ github\.sha \}\}/);
