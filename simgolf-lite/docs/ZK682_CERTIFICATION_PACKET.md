@@ -53,24 +53,34 @@ the actual exit code and derives `passed`; callers cannot supply a manual pass
 flag. Core, browser, asset, and headless gate values are derived from those
 receipts plus typed measurement reports.
 
-## Workflow authorization boundary
+## Hosted exact-SHA workflow
 
-The local implementation does not install a persistent GitHub Actions
-workflow. Adding one was blocked pending explicit authorization for
-repository-derived artifact upload. The minimal follow-up is one
-`workflow_dispatch` workflow with a required full `candidate_sha`, exact-ref
-checkout in every job, and `ZK682_EXPECTED_COMMIT` bound to that input rather
-than `GITHUB_SHA`.
+`.github/workflows/zk682-certification.yml` is manual-only and requires a full
+`candidate_sha`. Every job checks out and verifies that exact commit, and binds
+`ZK682_EXPECTED_COMMIT` to the input rather than the workflow file's ref. The
+Linux, native, and aggregate jobs exchange only exact-name artifacts created by
+the same workflow run.
 
-Proposed same-run artifact destinations:
+Same-run artifact destinations:
 
 - `zk682-linux-evidence-<full-sha>` — raw Linux evidence, 90 days
 - `zk682-native-evidence-darwin-arm64-<full-sha>` — native evidence, 90 days
 - `zk682-native-evidence-win32-x64-<full-sha>` — native evidence, 90 days
 - `zk682-certification-packet-<full-sha>` — complete raw/normalized packet, 90 days
-- optional, only if separately approved:
-  `coursecraft-<platform>-<arch>-unsigned-<full-sha>` — unsigned package, 30 days
+- `coursecraft-<platform>-<arch>-unsigned-<full-sha>` — unsigned package, 30 days
 
 Aggregation must download only exact SHA-suffixed artifacts from that run, run
 `release:build:zk682`, retain the packet even on HOLD, and fail unless all
 machine criteria pass and any HOLD blockers are physical-only.
+
+Dispatch only after the candidate exists on the remote:
+
+```sh
+gh workflow run zk682-certification.yml \
+  --ref develop \
+  -f candidate_sha=<full-40-character-sha>
+```
+
+The dispatch ref selects the workflow definition only. Evidence identity is
+always the required `candidate_sha`. The workflow never substitutes
+`github.sha` or `GITHUB_SHA` for the candidate.
