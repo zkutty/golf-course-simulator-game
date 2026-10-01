@@ -342,8 +342,10 @@ export async function buildZk682Packet({ root, candidateCommit, evidenceRoot = Z
   const longSession = supplemental.get("long-session-resource-stability");
   const interaction = supplemental.get("editing-overlay-sleep-recovery");
   const stabilityArtifacts = [resource.artifact, saveLoad.artifact, longSession.artifact, interaction.artifact];
-  const screenshot = join(ctx.rawRoot, "zk682-stability-final.png");
-  if (existsSync(screenshot)) stabilityArtifacts.push(ctx.bind(screenshot, true));
+  for (const name of ["zk682-resource-growth-final.png", "zk682-stability-final.png"]) {
+    const screenshot = join(ctx.rawRoot, name);
+    if (existsSync(screenshot)) stabilityArtifacts.push(ctx.bind(screenshot, true));
+  }
   gates.push(gate(ctx, "stability", [
     criterion("route-change-resource-stability", resourcePassed, "Renderer samples are recomputed with pinned thresholds."),
     criterion("save-load-resource-stability", saveLoad.passed, "Save/load samples are validated from typed evidence."),
