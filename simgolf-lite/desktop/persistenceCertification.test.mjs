@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 import {
   desktopPersistenceCertificationLoadOptions,
@@ -21,7 +22,7 @@ test("certification mode is absent during normal launches and accepts only one k
   assert.equal(parseDesktopPersistenceUserDataArgs([], null), null);
   assert.equal(
     parseDesktopPersistenceUserDataArgs(["--zk682-desktop-persistence-user-data=/tmp/zk682"], "write"),
-    "/tmp/zk682",
+    path.resolve("/tmp/zk682"),
   );
   assert.throws(() => parseDesktopPersistenceUserDataArgs(["--zk682-desktop-persistence-user-data=relative"], "write"));
   assert.throws(() => parseDesktopPersistenceUserDataArgs(["--zk682-desktop-persistence-user-data=/tmp/zk682"], null));
