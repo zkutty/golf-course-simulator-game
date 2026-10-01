@@ -73,6 +73,8 @@ function fixture() {
     write(root, `${prefix}/persistence.json`, report);
   }
   write(raw, "renderer-resource-growth.json", resourceReport(commit));
+  write(raw, "zk682-resource-growth-final.png", Buffer.from("resource screenshot"));
+  write(raw, "zk682-stability-final.png", Buffer.from("stability screenshot"));
   for (const gate of ["save-load-resource-stability", "long-session-resource-stability", "editing-overlay-sleep-recovery"]) write(raw, `${gate}.json`, supplemental(gate, commit));
   const assetSource = write(root, "artifacts/zk682/raw/m35-asset-audit.json", { ok: true, initialCritical: { bytes: 7_000_000 }, dist: { bundles: { parkland: { high: { bytes: 5_000_000 } } } } });
   const browserBuild = write(root, "artifacts/zk682/raw/browser-build-manifest.json", { "src/main.tsx": { file: "assets/index.js", isEntry: true } });
@@ -98,6 +100,11 @@ test("builder emits a hash-bound v2 packet and HOLD only for absent physical gat
     assert.equal(report.machinePassed, true);
     assert.deepEqual(report.blockers.map((blocker) => blocker.criterionId), ["midrange-physical-p95", "low-end-physical-p95"]);
     assert.equal(manifest.gateResults.length, 7);
+    const stabilityGate = JSON.parse(readFileSync(join(value.root, "release/zk682/gates/stability.json"), "utf8"));
+    assert.deepEqual(stabilityGate.artifacts.filter((artifact) => artifact.path.endsWith(".png")).map((artifact) => artifact.path), [
+      "artifacts/zk682/raw/zk682-resource-growth-final.png",
+      "artifacts/zk682/raw/zk682-stability-final.png",
+    ]);
   } finally { rmSync(value.repository, { recursive: true, force: true }); }
 });
 
