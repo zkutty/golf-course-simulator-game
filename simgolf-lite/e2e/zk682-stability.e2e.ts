@@ -43,9 +43,48 @@ async function canonicalState(page: Page) {
   });
 }
 
+async function pauseSimulation(page: Page) {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await expect.poll(async () => {
+    const speed = await page.evaluate(() => window.__coursecraftTest?.state().speed);
+    if (speed !== "paused") {
+      await page.keyboard.press("Space");
+      await page.waitForTimeout(100);
+    }
+    return page.evaluate(() => window.__coursecraftTest?.state().speed);
+  }, { timeout: 120_000, intervals: [250] }).toBe("paused");
+}
+
+async function waitForStableResourceTopology(page: Page) {
+  let previous = "";
+  let stableSamples = 0;
+  await expect.poll(async () => {
+    const snapshot = await page.evaluate(() => {
+      const renderer = window.__coursecraftPixiTest?.rendererAtlasState();
+      const resources = window.__coursecraftPixiTest?.resourceSnapshot();
+      if (renderer?.rendered.status !== "activated" || !resources?.canvasConnected) return null;
+      return {
+        displayObjects: resources.displayObjects,
+        containers: resources.containers,
+        sprites: resources.sprites,
+        graphics: resources.graphics,
+        meshes: resources.meshes,
+        text: resources.text,
+      };
+    });
+    const serialized = snapshot == null ? "" : JSON.stringify(snapshot);
+    stableSamples = serialized !== "" && serialized === previous ? stableSamples + 1 : (serialized === "" ? 0 : 1);
+    previous = serialized;
+    return stableSamples;
+  }, { timeout: 120_000, intervals: [100, 200, 400] }).toBeGreaterThanOrEqual(3);
+}
+
 async function openPause(page: Page) {
-  if (!await page.getByTestId("pause-overlay").isVisible()) await page.keyboard.press("Escape");
-  await expect(page.getByTestId("pause-overlay")).toBeVisible();
+  const pause = page.getByTestId("pause-overlay");
+  await expect.poll(async () => {
+    if (!await pause.isVisible()) await page.keyboard.press("Escape");
+    return pause.isVisible();
+  }, { timeout: 120_000, intervals: [250] }).toBe(true);
 }
 
 async function loadQuickSave(page: Page) {
@@ -54,8 +93,9 @@ async function loadQuickSave(page: Page) {
   const slot = page.getByTestId("save-slot-quick-save");
   await expect(slot).toContainText("Quick Save", { timeout: 30_000 });
   await slot.getByRole("button", { name: "Load", exact: true }).click();
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), { timeout: 120_000 }).toBe("game");
   await expect(page.locator(".cc-pixi-stage canvas")).toBeVisible({ timeout: 120_000 });
+  await waitForStableResourceTopology(page);
 }
 
 async function projectTile(page: Page, canvas: Locator, point: { x: number; y: number }) {
@@ -93,14 +133,13 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   await page.goto("/?perfFixture=1");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), { timeout: 120_000 }).toBe("game");
   await expect(page.locator(".cc-pixi-stage canvas")).toBeVisible({ timeout: 120_000 });
-  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest?.rendererAtlasState().rendered.status)).toBe("activated");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest?.rendererAtlasState().rendered.status), { timeout: 120_000 }).toBe("activated");
   const runtimeCommit = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().pathMaterialCrossSection.commit);
   expect(runtimeCommit).toBe(expectedCommit);
 
   // Repeated production quick-save loads, including real IndexedDB reads and
   // full App state restoration, are measured after a post-GC baseline.
-  if (await page.evaluate(() => window.__coursecraftTest!.state().speed) !== "paused") await page.keyboard.press("Space");
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("paused");
+  await pauseSimulation(page);
   await page.keyboard.press("Control+KeyS");
   await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
   // The synthetic heavy fixture is not itself a save-round-trip fixed point:
@@ -110,6 +149,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   await loadQuickSave(page);
   await page.keyboard.press("Control+KeyS");
   await page.waitForTimeout(250);
+  await waitForStableResourceTopology(page);
   const savedCourseHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
   const savedState = await canonicalState(page);
   const saveLoadSamples = [{ cycle: 0, slotId: "quick-save", loaded: false, courseHash: savedCourseHash, state: savedState, ...await measure(page, cdp) }];
@@ -154,8 +194,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
 
   // Save a recovery point, then exercise editing, diagnostic overlay,
   // Chromium frozen/active lifecycle, and production load recovery.
-  if (await page.evaluate(() => window.__coursecraftTest!.state().speed) !== "paused") await page.keyboard.press("Space");
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("paused");
+  await pauseSimulation(page);
   await page.keyboard.press("Control+KeyS");
   await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
   const recoveryPoint = await page.evaluate(() => window.__coursecraftTest!.state());

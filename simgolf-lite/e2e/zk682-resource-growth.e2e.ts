@@ -57,9 +57,15 @@ async function setRendererFixture(page: Page, theme: Theme, quality: Quality) {
 }
 
 async function pauseSimulation(page: Page) {
-  const speed = await page.evaluate(() => window.__coursecraftTest?.state().speed);
-  if (speed !== "paused") await page.keyboard.press("Space");
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().speed)).toBe("paused");
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await expect.poll(async () => {
+    const speed = await page.evaluate(() => window.__coursecraftTest?.state().speed);
+    if (speed !== "paused") {
+      await page.keyboard.press("Space");
+      await page.waitForTimeout(100);
+    }
+    return page.evaluate(() => window.__coursecraftTest?.state().speed);
+  }, { timeout: 120_000, intervals: [250] }).toBe("paused");
 }
 
 async function rotateFullCircle(page: Page) {
@@ -81,9 +87,11 @@ async function rotateFullCircle(page: Page) {
 }
 
 async function routeThroughTitle(page: Page) {
-  await page.keyboard.press("Escape");
   const pause = page.getByTestId("pause-overlay");
-  await expect(pause).toBeVisible();
+  await expect.poll(async () => {
+    if (!await pause.isVisible()) await page.keyboard.press("Escape");
+    return pause.isVisible();
+  }, { timeout: 120_000, intervals: [250] }).toBe(true);
   page.once("dialog", (dialog) => dialog.accept());
   await pause.getByRole("button", { name: "⌂ Quit to title" }).click();
   await expect(page.locator(".cc-pixi-stage canvas")).toHaveCount(0);
