@@ -1,0 +1,142 @@
+name: ZK-682 startup revision census
+run-name: Startup census for ${{ github.sha }}
+on:
+  push:
+    branches: [codex/startup-revision-census]
+permissions:
+  contents: read
+defaults:
+  run:
+    working-directory: simgolf-lite
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASELINE: 23ffa497e2e4271964e43eb73a2e50483ed1e12d
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify immutable instrumented scope
+        working-directory: ${{ github.workspace }}
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test -z "$(git status --porcelain)"
+          git diff --exit-code "$BASELINE" HEAD -- simgolf-lite/package.json simgolf-lite/package-lock.json simgolf-lite/vite.config.ts
+          while IFS= read -r changed; do
+            case "$changed" in
+              .github/workflows/zk682-startup-census.yml|simgolf-lite/scripts/perf-startup-census.mjs|simgolf-lite/scripts/perf-startup-census.test.mjs|simgolf-lite/scripts/perf-smoke.mjs|simgolf-lite/src/game/live/persistence.ts|simgolf-lite/src/ui/renderer/scenes/terrainWaterScene.ts) ;;
+              *) echo "Unexpected census change: $changed"; exit 1 ;;
+            esac
+          done < <(git diff --name-only "$BASELINE" HEAD)
+          printf 'CENSUS_ROOT=%s/startup-census\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/startup-census"
+          git diff --binary "$BASELINE" HEAD > "$RUNNER_TEMP/startup-census/instrumented.patch"
+          git rev-parse HEAD^{tree} > "$RUNNER_TEMP/startup-census/tree.txt"
+          sha256sum simgolf-lite/package-lock.json > "$RUNNER_TEMP/startup-census/lock-sha256.txt"
+          date -u +%FT%TZ > "$RUNNER_TEMP/startup-census/started-at.txt"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Observe original startup path
+        id: producer
+        continue-on-error: true
+        env:
+          PERF_FIXTURE: m27
+          PERF_THEME: parkland
+          PERF_FIXTURE_READY_TIMEOUT_MS: "300000"
+          PERF_CENSUS_COMMIT: ${{ github.sha }}
+          PERF_CENSUS_DIR: ${{ runner.temp }}/startup-census/observation
+          PERF_OUTPUT_PATH: ${{ runner.temp }}/startup-census/reports/performance.json
+        run: |
+          set +e
+          npm run test:perf 2>&1 | tee "$CENSUS_ROOT/producer.log"
+          result=${PIPESTATUS[0]}
+          printf '%s\n' "$result" > "$CENSUS_ROOT/producer-exit-code.txt"
+          exit "$result"
+      - name: Validate bounded fresh census
+        id: validation
+        continue-on-error: true
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import assert from 'node:assert/strict';
+          const root = process.env.CENSUS_ROOT;
+          const file = path.join(root, 'observation/startup-census.json');
+          const stat = fs.statSync(file);
+          assert.ok(stat.size > 0 && stat.size <= 256 * 1024);
+          assert.ok(stat.mtimeMs >= Date.parse(fs.readFileSync(path.join(root, 'started-at.txt'), 'utf8').trim()));
+          assert.ok(!fs.existsSync(`${file}.part`));
+          const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+          assert.equal(report.baseline, process.env.BASELINE);
+          assert.equal(report.diagnosticCommit, '${{ github.sha }}');
+          assert.equal(report.instrumented, true);
+          assert.equal(report.identityOnly, true);
+          assert.equal(report.complete, true);
+          assert.deepEqual(report.errors, []);
+          assert.deepEqual(report.phases.map(p => p.phase), ['cold', 'fixture']);
+          let records = 0;
+          for (const {report: phase} of report.phases) {
+            assert.equal(phase.baseline, process.env.BASELINE);
+            assert.equal(phase.diagnosticCommit, '${{ github.sha }}');
+            assert.equal(phase.complete, true);
+            assert.equal(phase.overflow, false);
+            assert.equal(phase.errors, 0);
+            assert.ok(phase.records.length <= 128);
+            assert.ok(phase.records.filter(r => r.caller).length <= 8);
+            assert.ok(phase.records.every(r => Number.isFinite(r.startedAtMs) && Number.isFinite(r.endedAtMs) && r.endedAtMs >= r.startedAtMs));
+            records += phase.records.length;
+          }
+          assert.ok(records <= 256);
+          assert.ok(report.phases[1].report.records.some(r => r.kind === 'terrain-revision'));
+          assert.ok(!fs.readFileSync(path.join(root, 'producer.log'), 'utf8').includes('[startup-census] diagnostic error:'));
+          const perf = JSON.parse(fs.readFileSync(path.join(root, 'reports/performance.json'), 'utf8'));
+          assert.equal(perf.fixture, 'm27Fixture');
+          assert.equal(perf.effective.budgets.fixtureLoadMilliseconds, 6000);
+          assert.equal(perf.effective.budgets.coldStartupMilliseconds, 5000);
+          console.log('Census complete; instrumented observation is not certification evidence.');
+          JS
+      - name: Record instrumented provenance
+        if: always()
+        env:
+          PRODUCER_OUTCOME: ${{ steps.producer.outcome }}
+          VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root = process.env.CENSUS_ROOT;
+          fs.mkdirSync(root, {recursive:true});
+          const exitFile = path.join(root, 'producer-exit-code.txt');
+          fs.writeFileSync(path.join(root, 'provenance.json'), JSON.stringify({
+            baseline: process.env.BASELINE, diagnosticCommit: '${{ github.sha }}', instrumented:true, certificationEligible:false,
+            platform:process.platform, architecture:process.arch, nodeVersion:process.version,
+            producer:{outcome:process.env.PRODUCER_OUTCOME, exitCode:fs.existsSync(exitFile)?Number(fs.readFileSync(exitFile,'utf8').trim()):null},
+            diagnosticValidation:process.env.VALIDATION_OUTCOME,
+            limitation:'Identity matches do not prove unchanged content or redundant ownership; terrainPatterns dependency is unavailable at this boundary.'
+          },null,2));
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zk682-startup-census-${{ github.sha }}
+          path: ${{ runner.temp }}/startup-census
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve actual outcomes
+        if: always()
+        env:
+          PRODUCER_OUTCOME: ${{ steps.producer.outcome }}
+          VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
+        run: |
+          test "$PRODUCER_OUTCOME" = success
+          test "$VALIDATION_OUTCOME" = success

@@ -22,6 +22,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { createStartupCensus } from "./perf-startup-census.mjs";
 import { loadBiomeKeys } from "./biome-registry.mjs";
 import { DEFAULT_COLD_STARTUP_BUDGET_MS, DEFAULT_FIXTURE_LOAD_BUDGET_MS, readinessBudgetValidation, rendererBudgetValidation } from "./perf-readiness-budget.mjs";
 
@@ -94,10 +95,14 @@ await page.addInitScript(() => {
   localStorage.setItem("coursecraft_perfhud", "on");
   localStorage.setItem("coursecraft_ambience", "on");
 });
+const census = await createStartupCensus({ page, directory: process.env.PERF_CENSUS_DIR,
+  outputPath: OUTPUT_PATH, canonicalRaw: new URL("../artifacts/zk682/raw", import.meta.url).pathname });
+try {
 const coldStartedAt = performance.now();
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 await page.getByRole("button", { name: "Quick Start" }).waitFor({ state: "visible", timeout: 30_000 });
 const coldStartupMs = performance.now() - coldStartedAt;
+await census?.collect("cold");
 const fixtureStartedAt = performance.now();
 await page.goto(`http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 console.log("[perf-smoke] document loaded; waiting for the visible course canvas …");
@@ -127,6 +132,8 @@ await page.waitForFunction(() => {
 }, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
 const box = await canvas.boundingBox();
 const fixtureLoadMs = performance.now() - fixtureStartedAt;
+await census?.collect("fixture");
+await census?.finish();
 console.log(`[perf-smoke] game state ready in ${fixtureLoadMs.toFixed(0)}ms`);
 await sleep(1200);
 if (!box) throw new Error("performance fixture did not create a renderer canvas");
@@ -247,3 +254,7 @@ console.log(
       ? `, p95 frame ${perf.p95Ms.toFixed(2)}ms ≤ ${BUDGET_MS}ms`
       : ` (frame p95 ${perf.p95Ms.toFixed(2)}ms reported, not asserted headless)`)
 );
+
+} finally {
+  await census?.finish();
+}

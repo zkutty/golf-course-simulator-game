@@ -66,6 +66,22 @@ export interface TerrainWaterSceneDiagnostics {
   borrowedTextures: number;
 }
 
+// Diagnostic-only observer, installed solely by the opt-in startup census.
+type StartupCensusObserver = {
+  begin: (kind: string, owner: object, inputs: Record<string, unknown>) => unknown;
+  end: (token: unknown) => void;
+};
+
+function censusBegin(observer: StartupCensusObserver | undefined, kind: string, owner: object, inputs: () => Record<string, unknown>): unknown {
+  if (!observer) return undefined;
+  try { return observer.begin(kind, owner, inputs()); } catch { return undefined; }
+}
+
+function censusEnd(observer: StartupCensusObserver | undefined, token: unknown): void {
+  if (!observer) return;
+  try { observer.end(token); } catch { /* diagnostics cannot affect scene lifecycle */ }
+}
+
 type TerrainWaterPhase = "surround" | "terrain" | "connected";
 type TerrainWaterRenderer = (snapshot: RenderSnapshot) => void | (() => void);
 
@@ -129,13 +145,34 @@ export class TerrainWaterSceneSystem {
   private rebuild(snapshot: RenderSnapshot): void {
     const revision = snapshot.revisions.terrainWater;
     if (revision === undefined) throw new Error("Terrain/water snapshot revision is required.");
-    if (!this.syncRevision(revision)) return;
+    const changed = this.syncRevision(revision);
+    const observer = (globalThis as typeof globalThis & { __ccStartupCensus?: StartupCensusObserver }).__ccStartupCensus;
+    if (observer) {
+      const token = censusBegin(observer, "terrain-revision", this, () => ({
+        revision, accepted: changed, course: snapshot.course,
+        tiles: snapshot.course.tiles, effectiveTiles: snapshot.effectiveTiles,
+        elevations: snapshot.course.elevations, buildings: snapshot.course.buildings,
+        estate: snapshot.course.estate, holes: snapshot.course.holes,
+        propertyAssets: snapshot.course.property?.assets, surfaceCare: snapshot.course.surfaceCare,
+        surfaceIntent: snapshot.course.surfaceIntent, theme: snapshot.course.theme,
+        width: snapshot.course.width, height: snapshot.course.height,
+        atlasRevision: snapshot.atlasRevision, quality: snapshot.graphicsQuality,
+        colorVision: snapshot.colorVision, reducedMotion: snapshot.reducedMotion,
+        seasonal: snapshot.seasonalVisualState, worldSeed: snapshot.worldSeed, rotation: snapshot.rotation,
+        // terrainPatterns is captured in the host's revision authority, not exposed by RenderSnapshot.
+        missingDependency: "terrainPatterns",
+      }));
+      censusEnd(observer, token);
+    }
+    if (!changed) return;
     for (const phase of ["surround", "terrain", "connected"] as const) {
       const renderer = this.renderers.get(phase);
       if (!renderer) throw new Error(`Terrain/water ${phase} renderer is not configured.`);
       this.phaseCleanups.get(phase)?.();
       this.phaseCleanups.delete(phase);
-      const cleanup = renderer(snapshot);
+      const token = observer ? censusBegin(observer, "terrain-phase", this, () => ({ revision, phase })) : undefined;
+      let cleanup: void | (() => void);
+      try { cleanup = renderer(snapshot); } finally { censusEnd(observer, token); }
       if (cleanup) this.phaseCleanups.set(phase, cleanup);
       if (phase === "surround") this.surroundRebuilds++;
       else if (phase === "connected") this.connectedRebuilds++;

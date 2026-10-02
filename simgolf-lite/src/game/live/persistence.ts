@@ -199,8 +199,25 @@ function normalizedSpeed(value: unknown): SpeedName | null {
   return value === "paused" || value === "1x" || value === "2x" || value === "4x" ? value : null;
 }
 
-function cloneSerializableState(state: Omit<LiveState, "walkCache">): Omit<LiveState, "walkCache"> {
-  return JSON.parse(JSON.stringify(state)) as Omit<LiveState, "walkCache">;
+// Diagnostic-only observer: absent in ordinary runs; never owns game state.
+type StartupCensusObserver = {
+  begin: (kind: string, owner: object, inputs: Record<string, unknown>) => unknown;
+  end: (token: unknown) => void;
+};
+
+function cloneSerializableState(state: Omit<LiveState, "walkCache">, source: object = state, trigger = "restore"): Omit<LiveState, "walkCache"> {
+  const observer = (globalThis as typeof globalThis & { __ccStartupCensus?: StartupCensusObserver }).__ccStartupCensus;
+  let token: unknown;
+  if (observer) {
+    try { token = observer.begin("snapshot-clone", source, { input: state, trigger }); } catch { /* diagnostics cannot affect cloning */ }
+  }
+  try {
+    return JSON.parse(JSON.stringify(state)) as Omit<LiveState, "walkCache">;
+  } finally {
+    if (observer) {
+      try { observer.end(token); } catch { /* diagnostics cannot affect cloning */ }
+    }
+  }
 }
 
 export function snapshotLiveSimulation(args: {
@@ -215,7 +232,7 @@ export function snapshotLiveSimulation(args: {
   void _walkCache;
   return {
     version: 6,
-    state: cloneSerializableState(serializable),
+    state: cloneSerializableState(serializable, args.state, "snapshot"),
     pendingCash: args.pendingCash,
     speed: args.speed,
     selectedGolferId: args.selectedGolferId,
