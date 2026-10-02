@@ -1,0 +1,166 @@
+name: ZK-682 hosted failure diagnostics
+run-name: Hosted diagnostics for ${{ github.sha }}
+
+on:
+  push:
+    branches: [codex/hosted-failure-diagnostics]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: simgolf-lite
+
+jobs:
+  startup-and-heap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ZK682_EXPECTED_COMMIT: ${{ github.sha }}
+      VITE_COMMIT_SHA: ${{ github.sha }}
+      ZK682_DIAGNOSTIC_BASELINE: adcfd92b6b608a96699d5fb87592834b980120be
+      ZK682_DIAGNOSTIC_ROOT: ${{ runner.temp }}/zk682-hosted-diagnostics
+    steps:
+      - name: Checkout immutable diagnostic source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify unchanged application and dependency inputs
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          [[ "$ZK682_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$ZK682_EXPECTED_COMMIT"
+          git diff --exit-code "$ZK682_DIAGNOSTIC_BASELINE" HEAD -- simgolf-lite/src simgolf-lite/package.json simgolf-lite/package-lock.json
+          mkdir -p "$ZK682_DIAGNOSTIC_ROOT/reports/stability"
+          date -u +%FT%TZ > "$ZK682_DIAGNOSTIC_ROOT/started-at.txt"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build original application inputs
+        run: npm run build
+      - name: Collect startup CPU and network evidence
+        id: performance
+        continue-on-error: true
+        env:
+          PERF_FIXTURE: m27
+          PERF_THEME: parkland
+          PERF_FIXTURE_READY_TIMEOUT_MS: "300000"
+          PERF_DIAGNOSTICS_DIR: ${{ runner.temp }}/zk682-hosted-diagnostics/startup
+          PERF_OUTPUT_PATH: ${{ runner.temp }}/zk682-hosted-diagnostics/reports/performance.json
+        run: |
+          set +e
+          npm run test:perf
+          result=$?
+          printf '%s\n' "$result" > "$ZK682_DIAGNOSTIC_ROOT/performance-exit-code.txt"
+          exit "$result"
+      - name: Collect bounded save-load heap evidence
+        id: stability
+        continue-on-error: true
+        if: always()
+        env:
+          ZK682_DIAGNOSTICS_DIR: ${{ runner.temp }}/zk682-hosted-diagnostics/heap
+        run: |
+          set +e
+          npm run test:stability -- --output-dir "$ZK682_DIAGNOSTIC_ROOT/reports/stability" --expected-commit "$ZK682_EXPECTED_COMMIT" 2>&1 | tee "$ZK682_DIAGNOSTIC_ROOT/stability-producer.log"
+          result=${PIPESTATUS[0]}
+          printf '%s\n' "$result" > "$ZK682_DIAGNOSTIC_ROOT/stability-exit-code.txt"
+          exit "$result"
+      - name: Validate separate diagnostic completeness
+        id: diagnostics
+        continue-on-error: true
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import fs from "node:fs";
+          import path from "node:path";
+          import assert from "node:assert/strict";
+          const root = process.env.ZK682_DIAGNOSTIC_ROOT;
+          const read = (...parts) => JSON.parse(fs.readFileSync(path.join(root, ...parts), "utf8"));
+          const startup = read("startup", "startup-summary.json");
+          assert.equal(startup.diagnosticOnly, true);
+          assert.equal(startup.commit, process.env.ZK682_EXPECTED_COMMIT);
+          assert.equal(startup.profileWritten, true);
+          assert.ok(startup.cpu.phases.fixture.sampledMs > 0);
+          assert.ok(startup.network.retainedEvents <= 4000);
+          assert.ok(!fs.existsSync(path.join(root, "startup", "startup-error.json")));
+          const profilePath = path.join(root, "startup", "startup.cpuprofile");
+          assert.equal(fs.statSync(profilePath).size, startup.profileBytes);
+          assert.ok(startup.profileBytes > 0 && startup.profileBytes <= 20 * 1024 * 1024);
+          const profile = read("startup", "startup.cpuprofile");
+          assert.ok(profile.samples.length > 0);
+          const heap = read("heap", "heap-diagnostics.json");
+          assert.equal(heap.diagnosticOnly, true);
+          assert.equal(heap.candidateCommit, process.env.ZK682_EXPECTED_COMMIT);
+          assert.equal(heap.complete, true);
+          assert.equal(heap.errorCount, 0);
+          assert.ok(Date.parse(heap.startedAt) >= Date.parse(fs.readFileSync(path.join(root, "started-at.txt"), "utf8")));
+          assert.ok(!fs.readFileSync(path.join(root, "stability-producer.log"), "utf8").includes("[zk682-heap-diagnostics]"));
+          assert.equal(heap.samples.length, 13);
+          assert.deepEqual(heap.samples.map(sample => sample.cycle), Array.from({length: 13}, (_, index) => index));
+          assert.ok(heap.captures.length >= 2 && heap.captures.length <= 3);
+          for (const reason of ["baseline", "end"]) assert.ok(heap.captures.some(capture => capture.reasons.includes(reason)));
+          for (const capture of heap.captures) {
+            assert.equal(capture.complete, true);
+            assert.equal(capture.error, null);
+            assert.equal(path.basename(capture.file), capture.file);
+            const bytes = fs.statSync(path.join(root, "heap", capture.file)).size;
+            assert.equal(bytes, capture.bytesWritten);
+            assert.ok(bytes > 0 && bytes <= 256 * 1024 * 1024);
+          }
+          console.log("Diagnostic artifacts complete; original producer outcomes remain separate.");
+          JS
+      - name: Record diagnostic provenance and producer outcomes
+        if: always()
+        env:
+          PERF_OUTCOME: ${{ steps.performance.outcome }}
+          STABILITY_OUTCOME: ${{ steps.stability.outcome }}
+          DIAGNOSTIC_OUTCOME: ${{ steps.diagnostics.outcome }}
+        run: |
+          node --input-type=module <<'JS'
+          import fs from "node:fs";
+          import path from "node:path";
+          const root = process.env.ZK682_DIAGNOSTIC_ROOT;
+          fs.mkdirSync(root, { recursive: true });
+          const readExit = (name) => {
+            const file = path.join(root, `${name}-exit-code.txt`);
+            return fs.existsSync(file) ? Number(fs.readFileSync(file, "utf8").trim()) : null;
+          };
+          fs.writeFileSync(path.join(root, "provenance.json"), JSON.stringify({
+            diagnosticOnly: true,
+            certificationEligible: false,
+            candidateCommit: process.env.ZK682_EXPECTED_COMMIT,
+            applicationBaseline: process.env.ZK682_DIAGNOSTIC_BASELINE,
+            platform: process.platform,
+            architecture: process.arch,
+            nodeVersion: process.version,
+            performance: { outcome: process.env.PERF_OUTCOME, exitCode: readExit("performance") },
+            stability: { outcome: process.env.STABILITY_OUTCOME, exitCode: readExit("stability") },
+            diagnostics: { outcome: process.env.DIAGNOSTIC_OUTCOME },
+            limitation: "Profiling and heap snapshots perturb execution; use uninstrumented exact-SHA certification for acceptance."
+          }, null, 2));
+          JS
+      - name: Preserve separate diagnostics and original report outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zk682-hosted-diagnostics-${{ github.sha }}
+          path: ${{ runner.temp }}/zk682-hosted-diagnostics
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve failing producer exit status
+        if: always()
+        env:
+          PERF_OUTCOME: ${{ steps.performance.outcome }}
+          STABILITY_OUTCOME: ${{ steps.stability.outcome }}
+          DIAGNOSTIC_OUTCOME: ${{ steps.diagnostics.outcome }}
+        run: |
+          test "$PERF_OUTCOME" = success
+          test "$STABILITY_OUTCOME" = success
+          test "$DIAGNOSTIC_OUTCOME" = success

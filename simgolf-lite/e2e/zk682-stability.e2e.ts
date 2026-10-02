@@ -1,6 +1,7 @@
 import { expect, test, type CDPSession, type Locator, type Page } from "@playwright/test";
-import { mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { closeSync, openSync, writeSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import {
   ZK682_STABILITY_THRESHOLDS,
   createZk682StabilityReport,
@@ -17,6 +18,136 @@ type Measured = {
 };
 
 const timingCleanupSamples: ReturnType<typeof clearReactComponentTimings>[] = [];
+
+// Opt-in snapshots may trigger GC and perturb later samples. Uninstrumented
+// stability evidence remains authoritative for release acceptance.
+async function createHeapDiagnostics(outputDirectory: string, candidateCommit: string) {
+  const requested = process.env.ZK682_DIAGNOSTICS_DIR;
+  if (!requested) return null;
+  const physicalPath = async (path: string): Promise<string> => {
+    try { return await realpath(path); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const parent = dirname(path);
+      if (parent === path) throw error;
+      return resolve(await physicalPath(parent), relative(parent, path));
+    }
+  };
+  const fixedCanonical = resolve("artifacts/zk682/raw");
+  const canonicalDirectories = [
+    resolve(outputDirectory), fixedCanonical,
+    await physicalPath(resolve(outputDirectory)), await physicalPath(fixedCanonical),
+  ];
+  const assertOutsideCanonical = (directory: string) => {
+    for (const canonicalDirectory of canonicalDirectories) {
+      const withinCanonical = relative(canonicalDirectory, directory);
+      if (withinCanonical === "" || (withinCanonical.split(/[\\/]/)[0] !== ".." && !isAbsolute(withinCanonical))) {
+        throw new Error("ZK682_DIAGNOSTICS_DIR must be outside active and fixed canonical stability output");
+      }
+    }
+  };
+  assertOutsideCanonical(resolve(requested));
+  assertOutsideCanonical(await physicalPath(resolve(requested)));
+  await mkdir(requested, { recursive: true });
+  const directory = await realpath(requested);
+  assertOutsideCanonical(directory);
+  const maxBytes = 256 * 1024 * 1024;
+  const startedAt = new Date().toISOString();
+  const errors: string[] = [];
+  let errorCount = 0;
+  const diagnosticFailure = (error: unknown) => {
+    errorCount++;
+    if (errors.length < 16) errors.push(String(error));
+    console.warn("[zk682-heap-diagnostics]", JSON.stringify({ complete: false, candidateCommit, startedAt, error: String(error) }));
+  };
+  const manifestPath = resolve(directory, "heap-diagnostics.json");
+  type Capture = { cycle: number; reasons: string[]; file: string; bytesWritten: number; complete: boolean; error: string | null };
+  const captures: Capture[] = [];
+  const samples: Array<{ cycle: number; growthBytes: number; measured: Measured; timingCleanup: ReturnType<typeof clearReactComponentTimings> }> = [];
+  let capturedExceedance = false;
+  const persist = async () => {
+    try {
+      await writeFile(`${manifestPath}.tmp`, `${JSON.stringify({
+        diagnosticOnly: true,
+        acceptanceEvidence: "Use the uninstrumented candidate run; snapshots may perturb later samples.",
+        candidateCommit, startedAt,
+        limits: { snapshots: 3, bytesPerSnapshot: maxBytes, samples: 13 },
+        complete: errorCount === 0 && samples.length === 13
+          && captures.some(capture => capture.reasons.includes("baseline") && capture.complete)
+          && captures.some(capture => capture.reasons.includes("end") && capture.complete)
+          && captures.every(capture => capture.complete),
+        errors, errorCount, captures, samples,
+      }, null, 2)}\n`);
+      await rename(`${manifestPath}.tmp`, manifestPath);
+    } catch (error) {
+      diagnosticFailure(error);
+      // Do not leave a previous run's complete manifest looking current after
+      // persistence fails. Root validates freshness and diagnostic log failures.
+      await rm(manifestPath, { force: true }).catch(diagnosticFailure);
+      await rm(`${manifestPath}.tmp`, { force: true }).catch(diagnosticFailure);
+    }
+  };
+  await persist();
+  return async (cdp: CDPSession, cycle: number, measured: Measured, baselineBytes: number) => {
+    try {
+      if (samples.length >= 13) {
+        diagnosticFailure("Bounded heap diagnostic sample count exceeded");
+        await persist();
+        return;
+      }
+      const growthBytes = measured.heap.runtimeUsedBytes - baselineBytes;
+      samples.push({ cycle, growthBytes, measured, timingCleanup: timingCleanupSamples.at(-1)! });
+      const reasons: string[] = [];
+      if (cycle === 0) reasons.push("baseline");
+      if (!capturedExceedance && growthBytes > ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"].resources.heap.maxGrowthBytes) {
+        capturedExceedance = true;
+        reasons.push("first-maximum-growth-exceedance");
+      }
+      if (cycle === ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"].minimumSaveLoads) reasons.push("end");
+      // Persist the original post-GC sample before potentially perturbing capture.
+      await persist();
+      if (!reasons.length || captures.length >= 3) return;
+      const capture: Capture = { cycle, reasons, file: `cycle-${cycle}.heapsnapshot`, bytesWritten: 0, complete: false, error: null };
+      captures.push(capture);
+      let descriptor: number | undefined;
+      const chunk = ({ chunk: text }: { chunk: string }) => {
+        if (capture.error || descriptor === undefined) return;
+        try {
+          const bytes = Buffer.from(text, "utf8");
+          if (capture.bytesWritten + bytes.length > maxBytes) {
+            capture.error = "Snapshot exceeded the 256 MiB cap; diagnostic file is incomplete";
+            return;
+          }
+          // Drain each chunk synchronously: no retained chunk array or unbounded
+          // pending-write/backpressure queue. The browser heap is never copied here.
+          let offset = 0;
+          while (offset < bytes.length) {
+            const written = writeSync(descriptor, bytes, offset, bytes.length - offset);
+            if (written <= 0) throw new Error("Heap snapshot write made no progress");
+            offset += written;
+          }
+          capture.bytesWritten += bytes.length;
+        } catch (error) { capture.error = String(error); }
+      };
+      try {
+        descriptor = openSync(resolve(directory, capture.file), "wx");
+        cdp.on("HeapProfiler.addHeapSnapshotChunk", chunk);
+        await cdp.send("HeapProfiler.takeHeapSnapshot", { reportProgress: false });
+        if (capture.bytesWritten === 0 && capture.error === null) capture.error = "Heap snapshot returned no data";
+        capture.complete = capture.error === null;
+      } catch (error) { capture.error = String(error); }
+      finally {
+        try { cdp.off("HeapProfiler.addHeapSnapshotChunk", chunk); }
+        catch (error) { capture.error = String(error); capture.complete = false; }
+        if (descriptor !== undefined) {
+          try { closeSync(descriptor); } catch (error) { capture.error = String(error); capture.complete = false; }
+        }
+      }
+      if (!capture.complete) diagnosticFailure(capture.error ?? "Heap snapshot capture is incomplete");
+      await persist();
+    } catch (error) { diagnosticFailure(error); await persist(); }
+  };
+}
 
 async function measure(page: Page, cdp: CDPSession): Promise<Measured> {
   timingCleanupSamples.push(await page.evaluate(clearReactComponentTimings));
@@ -124,6 +255,11 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   expect(expectedCommit, "ZK682_EXPECTED_COMMIT must be a full candidate SHA").toMatch(/^[0-9a-f]{40}$/);
   const outputDirectory = resolve(process.env.COURSECRAFT_ZK682_STABILITY_DIR ?? testInfo.outputDir);
   await mkdir(outputDirectory, { recursive: true });
+  let recordHeapDiagnostic: Awaited<ReturnType<typeof createHeapDiagnostics>> = null;
+  try { recordHeapDiagnostic = await createHeapDiagnostics(outputDirectory, expectedCommit!); }
+  catch (error) {
+    console.warn("[zk682-heap-diagnostics]", JSON.stringify({ complete: false, candidateCommit: expectedCommit, error: String(error) }));
+  }
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
   page.on("console", (message) => { if (message.type() === "error") errors.push(`console.error: ${message.text()}`); });
@@ -159,9 +295,11 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   const savedCourseHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
   const savedState = await canonicalState(page);
   const saveLoadSamples = [{ cycle: 0, slotId: "quick-save", loaded: false, courseHash: savedCourseHash, state: savedState, ...await measure(page, cdp) }];
+  await recordHeapDiagnostic?.(cdp, 0, saveLoadSamples[0], saveLoadSamples[0].heap.runtimeUsedBytes);
   for (let cycle = 1; cycle <= ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"].minimumSaveLoads; cycle += 1) {
     await loadQuickSave(page);
     saveLoadSamples.push({ cycle, slotId: "quick-save", loaded: true, courseHash: await page.evaluate(() => window.__coursecraftTest!.state().courseHash), state: await canonicalState(page), ...await measure(page, cdp) });
+    await recordHeapDiagnostic?.(cdp, cycle, saveLoadSamples.at(-1)!, saveLoadSamples[0].heap.runtimeUsedBytes);
   }
   const saveLoadReport = createZk682StabilityReport({
     gate: "save-load-resource-stability",
