@@ -181,11 +181,14 @@ function properSegmentIntersection(
 ): boolean {
   const abC = signedCross(a, b, c);
   const abD = signedCross(a, b, d);
+  // Endpoints must lie strictly on opposite sides of both segments. Reject
+  // on the first segment before evaluating the other two determinants.
+  if (!(Math.abs(abC) > HAZARD_EPSILON && Math.abs(abD) > HAZARD_EPSILON &&
+    (abC > 0) !== (abD > 0))) return false;
   const cdA = signedCross(c, d, a);
   const cdB = signedCross(c, d, b);
-  return Math.abs(abC) > HAZARD_EPSILON && Math.abs(abD) > HAZARD_EPSILON &&
-    Math.abs(cdA) > HAZARD_EPSILON && Math.abs(cdB) > HAZARD_EPSILON &&
-    (abC > 0) !== (abD > 0) && (cdA > 0) !== (cdB > 0);
+  return Math.abs(cdA) > HAZARD_EPSILON && Math.abs(cdB) > HAZARD_EPSILON &&
+    (cdA > 0) !== (cdB > 0);
 }
 
 function hasProperSelfIntersection(ring: readonly HazardBankPoint[]): boolean {
