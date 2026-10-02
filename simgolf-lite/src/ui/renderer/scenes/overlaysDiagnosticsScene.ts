@@ -14,10 +14,10 @@ import type {
   Terrain,
 } from "../../../game/models/types";
 import type { SeasonalVisualState } from "../../../game/presentation/seasonalVisualState";
-import { buildBunkerVisualRings, classifyBunkerVisualType } from "../../../game/render/bunkerShapes";
-import { authoredBunkerRings, bunkerDisplayPoint, cachedBunkerPresentation } from "../../../game/render/bunkerPresentation";
+import { bunkerDisplayPoint, cachedBunkerPresentation } from "../../../game/render/bunkerPresentation";
+import { createSandStrokePreviewResolver, type SandStrokePreviewComponent } from "../../../game/render/bunkerStrokePreview";
 import { TILE_H, TILE_W, worldToIso, type IsoRotation } from "../../../game/render/iso";
-import { buildLandscapeComponents, landscapeTopologyKey } from "../../../game/render/landscapeGeometry";
+import { buildLandscapeComponents } from "../../../game/render/landscapeGeometry";
 import { PerfWindow } from "../../../game/render/perfStats";
 import { seasonalTerrainTreatment } from "../../../game/render/seasonalTerrainPresentation";
 import type { RenderSnapshot } from "../RenderSnapshot";
@@ -43,6 +43,9 @@ export interface TerrainPreviewRenderDiagnostics {
   materials: Terrain[];
   colors: Partial<Record<Terrain, number>>;
   authoredBunkerRings?: Array<Array<{ x: number; y: number }>>;
+  bunkerContours?: SandStrokePreviewComponent[];
+  chargedCells?: number[];
+  acceptedCells?: number[];
 }
 
 export interface OverlayTickInput {
@@ -125,6 +128,7 @@ export function createOverlaysDiagnosticsSceneSystem(
   let hover: Point | null = null;
   let dirty = true;
   let previewDiagnostics: TerrainPreviewRenderDiagnostics | null = null;
+  const sandPreviewResolver = createSandStrokePreviewResolver();
   const perf = {
     win: new PerfWindow(180),
     enabled: false,
@@ -226,6 +230,8 @@ export function createOverlaysDiagnosticsSceneSystem(
       terrainStrokePreview,
       selectedTerrain,
     } = input;
+    if (!terrainStrokePreview || terrainStrokePreview.previewKind !== "stroke"
+      || terrainStrokePreview.acceptedTiles.length === 0 || selectedTerrain !== "sand") sandPreviewResolver.clear();
     const highlight = hoverHighlight;
     highlight.clear();
     if (hover) {
@@ -307,7 +313,7 @@ export function createOverlaysDiagnosticsSceneSystem(
             reducedMotion: input.reducedMotion,
           }).color
           : themedColors[terrain];
-        const previewTiles = terrainStrokePreview.previewKind === "surface-edit"
+        const previewTiles = terrainStrokePreview.previewKind === "surface-edit" || selectedTerrain === "sand"
           ? terrainStrokePreview.tiles
           : terrainStrokePreview.acceptedTiles;
         const previewMaterials = [...new Set(previewTiles.map((tile) => tile.terrain))];
@@ -337,8 +343,26 @@ export function createOverlaysDiagnosticsSceneSystem(
             "crosshatch",
           );
         }
+        if (terrainStrokePreview.previewKind === "stroke" && selectedTerrain === "sand"
+          && terrainStrokePreview.acceptedTiles.length > 0) {
+          const components = sandPreviewResolver.resolve({ course, effectiveTiles, preview: terrainStrokePreview, quality: input.graphicsQuality });
+          if (import.meta.env.MODE === "e2e") {
+            previewDiagnostics.bunkerContours = components;
+            previewDiagnostics.chargedCells = terrainStrokePreview.tiles.map((tile) => tile.y * course.width + tile.x);
+            previewDiagnostics.acceptedCells = terrainStrokePreview.acceptedTiles.map((tile) => tile.y * course.width + tile.x);
+          }
+          const authored = components.find((component) => component.authored);
+          if (authored) previewDiagnostics.authoredBunkerRings = authored.boundary;
+          for (const component of components) for (const ring of component.boundary) {
+            const points = ring.map((point) => worldToIso(point.x, point.y, surfaceHeightAt(point.x, point.y), rotation));
+            if (points.length < 3) continue;
+            highlight.poly(points.flatMap((point) => [point.x, point.y])).fill({ color: terrainStrokePreview.affordable ? previewColor("sand") : 0x8f3528, alpha: .16 });
+            highlight.stroke({ width: 2.4, color: terrainStrokePreview.affordable ? 0xffffff : 0xffd7c7, alpha: .88, join: "round", cap: "round" });
+          }
+        }
         if (
           terrainStrokePreview.previewKind === "stroke"
+          && selectedTerrain !== "sand"
           && input.graphicsQuality !== "low"
           && selectedTerrain
           && terrainStrokePreview.acceptedTiles.length > 0
@@ -370,24 +394,7 @@ export function createOverlaysDiagnosticsSceneSystem(
             return accepted.has(`${x},${y}`);
           }));
           for (const component of previewComponents) {
-            const bunkerType = selectedTerrain === "sand"
-              ? classifyBunkerVisualType(component.cells, localTiles, localWidth, localHeight)
-              : null;
-            const authored = bunkerType && terrainStrokePreview.surfaceFeature
-              ? authoredBunkerRings(
-                component.cells.map((cell) => (Math.floor(cell / localWidth) + minY) * course.width + cell % localWidth + minX),
-                [...(course.surfaceIntent?.features ?? []), terrainStrokePreview.surfaceFeature],
-                course.width, course.height,
-              )
-              : null;
-            if (authored && previewDiagnostics) previewDiagnostics.authoredBunkerRings = authored;
-            const rings = authored?.map((ring) => ring.map((point) => ({ x: point.x - minX, y: point.y - minY }))) ?? (bunkerType
-              ? buildBunkerVisualRings(
-                component.rings.map((ring) => ring.map((point) => ({ x: point.x + minX, y: point.y + minY }))),
-                landscapeTopologyKey("sand", component.cells.map((cell) => (Math.floor(cell / localWidth) + minY) * course.width + cell % localWidth + minX), course.width, course.height),
-                component.cells.length, bunkerType,
-              ).map((ring) => ring.map((point) => ({ x: point.x - minX, y: point.y - minY })))
-              : component.rings);
+            const rings = component.rings;
             for (const ring of rings) {
               const points = ring.map((point) => {
                 const worldX = point.x + minX;

@@ -69,6 +69,9 @@ interface Window {
       materials: import("./game/models/types").Terrain[];
       colors: Partial<Record<import("./game/models/types").Terrain, number>>;
       authoredBunkerRings?: Array<Array<{ x: number; y: number }>>;
+      bunkerContours?: import("./game/render/bunkerStrokePreview").SandStrokePreviewComponent[];
+      chargedCells?: number[];
+      acceptedCells?: number[];
     } | null;
     routeOverlay(): {
       geometrySamples: number;
