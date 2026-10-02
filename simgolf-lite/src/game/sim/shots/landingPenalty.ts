@@ -3,6 +3,7 @@ import type { Point } from "../../models/types";
 import { BALANCE } from "../../balance/balanceConfig";
 import { getBiomeDefinition } from "../../models/biomes";
 import { courseWithEffectiveSurfaces } from "../../conditions/surfaceCare";
+import { readScoringTile } from "../scoringTileReads";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -10,7 +11,7 @@ function clamp(x: number, a: number, b: number) {
 
 function tileAt(course: Course, p: Point): Terrain {
   if (p.x < 0 || p.y < 0 || p.x >= course.width || p.y >= course.height) return "rough";
-  return course.tiles[p.y * course.width + p.x];
+  return readScoringTile(course.tiles, p.y * course.width + p.x);
 }
 
 export interface LandingPenaltyResult {
@@ -65,6 +66,5 @@ export function computeExpectedLandingPenalty(args: {
 
   return { expectedPenalty: expected, probs };
 }
-
 
 

@@ -3,6 +3,7 @@ import type { GolferProfile } from "../golferProfiles";
 import { evalShotExpectedCost } from "./evalShotExpectedCost";
 import { BALANCE } from "../../balance/balanceConfig";
 import { courseWithEffectiveSurfaces } from "../../conditions/surfaceCare";
+import { readScoringTile } from "../scoringTileReads";
 import type { ShotSlopeContext } from "../../models/shotSlope";
 
 export interface ShotPlanStep {
@@ -32,7 +33,7 @@ function key(p: Point) {
 
 function tileAt(course: Course, p: Point): Terrain {
   if (p.x < 0 || p.y < 0 || p.x >= course.width || p.y >= course.height) return "rough";
-  return course.tiles[p.y * course.width + p.x];
+  return readScoringTile(course.tiles, p.y * course.width + p.x);
 }
 
 function inBounds(course: Course, p: Point) {
@@ -172,6 +173,7 @@ export function solveShotsToGreen(args: {
     const cx = curK % 10_000;
     const cy = Math.floor(curK / 10_000);
     const from: Point = { x: cx, y: cy };
+
 
     for (const club of golfer.clubs) {
       const maxTiles = Math.max(1, Math.floor((club.carryYards / golfer.yardsPerTile) * 1.05));

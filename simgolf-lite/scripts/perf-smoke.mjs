@@ -23,6 +23,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { loadBiomeKeys } from "./biome-registry.mjs";
+import { DEFAULT_COLD_STARTUP_BUDGET_MS, DEFAULT_FIXTURE_LOAD_BUDGET_MS, readinessBudgetValidation, rendererBudgetValidation } from "./perf-readiness-budget.mjs";
 
 const WORK_BUDGET_MS = Number(process.env.PERF_WORK_BUDGET_MS || 8);
 const BUDGET_MS = Number(process.env.PERF_BUDGET_MS || 33);
@@ -32,7 +33,8 @@ const MEASURE_S = Number(process.env.PERF_MEASURE_S || 20);
 const BIOME_KEYS = loadBiomeKeys();
 const PERF_THEME = BIOME_KEYS.includes(process.env.PERF_THEME) ? process.env.PERF_THEME : BIOME_KEYS[0];
 const PERF_FIXTURE = process.env.PERF_FIXTURE === "m27" ? "m27Fixture" : "perfFixture";
-const STARTUP_BUDGET_MS = Number(process.env.PERF_STARTUP_BUDGET_MS || 5000);
+const STARTUP_BUDGET_MS = Number(process.env.PERF_STARTUP_BUDGET_MS || DEFAULT_COLD_STARTUP_BUDGET_MS);
+const FIXTURE_LOAD_BUDGET_MS = Number(process.env.PERF_FIXTURE_LOAD_BUDGET_MS || DEFAULT_FIXTURE_LOAD_BUDGET_MS);
 const FIXTURE_READY_TIMEOUT_MS = Number(process.env.PERF_FIXTURE_READY_TIMEOUT_MS || 120_000);
 const WARMUP_S = 8;
 const OUTPUT_PATH = process.env.PERF_OUTPUT_PATH
@@ -180,23 +182,29 @@ if (!perf) {
 }
 console.log("[perf-smoke] result:", JSON.stringify(perf, null, 2));
 console.log(`[perf-smoke] cold startup ${coldStartupMs.toFixed(0)}ms; ${PERF_FIXTURE} load ${fixtureLoadMs.toFixed(0)}ms`);
-let failed = false;
-if (coldStartupMs > STARTUP_BUDGET_MS) {
+const readiness = readinessBudgetValidation({ coldStartupMs, fixtureLoadMs, startupBudgetMs: STARTUP_BUDGET_MS, fixtureBudgetMs: FIXTURE_LOAD_BUDGET_MS });
+const rendererValidation = rendererBudgetValidation({ workMs: perf.workMs, p95Ms: perf.p95Ms, workBudgetMs: WORK_BUDGET_MS, frameBudgetMs: BUDGET_MS, assertFrame: ASSERT_FRAME });
+let failed = !readiness.passed || !rendererValidation.passed;
+if (!readiness.coldStartupWithinBudget) {
   console.error(`[perf-smoke] FAIL: cold startup ${coldStartupMs.toFixed(0)}ms > budget ${STARTUP_BUDGET_MS}ms`);
   failed = true;
 }
-if (perf.workMs > WORK_BUDGET_MS) {
-  console.error(`[perf-smoke] FAIL: renderer tick work ${perf.workMs.toFixed(2)}ms > budget ${WORK_BUDGET_MS}ms`);
+if (!readiness.fixtureLoadWithinBudget) {
+  console.error(`[perf-smoke] FAIL: fixture load ${fixtureLoadMs.toFixed(0)}ms > budget ${FIXTURE_LOAD_BUDGET_MS}ms`);
+}
+if (!rendererValidation.rendererWorkWithinBudget) {
+  console.error(`[perf-smoke] FAIL: renderer tick work ${Number.isFinite(perf.workMs) ? perf.workMs.toFixed(2) : "invalid"}ms violates budget ${WORK_BUDGET_MS}ms`);
   failed = true;
 }
-if (ASSERT_FRAME && perf.p95Ms > BUDGET_MS) {
-  console.error(`[perf-smoke] FAIL: p95 frame time ${perf.p95Ms.toFixed(2)}ms > budget ${BUDGET_MS}ms`);
+if (ASSERT_FRAME && !rendererValidation.frameWithinBudget) {
+  console.error(`[perf-smoke] FAIL: p95 frame time ${Number.isFinite(perf.p95Ms) ? perf.p95Ms.toFixed(2) : "invalid"}ms violates budget ${BUDGET_MS}ms`);
   failed = true;
 }
 const gateValidation = {
-  coldStartupWithinBudget: coldStartupMs <= STARTUP_BUDGET_MS,
-  rendererWorkWithinBudget: perf.workMs <= WORK_BUDGET_MS,
-  frameWithinBudget: ASSERT_FRAME ? perf.p95Ms <= BUDGET_MS : null,
+  coldStartupWithinBudget: readiness.coldStartupWithinBudget,
+  fixtureLoadWithinBudget: readiness.fixtureLoadWithinBudget,
+  rendererWorkWithinBudget: rendererValidation.rendererWorkWithinBudget,
+  frameWithinBudget: rendererValidation.frameWithinBudget,
   passed: !failed,
 };
 const evidence = {
@@ -216,6 +224,7 @@ const evidence = {
     budgets: {
       rendererWorkMilliseconds: WORK_BUDGET_MS,
       coldStartupMilliseconds: STARTUP_BUDGET_MS,
+      fixtureLoadMilliseconds: FIXTURE_LOAD_BUDGET_MS,
       frameMilliseconds: BUDGET_MS,
     },
   },
