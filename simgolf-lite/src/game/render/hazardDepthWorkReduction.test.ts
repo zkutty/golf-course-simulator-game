@@ -15,7 +15,9 @@ function planDigest(value: unknown): string {
     return { ieee754: bytes.toString("hex") };
   })).digest("hex");
 }
-// Captured from unmodified d608498 before predicate changes.
+// Captured from unmodified d608498 before predicate changes. The dyadic
+// pathological corpus was also verified against that original implementation
+// on Node22 Linux/x64 and Node26 Darwin/arm64 before updating its golden.
 const ORIGINAL: Record<string, string> = {
   "m27-parkland-medium-low": "0490d705f2625166cff56079ac160653691a5c4694c7994a1228cc1fff84db20",
   "m27-parkland-high": "468e61be5d2b6a6c6387e432b3a0b76d1d24e42adfb6d3417d87bb7fc3a7273d",
@@ -24,7 +26,7 @@ const ORIGINAL: Record<string, string> = {
   "m27-desert-medium-low": "c177253f3522ffaacdc571147782e35cd5e02a78489c44813596fb3ae6480fa9",
   "m27-desert-high": "fbd68228d9dab54034bf75667bda52a635d2ecff1ab30eb0c1437f8d71631e60",
   "m19": "a3de83e65055dbef5f0f80d466d66967bd3853521ec97f9122f91f06b7a9479e",
-  "pathological": "3fb1116d3c62f7a2f887ec56fce0900a93c57c92190848ef2db9e08ab425a9ab"
+  "pathological": "5ddb548e5ea201ed64aa9ea52a190dadac8b6054f9676b85e6e19db1276f9e49"
 };
 function originalParity(name: string, value: unknown): void {
   const digest = planDigest(value);
@@ -81,11 +83,17 @@ describe("original hazard plan parity", () => {
     ];
     // Deterministic dense/concave/crossing variants exercise every scale and
     // the original decision ordering without relying on generated courses.
+    // Dyadic square coordinates avoid platform-dependent sin/cos inputs.
     for (let seed = 1; seed <= 80; seed++) {
-      const ring = Array.from({ length: 8 + seed % 25 }, (_, i) => {
-        const angle = i * Math.PI * 2 / (8 + seed % 25);
-        const radius = (i % 2 ? 1 : .07 + seed % 9 / 10) * (seed % 7 + .01);
-        return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+      const perSide = 2 ** (1 + seed % 3);
+      const ring = Array.from({ length: perSide * 4 }, (_, i) => {
+        const side = Math.floor(i / perSide);
+        const along = (i % perSide) / perSide * 2 - 1;
+        const square = side === 0 ? { x: 1, y: along }
+          : side === 1 ? { x: -along, y: 1 }
+            : side === 2 ? { x: -1, y: -along } : { x: along, y: -1 };
+        const radius = (i % 2 ? 1 : (1 + seed % 9) / 16) * (seed % 7 + 1 / 8);
+        return { x: square.x * radius, y: square.y * radius };
       });
       rings.push(ring);
     }
