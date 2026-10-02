@@ -1,0 +1,120 @@
+name: ZK-682 targeted candidate checks
+run-name: Targeted candidate checks for d608498502b766034841a314c991e8bc031f8404
+on:
+  push:
+    branches: [codex/hosted-candidate-probe]
+permissions:
+  contents: read
+defaults:
+  run:
+    working-directory: simgolf-lite
+jobs:
+  candidate-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ZK682_EXPECTED_COMMIT: d608498502b766034841a314c991e8bc031f8404
+      VITE_COMMIT_SHA: d608498502b766034841a314c991e8bc031f8404
+    steps:
+      - name: Checkout exact release candidate
+        uses: actions/checkout@v4
+        with:
+          ref: d608498502b766034841a314c991e8bc031f8404
+          fetch-depth: 1
+      - name: Verify immutable application source
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          [[ "$ZK682_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$ZK682_EXPECTED_COMMIT"
+          test -z "$(git status --porcelain)"
+          printf 'ZK682_PROBE_ROOT=%s/zk682-candidate-probe\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/zk682-candidate-probe/stability"
+          git rev-parse HEAD > "$RUNNER_TEMP/zk682-candidate-probe/checked-out-commit.txt"
+          git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/zk682-candidate-probe/checked-out-tree.txt"
+          git status --porcelain > "$RUNNER_TEMP/zk682-candidate-probe/initial-source-status.txt"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build exact candidate
+        run: npm run build
+      - name: Run original startup and fixture gates
+        id: performance
+        continue-on-error: true
+        env:
+          PERF_FIXTURE: m27
+          PERF_THEME: parkland
+          PERF_FIXTURE_READY_TIMEOUT_MS: "300000"
+          PERF_OUTPUT_PATH: ${{ runner.temp }}/zk682-candidate-probe/performance.json
+        run: |
+          set +e
+          npm run test:perf 2>&1 | tee "$ZK682_PROBE_ROOT/performance.log"
+          result=${PIPESTATUS[0]}
+          printf '%s\n' "$result" > "$ZK682_PROBE_ROOT/performance-exit-code.txt"
+          exit "$result"
+      - name: Run original supplemental stability gates
+        id: stability
+        continue-on-error: true
+        if: always()
+        run: |
+          set +e
+          npm run test:stability -- --output-dir "$ZK682_PROBE_ROOT/stability" --expected-commit "$ZK682_EXPECTED_COMMIT" 2>&1 | tee "$ZK682_PROBE_ROOT/stability.log"
+          result=${PIPESTATUS[0]}
+          printf '%s\n' "$result" > "$ZK682_PROBE_ROOT/stability-exit-code.txt"
+          exit "$result"
+      - name: Record exact source and original producer outcomes
+        if: always()
+        env:
+          WORKFLOW_COMMIT: ${{ github.sha }}
+          PERF_OUTCOME: ${{ steps.performance.outcome }}
+          STABILITY_OUTCOME: ${{ steps.stability.outcome }}
+        run: |
+          node --input-type=module <<'JS'
+          import fs from "node:fs";
+          import path from "node:path";
+          import assert from "node:assert/strict";
+          import { createHash } from "node:crypto";
+          const root = process.env.ZK682_PROBE_ROOT;
+          fs.mkdirSync(root, {recursive:true});
+          const checkedOutCommit = fs.readFileSync(path.join(root,"checked-out-commit.txt"),"utf8").trim();
+          const checkedOutTree = fs.readFileSync(path.join(root,"checked-out-tree.txt"),"utf8").trim();
+          const initialSourceStatus = fs.readFileSync(path.join(root,"initial-source-status.txt"),"utf8").trim();
+          assert.equal(checkedOutCommit,process.env.ZK682_EXPECTED_COMMIT);
+          assert.match(checkedOutTree,/^[0-9a-f]{40}$/);
+          assert.equal(initialSourceStatus,"");
+          const dependencyLockSha256 = createHash("sha256").update(fs.readFileSync("package-lock.json")).digest("hex");
+          const readExit = name => {
+            const file=path.join(root,`${name}-exit-code.txt`);
+            return fs.existsSync(file) ? Number(fs.readFileSync(file,"utf8").trim()) : null;
+          };
+          fs.writeFileSync(path.join(root,"provenance.json"),JSON.stringify({
+            candidateCommit:process.env.ZK682_EXPECTED_COMMIT,
+            checkedOutCommit,checkedOutTree,initialSourceStatus,dependencyLockSha256,
+            workflowCommit:process.env.WORKFLOW_COMMIT,
+            platform:process.platform,architecture:process.arch,nodeVersion:process.version,
+            instrumented:false,fullCertification:false,
+            performance:{outcome:process.env.PERF_OUTCOME,exitCode:readExit("performance")},
+            stability:{outcome:process.env.STABILITY_OUTCOME,exitCode:readExit("stability")},
+            limitation:"Targeted original producer checks; full exact-candidate certification and physical acceptance remain required."
+          },null,2));
+          JS
+      - name: Preserve original reports and outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zk682-targeted-candidate-d608498502b766034841a314c991e8bc031f8404
+          path: ${{ runner.temp }}/zk682-candidate-probe
+          if-no-files-found: error
+          retention-days: 30
+      - name: Require both original producer gates
+        if: always()
+        env:
+          PERF_OUTCOME: ${{ steps.performance.outcome }}
+          STABILITY_OUTCOME: ${{ steps.stability.outcome }}
+        run: |
+          test "$PERF_OUTCOME" = success
+          test "$STABILITY_OUTCOME" = success
