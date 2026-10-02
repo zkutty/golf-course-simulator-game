@@ -293,7 +293,10 @@ export function useLiveSimulation(args: {
   const onRoundRef = useRef(onRoundCompleted);
   const skipNextReconcileRef = useRef(false);
   const operationPolicyRef = useRef({ tutorialThreeHolePreview: publicThreeHoleOperation });
-  const courseCanReceiveArrivalsRef = useRef(courseCanReceiveLiveArrivals(course, { tutorialThreeHolePreview: publicThreeHoleOperation }));
+  const courseCanReceiveArrivalsRef = useRef<boolean | null>(null);
+  if (courseCanReceiveArrivalsRef.current === null) {
+    courseCanReceiveArrivalsRef.current = courseCanReceiveLiveArrivals(course, { tutorialThreeHolePreview: publicThreeHoleOperation });
+  }
 
   const buildRenderData = useCallback((live: LiveState) => {
     renderBufferIndexRef.current = renderBufferIndexRef.current === 0 ? 1 : 0;
@@ -495,7 +498,7 @@ export function useLiveSimulation(args: {
     // clock at the clubhouse while the player authors a valid layout, even if
     // their preferred default speed is 1x. Once any round has started, course
     // edits never freeze or rewind that real day.
-    if (shouldHoldUnopenedLiveDay(live, courseCanReceiveArrivalsRef.current)) {
+    if (shouldHoldUnopenedLiveDay(live, courseCanReceiveArrivalsRef.current!)) {
       clockRemainderRef.current = 0;
       return;
     }
