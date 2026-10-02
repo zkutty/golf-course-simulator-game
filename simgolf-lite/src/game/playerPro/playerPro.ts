@@ -1,3 +1,4 @@
+import { normalizeBunkerPresentation } from "../render/bunkerPresentation";
 import type {
   Course,
   ObstacleType,
@@ -384,6 +385,7 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
       theme,
       biomeCompatibility: biomeCompatibility.metadata,
       ...(greenSnapshot?.ok ? { greenSnapshot: greenSnapshot.value } : {}),
+      bunkerPresentation: normalizeBunkerPresentation(round.course.bunkerPresentation, round.course.tiles, round.course.width),
       greenDrainageLevel: clamp(Math.round(finite(round.course.greenDrainageLevel)), 0, 3),
       dispersionSnapshot: dispersionSnapshot.value,
       ...(round.course.weather ? {

@@ -1,7 +1,7 @@
 import { isOwnedTile } from "../estate/estate";
 import { isTerrainUnlocked } from "../progression/progression";
 import { isWaterHazard } from "./terrainRules";
-import type { Course, LandTheme, Obstacle, Point, Terrain } from "./types";
+import type { Course, LandTheme, Obstacle, Point, SurfaceFeature, Terrain } from "./types";
 import {
   computeElevationChangeCost,
   computeTerrainChangeBreakdown,
@@ -47,6 +47,8 @@ export type TerrainClimateWarning =
 
 export interface TerrainStrokePreview {
   previewKind: "stroke" | "surface-edit";
+  /** Accepted, clipped presentation intent; coverage/economics remain unchanged. */
+  surfaceFeature?: SurfaceFeature;
   tiles: TerrainPaintTile[];
   /** Valid coverage including already-matching cells, used to clip visual intent. */
   acceptedTiles: TerrainPaintTile[];

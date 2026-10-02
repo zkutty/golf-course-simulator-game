@@ -15,8 +15,9 @@ import type {
 } from "../../../game/models/types";
 import type { SeasonalVisualState } from "../../../game/presentation/seasonalVisualState";
 import { buildBunkerVisualRings, classifyBunkerVisualType } from "../../../game/render/bunkerShapes";
+import { authoredBunkerRings, bunkerDisplayPoint, cachedBunkerPresentation } from "../../../game/render/bunkerPresentation";
 import { TILE_H, TILE_W, worldToIso, type IsoRotation } from "../../../game/render/iso";
-import { buildLandscapeComponents } from "../../../game/render/landscapeGeometry";
+import { buildLandscapeComponents, landscapeTopologyKey } from "../../../game/render/landscapeGeometry";
 import { PerfWindow } from "../../../game/render/perfStats";
 import { seasonalTerrainTreatment } from "../../../game/render/seasonalTerrainPresentation";
 import type { RenderSnapshot } from "../RenderSnapshot";
@@ -41,6 +42,7 @@ export interface TerrainPreviewRenderDiagnostics {
   selectedTerrain: Terrain | null;
   materials: Terrain[];
   colors: Partial<Record<Terrain, number>>;
+  authoredBunkerRings?: Array<Array<{ x: number; y: number }>>;
 }
 
 export interface OverlayTickInput {
@@ -147,8 +149,12 @@ export function createOverlaysDiagnosticsSceneSystem(
     const next = createContainer();
     next.label = "player-pro-shot-overlay";
     const graphics = createGraphics();
-    const ballElevation = snapshot.surfaceHeightAt(round.ball.x + 0.5, round.ball.y + 0.5);
-    const ball = worldToIso(round.ball.x + 0.5, round.ball.y + 0.5, ballElevation, snapshot.rotation);
+    const bunkers = round.course.bunkerPresentation ?? cachedBunkerPresentation(round.course.tiles as Terrain[], round.course.width, round.course.height);
+    const display = (point: Point) => {
+      const position = bunkerDisplayPoint(point, round.course.width, bunkers);
+      return worldToIso(position.x, position.y, snapshot.surfaceHeightAt(position.x, position.y), snapshot.rotation);
+    };
+    const ball = display(round.ball);
     graphics.circle(ball.x, ball.y - 7, 7);
     graphics.fill({ color: 0xffd25b, alpha: 0.95 });
     graphics.stroke({ width: 2.5, color: 0x253c2b, alpha: 1 });
@@ -170,27 +176,14 @@ export function createOverlaysDiagnosticsSceneSystem(
 
     const trace = round.pendingShot ?? round.shots[round.shots.length - 1];
     if (trace) {
-      const from = worldToIso(trace.from.x + 0.5, trace.from.y + 0.5, snapshot.surfaceHeightAt(trace.from.x + 0.5, trace.from.y + 0.5), snapshot.rotation);
-      const rest = worldToIso(trace.rest.x + 0.5, trace.rest.y + 0.5, snapshot.surfaceHeightAt(trace.rest.x + 0.5, trace.rest.y + 0.5), snapshot.rotation);
+      const from = display(trace.from);
+      const rest = display(trace.rest);
       graphics.moveTo(from.x, from.y - 5);
       if (trace.greenRollout?.path.length) {
-        const landing = worldToIso(
-          trace.greenRollout.landing.x + 0.5,
-          trace.greenRollout.landing.y + 0.5,
-          snapshot.surfaceHeightAt(
-            trace.greenRollout.landing.x + 0.5,
-            trace.greenRollout.landing.y + 0.5,
-          ),
-          snapshot.rotation,
-        );
+        const landing = display(trace.greenRollout.landing);
         graphics.lineTo(landing.x, landing.y - 5);
         for (const point of trace.greenRollout.path.slice(1)) {
-          const projected = worldToIso(
-            point.x + 0.5,
-            point.y + 0.5,
-            snapshot.surfaceHeightAt(point.x + 0.5, point.y + 0.5),
-            snapshot.rotation,
-          );
+          const projected = display(point);
           graphics.lineTo(projected.x, projected.y - 5);
         }
       } else {
@@ -380,9 +373,21 @@ export function createOverlaysDiagnosticsSceneSystem(
             const bunkerType = selectedTerrain === "sand"
               ? classifyBunkerVisualType(component.cells, localTiles, localWidth, localHeight)
               : null;
-            const rings = bunkerType
-              ? buildBunkerVisualRings(component.rings, component.topologyKey, component.cells.length, bunkerType)
-              : component.rings;
+            const authored = bunkerType && terrainStrokePreview.surfaceFeature
+              ? authoredBunkerRings(
+                component.cells.map((cell) => (Math.floor(cell / localWidth) + minY) * course.width + cell % localWidth + minX),
+                [...(course.surfaceIntent?.features ?? []), terrainStrokePreview.surfaceFeature],
+                course.width, course.height,
+              )
+              : null;
+            if (authored && previewDiagnostics) previewDiagnostics.authoredBunkerRings = authored;
+            const rings = authored?.map((ring) => ring.map((point) => ({ x: point.x - minX, y: point.y - minY }))) ?? (bunkerType
+              ? buildBunkerVisualRings(
+                component.rings.map((ring) => ring.map((point) => ({ x: point.x + minX, y: point.y + minY }))),
+                landscapeTopologyKey("sand", component.cells.map((cell) => (Math.floor(cell / localWidth) + minY) * course.width + cell % localWidth + minX), course.width, course.height),
+                component.cells.length, bunkerType,
+              ).map((ring) => ring.map((point) => ({ x: point.x - minX, y: point.y - minY })))
+              : component.rings);
             for (const ring of rings) {
               const points = ring.map((point) => {
                 const worldX = point.x + minX;

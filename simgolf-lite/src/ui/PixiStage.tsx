@@ -96,6 +96,7 @@ import {
   buildHazardVisualRings,
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
+import { authoredBunkerRings } from "../game/render/bunkerPresentation";
 import { buildMacroLandformRaster } from "../game/render/macroLandform";
 import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
 import { isMaintained } from "../game/render/materialFields";
@@ -948,6 +949,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     widths: { shoulder: 0, edge: 0 },
     ownership: [],
   });
+  const bunkerContoursRef = useRef<Array<{ rotation: IsoRotation; cells: number[]; boundary: Array<Array<{ x: number; y: number }>>; floor: Array<Array<{ x: number; y: number }>> }>>([]);
   const sharedContourDiagnosticsRef = useRef<SharedContourRenderDiagnostics>(
     EMPTY_SHARED_CONTOUR_DIAGNOSTICS,
   );
@@ -1680,6 +1682,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           objectsIndex: layers.world.getChildIndex(layers.objects),
         };
       },
+      bunkerContours: () => structuredClone(bunkerContoursRef.current),
       terrainPreview: () => overlaysDiagnosticsSceneRef.current?.terrainPreview() ?? null,
       routeOverlay: () => ({
         geometrySamples: activeShotRoute?.geometry.length ?? 0,
@@ -3344,6 +3347,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
       return;
     }
+    if (import.meta.env.MODE === "e2e") bunkerContoursRef.current = [];
     for (const component of sortedComponents) {
       const presentationTerrain = component.terrain;
       // Canonical seams may displace slightly beyond authoritative ownership.
@@ -3385,7 +3389,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         : null;
       // One deterministic organic contour is shared by the hazard floor,
       // bank, lip, and boundary dressing. Gameplay/picking remain whole-cell.
-      const visualRings = bunkerVisualType != null
+      const visualRings = (isSand ? authoredBunkerRings(component.cells, course.surfaceIntent?.features, course.width, course.height) : null) ?? (bunkerVisualType != null
         || component.terrain === "water"
         || component.terrain === "wetland"
         ? buildHazardVisualRings(
@@ -3395,10 +3399,16 @@ export function PixiStage(requestedProps: PixiStageProps) {
           component.cells.length,
           bunkerVisualType ?? undefined,
         )
-        : component.rings;
+        : component.rings);
       const hazardPlans = visualRings.map((ring) => (
         buildHazardBankFacePlan(component.terrain, component.cells.length, ring)
       ));
+      if (isSand && import.meta.env.MODE === "e2e") bunkerContoursRef.current.push({
+        rotation,
+        cells: [...component.cells],
+        boundary: visualRings.map((ring) => ring.map((point) => ({ ...point }))),
+        floor: visualRings.map((ring, index) => (hazardPlans[index]?.innerRing ?? ring).map((point) => ({ ...point }))),
+      });
       // The generic field's large square chips made the route read as a gray
       // speckled ribbon. The compositor's core uses the existing deterministic
       // fine-grain generator instead; it remains world-anchored and the whole

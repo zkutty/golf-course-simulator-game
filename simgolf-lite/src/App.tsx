@@ -4725,8 +4725,8 @@ export default function App() {
   }, [course, selected, terrainBrushWidth, terrainTool]);
 
   const getTerrainStrokePreview = useCallback((points: Point[]): TerrainStrokePreview => {
-    const { coveragePoints } = buildTerrainSurfaceFeature(points, openingPaintTargetIds ?? undefined);
-    return previewTerrainStroke(
+    const { feature, coveragePoints } = buildTerrainSurfaceFeature(points, openingPaintTargetIds ?? undefined);
+    const preview = previewTerrainStroke(
       course,
       coveragePoints,
       selected,
@@ -4741,6 +4741,10 @@ export default function App() {
         waterPolicy: world.seasonal?.operations.waterPolicy,
       },
     );
+
+    const accepted = new Set(preview.acceptedTiles.map((tile) => tile.y * course.width + tile.x));
+    const raster = rasterizeSurfaceFeatureDetailed(feature, course.width, course.height, accepted);
+    return { ...preview, surfaceFeature: { ...feature, coverage: raster.tiles.map((tile) => tile.y * course.width + tile.x), renderRings: raster.rings } };
   }, [
     buildTerrainSurfaceFeature,
     openingPaintTargetIds,

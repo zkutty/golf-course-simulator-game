@@ -150,6 +150,10 @@ function fnv1a(value: string): string {
   return (hash >>> 0).toString(36);
 }
 
+export function landscapeTopologyKey(terrain: Terrain, cells: readonly number[], width: number, height: number): string {
+  return `${terrain}-${fnv1a(`${width}x${height}:${cells.join(",")}`)}`;
+}
+
 export function ringSignedArea(ring: readonly SurfacePoint[]): number {
   let area = 0;
   for (let index = 0; index < ring.length; index++) {
@@ -388,7 +392,7 @@ function buildLandscapeComponentSkeletons(
       terrain,
       cells,
       bounds: { minX, minY, maxX, maxY },
-      topologyKey: `${terrain}-${fnv1a(`${width}x${height}:${cells.join(",")}`)}`,
+      topologyKey: landscapeTopologyKey(terrain, cells, width, height),
       boundaryContextKey: "",
     });
   }
