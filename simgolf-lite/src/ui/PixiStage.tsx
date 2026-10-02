@@ -96,7 +96,7 @@ import {
   buildHazardVisualRings,
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
-import { authoredBunkerRings } from "../game/render/bunkerPresentation";
+import { authoredBunkerRings, cachedBunkerPresentation, capturedBunkerBoundary } from "../game/render/bunkerPresentation";
 import { buildMacroLandformRaster } from "../game/render/macroLandform";
 import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
 import { isMaintained } from "../game/render/materialFields";
@@ -1103,7 +1103,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const surfaceHeightAt = useCallback((x: number, y: number) => {
     const index = Math.max(0, Math.min(course.height - 1, Math.floor(y))) * course.width
       + Math.max(0, Math.min(course.width - 1, Math.floor(x)));
-    if (props.graphicsQuality === "low" && !isMaintained(effectiveTiles[index])) {
+    if (props.graphicsQuality === "low" && !isMaintained(effectiveTiles[index])
+      && (effectiveTiles[index] !== "sand" || !presentationRuntime)) {
       return course.elevations[index] ?? 0;
     }
     return sampleLandscapeSurfaceHeight(
@@ -1119,6 +1120,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     course.width,
     effectiveTiles,
     landscapeComponentByCell,
+    presentationRuntime,
     props.graphicsQuality,
     visualHeightfield,
   ]);
@@ -2506,6 +2508,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const composableTurfOwnsTransitions = Boolean(
       getParklandComposableField(course.theme, props.graphicsQuality, "tee"),
     );
+    const lowJoinedSandCells = new Set(props.graphicsQuality === "low" && composableRuntime
+      ? cachedBunkerPresentation(presentationTiles, course.width, course.height, course.surfaceIntent?.features)
+        .filter((component) => component.rings.length > 0 && component.rings.every((ring) => ring.length >= 3))
+        .flatMap((component) => component.cells)
+      : []);
     const lowJoinedMaintainedTopReady = props.graphicsQuality === "low"
       && Boolean(composableRuntime)
       && !composableTurfOwnsTransitions;
@@ -2601,7 +2608,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       };
       const recessedFace = (x: number, y: number, d: Point) => {
         const terrain = visualTerrainAt(x, y);
-        if (composableTurfOwnsTransitions && terrain === "sand") return;
+        if ((composableTurfOwnsTransitions || lowJoinedSandCells.has(y * w + x)) && terrain === "sand") return;
         const style = terrainReliefStyle(course.theme, terrain);
         if (!style) return;
         const nx = x + d.x;
@@ -2658,7 +2665,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         // Joined hazard masks, not whole-cell atlas diamonds/lips, own all
         // visible water. Low already used this exact rough underlay.
         const underlayTerrain = hazardChunkUnderlay(
-          maintainedChunkUnderlay(terrain, lowJoinedMaintainedTopReady),
+          maintainedChunkUnderlay(lowJoinedSandCells.has(y * w + x) && terrain === "sand" ? "rough" : terrain, lowJoinedMaintainedTopReady),
           composableTurfOwnsTransitions,
         );
         const material = getTerrainMaterial(course.theme, underlayTerrain);
@@ -2797,6 +2804,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           const ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
           const nTerrain = visualTerrainAt(nx, ny);
+          if (lowJoinedSandCells.has(y * w + x) || lowJoinedSandCells.has(ny * w + nx)) continue;
           if (
             composableTurfOwnsTransitions
             && composableRuntime!.isParklandComposableTransition(terrain, nTerrain)
@@ -2993,6 +3001,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     terrainScene.surfaceWaterSprites = [];
     const quality = props.graphicsQuality;
     landformDepthDiagnosticsRef.current = emptyLandformDepthDiagnostics(quality);
+    if (import.meta.env.MODE === "e2e") bunkerContoursRef.current = [];
     const composableRuntime = presentationRuntime;
     terrainScene.lowPresentationLayer = composableRuntime
       ? composableRuntime.destroyParklandPresentationLayer(terrainScene.lowPresentationLayer)
@@ -3082,6 +3091,77 @@ export function PixiStage(requestedProps: PixiStageProps) {
       return total / Math.max(1, samples);
     };
 
+    // Low's sand uses the same cached world boundary and exact inner floor as
+    // displayed ball endpoints. Mesh subdivision stays at one; bank/lip
+    // graphics are rebuilt only with the terrain scene, never each frame.
+    const appendLowSand = (target: PIXI.Container) => {
+      if (!composableRuntime) return;
+      const captured = cachedBunkerPresentation(presentationTiles, course.width, course.height, course.surfaceIntent?.features);
+      const byCell = new Map(captured.map((component) => [component.cells[0], component]));
+      const diagnostics: LandformDepthDiagnostics["hazards"][number][] = [];
+      for (const component of components.filter((entry) => entry.terrain === "sand").sort((a, b) => componentDepth(a) - componentDepth(b))) {
+        const authority = byCell.get(component.cells[0]);
+        if (!authority) continue;
+        const boundary = capturedBunkerBoundary(authority);
+        const plans = boundary.map((ring) => buildHazardBankFacePlan("sand", component.cells.length, ring));
+        const floorProject = (point: Point) => worldToIso(point.x, point.y,
+          sampleLandscapeSurfaceHeight(heightfield, component, point.x, point.y, true), rotation);
+        const mesh = composableRuntime!.createParklandComposableMesh(textureFor("sand"), component.presentationCells,
+          course.width, 1, (cell) => cell, (_cell, x, y) => floorProject({ x, y }), true);
+        if (!mesh) continue;
+        const mask = composableRuntime!.createLandscapeRingMask(authority.rings, floorProject);
+        mesh.eventMode = "none";
+        mesh.label = `low-shared-sand:${component.topologyKey}`;
+        mesh.mask = mask;
+        mesh.tint = seasonalByTerrain.sand?.textureTint ?? 0xffffff;
+        target.addChild(mesh, mask);
+        const banks = new PIXI.Graphics();
+        const lip = new PIXI.Graphics();
+        const contact = new PIXI.Graphics();
+        banks.eventMode = lip.eventMode = contact.eventMode = "none";
+        banks.label = "low-sand-bank";
+        lip.label = "low-sand-lip";
+        let nearFaces = 0;
+        let farFaces = 0;
+        let area = 0;
+        const drops: number[] = [];
+        for (const plan of plans) {
+          if (!plan) continue;
+          const grade = plan.outerRing.map(project);
+          const inset = plan.innerRing.map((point) => worldToIso(point.x, point.y,
+            sampleVisualHeight(heightfield, point.x, point.y), rotation));
+          const floor = plan.innerRing.map(floorProject);
+          for (let index = 0; index < grade.length; index++) {
+            const next = (index + 1) % grade.length;
+            const near = isInteriorBankFacingViewer([grade[index], grade[next]], [inset[index], inset[next]]);
+            if (near) nearFaces++; else farFaces++;
+            const polygon = [grade[index], grade[next], floor[next], floor[index]];
+            banks.poly(polygon.flatMap((point) => [point.x, point.y])).fill({ color: shade(themedColors.rough, near ? .72 : .98), alpha: near ? 1 : .9 });
+            if (near) area += Math.abs(polygon.reduce((sum, point, vertex) => {
+              const after = polygon[(vertex + 1) % polygon.length];
+              return sum + point.x * after.y - after.x * point.y;
+            }, 0)) / 2;
+            const outer = plan.outerRing[index];
+            const inner = plan.innerRing[index];
+            drops.push((sampleVisualHeight(heightfield, outer.x, outer.y)
+              - sampleLandscapeSurfaceHeight(heightfield, component, inner.x, inner.y, true)) * ELEVATION_STEP_PX);
+            lip.moveTo(grade[index].x, grade[index].y).lineTo(grade[next].x, grade[next].y);
+            contact.moveTo(floor[index].x, floor[index].y).lineTo(floor[next].x, floor[next].y);
+          }
+        }
+        lip.stroke({ width: 1.05, color: shade(themedColors.rough, 1.15), alpha: .85, join: "round", cap: "round" });
+        contact.stroke({ width: 1, color: shade(themedColors.rough, .55), alpha: .7, join: "round", cap: "round" });
+        target.addChild(banks, lip, contact);
+        if (drops.length) diagnostics.push({ terrain: "sand", topologyKey: component.topologyKey, rings: boundary.length,
+          nearFaces, farFaces, minimumDropPx: Math.min(...drops), maximumDropPx: Math.max(...drops),
+          floorBoundaryOwner: "shared", interiorFaceAreaPx: area });
+        if (import.meta.env.MODE === "e2e") bunkerContoursRef.current.push({ rotation, cells: [...component.cells],
+          boundary: boundary.map((ring) => ring.map((point) => ({ ...point }))),
+          floor: authority.rings.map((ring) => ring.map((point) => ({ ...point }))) });
+      }
+      landformDepthDiagnosticsRef.current = { ...emptyLandformDepthDiagnostics("low"), active: diagnostics.length > 0, hazards: diagnostics };
+    };
+
     // Links and Desert Low retain the economical chunk renderer for ordinary
     // terrain. Maintained components receive one joined, one-subdivision top
     // plane so their authored elevation can remain visible without exposing
@@ -3118,6 +3198,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         mesh.mask = mask;
         maintainedLayer.addChild(mesh, mask);
       }
+      appendLowSand(maintainedLayer);
       pathMaterialDiagnosticsRef.current = {
         active: false,
         mode: "legacy",
@@ -3242,7 +3323,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       // been neutralized to rough for these cells, so no stepped diamond can
       // remain outside the ring mask.
       for (const hazardComponent of sortedComponents.filter((component) => (
-        component.terrain === "water" || component.terrain === "wetland" || component.terrain === "sand"
+        component.terrain === "water" || component.terrain === "wetland"
       ))) {
         const isSand = hazardComponent.terrain === "sand";
         const visualType = isSand
@@ -3337,6 +3418,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         });
         presentationLayer.addChild(edge);
       }
+      appendLowSand(presentationLayer);
       const diagnostics = composableRuntime!.lowParklandPresentationDiagnostics(composableTrace, components);
       pathMaterialDiagnosticsRef.current = diagnostics.pathMaterial;
       parklandComposableDiagnosticsRef.current = diagnostics.composable;

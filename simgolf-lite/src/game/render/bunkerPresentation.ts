@@ -51,6 +51,14 @@ export function normalizeBunkerPresentation(value: unknown, tiles: readonly stri
   return normalized;
 }
 
+const capturedBoundaries = new WeakMap<BunkerPresentationComponent, SurfacePoint[][]>();
+
+/** Active-course capture keeps the shared boundary beside its floor without
+ * persisting extra metadata or changing frozen round snapshot semantics. */
+export function capturedBunkerBoundary(component: BunkerPresentationComponent): readonly (readonly SurfacePoint[])[] {
+  return capturedBoundaries.get(component) ?? component.rings;
+}
+
 export function captureBunkerPresentation(
   tiles: readonly Terrain[], width: number, height: number,
   features?: readonly SurfaceFeature[],
@@ -62,10 +70,12 @@ export function captureBunkerPresentation(
         component.rings, component.topologyKey, component.cells.length,
         classifyBunkerVisualType(component.cells, tiles, width, height),
       );
-      return { cells: [...component.cells], rings: boundary.map((ring) => {
+      const captured = { cells: [...component.cells], rings: boundary.map((ring) => {
         const plan = buildHazardBankFacePlan("sand", component.cells.length, ring);
         return (plan?.innerRing ?? ring).map((point) => ({ ...point }));
       }) };
+      capturedBoundaries.set(captured, boundary);
+      return captured;
     });
 }
 

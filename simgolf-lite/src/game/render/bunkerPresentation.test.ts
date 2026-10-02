@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SurfaceFeature, Terrain } from "../models/types";
 import { corridorFeature, rasterizeSurfaceFeatureDetailed } from "../models/surfaceIntent";
-import { authoredBunkerRings, bunkerDisplayPoint, cachedBunkerPresentation, captureBunkerPresentation, insideBunkerRings, normalizeBunkerPresentation, reconcileBunkerRest } from "./bunkerPresentation";
+import { authoredBunkerRings, capturedBunkerBoundary, bunkerDisplayPoint, cachedBunkerPresentation, captureBunkerPresentation, insideBunkerRings, normalizeBunkerPresentation, reconcileBunkerRest } from "./bunkerPresentation";
 import { resolvePlayableShot } from "../playerPro/playerPro";
 import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
 import { buildLandscapeComponents, landscapeTopologyKey } from "./landscapeGeometry";
@@ -174,4 +174,18 @@ it("uses the final world topology seed for an isolated pot preview", () => {
   expect(worldKey).toBe(final.topologyKey);
   const worldRings = preview.rings.map((ring) => ring.map((point) => ({ x: point.x + 3, y: point.y + 3 })));
   expect(buildBunkerVisualRings(worldRings, worldKey, 1)).toEqual(buildBunkerVisualRings(final.rings, final.topologyKey, 1));
+});
+
+
+it("keeps the captured boundary and floor authority together without snapshot changes", () => {
+  const tiles: Terrain[] = ["sand"];
+  const [captured] = cachedBunkerPresentation(tiles, 1, 1, [feature]);
+  expect(capturedBunkerBoundary(captured)).toEqual(authoredBunkerRings([0], [feature], 1, 1));
+  expect(capturedBunkerBoundary(captured)).not.toEqual(captured.rings);
+  const normalized = normalizeBunkerPresentation(JSON.parse(JSON.stringify([captured])), tiles, 1)!;
+  expect(normalized).toEqual([captured]);
+  expect(capturedBunkerBoundary(normalized[0])).toBe(normalized[0].rings);
+  const display = bunkerDisplayPoint({ x: .49, y: .49 }, 1, [captured]);
+  expect(insideBunkerRings(display, captured.rings)).toBe(true);
+  expect(tiles).toEqual(["sand"]);
 });
