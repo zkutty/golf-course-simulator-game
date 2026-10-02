@@ -29,6 +29,11 @@ jobs:
             platform: win32
             architecture: x64
     steps:
+      - name: Disable Windows checkout newline conversion
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -36,6 +41,8 @@ jobs:
           cache: npm
           cache-dependency-path: simgolf-lite/package-lock.json
       - run: npm ci
+      - name: Verify checkout source bytes
+        run: node --test scripts/desktop-smoke-workflow.test.mjs
       - run: npm run test:desktop
       - run: npm run build
       - name: Package unsigned smoke artifact and checksum it
