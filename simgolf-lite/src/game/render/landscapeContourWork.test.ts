@@ -10,6 +10,8 @@ import * as sharedContours from "./sharedBoundaryContours";
 function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value, (_, item: unknown) => {
     if (typeof item !== "number") return item;
+    // V8 may encode computed NaN with either sign; retain all other IEEE bits.
+    if (Number.isNaN(item)) return ["nonfinite", "NaN"];
     const bytes = Buffer.alloc(8); bytes.writeDoubleBE(item);
     return ["f64", bytes.toString("hex")];
   })).digest("hex");
@@ -122,6 +124,18 @@ describe("landscape cache shared-contour work", () => {
       }
     }
     expect(outcomes).toHaveLength(144);
-    expect(digest(outcomes)).toBe("eb54d600afbd883fff8a100ee8759d53d1e63522171a07e9e2ef234130283d08");
+    expect(outcomes.filter((item) => item !== null && typeof item === "object" && "error" in item)).toHaveLength(36);
+    const nanPaths: string[] = [];
+    const collectNaNs = (value: unknown, path: string) => {
+      if (typeof value === "number" && Number.isNaN(value)) nanPaths.push(path);
+      else if (value && typeof value === "object") {
+        for (const [key, item] of Object.entries(value)) collectNaNs(item, `${path}.${key}`);
+      }
+    };
+    collectNaNs(outcomes, "outcomes");
+    expect(nanPaths).toHaveLength(24);
+    expect(nanPaths.every((path) => /^outcomes\.13[01]\.value\.(components|changed)\.\d+\.rings\.\d+\.\d+\.[xy]$/.test(path))).toBe(true);
+    // Original 4da output on both Node22/Linux and Node26/Darwin; errors retain names/messages.
+    expect(digest(outcomes)).toBe("37e3410a70e2bb00b3b41fe3792b867a31c273203956881e94bcaac5da120435");
   });
 });
