@@ -29,6 +29,30 @@ describe("TerrainWaterSceneSystem", () => {
     expect(borrowed.calls).toBe(0);
   });
 
+  it("keeps context registrations flat through repeated owned/shared scene teardown", () => {
+    const borrowedContext = new PIXI.GraphicsContext().rect(0, 0, 2, 2).fill(0xffffff);
+    const registered = new Set<PIXI.GraphicsContext>([borrowedContext]);
+    let released = 0;
+    for (let cycle = 0; cycle < 12; cycle++) {
+      const sceneLayers = layers();
+      for (let index = 0; index < 5; index++) {
+        const graphics = sceneLayers.terrain.addChild(new PIXI.Graphics().rect(0, 0, 4, 4).fill(0xffffff));
+        const context = graphics.context; registered.add(context);
+        context.on("destroy", () => { registered.delete(context); released++; });
+      }
+      sceneLayers.smoothSurfaces.addChild(new PIXI.Graphics({ context: borrowedContext }));
+      const scene = createTerrainWaterSceneSystem(sceneLayers);
+      expect(registered.size).toBe(6);
+      expect(borrowedContext.listenerCount("update")).toBe(1);
+      scene.destroy(); scene.destroy();
+      expect(registered.size).toBe(1);
+      expect(borrowedContext.listenerCount("update")).toBe(0);
+      borrowedContext.rect(cycle, cycle, 1, 1).fill(0xffffff);
+    }
+    expect(released).toBe(60);
+    borrowedContext.destroy();
+  });
+
   it("runs all render phases only when the hosted revision changes", () => {
     const scene = createTerrainWaterSceneSystem(layers());
     const calls: string[] = [];

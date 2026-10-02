@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // functions with static implementations. Keep this before renderer startup so
 // Workers deployments can retain a script-src policy without 'unsafe-eval'.
 import "pixi.js/unsafe-eval";
+import { destroySceneSubtree } from "./renderer/destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../game/models/types";
 import type { ShotRoutePresentation } from "../game/presentation/shotRoutePresentation";
@@ -2236,8 +2237,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const terrainScene = terrainWaterSceneRef.current;
     if (!layers || !terrainScene) return;
     terrainScene.setRenderer("surround", () => {
-    layers.surround.removeChildren().forEach((child) => child.destroy({ children: true }));
-    layers.estateSeam.removeChildren().forEach((child) => child.destroy({ children: true }));
+    layers.surround.removeChildren().forEach(destroySceneSubtree);
+    layers.estateSeam.removeChildren().forEach(destroySceneSubtree);
 
     const model = generateScenicSurround(course, props.worldSeed);
     const palette = SCENIC_COLORS[getBiomeDefinition(model.theme).content.materials.terrain];
@@ -2906,7 +2907,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
     if (fullRebuild) {
       layers.terrain.removeChildren();
-      terrainScene.chunks.forEach((c) => c.container.destroy({ children: true }));
+      terrainScene.chunks.forEach((c) => destroySceneSubtree(c.container));
       terrainScene.chunks = [];
       terrainScene.builtRotation = rotation;
       terrainScene.builtAtlasGeneration = atlasRevision;
@@ -2997,7 +2998,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const layer = rendererLayers?.smoothSurfaces;
     if (!layer || !rendererLayers || !terrainScene) return;
     terrainScene.setRenderer("connected", () => {
-    layer.removeChildren().forEach((child) => child.destroy({ children: true }));
+    layer.removeChildren().forEach(destroySceneSubtree);
     terrainScene.surfaceWaterSprites = [];
     const quality = props.graphicsQuality;
     landformDepthDiagnosticsRef.current = emptyLandformDepthDiagnostics(quality);
