@@ -6,6 +6,8 @@ import {
   createZk682StabilityReport,
 } from "../scripts/zk682-stability-contract.mjs";
 
+import { clearReactComponentTimings } from "../scripts/react-component-timing-cleanup.mjs";
+
 test.use({ launchOptions: { args: ["--enable-precise-memory-info"] } });
 
 type Measured = {
@@ -14,7 +16,10 @@ type Measured = {
   heap: { runtimeUsedBytes: number; runtimeTotalBytes: number };
 };
 
+const timingCleanupSamples: ReturnType<typeof clearReactComponentTimings>[] = [];
+
 async function measure(page: Page, cdp: CDPSession): Promise<Measured> {
+  timingCleanupSamples.push(await page.evaluate(clearReactComponentTimings));
   await cdp.send("HeapProfiler.collectGarbage");
   await page.waitForTimeout(120);
   const heap = await cdp.send("Runtime.getHeapUsage");
@@ -113,6 +118,7 @@ async function projectTile(page: Page, canvas: Locator, point: { x: number; y: n
 
 test("ZK-682 produces candidate-bound supplemental stability evidence", async ({ page, browserName }, testInfo) => {
   test.slow();
+  timingCleanupSamples.length = 0;
   expect(browserName).toBe("chromium");
   const expectedCommit = process.env.ZK682_EXPECTED_COMMIT;
   expect(expectedCommit, "ZK682_EXPECTED_COMMIT must be a full candidate SHA").toMatch(/^[0-9a-f]{40}$/);
@@ -247,6 +253,25 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     samples: interactionSamples,
   });
   await writeFile(resolve(outputDirectory, "editing-overlay-sleep-recovery.json"), `${JSON.stringify(interactionReport, null, 2)}\n`);
+
+  const timingCleanupPath = testInfo.outputPath("react-component-timing-cleanup.json");
+  await writeFile(timingCleanupPath, `${JSON.stringify({
+    candidateCommit: expectedCommit,
+    command: "npm run test:stability",
+    browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown" },
+    filter: "detail.devtools.track === Components ⚛; all entries of each name must match",
+    samples: timingCleanupSamples,
+  }, null, 2)}\n`);
+
+  await testInfo.attach("react-component-timing-cleanup", { path: timingCleanupPath, contentType: "application/json" });
+  console.log(JSON.stringify({
+    diagnostic: "react-component-timing-cleanup",
+    candidateCommit: expectedCommit,
+    samples: timingCleanupSamples.length,
+    clearedEntries: timingCleanupSamples.reduce((total, sample) => total + sample.clearedEntries, 0),
+    preservedCollisionNames: timingCleanupSamples.reduce((total, sample) => total + sample.preservedCollisionNames, 0),
+    remainingMeasureEntries: timingCleanupSamples.at(-1)?.measureEntriesAfter ?? 0,
+  }));
 
   const finalScreenshot = resolve(outputDirectory, "zk682-stability-final.png");
   await page.screenshot({ path: finalScreenshot, fullPage: true });
