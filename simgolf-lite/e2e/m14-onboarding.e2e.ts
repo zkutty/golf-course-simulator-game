@@ -534,6 +534,21 @@ test.describe("ZK-1106 private operator opening", () => {
       targetIds,
       outlineCount: targetIds.length,
     });
+    const recordOpeningCamera = async (label: string) => {
+      const evidence = await page.evaluate((target) => ({
+        target,
+        projected: window.__coursecraftPixiTest!.tileToScreen(target.x, target.y),
+        viewport: window.__coursecraftPixiTest!.viewport(),
+        rotation: window.__coursecraftPixiTest!.viewportInputState()?.rotation ?? null,
+        transform: window.__coursecraftPixiTest!.cameraTransform(),
+        camera: window.__coursecraftPixiTest!.rendererAtlasState().camera,
+      }), point);
+      await testInfo.attach(`opening-camera-${label}`, {
+        body: Buffer.from(JSON.stringify(evidence, null, 2)), contentType: "application/json",
+      });
+      console.log(`ZK-1106 opening-camera-${label} ${JSON.stringify(evidence)}`);
+    };
+    await recordOpeningCamera("focused");
     // The outline stays registered to the same authoritative ids while the
     // actual camera rotates. The test only reads renderer diagnostics; all
     // authoring below remains real keyboard and mouse input.
@@ -549,6 +564,7 @@ test.describe("ZK-1106 private operator opening", () => {
         committed: expectedRotation,
         tweening: false,
       });
+      await recordOpeningCamera(`rotation-${expectedRotation}`);
       const projected = await page.evaluate(({ x, y }) => window.__coursecraftPixiTest!.tileToScreen(x, y), point);
       const viewport = await page.evaluate(() => window.__coursecraftPixiTest!.viewport());
       expect(projected).not.toBeNull();
