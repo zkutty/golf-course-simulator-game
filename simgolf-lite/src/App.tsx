@@ -2983,7 +2983,7 @@ export default function App() {
       presentationSeed: world.runSeed,
       presentationReducedMotion: appProfile.accessibility.reducedMotion || !effectiveAnimations,
     });
-    const liveStateById = live.getShotTelemetrySnapshot();
+    const liveStateById = live.getReadonlyShotTelemetryLookup();
     const textReport = textReportTransaction.finishCarePart();
     const renderText = () => JSON.stringify({
       coordinateSystem: "tile coordinates; origin top-left, +x right, +y down",
