@@ -20,13 +20,14 @@ jobs:
       ZK682_EXPECTED_COMMIT: ${{ github.sha }}
       VITE_COMMIT_SHA: ${{ github.sha }}
       ZK682_DIAGNOSTIC_BASELINE: adcfd92b6b608a96699d5fb87592834b980120be
-      ZK682_DIAGNOSTIC_ROOT: ${{ runner.temp }}/zk682-hosted-diagnostics
     steps:
       - name: Checkout immutable diagnostic source
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+      - name: Initialize runner diagnostic directory
+        run: printf 'ZK682_DIAGNOSTIC_ROOT=%s/zk682-hosted-diagnostics\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Verify unchanged application and dependency inputs
         shell: bash
         working-directory: ${{ github.workspace }}
