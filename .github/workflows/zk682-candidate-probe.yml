@@ -41,7 +41,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Build exact candidate
-        run: npm run build
+        run: GITHUB_SHA="$ZK682_EXPECTED_COMMIT" npm run build
       - name: Run original startup and fixture gates
         id: performance
         continue-on-error: true
@@ -52,7 +52,7 @@ jobs:
           PERF_OUTPUT_PATH: ${{ runner.temp }}/zk682-candidate-probe/performance.json
         run: |
           set +e
-          npm run test:perf 2>&1 | tee "$ZK682_PROBE_ROOT/performance.log"
+          GITHUB_SHA="$ZK682_EXPECTED_COMMIT" npm run test:perf 2>&1 | tee "$ZK682_PROBE_ROOT/performance.log"
           result=${PIPESTATUS[0]}
           printf '%s\n' "$result" > "$ZK682_PROBE_ROOT/performance-exit-code.txt"
           exit "$result"
@@ -62,7 +62,7 @@ jobs:
         if: always()
         run: |
           set +e
-          npm run test:stability -- --output-dir "$ZK682_PROBE_ROOT/stability" --expected-commit "$ZK682_EXPECTED_COMMIT" 2>&1 | tee "$ZK682_PROBE_ROOT/stability.log"
+          GITHUB_SHA="$ZK682_EXPECTED_COMMIT" npm run test:stability -- --output-dir "$ZK682_PROBE_ROOT/stability" --expected-commit "$ZK682_EXPECTED_COMMIT" 2>&1 | tee "$ZK682_PROBE_ROOT/stability.log"
           result=${PIPESTATUS[0]}
           printf '%s\n' "$result" > "$ZK682_PROBE_ROOT/stability-exit-code.txt"
           exit "$result"
