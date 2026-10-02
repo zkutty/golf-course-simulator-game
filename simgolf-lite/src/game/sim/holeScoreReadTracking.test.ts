@@ -12,7 +12,9 @@ describe("release-scale scoring read tracking", () => {
     // shot plan, slope fact, corridor, rating and validity result.
     const course = createM27ReleaseReferenceCourse();
     expect(hashCanonicalValue(scoreCourseHoles(course))).toBe("c019869d");
-    expect(__getEquivalentHoleScoreCacheDependenciesForTests(course)).toBe(76_220);
+    // The proved global suffix stop reduces original 76,220 dependencies;
+    // the complete scoring oracle above remains unchanged.
+    expect(__getEquivalentHoleScoreCacheDependenciesForTests(course)).toBe(43_931);
     expect(__getEquivalentHoleScoreCacheDependenciesForTests(course)).toBeLessThan(EQUIVALENT_HOLE_SCORE_MAX_DEPENDENCIES);
   });
 
@@ -112,6 +114,55 @@ describe("release-scale scoring read tracking", () => {
     __resetHoleScoreCacheForTests();
     expect(scoreHole(course, marker, 0)).toEqual(moved);
   });
+
+  it("reuses scores after edits outside the deliberately reduced heavy-hole footprint", () => {
+    // These boundary/middle cells were read by the original global-bound
+    // search, but are excluded by the proved one-stroke suffix stop.
+    for (const removed of [29199, 14103, 14706]) {
+      __resetHoleScoreCacheForTests();
+      const course = createM27ReleaseReferenceCourse();
+      const hole = course.holes[15];
+      const original = scoreHole(course, hole, 15);
+      expect(__getHoleScoreDependenciesForTests(hole)).not.toContain(removed);
+      const changed = { ...course, tiles: course.tiles.slice() };
+      changed.tiles[removed] = course.tiles[removed] === "water" ? "fairway" : "water";
+      const before = __getHoleScoreCacheStatsForTests();
+      const cached = scoreHole(changed, hole, 15);
+      expect(cached).toBe(original);
+      expect(__getHoleScoreCacheStatsForTests().hits).toBe(before.hits + 1);
+      __resetHoleScoreCacheForTests();
+      expect(scoreHole(changed, { ...hole }, 15)).toEqual(cached);
+    }
+  }, 30_000);
+
+  it("invalidates heavy-hole consumed terrain, elevation, obstacle and theme edits exactly", () => {
+    const course = createM27ReleaseReferenceCourse();
+    const hole = course.holes[15];
+    scoreHole(course, hole, 15);
+    const consumed = __getHoleScoreDependenciesForTests(hole)[0];
+    const terrain = { ...course, tiles: course.tiles.slice() };
+    terrain.tiles[consumed] = "deep_rough";
+    const elevation = { ...course, elevations: course.elevations!.slice() };
+    elevation.elevations[hole.tee!.y * course.width + hole.tee!.x] += 4;
+    const obstacle = { ...course, obstacles: [...course.obstacles, { type: "tree" as const, ...hole.tee! }] };
+    for (const changed of [terrain, elevation, obstacle]) {
+      __resetHoleScoreCacheForTests();
+      scoreHole(course, hole, 15);
+      const before = __getHoleScoreCacheStatsForTests().misses;
+      const cached = scoreHole(changed, hole, 15);
+      expect(__getHoleScoreCacheStatsForTests().misses).toBe(before + 1);
+      __resetHoleScoreCacheForTests();
+      expect(scoreHole(changed, { ...hole }, 15)).toEqual(cached);
+    }
+    __resetHoleScoreCacheForTests();
+    scoreHole(terrain, hole, 15);
+    const before = __getHoleScoreCacheStatsForTests().misses;
+    const themed = { ...terrain, theme: "desert" as const };
+    const cached = scoreHole(themed, hole, 15);
+    expect(__getHoleScoreCacheStatsForTests().misses).toBe(before + 1);
+    __resetHoleScoreCacheForTests();
+    expect(scoreHole(themed, { ...hole }, 15)).toEqual(cached);
+  }, 30_000);
 
   it("retains only one accessor root across sculpt/undo history and clears it on reset", () => {
     const course = createReferenceCourse();

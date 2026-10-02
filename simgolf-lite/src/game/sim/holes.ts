@@ -513,7 +513,8 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
   if (cacheableInputs) holeScoreCache.set(hole, entry);
   const entries = equivalents;
   // Bound both entry count and actual retained cell payload. The measured
-  // 36-hole release fixture uses 76,220 dependencies; 160,000 admits two
+  // 36-hole release fixture uses 43,931 dependencies after the proved global
+  // suffix stop (previously 76,220); the unchanged 160,000 limit admits two
   // comparable setup views without retaining millions of cells after edits.
   if (cacheableInputs && entry.tileDependencies.size + entry.elevationDependencies.size <= EQUIVALENT_HOLE_SCORE_MAX_DEPENDENCIES) {
     entries.set(equivalentKey, entry);

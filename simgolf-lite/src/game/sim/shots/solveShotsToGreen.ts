@@ -2,6 +2,7 @@ import type { Course, Point, Terrain } from "../../models/types";
 import type { GolferProfile } from "../golferProfiles";
 import { evalShotExpectedCost } from "./evalShotExpectedCost";
 import { BALANCE } from "../../balance/balanceConfig";
+import { getBiomeDefinition } from "../../models/biomes";
 import { courseWithEffectiveSurfaces } from "../../conditions/surfaceCare";
 import { readScoringTile } from "../scoringTileReads";
 import type { ShotSlopeContext } from "../../models/shotSlope";
@@ -112,6 +113,20 @@ export function solveShotsToGreen(args: {
   if (!candidateOK(tileAt(course, tee)) || !candidateOK(tileAt(course, green))) {
     return { reachable: false, expectedShotsToGreen: Infinity, plan: [] };
   }
+
+  // All ordinary valid edges cost at least one stroke. If experimental or
+  // malformed balance data invalidates that floor, retain the original bound.
+  const nonnegativeFinite = (value: number) => Number.isFinite(value) && value >= 0;
+  const penalties = BALANCE.shots.landing.penaltyStrokes;
+  const oneStrokeFloor = Object.getPrototypeOf(penalties) === Object.prototype
+    && Object.getOwnPropertyNames(penalties).every((name) => {
+      const descriptor = Object.getOwnPropertyDescriptor(penalties, name)!;
+      return "value" in descriptor && nonnegativeFinite(descriptor.value);
+    })
+    && nonnegativeFinite(BALANCE.themes[getBiomeDefinition(course.theme).key].deepRoughPenaltyMult)
+    && nonnegativeFinite(BALANCE.shots.water.shortMissMaxProb)
+    && nonnegativeFinite(BALANCE.shots.water.waterPenaltyStrokes)
+    && Number.isFinite(BALANCE.shots.water.shortMissUtilStart);
 
   const startK = key(tee);
   const goalK = key(green);
@@ -231,14 +246,13 @@ export function solveShotsToGreen(args: {
       }
     }
 
-    // Dijkstra can finish as soon as no unsettled state is cheaper than the
-    // best known goal. Equal-cost alternatives cannot replace the retained
-    // predecessor because relaxation above is intentionally strict (`<`).
-    // This matters on open ground where hundreds of one-stroke candidates
-    // otherwise churn before the one-stroke goal happens to leave the heap.
+    // With the stroke floor, every remaining outgoing edge costs at least
+    // minKey + 1. Such a suffix cannot improve the known goal or any of its
+    // predecessors. Strict relaxation preserves equal-cost retained plans;
+    // heap order and every relaxation before this global stop stay unchanged.
     const goalDistance = dist.get(goalK);
     const unsettledDistance = pq.minKey;
-    if (goalDistance != null && (unsettledDistance == null || goalDistance <= unsettledDistance)) break;
+    if (goalDistance != null && (unsettledDistance == null || goalDistance <= unsettledDistance + (oneStrokeFloor ? 1 : 0))) break;
   }
 
   const best = dist.get(goalK);
