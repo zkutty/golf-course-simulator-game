@@ -11,6 +11,7 @@ import {
   shouldHoldUnopenedLiveDay,
   stepLive,
 } from "../game/live/simulation";
+import { captureShotTelemetrySnapshot } from "../game/live/shotTelemetrySnapshot";
 import { commitDay } from "../game/live/commitDay";
 import type { DayResult, GolferRenderData, LiveState } from "../game/live/types";
 import {
@@ -566,6 +567,9 @@ export function useLiveSimulation(args: {
 
   const liveActive = speed !== "paused" || status.onCourse > 0;
 
+  const getShotTelemetrySnapshot = useCallback(() =>
+    captureShotTelemetrySnapshot(liveRef.current?.golfers ?? []), []);
+
   const getSnapshot = useCallback((): LiveSimulationSnapshotV1 | undefined => {
     const state = liveRef.current;
     if (!state) return undefined;
@@ -682,6 +686,7 @@ export function useLiveSimulation(args: {
     selectGolfer,
     selectedId,
     getSnapshot,
+    getShotTelemetrySnapshot,
     restoreSnapshot,
     advanceTime,
     setPacePreset,

@@ -2978,7 +2978,7 @@ export default function App() {
           member: { courseRating: textMemberRating.courseRating, slope: textMemberRating.slope, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
           championship: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
         };
-    const liveStateById = new Map((live.getSnapshot()?.state.golfers ?? []).map((golfer) => [golfer.id, golfer]));
+    const liveStateById = live.getShotTelemetrySnapshot();
     const textSurfaceCareSummary = surfaceCareConditionSummary(course);
     const textGreenKeeping = greenKeepingOverview(course, world);
     const textSurfaceCareEvidence = observedSurfaceCareEvidence(course);
