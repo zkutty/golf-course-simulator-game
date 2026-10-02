@@ -1,0 +1,122 @@
+name: ZK-682 bounded startup trace
+on:
+  push:
+    branches: [codex/hosted-startup-trace]
+permissions:
+  contents: read
+defaults:
+  run:
+    working-directory: simgolf-lite
+jobs:
+  startup-trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ZK682_APPLICATION_BASELINE: d608498502b766034841a314c991e8bc031f8404
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify unchanged application and dependencies
+        working-directory: ${{ github.workspace }}
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test -z "$(git status --porcelain)"
+          git diff --exit-code "$ZK682_APPLICATION_BASELINE" HEAD -- simgolf-lite/src simgolf-lite/package.json simgolf-lite/package-lock.json simgolf-lite/vite.config.ts
+          while IFS= read -r changed; do
+            case "$changed" in
+              .github/workflows/zk682-startup-trace.yml|simgolf-lite/scripts/perf-smoke.mjs|simgolf-lite/scripts/perf-startup-diagnostics.mjs|simgolf-lite/scripts/perf-startup-diagnostics.test.mjs) ;;
+              *) printf 'Unexpected diagnostic change: %s\n' "$changed"; exit 1 ;;
+            esac
+          done < <(git diff --name-only "$ZK682_APPLICATION_BASELINE" HEAD)
+          printf 'ZK682_TRACE_ROOT=%s/zk682-startup-trace\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/zk682-startup-trace/reports"
+          git rev-parse HEAD > "$RUNNER_TEMP/zk682-startup-trace/diagnostic-commit.txt"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build unchanged application
+        run: GITHUB_SHA="$ZK682_APPLICATION_BASELINE" npm run build
+      - name: Capture bounded startup diagnostics
+        id: performance
+        continue-on-error: true
+        env:
+          PERF_FIXTURE: m27
+          PERF_THEME: parkland
+          PERF_FIXTURE_READY_TIMEOUT_MS: "300000"
+          PERF_DIAGNOSTICS_DIR: ${{ runner.temp }}/zk682-startup-trace/startup
+          PERF_DIAGNOSTICS_TRACE: "1"
+          PERF_OUTPUT_PATH: ${{ runner.temp }}/zk682-startup-trace/reports/performance.json
+        run: |
+          set +e
+          GITHUB_SHA="$ZK682_APPLICATION_BASELINE" npm run test:perf 2>&1 | tee "$ZK682_TRACE_ROOT/performance.log"
+          result=${PIPESTATUS[0]}
+          printf '%s\n' "$result" > "$ZK682_TRACE_ROOT/performance-exit-code.txt"
+          exit "$result"
+      - name: Validate diagnostic completeness separately
+        id: diagnostics
+        if: always()
+        continue-on-error: true
+        run: |
+          node --input-type=module <<'JS'
+          import fs from "node:fs";
+          import path from "node:path";
+          import assert from "node:assert/strict";
+          const root=process.env.ZK682_TRACE_ROOT;
+          const dir=path.join(root,"startup");
+          const summary=JSON.parse(fs.readFileSync(path.join(dir,"startup-summary.json"),"utf8"));
+          assert.equal(summary.diagnosticOnly,true);
+          assert.equal(summary.commit,fs.readFileSync(path.join(root,"diagnostic-commit.txt"),"utf8").trim());
+          assert.equal(summary.traceRequested,true);
+          assert.equal(summary.profileWritten,true);
+          assert.equal(summary.cpu.truncated,false);
+          assert.equal(summary.network.truncated,false);
+          assert.equal(summary.trace.complete,true);
+          assert.equal(summary.trace.truncated,false);
+          assert.ok(summary.trace.coverage.phases.length===2 && summary.trace.coverage.phases.every(phase=>phase.covered));
+          assert.ok(summary.trace.highestBufferUsage<1);
+          assert.ok(summary.trace.phases.fixture.length>0);
+          assert.ok(summary.cpu.phases.fixture.sampledMs>0);
+          assert.ok(!fs.existsSync(path.join(dir,"startup-error.json")));
+          assert.ok(summary.trace.bytes>0 && summary.trace.bytes<=32*1024*1024);
+          assert.equal(fs.statSync(path.join(dir,"startup.trace.json")).size,summary.trace.bytes);
+          assert.equal(fs.statSync(path.join(dir,"startup.cpuprofile")).size,summary.profileBytes);
+          assert.ok(summary.profileBytes<=20*1024*1024);
+          const trace=JSON.parse(fs.readFileSync(path.join(dir,"startup.trace.json"),"utf8"));
+          assert.ok(trace.traceEvents.length>0 && trace.traceEvents.length<=200000);
+          JS
+      - name: Record separate diagnostic and producer outcomes
+        if: always()
+        env:
+          WORKFLOW_COMMIT: ${{ github.sha }}
+          PERF_OUTCOME: ${{ steps.performance.outcome }}
+          DIAGNOSTIC_OUTCOME: ${{ steps.diagnostics.outcome }}
+        run: |
+          node --input-type=module <<'JS'
+          import fs from "node:fs";
+          import path from "node:path";
+          import {createHash} from "node:crypto";
+          const root=process.env.ZK682_TRACE_ROOT;
+          const exitPath=path.join(root,"performance-exit-code.txt");
+          fs.writeFileSync(path.join(root,"provenance.json"),JSON.stringify({applicationBaseline:process.env.ZK682_APPLICATION_BASELINE,workflowCommit:process.env.WORKFLOW_COMMIT,observedDiagnosticCommit:fs.readFileSync(path.join(root,"diagnostic-commit.txt"),"utf8").trim(),dependencyLockSha256:createHash("sha256").update(fs.readFileSync("package-lock.json")).digest("hex"),instrumented:true,fullCertification:false,performance:{outcome:process.env.PERF_OUTCOME,exitCode:fs.existsSync(exitPath)?Number(fs.readFileSync(exitPath,"utf8").trim()):null},diagnostics:{outcome:process.env.DIAGNOSTIC_OUTCOME},limitation:"Diagnostic attribution only; original uninstrumented acceptance remains required."},null,2));
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zk682-bounded-startup-trace-${{ github.sha }}
+          path: ${{ runner.temp }}/zk682-startup-trace
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve both failing outcomes
+        if: always()
+        env:
+          PERF_OUTCOME: ${{ steps.performance.outcome }}
+          DIAGNOSTIC_OUTCOME: ${{ steps.diagnostics.outcome }}
+        run: |
+          test "$PERF_OUTCOME" = success
+          test "$DIAGNOSTIC_OUTCOME" = success

@@ -18,10 +18,13 @@
 // Env:   PERF_WORK_BUDGET_MS (default 8), PERF_BUDGET_MS (frame budget,
 //        default 33, enforced only with PERF_ASSERT_FRAME=1),
 //        PERF_MEASURE_S (default 20), PERF_HEADED=1 (visible GPU-backed run),
-//        PERF_HARDWARE_CLASS / PERF_POWER_STATE / PERF_RUN_LABEL (evidence labels)
-import { spawn } from "node:child_process";
+//        PERF_HARDWARE_CLASS / PERF_POWER_STATE / PERF_RUN_LABEL (evidence labels),
+//        PERF_DIAGNOSTICS_DIR (opt-in startup CPU/network artifacts outside evidence)
+//        PERF_DIAGNOSTICS_TRACE=1 (also capture bounded browser/native timeline)
+import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { diagnosticsDirectory, startStartupDiagnostics } from "./perf-startup-diagnostics.mjs";
 import { loadBiomeKeys } from "./biome-registry.mjs";
 import { DEFAULT_COLD_STARTUP_BUDGET_MS, DEFAULT_FIXTURE_LOAD_BUDGET_MS, readinessBudgetValidation, rendererBudgetValidation } from "./perf-readiness-budget.mjs";
 
@@ -41,6 +44,11 @@ const OUTPUT_PATH = process.env.PERF_OUTPUT_PATH
   ? resolve(process.env.PERF_OUTPUT_PATH)
   : new URL(`../artifacts/m28/performance-${PERF_THEME}.json`, import.meta.url);
 const PORT = 5199;
+let DIAGNOSTICS_DIRECTORY = null;
+if (process.env.PERF_DIAGNOSTICS_DIR) {
+  try { DIAGNOSTICS_DIRECTORY = diagnosticsDirectory(process.env.PERF_DIAGNOSTICS_DIR, OUTPUT_PATH); }
+  catch (error) { console.error("[perf-smoke] startup diagnostic directory rejected:", error.message); }
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -94,11 +102,28 @@ await page.addInitScript(() => {
   localStorage.setItem("coursecraft_perfhud", "on");
   localStorage.setItem("coursecraft_ambience", "on");
 });
+let startupDiagnostics = null;
+try {
+let diagnosticCommit = null;
+if (DIAGNOSTICS_DIRECTORY) {
+  try { diagnosticCommit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(); }
+  catch (error) { console.error("[perf-smoke] diagnostic commit unavailable:", error.message); }
+}
+startupDiagnostics = DIAGNOSTICS_DIRECTORY ? await startStartupDiagnostics(page, DIAGNOSTICS_DIRECTORY, {
+  commit: diagnosticCommit,
+  nodeVersion: process.version, platform: process.platform, arch: process.arch,
+  browserVersion: browser.version(), fixture: PERF_FIXTURE, theme: PERF_THEME,
+  viewport: { width: 1440, height: 900 }, samplingIntervalUs: 1000,
+  budgets: { coldStartupMilliseconds: STARTUP_BUDGET_MS, fixtureLoadMilliseconds: FIXTURE_LOAD_BUDGET_MS },
+}, { trace: process.env.PERF_DIAGNOSTICS_TRACE === "1" }) : null;
 const coldStartedAt = performance.now();
+startupDiagnostics?.mark("cold-start", coldStartedAt);
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 await page.getByRole("button", { name: "Quick Start" }).waitFor({ state: "visible", timeout: 30_000 });
 const coldStartupMs = performance.now() - coldStartedAt;
+startupDiagnostics?.mark("cold-ready", coldStartedAt + coldStartupMs);
 const fixtureStartedAt = performance.now();
+startupDiagnostics?.mark("fixture-start", fixtureStartedAt);
 await page.goto(`http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 console.log("[perf-smoke] document loaded; waiting for the visible course canvas …");
 await sleep(500);
@@ -127,6 +152,11 @@ await page.waitForFunction(() => {
 }, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
 const box = await canvas.boundingBox();
 const fixtureLoadMs = performance.now() - fixtureStartedAt;
+startupDiagnostics?.mark("fixture-ready", fixtureStartedAt + fixtureLoadMs);
+// Stop collection after the original readiness boundary; persist in parallel
+// with unchanged warmup/measurement; diagnostics report errors separately.
+const startupDiagnosticResult = startupDiagnostics?.finish({ coldStartupMs, fixtureLoadMs })
+;
 console.log(`[perf-smoke] game state ready in ${fixtureLoadMs.toFixed(0)}ms`);
 await sleep(1200);
 if (!box) throw new Error("performance fixture did not create a renderer canvas");
@@ -173,6 +203,7 @@ const browserEvidence = await page.evaluate(() => {
     context,
   };
 });
+await startupDiagnosticResult;
 await browser.close();
 vite.kill();
 
@@ -247,3 +278,7 @@ console.log(
       ? `, p95 frame ${perf.p95Ms.toFixed(2)}ms ≤ ${BUDGET_MS}ms`
       : ` (frame p95 ${perf.p95Ms.toFixed(2)}ms reported, not asserted headless)`)
 );
+
+} finally {
+  await startupDiagnostics?.dispose();
+}
