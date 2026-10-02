@@ -1,3 +1,4 @@
+import { CourseTextReportOwner } from "./app/courseTextReport";
 import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState, useCallback, type CSSProperties } from "react";
 import { formatCurrency } from "./i18n/format";
 import { useI18n } from "./i18n/useI18n";
@@ -49,11 +50,10 @@ import {
   type FineGreenSculptPreview,
 } from "./game/greens/fineGreenSculpt";
 import { normalizeGreenProgram } from "./game/greens/greenSurface";
-import { greenKeepingOverview } from "./game/greens/greenMaintenance";
 import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
-import { computeCourseRatingAndSlope, computeRatingForSetup, computeRatingsByTee } from "./game/sim/courseRating";
+import { computeCourseRatingAndSlope, computeRatingForSetup } from "./game/sim/courseRating";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "./game/sim/loanEligibility";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import {
@@ -217,7 +217,6 @@ import {
   terrainMinReputation,
 } from "./game/progression/progression";
 import { prepareTournamentDay, revalidateScheduledTournaments, tournamentCalendar } from "./game/tournaments/tournaments";
-import { evaluateTournamentCourseQualification } from "./game/tournaments/eligibility";
 import type { TournamentTier } from "./game/tournaments/types";
 import { debugLog } from "./utils/debugLog";
 import { activeCourseLayout, courseForLayout, courseLayouts, normalizeCourseLayouts, selectLayout } from "./game/models/courseLayouts";
@@ -252,10 +251,7 @@ import { compareM48DesignTest, refreshM48DesignTestSession } from "./game/archit
 import { strategicGeometryVersion } from "./game/architecture/strategic";
 import {
   effectiveSurfaceTiles,
-  observedSurfaceCareEvidence,
-  surfaceCareConditionSummary,
 } from "./game/conditions/surfaceCare";
-import { surfaceCarePresentationSummary } from "./game/render/surfaceCarePresentation";
 import { currentShotEvidence, currentShotEvidenceText } from "./game/live/currentShotEvidence";
 import {
   createM53SurfaceCareRoutineFixture,
@@ -453,6 +449,14 @@ export default function App() {
     initialState: DEFAULT_STATE,
     platform: platformServices,
   }));
+  const [courseTextReportOwner] = useState(() => new CourseTextReportOwner(gameSession));
+  useEffect(() => {
+    const unregister = gameSession.registerTeardown(courseTextReportOwner.clear);
+    return () => {
+      unregister();
+      courseTextReportOwner.clear();
+    };
+  }, [gameSession, courseTextReportOwner]);
   const gameState = useGameSessionSelector(gameSession, (state) => state);
 
   useEffect(() => {
@@ -2965,29 +2969,22 @@ export default function App() {
   }
 
   useEffect(() => {
-    const hasExpandedSetup = course.holes.some((hole) => hole.teeBoxes?.forward || hole.teeBoxes?.championship || hole.pinPositions?.B || hole.pinPositions?.C);
-    const textMemberRating = computeCourseRatingAndSlope(activeOperatingCourse);
-    const tournamentReadiness = Object.fromEntries((["local", "regional", "championship"] as const).map((tier) => {
-      const result = evaluateTournamentCourseQualification(activeOperatingCourse, tier);
-      return [tier, { eligible: result.eligible, teeSet: result.teeSet, pinRotation: result.pinRotation, rating: result.rating, slope: result.slope, completeRotations: result.completeRotations, blockers: result.requirements.filter((item) => !item.passed).map((item) => ({ id: item.id, current: item.current, required: item.required })) }];
-    }));
-    const textTeeRatings = hasExpandedSetup
-      ? computeRatingsByTee(activeOperatingCourse)
-      : {
-          forward: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
-          member: { courseRating: textMemberRating.courseRating, slope: textMemberRating.slope, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
-          championship: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
-        };
-    const liveStateById = live.getShotTelemetrySnapshot();
-    const textSurfaceCareSummary = surfaceCareConditionSummary(course);
-    const textGreenKeeping = greenKeepingOverview(course, world);
-    const textSurfaceCareEvidence = observedSurfaceCareEvidence(course);
-    const textSurfaceCarePresentation = surfaceCarePresentationSummary({
-      course,
+    const textReportTransaction = courseTextReportOwner.prepareRatingPart({
+      session: gameSession,
+      capturedState: gameState,
+      persistedCourse: course,
+      capturedWorld: world,
+      activeOperatingCourse,
+      operatingLayoutId: activeLayout.id,
+      selectedTeeSet,
+      activePinRotation: course.activePinRotation ?? "A",
+      outputMode: activeTutorial?.stage === "validate-hole" ? "validate-hole" : "normal",
       quality: resolvedGraphicsQuality,
-      seed: world.runSeed,
-      reducedMotion: appProfile.accessibility.reducedMotion || !effectiveAnimations,
+      presentationSeed: world.runSeed,
+      presentationReducedMotion: appProfile.accessibility.reducedMotion || !effectiveAnimations,
     });
+    const liveStateById = live.getShotTelemetrySnapshot();
+    const textReport = textReportTransaction.finishCarePart();
     const renderText = () => JSON.stringify({
       coordinateSystem: "tile coordinates; origin top-left, +x right, +y down",
       screen,
@@ -3069,27 +3066,13 @@ export default function App() {
           cellSize: course.surfaceCare?.cellSize ?? 8,
           lastAdvancedAbsoluteDay:
             course.surfaceCare?.lastAdvancedAbsoluteDay ?? null,
-          ...textSurfaceCareSummary,
-          presentation: textSurfaceCarePresentation,
-          evidence: textSurfaceCareEvidence.map((zone) => ({
-            key: zone.key,
-            surfaceId: zone.surfaceId,
-            cell: [zone.cellX, zone.cellY],
-            terrain: zone.terrain,
-            tiles: zone.tiles,
-            effectiveTerrain: zone.effectiveTerrain,
-            turfHealth: zone.turfHealth,
-            mowingQuality: zone.mowingQuality,
-            moisture: zone.moisture,
-            wear: zone.wear,
-            serviceRatio: zone.serviceRatio,
-            repairRequired: zone.repairRequired,
-            action: zone.action,
-          })),
+          ...textReport.care.condition,
+          presentation: textReport.care.presentation,
+          evidence: textReport.care.evidence,
         },
         greenKeeping: {
           program: course.greenProgram?.preset ?? "balanced",
-          explicitAdvancedControls: textGreenKeeping.explicitAdvancedControls,
+          explicitAdvancedControls: textReport.care.greenKeeping.explicitAdvancedControls,
           targets: {
             speedFeet: course.greenProgram?.targetSpeedFeet ?? 9.5,
             firmness: course.greenProgram?.targetFirmness ?? 0.5,
@@ -3097,31 +3080,16 @@ export default function App() {
             rollingPasses: course.greenProgram?.rollingPasses ?? 1,
             irrigationTarget: course.greenProgram?.irrigationTarget ?? 0.58,
           },
-          realized: {
-            speedFeet: textGreenKeeping.realizedSpeedFeet,
-            firmness: textGreenKeeping.realizedFirmness,
-            health: textGreenKeeping.averageHealth,
-            moisture: textGreenKeeping.averageMoisture,
-            compaction: textGreenKeeping.averageCompaction,
-            wear: textGreenKeeping.averageWear,
-          },
-          delivery: {
-            requiredWeeklyBudget: textGreenKeeping.requiredWeeklyBudget,
-            allocatedDailyBudget: textGreenKeeping.allocatedDailyBudget,
-            requiredDailyBudget: textGreenKeeping.requiredDailyBudget,
-            staffCoverage: textGreenKeeping.staffCoverage,
-          },
-          tradeoffs: {
-            paceMinutesDelta: textGreenKeeping.paceMinutesDelta,
-            satisfactionDelta: textGreenKeeping.satisfactionDelta,
-          },
+          realized: textReport.care.greenKeeping.realized,
+          delivery: textReport.care.greenKeeping.delivery,
+          tradeoffs: textReport.care.greenKeeping.tradeoffs,
         },
         holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length,
         terrainCounts: course.tiles.reduce((counts, terrain) => ({ ...counts, [terrain]: (counts[terrain] ?? 0) + 1 }), {} as Partial<Record<Terrain, number>>),
         obstacleCounts: course.obstacles.reduce((counts, obstacle) => ({ ...counts, [obstacle.type]: (counts[obstacle.type] ?? 0) + 1 }), {} as Partial<Record<ObstacleType, number>>),
         decorations: (course.decorations ?? []).map((decoration) => ({ kind: decoration.kind, x: decoration.x, y: decoration.y, rotation: decoration.rotation, span: decoration.span ?? null })),
         activePinRotation: course.activePinRotation ?? "A",
-        teeRatings: Object.fromEntries(Object.entries(textTeeRatings).map(([teeSet, summary]) => [teeSet, { rating: summary.courseRating, slope: summary.slope, yardage: summary.effectiveYardage, complete: summary.setupComplete, deltas: summary.rotationDeltas }])),
+        teeRatings: textReport.ratings.teeRatings,
         holeSetups: course.holes.map((hole) => ({ teeBoxes: hole.teeBoxes ?? { member: hole.tee }, pinPositions: hole.pinPositions ?? { A: hole.green }, parByTee: Object.fromEntries(TEE_SETS.map((teeSet) => [teeSet, getParSetting(hole, teeSet)])) })),
         courseManagerOpen: showCourseManager,
         activeCourseId: activeLayout.id,
@@ -3434,7 +3402,7 @@ export default function App() {
         scheduled: tournamentCalendar(world).events.filter((event) => event.status === "scheduled").length,
         cancelled: tournamentCalendar(world).events.filter((event) => event.status === "cancelled").length,
         warnings: tournamentCalendar(world).events.filter((event) => event.status === "scheduled" && event.warning).map((event) => ({ name: event.name, warning: event.warning })),
-        readiness: tournamentReadiness,
+        readiness: textReport.ratings.tournamentReadiness,
         active: live.status.tournament ? { name: live.status.tournament.name, teeSet: live.status.tournament.teeSet, pinRotation: live.status.tournament.pinRotation, standings: live.status.tournament.standings.slice(0, 5) } : null,
       },
       selectedGolferEvidence: live.status.selected ? { golferId: live.status.selected.id, channel: currentShotEvidenceText(currentShotEvidence(liveStateById.get(live.status.selected.id))) } : null,
@@ -3466,7 +3434,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleAuthorityCourse.activePinRotation, activeHoleAuthorityCourse.holes, activeHoleIndex, activeHoleScore?.par, activeLayout.id, activeOperatingCourse, activePlayerRound, activeShotRoute, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, openingMarker, openingPlaybackUi.following, openingPlaybackUi.running, openingPlaybackUi.speed, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
+  }, [courseTextReportOwner, gameSession, gameState, activeHoleAuthorityCourse.activePinRotation, activeHoleAuthorityCourse.holes, activeHoleIndex, activeHoleScore?.par, activeLayout.id, activeOperatingCourse, activePlayerRound, activeShotRoute, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, openingMarker, openingPlaybackUi.following, openingPlaybackUi.running, openingPlaybackUi.speed, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
