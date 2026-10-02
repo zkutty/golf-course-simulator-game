@@ -1333,6 +1333,8 @@ export class ViewportInputController {
       const next = nextRotation(this.rotation, right ? 1 : -1);
       if (!this.config.animationsEnabled) {
         this.rotation = next;
+        this.applyCamera();
+        this.invalidateOverlay();
         this.config.onRotationCommit(next);
       } else {
         this.rotationTween = { start: this.now(), toDeg: right ? -90 : 90, next };
