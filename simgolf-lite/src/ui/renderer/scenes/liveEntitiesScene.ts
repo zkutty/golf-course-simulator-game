@@ -1,4 +1,5 @@
 import * as PIXI from "pixi.js";
+import { destroySceneSubtree } from "../destroySceneSubtree";
 import type { GolferRenderData } from "../../../game/live/types";
 import type { Terrain } from "../../../game/models/types";
 import { bunkerDisplayPoint, cachedBunkerPresentation } from "../../../game/render/bunkerPresentation";
@@ -279,7 +280,7 @@ export function createLiveEntitiesSceneSystem(
     for (const [id, entry] of pool) destroyEntry(id, entry, false);
     for (const container of bubbles.values()) {
       container.parent?.removeChild(container);
-      container.destroy({ children: true });
+      destroySceneSubtree(container);
     }
     bubbles.clear();
     effectGraphics?.parent?.removeChild(effectGraphics);
@@ -644,7 +645,7 @@ export function createLiveEntitiesSceneSystem(
     for (const [id, container] of bubbles) {
       if (!scheduler.active.some((emote) => emote.golferId === id)) {
         container.parent?.removeChild(container);
-        container.destroy({ children: true });
+        destroySceneSubtree(container);
         bubbles.delete(id);
       }
     }
