@@ -1,6 +1,6 @@
 import { expect, test, type CDPSession, type Locator, type Page } from "@playwright/test";
-import { mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import {
   ZK682_STABILITY_THRESHOLDS,
   createZk682StabilityReport,
@@ -17,6 +17,102 @@ type Measured = {
 };
 
 const timingCleanupSamples: ReturnType<typeof clearReactComponentTimings>[] = [];
+
+// End-only opt-in diagnostic: the original save/load report is already on disk.
+// Extra GC perturbs subsequent long-session samples; this is never acceptance.
+async function runEndHeapGcDiagnostics(
+  page: Page, cdp: CDPSession, outputDirectory: string, candidateCommit: string,
+  originalEnd: Measured & { cycle: number; courseHash: string },
+  reportStatus: { passed: boolean; errors: readonly string[] },
+): Promise<void> {
+  const requested = process.env.ZK682_END_GC_DIAGNOSTICS_DIR;
+  if (!requested) return;
+  const startedAt = new Date().toISOString();
+  const errors: string[] = [];
+  let file: string | undefined;
+  const failure = (error: unknown) => {
+    const message = String(error).slice(0, 512);
+    if (errors.length < 8) errors.push(message);
+    console.warn("[zk682-end-gc-diagnostics]", JSON.stringify({ complete: false, candidateCommit, startedAt, error: message }));
+  };
+  try {
+    const applicationBaseline = process.env.ZK682_APPLICATION_BASELINE;
+    if (!/^[0-9a-f]{40}$/.test(candidateCommit) || !/^[0-9a-f]{40}$/.test(applicationBaseline ?? "")) {
+      throw new Error("End-GC diagnostic requires full candidate and application baseline SHAs");
+    }
+    const physicalPath = async (path: string): Promise<string> => {
+      try { return await realpath(path); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        const parent = dirname(path);
+        if (parent === path) throw error;
+        return resolve(await physicalPath(parent), relative(parent, path));
+      }
+    };
+    const fixedCanonical = resolve("artifacts/zk682/raw");
+    const canonical = [resolve(outputDirectory), fixedCanonical,
+      await physicalPath(resolve(outputDirectory)), await physicalPath(fixedCanonical)];
+    const outsideCanonical = (directory: string) => {
+      for (const root of canonical) {
+        const within = relative(root, directory);
+        if (within === "" || (within.split(/[\\/]/)[0] !== ".." && !isAbsolute(within))) {
+          throw new Error("End-GC diagnostics must be outside active and fixed canonical output");
+        }
+      }
+    };
+    outsideCanonical(resolve(requested));
+    outsideCanonical(await physicalPath(resolve(requested)));
+    await mkdir(requested, { recursive: true });
+    const directory = await realpath(requested); outsideCanonical(directory);
+    file = resolve(directory, "end-heap-gc-diagnostics.json");
+    await rm(file, { force: true }); await rm(`${file}.tmp`, { force: true });
+    if (originalEnd.cycle !== 12) throw new Error("End-GC diagnostic requires original cycle 12");
+    type Reading = { name: string; usedSize: number; totalSize: number; embedderHeapUsedSize?: number; backingStorageSize?: number };
+    const readings: Reading[] = [];
+    const actions: { name: string; startedMs: number; completedMs: number; error: string | null }[] = [];
+    const action = async (name: string, operation: () => Promise<void>) => {
+      const entry = { name, startedMs: performance.now(), completedMs: 0, error: null as string | null };
+      actions.push(entry);
+      try { await operation(); }
+      catch (error) { entry.error = String(error).slice(0, 512); failure(error); }
+      finally { entry.completedMs = performance.now(); }
+    };
+    const read = (name: string) => action(name, async () => {
+      const heap = await cdp.send("Runtime.getHeapUsage");
+      if (!Number.isFinite(heap.usedSize) || heap.usedSize <= 0 || !Number.isFinite(heap.totalSize) || heap.totalSize <= 0) {
+        throw new Error("Invalid diagnostic Runtime heap reading");
+      }
+      readings.push({ name, usedSize: heap.usedSize, totalSize: heap.totalSize,
+        ...(Number.isFinite(heap.embedderHeapUsedSize) ? { embedderHeapUsedSize: heap.embedderHeapUsedSize } : {}),
+        ...(Number.isFinite(heap.backingStorageSize) ? { backingStorageSize: heap.backingStorageSize } : {}),
+      });
+    });
+    await read("before-extra-gc");
+    await action("first-extra-gc", async () => { await cdp.send("HeapProfiler.collectGarbage"); });
+    await read("immediate-after-first-gc");
+    await action("diagnostic-120ms-delay", async () => { await page.waitForTimeout(120); });
+    await read("after-120ms-delay");
+    await action("second-extra-gc", async () => { await cdp.send("HeapProfiler.collectGarbage"); });
+    await read("immediate-after-second-gc");
+    const receipt = { schemaVersion: 1, diagnosticOnly: true, certificationEligible: false,
+      singleObservation: true, laterProducerMeasurementsPerturbed: true, candidateCommit, applicationBaseline,
+      startedAt, completedAt: new Date().toISOString(), originalEnd,
+      originalReportPassed: reportStatus.passed, originalReportErrors: reportStatus.errors.slice(0, 8),
+      requestedDelayMs: 120, readings, actions, errorCount: errors.length, errors,
+      complete: errors.length === 0 && readings.length === 4 && actions.length === 7,
+    };
+    const bytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+    if (bytes.length > 128 * 1024) throw new Error("End-GC diagnostic exceeded 128 KiB cap");
+    await writeFile(`${file}.tmp`, bytes, { flag: "wx" });
+    await rename(`${file}.tmp`, file);
+  } catch (error) {
+    failure(error);
+    if (file) {
+      await rm(file, { force: true }).catch(failure);
+      await rm(`${file}.tmp`, { force: true }).catch(failure);
+    }
+  }
+}
 
 async function measure(page: Page, cdp: CDPSession): Promise<Measured> {
   timingCleanupSamples.push(await page.evaluate(clearReactComponentTimings));
@@ -173,6 +269,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     samples: saveLoadSamples,
   });
   await writeFile(resolve(outputDirectory, "save-load-resource-stability.json"), `${JSON.stringify(saveLoadReport, null, 2)}\n`);
+  await runEndHeapGcDiagnostics(page, cdp, outputDirectory, expectedCommit!, saveLoadSamples.at(-1)!, saveLoadReport);
 
   // Run the actual mutable live simulation for at least two in-game hours.
   await page.keyboard.press("Digit3");
