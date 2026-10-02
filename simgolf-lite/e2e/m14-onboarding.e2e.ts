@@ -538,10 +538,16 @@ test.describe("ZK-1106 private operator opening", () => {
     // actual camera rotates. The test only reads renderer diagnostics; all
     // authoring below remains real keyboard and mouse input.
     for (let rotation = 0; rotation < 4; rotation++) {
+      const priorRotation = await page.evaluate(() => window.__coursecraftPixiTest!.viewportInputState()!.rotation.committed);
+      const expectedRotation = ((priorRotation + 270) % 360) as typeof priorRotation;
       await page.keyboard.press("q");
       await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toMatchObject({
         targetIds,
         outlineCount: targetIds.length,
+      });
+      await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.viewportInputState()?.rotation ?? null)).toMatchObject({
+        committed: expectedRotation,
+        tweening: false,
       });
       const projected = await page.evaluate(({ x, y }) => window.__coursecraftPixiTest!.tileToScreen(x, y), point);
       const viewport = await page.evaluate(() => window.__coursecraftPixiTest!.viewport());
