@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      ZK682_EXPECTED_COMMIT: 23ffa497e2e4271964e43eb73a2e50483ed1e12d
+      ZK682_EXPECTED_COMMIT: ${{ github.sha }}
       ZK682_DIAGNOSTIC_BASELINE: 23ffa497e2e4271964e43eb73a2e50483ed1e12d
     steps:
       - name: Checkout immutable diagnostic source
