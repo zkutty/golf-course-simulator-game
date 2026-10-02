@@ -501,7 +501,16 @@ export function createLandscapeComponentCache(): LandscapeComponentCache {
     update(tiles, width, height, options = {}) {
       const styleKey = `${width}x${height}:${options.cornerRadius ?? 0.36}:${options.cornerSegments ?? 3}`;
       const skeletons = buildLandscapeComponentSkeletons(tiles, width, height);
-      const sharedRings = sharedRingsForSkeletons(tiles, width, height, skeletons, options);
+      // Preserve the eager helper's option reads, including accessor errors.
+      const sharedOptions = {
+        cornerRadius: options.cornerRadius ?? 0.36,
+        cornerSegments: options.cornerSegments ?? 3,
+      };
+      // Malformed/coercible options keep the original eager arithmetic path.
+      let sharedRings = Number.isFinite(sharedOptions.cornerRadius)
+        && Number.isFinite(sharedOptions.cornerSegments)
+        ? undefined
+        : sharedRingsForSkeletons(tiles, width, height, skeletons, sharedOptions);
       const components: LandscapeComponent[] = [];
       const changed: LandscapeComponent[] = [];
       let hits = 0;
@@ -515,6 +524,8 @@ export function createLandscapeComponentCache(): LandscapeComponentCache {
           components.push(cached);
           next.set(key, cached);
         } else {
+          // Hits return existing components; only a miss consumes these rings.
+          sharedRings ??= sharedRingsForSkeletons(tiles, width, height, skeletons, sharedOptions);
           const component = materializeLandscapeComponent(
             skeleton,
             width,
