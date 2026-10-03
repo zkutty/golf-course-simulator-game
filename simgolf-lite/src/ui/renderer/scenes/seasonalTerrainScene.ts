@@ -1,3 +1,4 @@
+import { destroySceneSubtree } from "../destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../../../game/models/courseSetup";
 import { seasonalTerrainDecals } from "../../../game/render/seasonalTerrainPresentation";
@@ -11,7 +12,7 @@ export function createSeasonalTerrainSceneSystem(
     // Compatibility helper now composed by the atmosphere owner.
     id: "atmosphere",
     render(snapshot) {
-      layer.removeChildren().forEach((child) => child.destroy({ children: true }));
+      layer.removeChildren().forEach(destroySceneSubtree);
       const state = snapshot.seasonalVisualState;
       if (!state) return;
 
