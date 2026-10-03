@@ -459,15 +459,21 @@ function sharedRingsForSkeletons(
   skeletons: readonly LandscapeComponentSkeleton[],
   options: LandscapeOptions,
 ): ReadonlyMap<number, SurfacePoint[][]> {
+  const sharedOptions = {
+    cornerRadius: options.cornerRadius ?? 0.36,
+    cornerSegments: options.cornerSegments ?? 3,
+  };
+  const ringsOnly = typeof sharedOptions.cornerRadius === "number"
+    && Number.isFinite(sharedOptions.cornerRadius)
+    && typeof sharedOptions.cornerSegments === "number"
+    && Number.isFinite(sharedOptions.cornerSegments);
   return buildSharedBoundaryContours(
     tiles,
     width,
     height,
     skeletons.map((skeleton, id) => ({ id, terrain: skeleton.terrain, cells: skeleton.cells })),
-    {
-      cornerRadius: options.cornerRadius ?? 0.36,
-      cornerSegments: options.cornerSegments ?? 3,
-    },
+    sharedOptions,
+    ringsOnly ? "rings-only" : "full",
   ).ringsByComponent;
 }
 

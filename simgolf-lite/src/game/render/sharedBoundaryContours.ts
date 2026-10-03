@@ -429,6 +429,7 @@ export function buildSharedBoundaryContours(
   height: number,
   components: readonly SharedBoundaryComponentInput[],
   options: SharedBoundaryOptions,
+  outputMode: "full" | "rings-only" = "full",
 ): SharedBoundaryResult {
   if (width <= 0 || height <= 0 || tiles.length !== width * height) {
     return { ringsByComponent: new Map(), edges: [], seams: [] };
@@ -441,5 +442,5 @@ export function buildSharedBoundaryContours(
       .sort((a, b) => Math.abs(signedArea(b)) - Math.abs(signedArea(a)));
     ringsByComponent.set(component.id, rings);
   }
-  return { ringsByComponent, edges, seams: buildCanonicalSeams(edges, options) };
+  return { ringsByComponent, edges, seams: outputMode === "rings-only" ? [] : buildCanonicalSeams(edges, options) };
 }
