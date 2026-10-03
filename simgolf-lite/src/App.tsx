@@ -6,7 +6,7 @@ import { perfProfiler } from "./utils/performanceProfiler";
 import { lastItem } from "./utils/array";
 import "./ui/cozyLayout.css";
 import "./App.css";
-import { PixiStage } from "./ui/PixiStage";
+import { PixiStage } from "./ui/renderer/pixiStageBoundary";
 import { DesignDock } from "./ui/DesignDock";
 import {
   buildDesignCatalog,
@@ -379,6 +379,7 @@ import { applyManualOperationsCommand } from "./game/operations/commands";
 import { ContentLibraryPanel } from "./ui/ContentLibraryPanel";
 import { IS_DEMO, saveAvailableInEdition } from "./config/edition";
 import {
+  captureBugError,
   recordBugAction,
   updateBugDiagnosticContext,
 } from "./bug-reporting/diagnostics";
@@ -419,6 +420,15 @@ const QUICK_SAVE_ANNOUNCEMENT_DURATION_MS = 2_500;
 export default function App() {
   const { t } = useI18n();
   const [flow, flowDispatch] = useReducer(reduceScreenFlow, INITIAL_SCREEN_FLOW);
+  const nativeRendererSessionRef = useRef<ReturnType<typeof PixiStage.createSession> | null>(null);
+  if (nativeRendererSessionRef.current === null) nativeRendererSessionRef.current = PixiStage.createSession();
+  const nativeRendererSession = nativeRendererSessionRef.current;
+  useEffect(() => () => {
+    void nativeRendererSession.close().catch((error: unknown) => captureBugError("react-crash", error));
+  }, [nativeRendererSession]);
+  useEffect(() => {
+    if (flow.base !== "in-game" && flow.base !== "loading") void nativeRendererSession.close().catch((error: unknown) => captureBugError("react-crash", error));
+  }, [flow.base, nativeRendererSession]);
   const [showVision, setShowVision] = useState(() => new URLSearchParams(window.location.search).get("view") === "vision");
   const [appProfile, setAppProfile] = useState<AppProfile>(() => loadAppProfile());
   // M53 screenshots are evidence for an explicit renderer tier, not a
@@ -2862,6 +2872,7 @@ export default function App() {
 
   // Career (ZKU-164): scenarios build their run from the authored definition.
   function startScenario(scenario: ScenarioDefinition) {
+    void nativeRendererSession.close().catch((error: unknown) => captureBugError("react-crash", error));
     setPendingLoadingContext(neutralLoadingBiomeContext(scenario.theme));
     flowDispatch({ type: "BEGIN_LOADING", label: t("scenario.preparing", { name: t(scenario.nameKey) }) });
     window.setTimeout(() => {
@@ -4516,6 +4527,7 @@ export default function App() {
   }
 
   function startNewGame(setup: GameSetup, openingDemo = false) {
+    void nativeRendererSession.close().catch((error: unknown) => captureBugError("react-crash", error));
     void audio.unlock();
     void audio.playSfx("confirm");
     setPendingLoadingContext(neutralLoadingBiomeContext(setup.theme));
@@ -4551,6 +4563,7 @@ export default function App() {
       return;
     }
     setPendingLoadingContext(neutralLoadingBiomeContext(recent.theme));
+    nativeRendererSession.beginRestore();
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreLatest") });
     const loaded = await loadSlot(recent.id);
     if (!loaded) {
@@ -5710,6 +5723,7 @@ export default function App() {
       onSaved={() => markClean(payloadSequenceRef.current)}
       onLoaded={(payload) => {
         setPendingLoadingContext(savedLoadingBiomeContext(payload));
+        nativeRendererSession.beginRestore();
         flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
         window.requestAnimationFrame(() => {
           window.setTimeout(() => {
@@ -6102,6 +6116,7 @@ export default function App() {
         >
           <div ref={canvasPaneRef} className="cc-course-pane" data-tutorial-target="course">
             <PixiStage
+                nativeSession={nativeRendererSession}
                 course={course}
                 holes={course.holes}
                 obstacles={course.obstacles}

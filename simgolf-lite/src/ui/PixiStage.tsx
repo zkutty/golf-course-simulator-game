@@ -1,11 +1,13 @@
 import { ownSceneMeshGeometry } from "./renderer/ownedSceneMeshGeometry";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 // Pixi's strict-CSP adapter replaces runtime-generated shader/uniform
 // functions with static implementations. Keep this before renderer startup so
 // Workers deployments can retain a script-src policy without 'unsafe-eval'.
 import "pixi.js/unsafe-eval";
 import { destroySceneSubtree } from "./renderer/destroySceneSubtree";
 import * as PIXI from "pixi.js";
+import { completeNativeSceneDisposers, guardNativeRendererCleanup, NativeRendererSession, type NativeRendererLease } from "./renderer/nativeRendererSession";
+import { NativeRendererOwner } from "./renderer/nativeRendererOwner";
 import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../game/models/types";
 import type { ShotRoutePresentation } from "../game/presentation/shotRoutePresentation";
 import type { GolferRenderData } from "../game/live/types";
@@ -582,6 +584,7 @@ function createCompactedPathCoreTexture(
 // (screen lower-left) face sits in shadow, the SE-facing face catches more.
 
 export interface PixiStageProps {
+  nativeSession?: PixiRendererSession;
   course: Course;
   holes: Hole[];
   obstacles: Obstacle[];
@@ -864,7 +867,97 @@ function fitZoomForTileBounds(
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min((screenW * 0.95) / width, (screenH * 0.95) / height)));
 }
 
-export function PixiStage(requestedProps: PixiStageProps) {
+export interface NativeRendererConfiguration {
+  readonly width: number;
+  readonly height: number;
+  readonly resolution: number;
+  readonly antialias: boolean;
+}
+type PixiRendererSession = NativeRendererSession<PIXI.Application, PIXI.Texture, NativeRendererConfiguration>;
+type PixiRendererLease = NativeRendererLease<PIXI.Application, PIXI.Texture, NativeRendererConfiguration>;
+
+// These ports retain native resources only; no React props, refs or course callbacks.
+function createNativeRendererOwner(): NativeRendererOwner<PIXI.Application, PIXI.Texture, NativeRendererConfiguration> {
+  return new NativeRendererOwner({
+    create: () => new PIXI.Application(),
+    initialize: async (app, config) => {
+      await app.init({
+        width: config.width,
+        height: config.height,
+        backgroundColor: 0xdfe8d8,
+        antialias: config.antialias,
+        resolution: config.resolution,
+        autoDensity: true,
+        eventFeatures: { move: false, globalMove: false, click: false, wheel: false },
+      });
+    },
+    compatible: (created, requested) => created.resolution === requested.resolution
+      && created.antialias === requested.antialias,
+    resume: (app, config) => {
+      app.renderer.resize(config.width, config.height, config.resolution);
+      app.start();
+    },
+    stop: (app) => { if (typeof app.stop === "function" && app.ticker) app.stop(); },
+    detachCanvas: (app) => { if (app.renderer) app.canvas.remove(); },
+    destroy: (app) => {
+      // Rejected renderer initialization has a public stage but no renderer/ticker yet.
+      if (app.renderer) app.destroy(true, { children: true, texture: false, textureSource: false });
+      else app.stage?.destroy({ children: true, texture: false, textureSource: false });
+    },
+    createDiamond: (app) => {
+      const g = new PIXI.Graphics();
+      try {
+        g.poly([TILE_W / 2, 0, TILE_W, TILE_H / 2, TILE_W / 2, TILE_H, 0, TILE_H / 2]);
+        g.fill(0xffffff);
+        g.stroke({ width: 1, color: 0xffffff, alpha: 0.35 });
+        return app.renderer.generateTexture(g);
+      } finally { g.destroy(); }
+    },
+    destroyDiamond: (texture) => { texture.destroy(true); },
+  });
+}
+
+export function PixiStage(props: PixiStageProps) {
+  const { t } = useI18n();
+  const [session] = useState(() => props.nativeSession ?? new NativeRendererSession(createNativeRendererOwner));
+  session.configure(createNativeRendererOwner);
+  const [failed, setFailed] = useState(false);
+  const onRendererFailure = useCallback(() => setFailed(true), []);
+  useEffect(() => () => {
+    if (!props.nativeSession) void session.close().catch((error: unknown) => {
+      console.error("[PixiStage] Renderer cleanup failed", error);
+    });
+  }, [props.nativeSession, session]);
+  if (!failed) return <PixiScene {...props} nativeSession={session} onRendererFailure={onRendererFailure} />;
+  return (
+    <div className={`cc-pixi-stage cc-tool-${props.playableShotMode ? "player-shot" : props.editorMode.toLowerCase()}`}
+      style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden" }}>
+      <div style={{ width: "100%", height: "100%", position: "relative", overflow: "hidden", cursor: "crosshair", touchAction: "none" }} />
+      <div
+          data-testid="course-renderer-error"
+          role="alert"
+          style={{
+            position: "absolute",
+            inset: 24,
+            display: "grid",
+            placeContent: "center",
+            padding: 24,
+            borderRadius: 14,
+            background: "rgba(35, 47, 38, 0.94)",
+            color: "#f7f1de",
+            textAlign: "center",
+            zIndex: 30,
+          }}
+        >
+          <strong style={{ fontSize: 18 }}>{t("renderer.error.title")}</strong>
+          <span style={{ marginTop: 8 }}>{t("renderer.error.body")}</span>
+        </div>
+    </div>
+  );
+}
+
+
+function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendererSession; onRendererFailure(): void }) {
   const { t } = useI18n();
   const initialRendererConfigRef = useRef({
     resolutionScale: requestedProps.resolutionScale,
@@ -974,6 +1067,34 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const viewportInputControllerRef = useRef<ViewportInputController | null>(null);
   const [flyoverCard, setFlyoverCard] = useState<{ hole: number; par: number; yards: number } | null>(null);
   const [rendererError, setRendererError] = useState(false);
+  const nativeSession = requestedProps.nativeSession;
+  const onRendererFailure = requestedProps.onRendererFailure;
+  const nativeMountRef = useRef<{ lease: PixiRendererLease; application: PIXI.Application | null } | null>(null);
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const lease = nativeSession.claim({
+      width: Math.max(container.clientWidth || 800, 100),
+      height: Math.max(container.clientHeight || 600, 100),
+      resolution: (window.devicePixelRatio || 1) * initialRendererConfigRef.current.resolutionScale,
+      antialias: true,
+    });
+    const mount = { lease, application: null as PIXI.Application | null };
+    nativeMountRef.current = mount;
+    return () => {
+      nativeSession.invalidate(lease);
+      if (nativeMountRef.current === mount) nativeMountRef.current = null;
+    };
+  }, [nativeSession]);
+  useEffect(() => {
+    if (!rendererError) return;
+    const mount = nativeMountRef.current;
+    if (mount) void nativeSession.fail(mount.lease).catch((error: unknown) => {
+      console.error("[PixiStage] Renderer cleanup failed", error);
+    });
+    // Unmount the failed scene so every effect cleanup runs before native finalization.
+    onRendererFailure();
+  }, [nativeSession, onRendererFailure, rendererError]);
   const [terrainStrokePreview, setTerrainStrokePreview] = useState<TerrainStrokePreview | null>(null);
   const [fineGreenStrokePreview, setFineGreenStrokePreview] = useState<FineGreenSculptPreview | null>(null);
   const [clickSplineDraft, setClickSplineDraft] = useState<Point[]>([]);
@@ -1461,7 +1582,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       });
     };
     void import("../game/architecture/referencePlan").then((module) => begin(module.flyoverReferencePlan(course, activeHoleIndex, props.selectedTeeSet ?? "member"))).catch(() => begin(null));
-    return () => { canceled = true; };
+    return guardNativeRendererCleanup(nativeMountRef.current?.lease, () => { canceled = true; });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.flyoverNonce, appReady]);
 
@@ -1580,11 +1701,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
       terrain: () => terrainWaterSceneRef.current,
     });
     viewportInputControllerRef.current = controller;
-    return () => {
+    return guardNativeRendererCleanup(nativeMountRef.current?.lease, () => {
       if (viewportInputControllerRef.current !== controller) return;
       controller.destroy();
       viewportInputControllerRef.current = null;
-    };
+    });
   }, [appReady]);
 
   useEffect(() => {
@@ -1893,9 +2014,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       },
     };
     window.__coursecraftPixiTest = api;
-    return () => {
+    return guardNativeRendererCleanup(nativeMountRef.current?.lease, () => {
       if (window.__coursecraftPixiTest === api) delete window.__coursecraftPixiTest;
-    };
+    });
   }, [
     activeShotRoute,
     appReady,
@@ -1933,26 +2054,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const container = containerRef.current;
     if (!container) return;
 
-    const app = new PIXI.Application();
+    const mount = nativeMountRef.current;
+    if (!mount) return;
+    const { owner, generation } = mount.lease;
     setRendererError(false);
 
     const init = async () => {
       const width = Math.max(container.clientWidth || 800, 100);
       const height = Math.max(container.clientHeight || 600, 100);
 
-      await app.init({
-        width,
-        height,
-        backgroundColor: 0xdfe8d8, // soft parchment-green backdrop
-        antialias: true,
-        resolution: (window.devicePixelRatio || 1) * initialRendererConfigRef.current.resolutionScale,
-        autoDensity: true,
-      });
-
-      if (cancelled) {
-        app.destroy(true, { children: true, texture: true });
-        return;
-      }
+      const app = await owner.acquire(generation);
+      if (!app) return;
+      mount.application = app;
+      if (cancelled || !owner.isCurrent(generation)) return;
       const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule] = await Promise.all([
         import("./renderer/scenes/deferredWorldScenes"),
         import("./renderer/scenes/terrainWaterScene"),
@@ -1960,20 +2074,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
         import("../game/render/courseSceneCamera"),
         import("./renderer/viewportInputController"),
       ]);
-      if (cancelled) {
-        app.destroy(true, { children: true, texture: true });
-        return;
-      }
+      if (cancelled || !owner.isCurrent(generation)) return;
 
       const activation = await loadAtlases(
         initialRendererConfigRef.current.theme,
         initialRendererConfigRef.current.graphicsQuality,
         initialRendererConfigRef.current.season,
       );
-      if (cancelled) {
-        app.destroy(true, { children: true, texture: true });
-        return;
-      }
+      if (cancelled || !owner.isCurrent(generation)) return;
       deferredWorldScenesRef.current = deferredWorldScenes;
       viewportInputControllerModuleRef.current = viewportInputControllerModule;
       sceneCameraDeriversRef.current = [
@@ -1996,13 +2104,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       app.canvas.style.left = "0";
       container.appendChild(app.canvas);
 
-      // Shared white diamond texture, tinted per terrain.
-      const g = new PIXI.Graphics();
-      g.poly([TILE_W / 2, 0, TILE_W, TILE_H / 2, TILE_W / 2, TILE_H, 0, TILE_H / 2]);
-      g.fill(0xffffff);
-      g.stroke({ width: 1, color: 0xffffff, alpha: 0.35 });
-      const diamondTexture = app.renderer.generateTexture(g);
-      g.destroy();
+      // Native-owned white diamond; fresh terrain scenes borrow its residency.
+      const diamondTexture = owner.diamond(generation);
 
       // Build the layer tree (see header comment for architecture).
       const world = new PIXI.Container();
@@ -2035,7 +2138,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         smoothSurfaces,
         estateSeam,
       });
-      terrainWaterScene.diamondTexture = terrainWaterScene.ownGeneratedTexture(diamondTexture);
+      terrainWaterScene.diamondTexture = terrainWaterScene.borrowTexture(diamondTexture);
       terrainWaterSceneRef.current = terrainWaterScene;
       if (activation.context) {
         setRenderContext({
@@ -2044,60 +2147,49 @@ export function PixiStage(requestedProps: PixiStageProps) {
           resolutionScale: initialRendererConfigRef.current.resolutionScale,
         });
       }
+      owner.markReady(generation);
       setAppReady(true);
       devLog(`initialized ${width}x${height}`);
     };
 
     void init().catch((error: unknown) => {
-      if (cancelled) {
-        terrainWaterSceneRef.current?.destroy();
-        terrainWaterSceneRef.current = null;
-        try { app.destroy(true, { children: true, texture: false, textureSource: false }); } catch { /* partial initialization */ }
-        return;
-      }
+      if (cancelled) return;
+      owner.fail(generation);
       console.error("[PixiStage] Course renderer initialization failed", error);
-      deferredWorldScenesRef.current = null;
-      viewportInputControllerModuleRef.current = null;
-      sceneCameraDeriversRef.current = null;
       setRendererError(true);
-      terrainWaterSceneRef.current?.destroy();
-      terrainWaterSceneRef.current = null;
-      try { app.destroy(true, { children: true, texture: false, textureSource: false }); } catch { /* partially initialized */ }
     });
 
-    return () => {
+    return guardNativeRendererCleanup(nativeMountRef.current?.lease, () => {
       cancelled = true;
       supersedePendingAtlasLoad();
       setAppReady(false);
-      viewportInputControllerRef.current?.destroy();
-      viewportInputControllerRef.current = null;
-      // Scene-owned display objects and fallback textures must be released
-      // before the application recursively tears down the shared layer tree.
-      sceneSystemHostRef.current?.dispose();
-      sceneSystemHostRef.current = null;
-      atmosphereSceneRef.current = null;
-      naturalPropsSceneRef.current = null;
-      habitatFieldSceneRef.current = null;
-      playerProCollectionSceneRef.current = null;
-      holeMarkersSceneRef.current = null;
-      mobilityEntitiesSceneRef.current = null;
-      liveEntitiesSceneRef.current = null;
-      overlaysDiagnosticsSceneRef.current = null;
-      terrainWaterSceneRef.current?.destroy();
-      terrainWaterSceneRef.current = null;
-      deferredWorldScenesRef.current = null;
-      viewportInputControllerModuleRef.current = null;
-      layersRef.current = null;
-      structureSpriteCountRef.current = 0;
-      surfaceCareWorkersRef.current = [];
-      if (appRef.current) {
-        // Scene systems release generated textures explicitly. Atlas textures
-        // are borrowed residency resources and must never be recursively
-        // destroyed by the Pixi application.
-        appRef.current.destroy(true, { children: true, texture: false, textureSource: false });
-        appRef.current = null;
+      // Attempt every independent disposer before severing all captured scene refs.
+      try {
+        completeNativeSceneDisposers([
+          () => viewportInputControllerRef.current?.destroy(),
+          () => sceneSystemHostRef.current?.dispose(),
+          () => terrainWaterSceneRef.current?.destroy(),
+        ]);
+      } finally {
+        viewportInputControllerRef.current = null;
+        sceneSystemHostRef.current = null;
+        atmosphereSceneRef.current = null;
+        naturalPropsSceneRef.current = null;
+        habitatFieldSceneRef.current = null;
+        playerProCollectionSceneRef.current = null;
+        holeMarkersSceneRef.current = null;
+        mobilityEntitiesSceneRef.current = null;
+        liveEntitiesSceneRef.current = null;
+        overlaysDiagnosticsSceneRef.current = null;
+        terrainWaterSceneRef.current = null;
+        deferredWorldScenesRef.current = null;
+        viewportInputControllerModuleRef.current = null;
+        layersRef.current = null;
+        structureSpriteCountRef.current = 0;
+        surfaceCareWorkersRef.current = [];
+        if (appRef.current === mount.application) appRef.current = null;
       }
-    };
+    });
   }, []);
 
   // Resolution is an adaptive quality setting, not an app-lifecycle setting.
@@ -2181,9 +2273,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
         });
       }
     });
-    return () => {
+    return guardNativeRendererCleanup(nativeMountRef.current?.lease, () => {
       cancelled = true;
-    };
+    });
   }, [
     appReady,
     atlasContext.biome,
@@ -4042,7 +4134,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     liveEntitiesSceneRef.current = liveEntities;
     overlaysDiagnosticsSceneRef.current = overlaysDiagnostics;
     sceneSystemHostRef.current = host;
-    return () => {
+    return guardNativeRendererCleanup(nativeMountRef.current?.lease, () => {
       if (sceneSystemHostRef.current === host) sceneSystemHostRef.current = null;
       if (atmosphereSceneRef.current === atmosphere) atmosphereSceneRef.current = null;
       if (naturalPropsSceneRef.current === naturalProps) naturalPropsSceneRef.current = null;
@@ -4053,7 +4145,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (liveEntitiesSceneRef.current === liveEntities) liveEntitiesSceneRef.current = null;
       if (overlaysDiagnosticsSceneRef.current === overlaysDiagnostics) overlaysDiagnosticsSceneRef.current = null;
       host.dispose();
-    };
+    });
   }, [appReady]);
 
   useEffect(() => {
@@ -4258,10 +4350,34 @@ export function PixiStage(requestedProps: PixiStageProps) {
     // live ghost. Force the replacement closure to paint on its first tick.
     overlaysDiagnosticsSceneRef.current?.invalidate();
     app.ticker.add(tick);
-    return () => {
+    return guardNativeRendererCleanup(nativeMountRef.current?.lease, () => {
       app.ticker?.remove(tick);
-    };
+    });
   }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, draftGreen, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, terrainStrokePreview, clickSplineDraft, clickSplineHover, props.colorVision, props.graphicsQuality, props.reducedMotion, props.seasonalVisualState, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, props.onFrameTime, clampCenter, surfaceHeightAt]);
+
+  // This is deliberately the final effect: finalize after all preceding passive cleanups.
+  useEffect(() => {
+    const mount = nativeMountRef.current;
+    if (!mount) return;
+    return () => {
+      queueMicrotask(() => {
+        const app = mount.application;
+        try {
+          if (app) {
+            completeNativeSceneDisposers(app.stage.removeChildren().map((child) => () => destroySceneSubtree(child)));
+          }
+        } catch (error) {
+          mount.lease.owner.fail(mount.lease.generation);
+          console.error("[PixiStage] Scene cleanup failed", error);
+        } finally {
+          mount.application = null;
+          void nativeSession.completeCleanup(mount.lease).catch((error: unknown) => {
+            console.error("[PixiStage] Renderer cleanup failed", error);
+          });
+        }
+      });
+    };
+  }, [nativeSession]);
 
   // Camera and editor input listeners are owned by ViewportInputController.
 
