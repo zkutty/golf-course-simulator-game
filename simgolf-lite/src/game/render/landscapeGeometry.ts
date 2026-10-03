@@ -350,6 +350,7 @@ function buildLandscapeComponentSkeletons(
   tiles: readonly Terrain[],
   width: number,
   height: number,
+  outputMode: "complete" | "membership-only" = "complete",
 ): LandscapeComponentSkeleton[] {
   if (width <= 0 || height <= 0 || tiles.length !== width * height) return [];
   const visited = new Uint8Array(tiles.length);
@@ -396,6 +397,7 @@ function buildLandscapeComponentSkeletons(
       boundaryContextKey: "",
     });
   }
+  if (outputMode === "membership-only") return components;
   for (const component of components) {
     const owned = new Set(component.cells);
     const halo = new Set<number>();
@@ -615,7 +617,7 @@ interface FlatGroup {
 function deriveFlatGroups(course: Course, inputMode: "full" | "topology-only"): FlatGroup[] {
   const groups: FlatGroup[] = [];
   const components = inputMode === "topology-only"
-    ? buildLandscapeComponentSkeletons(course.tiles, course.width, course.height)
+    ? buildLandscapeComponentSkeletons(course.tiles, course.width, course.height, "membership-only")
     : buildLandscapeComponents(course.tiles, course.width, course.height, { cornerRadius: 0 });
   for (const component of components) {
     if (
