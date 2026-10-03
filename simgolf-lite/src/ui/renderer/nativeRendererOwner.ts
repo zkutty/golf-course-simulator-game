@@ -63,6 +63,7 @@ export class NativeRendererOwner<Application, Texture, Configuration> {
   private latest: SceneGeneration<Application, Texture, Configuration> | null = null;
   private retirement: Retirement<Application, Texture, Configuration> | null = null;
   private transaction: RendererRestoreTransaction | null = null;
+  private replaySource: SceneGeneration<Application, Texture, Configuration> | null = null;
   private serial = 0;
   private closed = false;
 
@@ -73,10 +74,11 @@ export class NativeRendererOwner<Application, Texture, Configuration> {
   claim(configuration: Configuration, transaction?: RendererRestoreTransaction): RendererGeneration {
     if (this.closed) throw new Error("Native renderer owner is closed");
     if (this.latest && !this.latest.cancelled) throw new Error("Previous renderer generation is still active");
-    if (transaction && transaction !== this.transaction) throw new Error("Invalid renderer restore transaction");
+    if (transaction && (transaction !== this.transaction || this.replaySource?.failed)) throw new Error("Invalid renderer restore transaction");
     // A claim without the outstanding transaction cannot borrow a parked entry.
     if (!transaction && this.current && !this.current.active) this.destroyEntry(this.current);
     this.transaction = null;
+    this.replaySource = null;
     const identity = Object.freeze({ generation: ++this.serial });
     const scene: SceneGeneration<Application, Texture, Configuration> = {
       identity, configuration, entry: null, cancelled: false, failed: false,
@@ -94,6 +96,18 @@ export class NativeRendererOwner<Application, Texture, Configuration> {
     const transaction = Object.freeze({ generation: generation.generation });
     scene.retain = true;
     this.transaction = transaction;
+    return transaction;
+  }
+
+  /** Continue the same restore through a canceled StrictMode claim that acquired no entry. */
+  replayPendingRestore(generation: RendererGeneration): RendererRestoreTransaction | null {
+    const scene = this.scene(generation);
+    if (this.closed || this.latest !== scene || !scene.cancelled || scene.failed
+      || !scene.borrow || scene.entry !== null || scene.ready || this.transaction) return null;
+    scene.borrow = false; // This proxy may mint exactly one continuation, never outgoing park authority.
+    const transaction = Object.freeze({ generation: generation.generation });
+    this.transaction = transaction;
+    this.replaySource = scene;
     return transaction;
   }
 
@@ -172,6 +186,7 @@ export class NativeRendererOwner<Application, Texture, Configuration> {
   async close(): Promise<void> {
     this.closed = true;
     this.transaction = null;
+    this.replaySource = null;
     const scene = this.latest;
     if (scene && !scene.cancelled) this.invalidate(scene.identity);
     const retirement = this.retirement;

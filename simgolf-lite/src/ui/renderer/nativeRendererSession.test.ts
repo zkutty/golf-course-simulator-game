@@ -121,6 +121,41 @@ describe("NativeRendererSession App lifetime", () => {
 });
 
 
+describe("StrictMode restore claim replay", () => {
+  it.each([false, true])("cancels before native acquire and retains explicit restore when old parked=%s", async (parked) => {
+    const f = fixture(); const old = await f.mount(); f.session.beginRestore(); f.session.invalidate(old.lease);
+    if (parked) await f.session.completeCleanup(old.lease);
+    const proxy = f.session.claim(1); let cancelled = false; let firstAcquired = false;
+    const firstSetup = (async () => {
+      await Promise.resolve(); if (cancelled) return;
+      firstAcquired = true; await proxy.owner.acquire(proxy.generation);
+    })();
+    cancelled = true; f.session.invalidate(proxy); await f.session.completeCleanup(proxy);
+    const next = f.mount(); await firstSetup; expect(firstAcquired).toBe(false);
+    if (!parked) await f.session.completeCleanup(old.lease);
+    const current = await next; expect(current.app).toBe(old.app); expect(current.diamond).toBe(old.diamond);
+    expect(f.apps).toHaveLength(1); await f.session.fail(proxy);
+    expect(current.lease.owner.isCurrent(current.lease.generation)).toBe(true); await f.cleanup(current);
+  });
+
+  it("pending source failure revokes only its own token before claim", async () => {
+    const f = fixture(); const old = await f.mount(); f.session.beginRestore(); f.session.invalidate(old.lease);
+    await f.session.completeCleanup(old.lease);
+    const proxy = f.session.claim(1); f.session.invalidate(proxy); await f.session.completeCleanup(proxy);
+    await f.session.fail(proxy); const fresh = await f.mount();
+    expect(fresh.app).not.toBe(old.app); expect(old.app.destroys).toBe(1); await f.cleanup(fresh);
+  });
+
+  it("close revokes pending replay and future setup uses a fresh lifetime", async () => {
+    const f = fixture(); const old = await f.mount(); f.session.beginRestore(); f.session.invalidate(old.lease);
+    await f.session.completeCleanup(old.lease);
+    const proxy = f.session.claim(1); f.session.invalidate(proxy); await f.session.completeCleanup(proxy);
+    await f.session.close(); const fresh = await f.mount();
+    expect(fresh.lease.owner).not.toBe(proxy.owner); expect(fresh.app).not.toBe(old.app);
+    expect(old.app.destroys).toBe(1); await f.cleanup(fresh);
+  });
+});
+
 describe("captured native scene cleanup", () => {
   it.each([new Error("dispose failed"), 0, "", null, undefined])("attempts all disposers and preserves first failure %s", (error) => {
     const operations: string[] = [];

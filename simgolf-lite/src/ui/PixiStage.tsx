@@ -2060,6 +2060,9 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
     setRendererError(false);
 
     const init = async () => {
+      // StrictMode can retire its first setup before any native entry is acquired.
+      await Promise.resolve();
+      if (cancelled || nativeMountRef.current !== mount) return;
       const width = Math.max(container.clientWidth || 800, 100);
       const height = Math.max(container.clientHeight || 600, 100);
 
@@ -2153,7 +2156,7 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
     };
 
     void init().catch((error: unknown) => {
-      if (cancelled) return;
+      if (cancelled || nativeMountRef.current !== mount) return;
       owner.fail(generation);
       console.error("[PixiStage] Course renderer initialization failed", error);
       setRendererError(true);

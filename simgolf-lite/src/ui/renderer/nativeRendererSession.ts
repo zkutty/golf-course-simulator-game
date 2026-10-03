@@ -11,6 +11,7 @@ export class NativeRendererSession<Application, Texture, Configuration> {
   private owner: NativeRendererOwner<Application, Texture, Configuration> | null = null;
   private lease: NativeRendererLease<Application, Texture, Configuration> | null = null;
   private restore: RendererRestoreTransaction | null = null;
+  private pendingReplay: NativeRendererLease<Application, Texture, Configuration> | null = null;
 
   constructor(createOwner?: () => NativeRendererOwner<Application, Texture, Configuration>) {
     this.createOwner = createOwner ?? null;
@@ -28,6 +29,7 @@ export class NativeRendererSession<Application, Texture, Configuration> {
     this.owner = owner;
     const generation = owner.claim(configuration, this.restore ?? undefined);
     this.restore = null;
+    this.pendingReplay = null;
     const lease = Object.freeze({ owner, generation });
     this.lease = lease;
     return lease;
@@ -40,7 +42,13 @@ export class NativeRendererSession<Application, Texture, Configuration> {
 
   invalidate(lease: NativeRendererLease<Application, Texture, Configuration>): void {
     lease.owner.invalidate(lease.generation);
-    if (this.lease === lease) this.lease = null;
+    if (this.lease === lease) {
+      if (!this.restore) {
+        this.restore = lease.owner.replayPendingRestore(lease.generation);
+        this.pendingReplay = this.restore ? lease : null;
+      }
+      this.lease = null;
+    }
   }
 
   completeCleanup(lease: NativeRendererLease<Application, Texture, Configuration>): Promise<void> {
@@ -49,10 +57,15 @@ export class NativeRendererSession<Application, Texture, Configuration> {
 
   fail(lease: NativeRendererLease<Application, Texture, Configuration>): Promise<void> {
     lease.owner.fail(lease.generation);
+    if (this.pendingReplay === lease) {
+      this.restore = null;
+      this.pendingReplay = null;
+    }
     if (this.owner === lease.owner && this.lease === lease) {
       this.owner = null;
       this.lease = null;
       this.restore = null;
+      this.pendingReplay = null;
       return lease.owner.close();
     }
     // Late work belongs to a retired generation and cannot close a rebound owner.
@@ -65,6 +78,7 @@ export class NativeRendererSession<Application, Texture, Configuration> {
     this.owner = null;
     this.lease = null;
     this.restore = null;
+    this.pendingReplay = null;
     return owner?.close() ?? Promise.resolve();
   }
 }

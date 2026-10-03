@@ -220,4 +220,60 @@ describe("NativeRendererOwner", () => {
     f.owner.invalidate(old.scene); await f.owner.completeCleanup(old.scene);
     expect(old.app.destroys).toBe(0); await f.owner.close(); expect(old.app.destroys).toBe(1); expect(old.diamond.destroys).toBe(1);
   });
+
+  it.each([false, true])("continues one canceled pre-entry restore with original retirement parked=%s", async (parked) => {
+    const f = fixture(); const old = await f.mount(); const tx = f.owner.beginRestore(old.scene);
+    f.owner.invalidate(old.scene);
+    if (parked) await f.owner.completeCleanup(old.scene);
+    const proxy = f.owner.claim(config, tx);
+    expect(f.owner.replayPendingRestore(proxy)).toBe(null); // Still active.
+    f.owner.invalidate(proxy);
+    const continuation = f.owner.replayPendingRestore(proxy);
+    expect(continuation).not.toBe(null);
+    expect(f.owner.replayPendingRestore(proxy)).toBe(null); // Mint once.
+    await f.owner.completeCleanup(proxy);
+    const next = f.owner.claim(config, continuation!);
+    const pending = f.owner.acquire(next);
+    if (!parked) await f.owner.completeCleanup(old.scene);
+    expect(await pending).toBe(old.app); expect(f.owner.diamond(next)).toBe(old.diamond);
+    f.owner.markReady(next);
+    // Incoming continuation never authorizes an ordinary outgoing park.
+    f.owner.invalidate(next); await f.owner.completeCleanup(next);
+    expect(old.app.destroys).toBe(1); expect(old.diamond.destroys).toBe(1); await f.owner.close();
+  });
+
+  it("does not mint replay from ordinary, entry-bound, failed, closed or foreign generations", async () => {
+    const f = fixture(); const initial = f.owner.claim(config); f.owner.invalidate(initial);
+    expect(f.owner.replayPendingRestore(initial)).toBe(null); await f.owner.completeCleanup(initial);
+    const old = await f.mount(); const tx = f.owner.beginRestore(old.scene); f.owner.invalidate(old.scene);
+    await f.owner.completeCleanup(old.scene);
+    const bound = f.owner.claim(config, tx); await f.owner.acquire(bound); f.owner.invalidate(bound);
+    expect(f.owner.replayPendingRestore(bound)).toBe(null);
+    await f.owner.completeCleanup(bound); expect(old.app.destroys).toBe(1);
+    const fresh = await f.mount(); const tx2 = f.owner.beginRestore(fresh.scene); f.owner.invalidate(fresh.scene);
+    await f.owner.completeCleanup(fresh.scene);
+    const failed = f.owner.claim(config, tx2); f.owner.fail(failed);
+    expect(f.owner.replayPendingRestore(failed)).toBe(null);
+    expect(f.owner.replayPendingRestore(bound)).toBe(null); // Obsolete.
+    expect(() => f.owner.replayPendingRestore({ generation: failed.generation })).toThrow("Foreign");
+    await f.owner.completeCleanup(failed); await f.owner.close();
+    expect(f.owner.replayPendingRestore(failed)).toBe(null); expect(fresh.app.destroys).toBe(1);
+  });
+
+  it("rejects a pending replay token failed before consumption and fences failure after consumption", async () => {
+    const f = fixture(); const old = await f.mount(); const tx = f.owner.beginRestore(old.scene);
+    f.owner.invalidate(old.scene); await f.owner.completeCleanup(old.scene);
+    const proxy = f.owner.claim(config, tx); f.owner.invalidate(proxy);
+    const replay = f.owner.replayPendingRestore(proxy)!;
+    f.owner.fail(proxy); expect(() => f.owner.claim(config, replay)).toThrow("Invalid");
+    await f.owner.completeCleanup(proxy); const fresh = await f.mount();
+    expect(fresh.app).not.toBe(old.app); expect(old.app.destroys).toBe(1);
+    const tx2 = f.owner.beginRestore(fresh.scene); f.owner.invalidate(fresh.scene); await f.owner.completeCleanup(fresh.scene);
+    const proxy2 = f.owner.claim(config, tx2); f.owner.invalidate(proxy2);
+    const replay2 = f.owner.replayPendingRestore(proxy2)!; await f.owner.completeCleanup(proxy2);
+    const current = await f.mount(config, replay2); f.owner.fail(proxy2);
+    expect(f.owner.isCurrent(current.scene)).toBe(true); expect(current.app).toBe(fresh.app);
+    const closing = f.owner.close(); await f.owner.completeCleanup(current.scene); await closing;
+  });
+
 });
