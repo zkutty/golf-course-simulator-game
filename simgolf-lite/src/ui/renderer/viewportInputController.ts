@@ -1,4 +1,9 @@
-import type * as PIXI from "pixi.js";
+import {
+  DomViewportPointerEventSource,
+  type ViewportGameplayPointerEvent,
+  type ViewportPointerEventSource,
+  type ViewportPointerMappingPort,
+} from "./viewportPointerEvents";
 import type { Keybindings, BindingAction } from "../../accessibility/keybindings";
 import { bindingFromEvent } from "../../accessibility/keybindings";
 import type { CameraState, IsoCameraSnapshot } from "../../game/render/camera";
@@ -58,14 +63,9 @@ export interface ViewportWorldPort {
   rotation: number;
 }
 
-export interface ViewportApplicationPort {
+export interface ViewportApplicationPort extends ViewportPointerMappingPort {
   screen: { width: number; height: number };
-  renderer: { resize(width: number, height: number): void };
-  stage: {
-    hitArea?: unknown;
-    on(event: string, listener: (event: PIXI.FederatedPointerEvent) => void): void;
-    off(event: string, listener: (event: PIXI.FederatedPointerEvent) => void): void;
-  };
+  renderer: ViewportPointerMappingPort["renderer"] & { resize(width: number, height: number): void };
   ticker: {
     add(listener: (ticker: { deltaMS: number }) => void): void;
     remove(listener: (ticker: { deltaMS: number }) => void): void;
@@ -126,8 +126,8 @@ export interface ViewportInputConfig {
   onViewChange?: (view: IsoCameraSnapshot) => void;
   deriveFrame(mode: "normal" | "overview", viewport: { width: number; height: number }, rotation: IsoRotation): ViewportInputFrame | null;
   onFlyoverEnd?(): void;
-  onPrimaryPointer?(event: PIXI.FederatedPointerEvent, controller: ViewportInputController): void;
-  onPointerCancel?(event: PIXI.FederatedPointerEvent): void;
+  onPrimaryPointer?(event: ViewportGameplayPointerEvent, controller: ViewportInputController): void;
+  onPointerCancel?(event: ViewportGameplayPointerEvent): void;
   updateCursor?(tile: { x: number; y: number } | null): void;
   editor: ViewportEditorConfig;
 }
@@ -140,6 +140,7 @@ export interface ViewportInputControllerPorts {
   terrain(): ViewportInputTerrainPort | null;
   now?(): number;
   resizeObserver?: typeof ResizeObserver;
+  pointerEvents?: ViewportPointerEventSource;
 }
 
 export interface ViewportInputState {
@@ -331,6 +332,7 @@ function nearestSurfaceSegment(feature: SurfaceFeature, point: Point): { index: 
 export class ViewportInputController {
   private config: ViewportInputConfig;
   private readonly ports: ViewportInputControllerPorts;
+  private readonly pointerEvents: ViewportPointerEventSource;
   private readonly camera: CameraValues = {
     cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tzoom: 1, initialized: false,
   };
@@ -367,6 +369,7 @@ export class ViewportInputController {
     this.config = config;
     this.rotation = config.rotation;
     this.ports = ports;
+    this.pointerEvents = ports.pointerEvents ?? new DomViewportPointerEventSource(ports.app, ports.element);
     this.attach();
     this.resize();
   }
@@ -728,6 +731,7 @@ export class ViewportInputController {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.pointerEvents.suspend();
     const { element, app } = this.ports;
     element.removeEventListener("wheel", this.handleWheel);
     element.removeEventListener("gesturestart", this.handleGestureStart);
@@ -746,9 +750,10 @@ export class ViewportInputController {
     window.removeEventListener("keydown", this.handleKeyDown, true);
     window.removeEventListener("keyup", this.handleKeyUp);
     window.removeEventListener("blur", this.handleBlur);
-    app.stage.off("pointerdown", this.handleStagePointerDown);
-    app.stage.off("pointermove", this.handleStagePointerMove);
-    app.stage.off("pointercancel", this.handleStagePointerCancel);
+    this.pointerEvents.off("pointerdown", this.handleStagePointerDown);
+    this.pointerEvents.off("pointermove", this.handleStagePointerMove);
+    this.pointerEvents.off("pointercancel", this.handleStagePointerCancel);
+    this.pointerEvents.destroy();
     app.ticker.remove(this.tickFromTicker);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
@@ -1348,7 +1353,7 @@ export class ViewportInputController {
     }
   };
 
-  private handleStagePointerDown = (event: PIXI.FederatedPointerEvent): void => {
+  private handleStagePointerDown = (event: ViewportGameplayPointerEvent): void => {
     if (event.button !== 0) return;
     if (this.flyover) {
       event.stopImmediatePropagation();
@@ -1358,7 +1363,7 @@ export class ViewportInputController {
     this.config.onPrimaryPointer?.(event, this);
   };
 
-  private handleStagePointerMove = (event: PIXI.FederatedPointerEvent): void => {
+  private handleStagePointerMove = (event: ViewportGameplayPointerEvent): void => {
     const tile = this.screenToTile(event.global.x, event.global.y);
     this.hover = tile;
     const changed = this.ports.overlay()?.setHover(tile) ?? true;
@@ -1368,7 +1373,7 @@ export class ViewportInputController {
     }
   };
 
-  private handleStagePointerCancel = (event: PIXI.FederatedPointerEvent): void => this.config.onPointerCancel?.(event);
+  private handleStagePointerCancel = (event: ViewportGameplayPointerEvent): void => this.config.onPointerCancel?.(event);
   private tickFromTicker = (ticker: { deltaMS: number }): void => this.tick(ticker.deltaMS);
 
   private attach(): void {
@@ -1390,9 +1395,9 @@ export class ViewportInputController {
     window.addEventListener("keydown", this.handleKeyDown, true);
     window.addEventListener("keyup", this.handleKeyUp);
     window.addEventListener("blur", this.handleBlur);
-    app.stage.on("pointerdown", this.handleStagePointerDown);
-    app.stage.on("pointermove", this.handleStagePointerMove);
-    app.stage.on("pointercancel", this.handleStagePointerCancel);
+    this.pointerEvents.on("pointerdown", this.handleStagePointerDown);
+    this.pointerEvents.on("pointermove", this.handleStagePointerMove);
+    this.pointerEvents.on("pointercancel", this.handleStagePointerCancel);
     app.ticker.add(this.tickFromTicker);
     const Observer = this.ports.resizeObserver ?? globalThis.ResizeObserver;
     if (Observer) {

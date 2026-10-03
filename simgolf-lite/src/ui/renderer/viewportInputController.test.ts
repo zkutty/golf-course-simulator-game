@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextRotation, worldToIso, type IsoRotation } from "../../game/render/iso";
 import type { Course } from "../../game/models/types";
 import { DEFAULT_KEYBINDINGS } from "../../accessibility/keybindings";
+import type { ViewportPointerEventType, ViewportPointerListener } from "./viewportPointerEvents";
 import {
   ViewportInputController,
   fitViewportZoomForTileBounds,
@@ -45,7 +46,13 @@ function harness() {
     unobserve() {}
     disconnect() {}
   }
-  const stageListeners = new Map<string, (event: never) => void>();
+  const pointerListeners = new Map<ViewportPointerEventType, ViewportPointerListener>();
+  const pointerEvents = {
+    on: vi.fn((name: ViewportPointerEventType, listener: ViewportPointerListener) => pointerListeners.set(name, listener)),
+    off: vi.fn((name: ViewportPointerEventType) => pointerListeners.delete(name)),
+    suspend: vi.fn(),
+    destroy: vi.fn(),
+  };
   const app = {
     screen: { width: 800, height: 600 },
     renderer: { resize: vi.fn((width: number, height: number) => {
@@ -54,8 +61,6 @@ function harness() {
     }) },
     stage: {
       hitArea: null,
-      on: vi.fn((name: string, listener: (event: never) => void) => stageListeners.set(name, listener)),
-      off: vi.fn((name: string) => stageListeners.delete(name)),
     },
     ticker: {
       add: vi.fn((listener: (value: { deltaMS: number }) => void) => { ticker = listener; }),
@@ -101,9 +106,10 @@ function harness() {
     terrain: () => terrain,
     now: () => now,
     resizeObserver: FakeResizeObserver as unknown as typeof ResizeObserver,
+    pointerEvents,
   });
   return {
-    app, config, controller, element, overlay, terrain, windowTarget, world, stageListeners,
+    app, config, controller, element, overlay, terrain, windowTarget, world, pointerEvents, pointerListeners,
     advance(ms: number) { now += ms; ticker?.({ deltaMS: ms }); },
     resize(width: number, height: number) {
       element.clientWidth = width;
@@ -139,9 +145,9 @@ describe("ViewportInputController", () => {
   });
 
   it("owns one listener/ticker lifecycle and applies/culls its initialized frame", () => {
-    const { app, config, controller, terrain, world } = harness();
+    const { app, config, controller, terrain, world, pointerEvents } = harness();
     expect(app.ticker.add).toHaveBeenCalledTimes(1);
-    expect(app.stage.on).toHaveBeenCalledTimes(3);
+    expect(pointerEvents.on).toHaveBeenCalledTimes(3);
 
     controller.initializeDefault();
     expect(controller.cameraSnapshot()).toMatchObject({ cx: 12, cy: 8, tcx: 12, tcy: 8, zoom: 1.25, tzoom: 1.25, initialized: true });
@@ -151,7 +157,11 @@ describe("ViewportInputController", () => {
 
     controller.destroy();
     expect(app.ticker.remove).toHaveBeenCalledTimes(1);
-    expect(app.stage.off).toHaveBeenCalledTimes(3);
+    expect(pointerEvents.off).toHaveBeenCalledTimes(3);
+    expect(pointerEvents.suspend).toHaveBeenCalledTimes(1);
+    expect(pointerEvents.destroy).toHaveBeenCalledTimes(1);
+    controller.destroy();
+    expect(pointerEvents.destroy).toHaveBeenCalledTimes(1);
     expect(controller.snapshot().attached).toBe(false);
   });
 
@@ -288,7 +298,7 @@ describe("ViewportInputController", () => {
   });
 
   it("owns wheel, pan, rotation and stage hover/click arbitration", () => {
-    const { config, controller, element, overlay, stageListeners } = harness();
+    const { config, controller, element, overlay, pointerListeners } = harness();
     const primary = vi.fn();
     config.onPrimaryPointer = primary;
     controller.update(config);
@@ -304,9 +314,9 @@ describe("ViewportInputController", () => {
     expect(controller.snapshot().input.panning).toBe(false);
     window.dispatchEvent(keyEvent("e", "KeyE"));
     expect(config.onRotationCommit).toHaveBeenCalledWith(90);
-    stageListeners.get("pointermove")?.({ global: { x: 400, y: 300 } } as never);
+    pointerListeners.get("pointermove")?.({ global: { x: 400, y: 300 } } as never);
     expect(overlay.setHover).toHaveBeenCalled();
-    stageListeners.get("pointerdown")?.({ button: 0, global: { x: 400, y: 300 } } as never);
+    pointerListeners.get("pointerdown")?.({ button: 0, global: { x: 400, y: 300 } } as never);
     expect(primary).toHaveBeenCalled();
     controller.destroy();
   });
