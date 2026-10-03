@@ -901,7 +901,7 @@ function createNativeRendererOwner(): NativeRendererOwner<PIXI.Application, PIXI
     detachCanvas: (app) => { if (app.renderer) app.canvas.remove(); },
     destroy: (app) => {
       // Rejected renderer initialization has a public stage but no renderer/ticker yet.
-      if (app.renderer) app.destroy(true, { children: true, texture: false, textureSource: false });
+      if (app.renderer) app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false });
       else app.stage?.destroy({ children: true, texture: false, textureSource: false });
     },
     createDiamond: (app) => {
