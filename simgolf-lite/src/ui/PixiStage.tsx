@@ -1,3 +1,4 @@
+import { ownSceneMeshGeometry } from "./renderer/ownedSceneMeshGeometry";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Pixi's strict-CSP adapter replaces runtime-generated shader/uniform
 // functions with static implementations. Keep this before renderer startup so
@@ -3522,14 +3523,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
             rotation,
           ));
           if (data.indices.length === 0) continue;
-          const stripMesh = new PIXI.Mesh({
+          const stripMesh = ownSceneMeshGeometry(new PIXI.Mesh({
             geometry: new PIXI.MeshGeometry({
               positions: data.positions,
               uvs: data.uvs,
               indices: data.indices,
             }),
             texture: data.role === "shoulder" ? pathShoulderTexture! : pathEdgeTexture!,
-          });
+          }));
           stripMesh.eventMode = "none";
           stripMesh.label = `path-material:${data.role}:${component.topologyKey}`;
           pathMaterialLayer.addChild(stripMesh);
@@ -3630,14 +3631,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
             label: string,
           ) => {
             if (indices.length === 0) return;
-            const bank = new PIXI.Mesh({
+            const bank = ownSceneMeshGeometry(new PIXI.Mesh({
               geometry: new PIXI.MeshGeometry({
                 positions: new Float32Array(positions),
                 uvs: new Float32Array(uvs),
                 indices: new Uint32Array(indices),
               }),
               texture: PIXI.Texture.WHITE,
-            });
+            }));
             bank.eventMode = "none";
             bank.label = label;
             bank.tint = tint;
@@ -3846,7 +3847,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const shadowTexture = textureFromRgba(macroRaster.shadow);
     if (shadowTexture) {
       generatedMacroTextures.push(terrainScene.ownGeneratedTexture(shadowTexture));
-      const shadow = new PIXI.Mesh({ geometry: macroGeometry(), texture: shadowTexture });
+      const shadow = ownSceneMeshGeometry(new PIXI.Mesh({ geometry: macroGeometry(), texture: shadowTexture }));
       shadow.eventMode = "none";
       shadow.label = "macro-landform-shadow";
       shadow.blendMode = "multiply";
@@ -3855,7 +3856,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const highlightTexture = textureFromRgba(macroRaster.highlight);
     if (highlightTexture) {
       generatedMacroTextures.push(terrainScene.ownGeneratedTexture(highlightTexture));
-      const highlight = new PIXI.Mesh({ geometry: macroGeometry(), texture: highlightTexture });
+      const highlight = ownSceneMeshGeometry(new PIXI.Mesh({ geometry: macroGeometry(), texture: highlightTexture }));
       highlight.eventMode = "none";
       highlight.label = "macro-landform-highlight";
       highlight.blendMode = "screen";
