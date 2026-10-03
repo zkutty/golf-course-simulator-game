@@ -1,5 +1,5 @@
 name: ZK-682 targeted candidate checks
-run-name: Targeted candidate checks for 7f89cb9169ea7a9f0c4baa12a77f83549c15bc90
+run-name: Targeted candidate checks for 7bbb8053e86dd4d19e54d7f085ac83895fb93f54
 on:
   push:
     branches: [codex/hosted-candidate-probe]
@@ -13,13 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      ZK682_EXPECTED_COMMIT: 7f89cb9169ea7a9f0c4baa12a77f83549c15bc90
-      VITE_COMMIT_SHA: 7f89cb9169ea7a9f0c4baa12a77f83549c15bc90
+      ZK682_EXPECTED_COMMIT: 7bbb8053e86dd4d19e54d7f085ac83895fb93f54
+      VITE_COMMIT_SHA: 7bbb8053e86dd4d19e54d7f085ac83895fb93f54
     steps:
       - name: Checkout exact release candidate
         uses: actions/checkout@v4
         with:
-          ref: 7f89cb9169ea7a9f0c4baa12a77f83549c15bc90
+          ref: 7bbb8053e86dd4d19e54d7f085ac83895fb93f54
           fetch-depth: 1
       - name: Verify immutable application source
         shell: bash
@@ -106,7 +106,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zk682-targeted-candidate-7f89cb9169ea7a9f0c4baa12a77f83549c15bc90
+          name: zk682-targeted-candidate-7bbb8053e86dd4d19e54d7f085ac83895fb93f54
           path: ${{ runner.temp }}/zk682-candidate-probe
           if-no-files-found: error
           retention-days: 30
