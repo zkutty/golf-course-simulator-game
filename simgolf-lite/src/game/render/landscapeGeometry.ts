@@ -612,11 +612,11 @@ interface FlatGroup {
   priority: number;
 }
 
-function deriveFlatGroups(course: Course): FlatGroup[] {
+function deriveFlatGroups(course: Course, inputMode: "full" | "topology-only"): FlatGroup[] {
   const groups: FlatGroup[] = [];
-  const components = buildLandscapeComponents(course.tiles, course.width, course.height, {
-    cornerRadius: 0,
-  });
+  const components = inputMode === "topology-only"
+    ? buildLandscapeComponentSkeletons(course.tiles, course.width, course.height)
+    : buildLandscapeComponents(course.tiles, course.width, course.height, { cornerRadius: 0 });
   for (const component of components) {
     if (
       component.terrain !== "water" &&
@@ -671,6 +671,9 @@ function deriveFlatGroups(course: Course): FlatGroup[] {
 export function buildVisualHeightfield(
   course: Course,
   theme: LandTheme = getBiomeDefinition(course.theme).key,
+  // Renderer-normalized data needs only connected cell membership for pads.
+  // Default full mode preserves the public contour reads and error behavior.
+  inputMode: "full" | "topology-only" = "full",
 ): VisualHeightfield {
   const materialOwner = getBiomeDefinition(theme).content.materials.terrain;
   const width = course.width;
@@ -682,7 +685,7 @@ export function buildVisualHeightfield(
     targets[index] = terrainTargetHeight(course, index);
   }
 
-  const flatGroups = deriveFlatGroups(course);
+  const flatGroups = deriveFlatGroups(course, inputMode);
   for (const group of flatGroups) {
     for (const index of group.cells) targets[index] = group.target;
   }

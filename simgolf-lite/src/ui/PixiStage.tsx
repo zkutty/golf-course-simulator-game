@@ -802,7 +802,7 @@ function visualHeightfieldForRenderer(
     buildings,
     property: propertyAssets ? { assets: propertyAssets } : undefined,
     theme,
-  } as Course);
+  } as Course, undefined, "topology-only");
 }
 
 /**
