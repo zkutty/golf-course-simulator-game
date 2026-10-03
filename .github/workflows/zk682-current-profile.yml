@@ -1,0 +1,220 @@
+name: ZK-682 current startup and heap attribution
+run-name: Diagnostic attribution of application 7f89cb9
+on:
+  push:
+    branches: [codex/7f-profile-integration]
+permissions:
+  contents: read
+defaults:
+  run:
+    working-directory: simgolf-lite
+jobs:
+  current-profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ZK682_APPLICATION_BASELINE: 7f89cb9169ea7a9f0c4baa12a77f83549c15bc90
+      ZK682_EXPECTED_COMMIT: 7f89cb9169ea7a9f0c4baa12a77f83549c15bc90
+      VITE_COMMIT_SHA: 7f89cb9169ea7a9f0c4baa12a77f83549c15bc90
+    steps:
+      - name: Checkout immutable diagnostic source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify exact application and bounded instrumentation
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          test -z "$(git status --porcelain)"
+          git diff --exit-code "$ZK682_APPLICATION_BASELINE" HEAD -- simgolf-lite/src simgolf-lite/package.json simgolf-lite/package-lock.json simgolf-lite/vite.config.ts
+          while IFS= read -r changed; do
+            case "$changed" in
+              .github/workflows/zk682-current-profile.yml|simgolf-lite/scripts/perf-smoke.mjs|simgolf-lite/scripts/perf-startup-diagnostics.mjs|simgolf-lite/scripts/perf-startup-diagnostics.test.mjs|simgolf-lite/e2e/zk682-stability.e2e.ts) ;;
+              *) printf 'Unexpected diagnostic change: %s\n' "$changed"; exit 1 ;;
+            esac
+          done < <(git diff --name-only "$ZK682_APPLICATION_BASELINE" HEAD)
+          printf 'ZK682_PROFILE_ROOT=%s/zk682-current-profile\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/zk682-current-profile/reports/stability"
+          git rev-parse HEAD > "$RUNNER_TEMP/zk682-current-profile/diagnostic-commit.txt"
+          git status --porcelain > "$RUNNER_TEMP/zk682-current-profile/initial-source-status.txt"
+          git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/zk682-current-profile/diagnostic-tree.txt"
+          git rev-parse "$ZK682_APPLICATION_BASELINE^{tree}" > "$RUNNER_TEMP/zk682-current-profile/application-tree.txt"
+          git rev-parse "$ZK682_APPLICATION_BASELINE:simgolf-lite/src" > "$RUNNER_TEMP/zk682-current-profile/application-src-tree.txt"
+          git diff --binary "$ZK682_APPLICATION_BASELINE" HEAD > "$RUNNER_TEMP/zk682-current-profile/instrumentation.patch"
+          date -u +%FT%TZ > "$RUNNER_TEMP/zk682-current-profile/started-at.txt"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Test diagnostic collector contracts
+        run: node --test scripts/perf-startup-diagnostics.test.mjs
+      - name: Build unchanged application
+        run: GITHUB_SHA="$ZK682_APPLICATION_BASELINE" npm run build
+      - name: Capture current startup attribution
+        id: performance
+        continue-on-error: true
+        env:
+          PERF_FIXTURE: m27
+          PERF_THEME: parkland
+          PERF_FIXTURE_READY_TIMEOUT_MS: "300000"
+          PERF_DIAGNOSTICS_DIR: ${{ runner.temp }}/zk682-current-profile/startup
+          PERF_DIAGNOSTICS_TRACE: "1"
+          PERF_OUTPUT_PATH: ${{ runner.temp }}/zk682-current-profile/reports/performance.json
+        run: |
+          set +e
+          GITHUB_SHA="$ZK682_APPLICATION_BASELINE" npm run test:perf 2>&1 | tee "$ZK682_PROFILE_ROOT/performance.log"
+          result=${PIPESTATUS[0]}
+          printf '%s\n' "$result" > "$ZK682_PROFILE_ROOT/performance-exit-code.txt"
+          exit "$result"
+      - name: Capture current baseline and end heap graphs
+        id: stability
+        continue-on-error: true
+        env:
+          ZK682_DIAGNOSTICS_DIR: ${{ runner.temp }}/zk682-current-profile/heap
+          COURSECRAFT_ZK682_STABILITY_DIR: ${{ runner.temp }}/zk682-current-profile/reports/stability
+        run: |
+          set +e
+          GITHUB_SHA="$ZK682_APPLICATION_BASELINE" npx playwright test e2e/zk682-stability.e2e.ts --workers=1 --retries=0 2>&1 | tee "$ZK682_PROFILE_ROOT/stability.log"
+          result=${PIPESTATUS[0]}
+          printf '%s\n' "$result" > "$ZK682_PROFILE_ROOT/stability-exit-code.txt"
+          exit "$result"
+      - name: Validate separate diagnostic completeness
+        id: diagnostics
+        if: always()
+        continue-on-error: true
+        run: |
+          node --input-type=module <<'JS'
+          import fs from "node:fs";
+          import path from "node:path";
+          import assert from "node:assert/strict";
+          import { createHash } from "node:crypto";
+          const root=process.env.ZK682_PROFILE_ROOT;
+          const read=(...p)=>JSON.parse(fs.readFileSync(path.join(root,...p),"utf8"));
+          const summary=read("startup","startup-summary.json");
+          assert.equal(summary.diagnosticOnly,true);
+          assert.equal(summary.complete,true);
+          assert.equal(summary.errorCount,0);
+          assert.equal(summary.applicationBaseline,process.env.ZK682_APPLICATION_BASELINE);
+          assert.equal(summary.cpuCoverage.complete,true);
+          assert.deepEqual(summary.cpuCoverage.phases.map(p=>p.name),["cold","fixture"]);
+          assert.ok(summary.cpuCoverage.phases.every(p=>p.covered));
+          assert.equal(summary.commit,fs.readFileSync(path.join(root,"diagnostic-commit.txt"),"utf8").trim());
+          assert.equal(summary.traceRequested,true);
+          assert.equal(summary.profileWritten,true);
+          assert.equal(summary.cpu.truncated,false);
+          assert.equal(summary.network.truncated,false);
+          assert.equal(summary.trace.complete,true);
+          assert.equal(summary.trace.truncated,false);
+          assert.ok(summary.trace.coverage.phases.length===2 && summary.trace.coverage.phases.every(p=>p.covered));
+          assert.ok(summary.trace.highestBufferUsage<1);
+          assert.ok(summary.trace.phases.fixture.length>0 && summary.cpu.phases.fixture.sampledMs>0);
+          assert.ok(!fs.existsSync(path.join(root,"startup","startup-error.json")));
+          assert.ok(summary.trace.bytes>0 && summary.trace.bytes<=32*1024*1024);
+          assert.equal(fs.statSync(path.join(root,"startup","startup.trace.json")).size,summary.trace.bytes);
+          assert.equal(fs.statSync(path.join(root,"startup","startup.cpuprofile")).size,summary.profileBytes);
+          assert.ok(summary.profileBytes>0 && summary.profileBytes<=20*1024*1024);
+          const trace=read("startup","startup.trace.json");
+          assert.ok(trace.traceEvents.length>0 && trace.traceEvents.length<=200000);
+          const heap=read("heap","heap-diagnostics.json");
+          assert.equal(heap.diagnosticOnly,true);
+          assert.equal(heap.candidateCommit,process.env.ZK682_APPLICATION_BASELINE);
+          assert.equal(heap.complete,true);
+          assert.equal(heap.errorCount,0);
+          assert.ok(Date.parse(heap.startedAt)>=Date.parse(fs.readFileSync(path.join(root,"started-at.txt"),"utf8").trim()));
+          assert.ok(!fs.readFileSync(path.join(root,"stability.log"),"utf8").includes("[zk682-heap-diagnostics]"));
+          assert.equal(heap.samples.length,13);
+          assert.deepEqual(heap.samples.map(s=>s.cycle),Array.from({length:13},(_,i)=>i));
+          assert.equal(heap.limits.snapshots,2);
+          assert.equal(heap.captures.length,2);
+          assert.deepEqual(heap.captures.map(({cycle,reasons})=>({cycle,reasons})),[{cycle:0,reasons:["baseline"]},{cycle:12,reasons:["end"]}]);
+          for(const c of heap.captures){
+            assert.equal(c.complete,true);assert.equal(c.error,null);
+            assert.equal(path.basename(c.file),c.file);
+            const file=path.join(root,"heap",c.file),bytes=fs.statSync(file).size;
+            assert.equal(bytes,c.bytesWritten);assert.ok(bytes>0 && bytes<=256*1024*1024);
+            const data=fs.readFileSync(file);assert.equal(createHash("sha256").update(data).digest("hex"),c.sha256);
+            const graph=JSON.parse(data.toString("utf8"));
+            const { node_fields:nf,node_types:nt,edge_fields:ef,edge_types:et }=graph.snapshot.meta;
+            assert.ok(Array.isArray(nf)&&nf.length>0&&new Set(nf).size===nf.length);
+            assert.ok(Array.isArray(ef)&&ef.length>0&&new Set(ef).size===ef.length);
+            for(const f of ["type","name","id","self_size","edge_count"])assert.ok(nf.includes(f));
+            for(const f of ["type","name_or_index","to_node"])assert.ok(ef.includes(f));
+            const nw=nf.length,ew=ef.length;
+            const ni=f=>nf.indexOf(f),ei=f=>ef.indexOf(f);
+            assert.ok(Number.isInteger(graph.snapshot.node_count)&&graph.snapshot.node_count>0);
+            assert.ok(Number.isInteger(graph.snapshot.edge_count)&&graph.snapshot.edge_count>0);
+            assert.ok(Array.isArray(graph.nodes)&&Array.isArray(graph.edges)&&Array.isArray(graph.strings));
+            assert.equal(graph.nodes.length,graph.snapshot.node_count*nw);
+            assert.equal(graph.edges.length,graph.snapshot.edge_count*ew);
+            assert.ok(graph.strings.length>0&&graph.strings.every(s=>typeof s==="string"));
+            assert.ok(Array.isArray(nt[ni("type")])&&nt[ni("type")].length>0);
+            assert.ok(Array.isArray(et[ei("type")])&&et[ei("type")].length>0);
+            const index=(v,len)=>Number.isInteger(v)&&v>=0&&v<len;
+            let edges=0;
+            for(let i=0;i<graph.nodes.length;i+=nw){
+              assert.ok(index(graph.nodes[i+ni("type")],nt[ni("type")].length));
+              assert.ok(index(graph.nodes[i+ni("name")],graph.strings.length));
+              assert.ok(Number.isInteger(graph.nodes[i+ni("id")])&&graph.nodes[i+ni("id")]>0);
+              assert.ok(Number.isInteger(graph.nodes[i+ni("self_size")])&&graph.nodes[i+ni("self_size")]>=0);
+              const count=graph.nodes[i+ni("edge_count")];assert.ok(Number.isInteger(count)&&count>=0);edges+=count;
+            }
+            assert.equal(edges,graph.snapshot.edge_count);
+            for(let i=0;i<graph.edges.length;i+=ew){
+              const typ=graph.edges[i+ei("type")];assert.ok(index(typ,et[ei("type")].length));
+              const to=graph.edges[i+ei("to_node")];assert.ok(index(to,graph.nodes.length)&&to%nw===0);
+              const key=graph.edges[i+ei("name_or_index")],name=et[ei("type")][typ];
+              assert.ok(name==="element"||name==="hidden"?Number.isInteger(key)&&key>=0:index(key,graph.strings.length));
+            }
+          }
+          console.log("Complete current-source diagnostic attribution artifacts; not release acceptance.");
+          JS
+      - name: Record separate identities and outcomes
+        if: always()
+        env:
+          WORKFLOW_COMMIT: ${{ github.sha }}
+          PERF_OUTCOME: ${{ steps.performance.outcome }}
+          STABILITY_OUTCOME: ${{ steps.stability.outcome }}
+          DIAGNOSTIC_OUTCOME: ${{ steps.diagnostics.outcome }}
+        run: |
+          node --input-type=module <<'JS'
+          import fs from "node:fs";
+          import path from "node:path";
+          import { createHash } from "node:crypto";
+          const root=process.env.ZK682_PROFILE_ROOT;
+          fs.mkdirSync(root,{recursive:true});
+          const text=name=>fs.existsSync(path.join(root,name))?fs.readFileSync(path.join(root,name),"utf8").trim():null;
+          const exit=name=>text(`${name}-exit-code.txt`)===null?null:Number(text(`${name}-exit-code.txt`));
+          fs.writeFileSync(path.join(root,"provenance.json"),JSON.stringify({
+            applicationBaseline:process.env.ZK682_APPLICATION_BASELINE,applicationTree:text("application-tree.txt"),applicationSrcTree:text("application-src-tree.txt"),
+            diagnosticCommit:process.env.WORKFLOW_COMMIT,observedDiagnosticCommit:text("diagnostic-commit.txt"),diagnosticTree:text("diagnostic-tree.txt"),
+            dependencyLockSha256:createHash("sha256").update(fs.readFileSync("package-lock.json")).digest("hex"),
+            initialSourceClean:text("initial-source-status.txt")==="",platform:process.platform,architecture:process.arch,nodeVersion:process.version,
+            instrumented:true,certificationEligible:false,fullCertification:false,
+            performance:{outcome:process.env.PERF_OUTCOME,exitCode:exit("performance")},stability:{outcome:process.env.STABILITY_OUTCOME,exitCode:exit("stability")},
+            diagnostics:{outcome:process.env.DIAGNOSTIC_OUTCOME},
+            limitation:"Profiling and snapshots perturb execution. Original uninstrumented exact-candidate acceptance remains required."
+          },null,2));
+          JS
+      - name: Retain complete diagnostic and producer records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zk682-current-profile-${{ github.sha }}
+          path: ${{ runner.temp }}/zk682-current-profile
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve real producer and diagnostic failures
+        if: always()
+        env:
+          PERF_OUTCOME: ${{ steps.performance.outcome }}
+          STABILITY_OUTCOME: ${{ steps.stability.outcome }}
+          DIAGNOSTIC_OUTCOME: ${{ steps.diagnostics.outcome }}
+        run: |
+          test "$PERF_OUTCOME" = success
+          test "$STABILITY_OUTCOME" = success
+          test "$DIAGNOSTIC_OUTCOME" = success
