@@ -11,6 +11,8 @@ import {
   shouldHoldUnopenedLiveDay,
   stepLive,
 } from "../game/live/simulation";
+import { LiveCursorRevisionOwner } from "../game/live/liveCursorRevision";
+import { captureShotTelemetrySnapshot } from "../game/live/shotTelemetrySnapshot";
 import { commitDay } from "../game/live/commitDay";
 import type { DayResult, GolferRenderData, LiveState } from "../game/live/types";
 import {
@@ -273,6 +275,9 @@ export function useLiveSimulation(args: {
   const worldRef = useRef(world);
   const speedRef = useRef<SpeedName>(speed);
   const liveRef = useRef<LiveState | null>(null);
+  const [cursorOwner] = useState(() => new LiveCursorRevisionOwner());
+  // Own projection lifetime independently of the frequently restarted RAF effect.
+  useEffect(() => () => cursorOwner.invalidate(), [cursorOwner, enabled]);
   const golfersRef = useRef<GolferRenderData[]>([]);
   // Alternate two retained render buffers so 100+ entity frames do not
   // allocate a new array/object graph every rAF. The previous buffer remains
@@ -292,7 +297,10 @@ export function useLiveSimulation(args: {
   const onRoundRef = useRef(onRoundCompleted);
   const skipNextReconcileRef = useRef(false);
   const operationPolicyRef = useRef({ tutorialThreeHolePreview: publicThreeHoleOperation });
-  const courseCanReceiveArrivalsRef = useRef(courseCanReceiveLiveArrivals(course, { tutorialThreeHolePreview: publicThreeHoleOperation }));
+  const courseCanReceiveArrivalsRef = useRef<boolean | null>(null);
+  if (courseCanReceiveArrivalsRef.current === null) {
+    courseCanReceiveArrivalsRef.current = courseCanReceiveLiveArrivals(course, { tutorialThreeHolePreview: publicThreeHoleOperation });
+  }
 
   const buildRenderData = useCallback((live: LiveState) => {
     renderBufferIndexRef.current = renderBufferIndexRef.current === 0 ? 1 : 0;
@@ -323,17 +331,21 @@ export function useLiveSimulation(args: {
       prev.buildings !== course.buildings;
     const live = liveRef.current;
     courseCanReceiveArrivalsRef.current = courseCanReceiveLiveArrivals(course, operationPolicyRef.current);
-    if (enabled && live) ensureOpeningDayArrivals(live, course, worldRef.current, operationPolicyRef.current);
+    if (enabled && live) {
+      cursorOwner.invalidate();
+      ensureOpeningDayArrivals(live, course, worldRef.current, operationPolicyRef.current);
+    }
     if (!changed) return;
     geomRef.current = { tiles: course.tiles, holes: course.holes, obstacles: course.obstacles, buildings: course.buildings };
     const skipGolferReconcile = skipNextReconcileRef.current;
     skipNextReconcileRef.current = false;
     if (skipGolferReconcile) return;
     if (enabled && live && live.golfers.length > 0) {
+      cursorOwner.invalidate();
       reconcileGolfers(live, course);
       golfersRef.current = buildRenderData(live);
     }
-  }, [buildRenderData, enabled, course, publicThreeHoleOperation]);
+  }, [buildRenderData, cursorOwner, enabled, course, publicThreeHoleOperation]);
 
   const flushCash = useCallback(() => {
     const d = pendingCashRef.current;
@@ -397,6 +409,7 @@ export function useLiveSimulation(args: {
   // Commit a finished day: apply costs/rep/condition as deltas (green fees were
   // already banked live), then roll the calendar and start the next day.
   const finishDay = useCallback((live: LiveState) => {
+    cursorOwner.invalidate();
     flushCash();
     const tournament = completeTournament(worldRef.current, live);
     const revenue = live.greenFeeCollected + live.concessionCollected + tournament.revenue;
@@ -446,6 +459,7 @@ export function useLiveSimulation(args: {
     setWorld(() => preparedNext.world);
     if (closesWeek) weekLedgerRef.current = createWeekLedger(preparedNext.world.week);
     const next = createLiveState(nextCourse, preparedNext.world, nextDayIndex, operationPolicyRef.current);
+    cursorOwner.invalidate();
     liveRef.current = next;
     golfersRef.current = [];
     selectedIdRef.current = null;
@@ -487,14 +501,14 @@ export function useLiveSimulation(args: {
         standings: sortedStandings(next.tournament.standings),
       } : null,
     }));
-  }, [flushCash, setCourse, setWorld]);
+  }, [cursorOwner, flushCash, setCourse, setWorld]);
 
   const advanceSimulation = useCallback((live: LiveState, realMs: number) => {
     // A fresh course has no operating day to consume yet. Keep the opening
     // clock at the clubhouse while the player authors a valid layout, even if
     // their preferred default speed is 1x. Once any round has started, course
     // edits never freeze or rewind that real day.
-    if (shouldHoldUnopenedLiveDay(live, courseCanReceiveArrivalsRef.current)) {
+    if (shouldHoldUnopenedLiveDay(live, courseCanReceiveArrivalsRef.current!)) {
       clockRemainderRef.current = 0;
       return;
     }
@@ -503,6 +517,7 @@ export function useLiveSimulation(args: {
     if (clock.steps === 0) return;
     const previousRender = golfersRef.current;
     for (let step = 0; step < clock.steps && !live.dayOver; step++) {
+      cursorOwner.invalidate();
       const ev = stepLive(live, courseRef.current, FIXED_GAME_STEP_MINUTES, worldRef.current);
       for (const round of ev.completedRounds) {
         const recordedWorld = recordLivingClubRound(worldRef.current, courseRef.current, round, live.dayIndex);
@@ -521,7 +536,7 @@ export function useLiveSimulation(args: {
     for (const audioEvent of deriveLiveAudioEvents(previousRender, nextRender, courseRef.current).slice(0, eventCap)) {
       onAudioRef.current?.(audioEvent);
     }
-  }, [buildRenderData, setWorld]);
+  }, [buildRenderData, cursorOwner, setWorld]);
 
   // Main clock loop.
   useEffect(() => {
@@ -532,6 +547,7 @@ export function useLiveSimulation(args: {
         worldRef.current = prepared.world;
         setWorld(() => prepared.world);
       }
+      cursorOwner.invalidate();
       liveRef.current = createLiveState(courseRef.current, prepared.world, 0, operationPolicyRef.current);
     }
 
@@ -562,9 +578,15 @@ export function useLiveSimulation(args: {
       rafRef.current = null;
       lastTsRef.current = null;
     };
-  }, [advanceSimulation, enabled, flushCash, publishStatus, finishDay]);
+  }, [advanceSimulation, cursorOwner, enabled, flushCash, publishStatus, finishDay]);
 
   const liveActive = speed !== "paused" || status.onCourse > 0;
+
+  const getShotTelemetrySnapshot = useCallback(() =>
+    captureShotTelemetrySnapshot(liveRef.current?.golfers ?? []), []);
+
+  const getReadonlyShotTelemetryLookup = useCallback(() =>
+    cursorOwner.capture(liveRef.current?.golfers ?? []), [cursorOwner]);
 
   const getSnapshot = useCallback((): LiveSimulationSnapshotV1 | undefined => {
     const state = liveRef.current;
@@ -580,6 +602,7 @@ export function useLiveSimulation(args: {
   }, []);
 
   const restoreSnapshot = useCallback((snapshot: LiveSimulationSnapshotV1 | undefined): boolean => {
+    cursorOwner.invalidate();
     if (!snapshot) {
       liveRef.current = null;
       golfersRef.current = [];
@@ -642,17 +665,18 @@ export function useLiveSimulation(args: {
       mobility: buildMobilityOperationsReports({ course: courseRef.current, world: worldRef.current, live: restored.state.m51, week: worldRef.current.week, dayIndex: restored.state.dayIndex }),
     });
     return true;
-  }, [buildRenderData]);
+  }, [buildRenderData, cursorOwner]);
 
   const advanceTime = useCallback((ms: number) => {
     if (!enabled || !Number.isFinite(ms) || ms <= 0) return;
+    if (!liveRef.current) cursorOwner.invalidate();
     const live = liveRef.current ?? createLiveState(courseRef.current, worldRef.current, 0, operationPolicyRef.current);
     liveRef.current = live;
     advanceSimulation(live, Math.min(2_000, ms));
     flushCash();
     publishStatus(live);
     if (live.dayOver) finishDay(live);
-  }, [advanceSimulation, enabled, finishDay, flushCash, publishStatus]);
+  }, [advanceSimulation, cursorOwner, enabled, finishDay, flushCash, publishStatus]);
 
   const setSpeed = useCallback((next: SpeedName) => {
     // Update the loop's ref synchronously. App-shell pause must freeze the
@@ -682,6 +706,8 @@ export function useLiveSimulation(args: {
     selectGolfer,
     selectedId,
     getSnapshot,
+    getShotTelemetrySnapshot,
+    getReadonlyShotTelemetryLookup,
     restoreSnapshot,
     advanceTime,
     setPacePreset,

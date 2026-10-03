@@ -1,3 +1,4 @@
+import { cachedBunkerPresentation } from "../render/bunkerPresentation";
 import type { Course, PinRotation, TeeSet, World } from "../models/types";
 import type { PlayerPlayableRound, PlayerProSkills, PlayerRoundCourseSnapshot, PlayerRoundKind } from "../models/playerProTypes";
 import { biomeCompatibilityMetadataFor, getBiomeDefinition } from "../models/biomes";
@@ -57,6 +58,7 @@ function snapshotCourse(course: Course, world: World, day: number, layoutId: str
     height: course.height,
     yardsPerTile: course.yardsPerTile,
     tiles: effectiveSurfaceTiles(course).slice(),
+    bunkerPresentation: cachedBunkerPresentation(effectiveSurfaceTiles(course), course.width, course.height, course.surfaceIntent?.features),
     elevations: course.elevations.slice(),
     obstacles: course.obstacles.map((obstacle) => ({ ...obstacle })),
     holes: holes as PlayerRoundCourseSnapshot["holes"],

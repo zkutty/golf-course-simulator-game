@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type * as PIXI from "pixi.js";
+import * as PIXI from "pixi.js";
 import type { GolferRenderData } from "../../../game/live/types";
+import { feeEmote } from "../../../game/render/emotes";
 import { DEFAULT_COURSE } from "../../../game/models/defaults";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import { SceneSystemHost } from "../SceneSystemHost";
@@ -29,7 +30,9 @@ class FakeDisplay {
   tint: number | string = 0xffffff;
   texture: unknown = null;
   rotation = 0;
-  destroy = vi.fn((_options?: { children?: boolean }) => {});
+  destroyed = false;
+  removeChildren(): FakeDisplay[] { return []; }
+  destroy = vi.fn((_options?: { children?: boolean }) => { this.destroyed = true; });
 }
 
 class FakeGraphics extends FakeDisplay {
@@ -56,6 +59,7 @@ class FakeContainer extends FakeDisplay {
   children: FakeDisplay[] = [];
   addLog: string[] | null = null;
   override destroy = vi.fn((options?: { children?: boolean }) => {
+    this.destroyed = true;
     if (!options?.children) return;
     for (const child of this.children) child.destroy(options);
     this.children = [];
@@ -68,6 +72,12 @@ class FakeContainer extends FakeDisplay {
       this.addLog?.push(this.label);
     }
     return children[0];
+  }
+
+  override removeChildren(): FakeDisplay[] {
+    const children = [...this.children];
+    for (const child of children) this.removeChild(child);
+    return children;
   }
 
   removeChild<T extends FakeDisplay>(child: T): T {
@@ -279,5 +289,119 @@ describe("live golfer, ball, emote, and transient scene ownership", () => {
 
     expect(followCamera).toHaveBeenCalledWith(11, 12);
     expect(mobility).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe("actual Pixi emote context ownership", () => {
+  function actualScene(sharedIcon?: PIXI.GraphicsContext) {
+    const world = new PIXI.Container();
+    const objects = world.addChild(new PIXI.Container());
+    const screenOverlay = new PIXI.Container();
+    const texture = new PIXI.Texture({ source: new PIXI.TextureSource({ width: 1, height: 1 }) });
+    const graphics: PIXI.Graphics[] = [];
+    const system = createLiveEntitiesSceneSystem({
+      objects, screenOverlay,
+      terrainDecals: new PIXI.Container(), fx: new PIXI.Container(),
+    }, {
+      atlasReady: () => false,
+      createGraphics: () => {
+        // Effect, ball shadow and ball precede the bubble background and empty icon.
+        const graphic = sharedIcon && graphics.length === 4
+          ? new PIXI.Graphics({ context: sharedIcon }) : new PIXI.Graphics();
+        graphics.push(graphic);
+        return graphic;
+      },
+      createText: () => new PIXI.Sprite(texture) as unknown as PIXI.Text,
+    });
+    system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 100 } }));
+    const step = (nowMs: number, golfers = [golfer()]) => system.tickEntities({
+      nowMs, golfers, animationsEnabled: false, cullBounds: unbounded,
+      worldPointToScreen: (x, y) => ({ x, y }), followCamera: vi.fn(),
+      startleAtmosphere: vi.fn(), tickMobilityEntities: vi.fn(),
+    });
+    return { system, screenOverlay, graphics, texture, step };
+  }
+
+  it.each(["expiry", "clear"])("releases drawn and empty owned contexts on %s exactly once", (mode) => {
+    const scene = actualScene();
+    scene.step(1_000);
+    expect(scene.system.diagnostics().bubbles).toBe(1);
+    const bubble = scene.screenOverlay.children[0];
+    bubble.enableRenderGroup();
+    const groupDestroy = vi.spyOn(bubble.renderGroup, "destroy");
+    const background = bubble.children[0] as PIXI.Graphics;
+    const icon = bubble.children.at(-1) as PIXI.Graphics;
+    expect(background.context.instructions.map((instruction) => instruction.action)).toEqual(["fill", "stroke", "fill", "stroke", "fill", "stroke"]);
+    expect(icon.context.instructions).toHaveLength(0);
+    const managed: Record<string, unknown>[] = [];
+    const renderer = new PIXI.GraphicsContextSystem({ renderableGC: {
+      addManagedHash: (owner: object, key: string) => managed.push(Reflect.get(owner, key)),
+    } } as unknown as ConstructorParameters<typeof PIXI.GraphicsContextSystem>[0]);
+    const contexts = [background.context, icon.context];
+    const destroyed = contexts.map((context) => vi.spyOn(context, "destroy"));
+    contexts.forEach((context) => renderer.getGpuContext(context));
+    expect(Object.values(managed[0]).filter(Boolean)).toHaveLength(2);
+    for (const graphic of [background, icon]) graphic.on("destroyed", () => {
+      expect(groupDestroy).not.toHaveBeenCalled();
+      expect(bubble.destroyed).toBe(false);
+    });
+    const textureDestroy = vi.spyOn(scene.texture, "destroy");
+    if (mode === "expiry") scene.step(4_101);
+    else scene.system.destroy!();
+    expect(scene.system.diagnostics().bubbles).toBe(0);
+    expect(Object.values(managed[0]).filter(Boolean)).toHaveLength(0);
+    for (const [index, context] of contexts.entries()) {
+      expect(destroyed[index]).toHaveBeenCalledExactlyOnceWith(undefined);
+      expect(context.listenerCount("update")).toBe(0);
+      expect(context.listenerCount("destroy")).toBe(0);
+    }
+    expect(groupDestroy).toHaveBeenCalledTimes(1);
+    expect(textureDestroy).not.toHaveBeenCalled();
+    scene.system.destroy!(); renderer.destroy();
+    destroyed.forEach((destroy) => expect(destroy).toHaveBeenCalledTimes(1));
+    scene.texture.destroy(true);
+  });
+
+  it("preserves a borrowed icon context and its sibling while detaching the retired icon", () => {
+    const context = new PIXI.GraphicsContext();
+    const sibling = new PIXI.Graphics({ context });
+    const scene = actualScene(context);
+    scene.step(1_000);
+    const icon = scene.screenOverlay.children[0].children.at(-1) as PIXI.Graphics;
+    expect(icon.context).toBe(context);
+    expect(context.listenerCount("update")).toBe(2);
+    const destroy = vi.spyOn(context, "destroy");
+    scene.step(4_101);
+    expect(icon.destroyed).toBe(true);
+    expect(context.listenerCount("update")).toBe(1);
+    expect(destroy).not.toHaveBeenCalled();
+    sibling.didViewUpdate = false; context.dirty = false;
+    context.rect(0, 0, 3, 3).fill(0xffffff);
+    expect(sibling.didViewUpdate).toBe(true);
+    scene.system.destroy!(); sibling.destroy(); context.destroy(); scene.texture.destroy(true);
+  });
+
+  it("keeps GPU registrations flat through repeated bubble creation and expiry", () => {
+    const scene = actualScene();
+    let registry: Record<string, unknown> = {};
+    const renderer = new PIXI.GraphicsContextSystem({ renderableGC: {
+      addManagedHash: (owner: object, key: string) => {
+        if (key === "_gpuContextHash") registry = Reflect.get(owner, key);
+      },
+    } } as unknown as ConstructorParameters<typeof PIXI.GraphicsContextSystem>[0]);
+    const ids = Array.from({ length: 100 }, (_, index) => index + 1).filter((id) => feeEmote(100, id));
+    for (let cycle = 0; cycle < 12; cycle++) {
+      const now = 1_000 + cycle * 10_000;
+      scene.step(now, [golfer(ids[cycle])]);
+      expect(scene.system.diagnostics().bubbles).toBe(1);
+      const pair = scene.graphics.slice(-2);
+      pair.forEach((graphic) => renderer.getGpuContext(graphic.context));
+      expect(Object.values(registry).filter(Boolean)).toHaveLength(2);
+      scene.step(now + 3_101, [golfer(ids[cycle])]);
+      expect(scene.system.diagnostics().bubbles).toBe(0);
+      expect(Object.values(registry).filter(Boolean)).toHaveLength(0);
+    }
+    scene.system.destroy!(); renderer.destroy(); scene.texture.destroy(true);
   });
 });

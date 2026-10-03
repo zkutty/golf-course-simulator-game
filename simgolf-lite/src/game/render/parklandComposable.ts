@@ -1,3 +1,5 @@
+import { destroySceneSubtree } from "../../ui/renderer/destroySceneSubtree";
+import { ownSceneMeshGeometry } from "../../ui/renderer/ownedSceneMeshGeometry";
 import * as PIXI from "pixi.js";
 import type { Building, LandTheme, Point, Terrain } from "../models/types";
 export {
@@ -308,7 +310,7 @@ export function isParklandComposableTransition(owner: Terrain, outside: Terrain)
 
 export function destroyParklandPresentationLayer(layer: PIXI.Container | null): null {
   layer?.removeFromParent();
-  layer?.destroy({ children: true });
+  if (layer) destroySceneSubtree(layer);
   return null;
 }
 
@@ -448,10 +450,10 @@ export function createParklandComposableMesh<T>(
   const data = buildParklandComposableMeshGeometry(
     entries, courseWidth, subdivisions, cellIndex, project, reuseVertices,
   );
-  return data.indices.length === 0 ? null : new PIXI.Mesh({
+  return data.indices.length === 0 ? null : ownSceneMeshGeometry(new PIXI.Mesh({
     geometry: new PIXI.MeshGeometry(data),
     texture,
-  });
+  }));
 }
 
 export function createLandscapeRingMask(
@@ -768,7 +770,7 @@ function parklandPairTileMesh(
     );
     return [projected.x, projected.y];
   });
-  return new PIXI.Mesh({
+  return ownSceneMeshGeometry(new PIXI.Mesh({
     geometry: new PIXI.MeshGeometry({
       positions: new Float32Array(positions),
       uvs: new Float32Array([
@@ -786,7 +788,7 @@ function parklandPairTileMesh(
       ]),
     }),
     texture,
-  });
+  }));
 }
 
 export interface ParklandPairFringeRenderDiagnostics {

@@ -61,12 +61,17 @@ interface Window {
       markerIndex: number;
       objectsIndex: number;
     } | null;
+    bunkerContours(): Array<{ rotation: import("./game/render/iso").IsoRotation; cells: number[]; boundary: Array<Array<{ x: number; y: number }>>; floor: Array<Array<{ x: number; y: number }>> }>;
     terrainPreview(): {
       revision: number;
       previewKind: "stroke" | "surface-edit";
       selectedTerrain: import("./game/models/types").Terrain | null;
       materials: import("./game/models/types").Terrain[];
       colors: Partial<Record<import("./game/models/types").Terrain, number>>;
+      authoredBunkerRings?: Array<Array<{ x: number; y: number }>>;
+      bunkerContours?: import("./game/render/bunkerStrokePreview").SandStrokePreviewComponent[];
+      chargedCells?: number[];
+      acceptedCells?: number[];
     } | null;
     routeOverlay(): {
       geometrySamples: number;

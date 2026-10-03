@@ -181,14 +181,47 @@ function properSegmentIntersection(
 ): boolean {
   const abC = signedCross(a, b, c);
   const abD = signedCross(a, b, d);
+  // Endpoints must lie strictly on opposite sides of both segments. Reject
+  // on the first segment before evaluating the other two determinants.
+  if (!(Math.abs(abC) > HAZARD_EPSILON && Math.abs(abD) > HAZARD_EPSILON &&
+    (abC > 0) !== (abD > 0))) return false;
   const cdA = signedCross(c, d, a);
   const cdB = signedCross(c, d, b);
-  return Math.abs(abC) > HAZARD_EPSILON && Math.abs(abD) > HAZARD_EPSILON &&
-    Math.abs(cdA) > HAZARD_EPSILON && Math.abs(cdB) > HAZARD_EPSILON &&
-    (abC > 0) !== (abD > 0) && (cdA > 0) !== (cdB > 0);
+  return Math.abs(cdA) > HAZARD_EPSILON && Math.abs(cdB) > HAZARD_EPSILON &&
+    (cdA > 0) !== (cdB > 0);
 }
 
-function hasProperSelfIntersection(ring: readonly HazardBankPoint[]): boolean {
+/** World-tile coordinates within this bound give determinant roundoff <=
+ * 2^-26, below HAZARD_EPSILON. An accepted proper intersection therefore has
+ * reliable orientation signs; strictly disjoint boxes cannot be accepted.
+ * Nonfinite/extreme copies retain the original predicate without exclusion.
+ */
+function boundedEdgeBoxes(ring: readonly HazardBankPoint[]): Float64Array | null {
+  for (const point of ring) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)
+      || Math.abs(point.x) > 1024 || Math.abs(point.y) > 1024) return null;
+  }
+  const boxes = new Float64Array(ring.length * 4);
+  for (let index = 0; index < ring.length; index++) {
+    const a = ring[index];
+    const b = ring[(index + 1) % ring.length];
+    const offset = index * 4;
+    boxes[offset] = Math.min(a.x, b.x);
+    boxes[offset + 1] = Math.max(a.x, b.x);
+    boxes[offset + 2] = Math.min(a.y, b.y);
+    boxes[offset + 3] = Math.max(a.y, b.y);
+  }
+  return boxes;
+}
+
+function disjointEdgeBoxes(a: Float64Array, first: number, b: Float64Array, second: number): boolean {
+  const i = first * 4;
+  const j = second * 4;
+  return a[i + 1] < b[j] || b[j + 1] < a[i]
+    || a[i + 3] < b[j + 2] || b[j + 3] < a[i + 2];
+}
+
+function hasProperSelfIntersection(ring: readonly HazardBankPoint[], boxes: Float64Array | null): boolean {
   for (let first = 0; first < ring.length; first++) {
     const firstNext = (first + 1) % ring.length;
     for (let second = first + 1; second < ring.length; second++) {
@@ -196,6 +229,7 @@ function hasProperSelfIntersection(ring: readonly HazardBankPoint[]): boolean {
       // Neighbouring edges meet by design. The first and final edge are also
       // neighbours in a closed ring.
       if (first === second || firstNext === second || secondNext === first) continue;
+      if (boxes && disjointEdgeBoxes(boxes, first, boxes, second)) continue;
       if (properSegmentIntersection(ring[first], ring[firstNext], ring[second], ring[secondNext])) return true;
     }
   }
@@ -224,6 +258,7 @@ function joinedInnerRing(
   // +y. Its inward normal is (-dy, dx), including oppositely wound hole rings.
   // Low's frozen silhouette adapter explicitly retains the old outward mask.
   const direction = legacyOutward ? -1 : 1;
+  const outerBoxes = boundedEdgeBoxes(outerRing);
   for (let scale = 1; scale >= 0.1; scale *= 0.72) {
     const width = requestedWidth * scale;
     const innerRing: HazardBankPoint[] = [];
@@ -264,7 +299,9 @@ function joinedInnerRing(
       const miter = Math.min(localWidth / normalAlignment, localWidth * 1.6);
       innerRing.push({ x: current.x + bisector.x * miter, y: current.y + bisector.y * miter });
     }
-    if (innerRing.length !== outerRing.length || hasProperSelfIntersection(innerRing)) continue;
+    if (innerRing.length !== outerRing.length) continue;
+    const innerBoxes = boundedEdgeBoxes(innerRing);
+    if (hasProperSelfIntersection(innerRing, innerBoxes)) continue;
     if (Math.abs(signedArea(innerRing)) <= HAZARD_EPSILON) continue;
     let valid = true;
     for (let index = 0; index < outerRing.length; index++) {
@@ -284,6 +321,7 @@ function joinedInnerRing(
       const outerNext = (outer + 1) % outerRing.length;
       for (let inner = 0; inner < innerRing.length; inner++) {
         const innerNext = (inner + 1) % innerRing.length;
+        if (outerBoxes && innerBoxes && disjointEdgeBoxes(outerBoxes, outer, innerBoxes, inner)) continue;
         if (properSegmentIntersection(outerRing[outer], outerRing[outerNext], innerRing[inner], innerRing[innerNext])) {
           valid = false;
           break;

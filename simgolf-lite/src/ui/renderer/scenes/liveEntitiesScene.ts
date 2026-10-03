@@ -1,6 +1,8 @@
 import * as PIXI from "pixi.js";
+import { destroySceneSubtree } from "../destroySceneSubtree";
 import type { GolferRenderData } from "../../../game/live/types";
 import type { Terrain } from "../../../game/models/types";
+import { bunkerDisplayPoint, cachedBunkerPresentation } from "../../../game/render/bunkerPresentation";
 import { ballFlightPose, landingBehavior } from "../../../game/render/ballFlight";
 import { forgetGolfer, recordEmote } from "../../../game/render/emoteFeed";
 import {
@@ -278,7 +280,7 @@ export function createLiveEntitiesSceneSystem(
     for (const [id, entry] of pool) destroyEntry(id, entry, false);
     for (const container of bubbles.values()) {
       container.parent?.removeChild(container);
-      container.destroy({ children: true });
+      destroySceneSubtree(container);
     }
     bubbles.clear();
     effectGraphics?.parent?.removeChild(effectGraphics);
@@ -348,6 +350,7 @@ export function createLiveEntitiesSceneSystem(
   const tickEntities = (input: LiveEntityTickInput) => {
     if (!authority) return;
     const { course, effectiveTiles, rotation, surfaceHeightAt } = authority;
+    let bunkers: ReturnType<typeof cachedBunkerPresentation> | null = null;
     const {
       nowMs,
       animationsEnabled,
@@ -587,10 +590,16 @@ export function createLiveEntitiesSceneSystem(
             startleAtmosphere(impact, nowMs);
           }
         }
-        const elevation = surfaceHeightAt(x + 0.5, y + 0.5);
-        const ground = tileCenterIso(x, y, elevation, rotation);
+        bunkers ??= cachedBunkerPresentation(effectiveTiles, course.width, course.height, course.surfaceIntent?.features);
+        const displayedFrom = bunkerDisplayPoint(from, course.width, bunkers);
+        const displayedTo = bunkerDisplayPoint(to, course.width, bunkers);
+        const progress = golfer.segKind === "flight" ? Math.max(0, Math.min(1, golfer.segT)) : 1;
+        const displayX = x + 0.5 + (displayedFrom.x - from.x - 0.5) * (1 - progress) + (displayedTo.x - to.x - 0.5) * progress;
+        const displayY = y + 0.5 + (displayedFrom.y - from.y - 0.5) * (1 - progress) + (displayedTo.y - to.y - 0.5) * progress;
+        const elevation = surfaceHeightAt(displayX, displayY);
+        const ground = tileCenterIso(displayX - 0.5, displayY - 0.5, elevation, rotation);
         entry.ball.position.set(ground.x, ground.y - heightPx);
-        const depth = Math.round(entityDepth(x, y, elevation, rotation) * 10) / 10;
+        const depth = Math.round(entityDepth(displayX - 0.5, displayY - 0.5, elevation, rotation) * 10) / 10;
         if (entry.ball.zIndex !== depth) entry.ball.zIndex = depth;
         entry.ball.visible = !hidden;
         entry.ballShadow.position.set(ground.x, ground.y);
@@ -636,7 +645,7 @@ export function createLiveEntitiesSceneSystem(
     for (const [id, container] of bubbles) {
       if (!scheduler.active.some((emote) => emote.golferId === id)) {
         container.parent?.removeChild(container);
-        container.destroy({ children: true });
+        destroySceneSubtree(container);
         bubbles.delete(id);
       }
     }

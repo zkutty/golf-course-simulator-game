@@ -5,6 +5,8 @@ import { getGolferProfile } from "./golferProfiles";
 import type { ShotPlanStep } from "./shots/solveShotsToGreen";
 import { solveShotsToGreen } from "./shots/solveShotsToGreen";
 import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
+import { readScoringTile, withScoringTileReads } from "./scoringTileReads";
+import { scoringDependencyWeight, trimScoringDependencyCache } from "./scoringCacheRetention";
 
 export interface HoleScore {
   holeIndex: number;
@@ -70,7 +72,7 @@ export function tileAt(course: Course, p: Point): Terrain {
   // Scoring enters through scoreHole(), which freezes the effective terrain
   // view before dependency tracking. Reading that view directly preserves the
   // exact per-hole cache footprint used by immutable paint updates.
-  return course.tiles[p.y * course.width + p.x];
+  return readScoringTile(course.tiles, p.y * course.width + p.x);
 }
 
 export function sampleLine(a: Point, b: Point, samples = 13): Point[] {
@@ -358,29 +360,69 @@ interface HoleScoreCacheEntry {
   theme: Course["theme"];
   themeSensitive: boolean;
   obstacles: Course["obstacles"];
+  obstacleSignature: string;
+  holeSignature: string;
   tileDependencies: Map<number, Terrain>;
   elevationDependencies: Map<number, number>;
   result: HoleScore;
 }
 
 let holeScoreCache = new WeakMap<Hole, HoleScoreCacheEntry>();
+// Setup/rating consumers copy hole objects without changing their scoring
+// inputs. Reuse their exact result on the same immutable terrain root, rather
+// than repeating the expensive solver for each equivalent setup view.
+let equivalentHoleScoreCache: { tiles: Course["tiles"]; entries: Map<string, HoleScoreCacheEntry> } | undefined;
+export const EQUIVALENT_HOLE_SCORE_MAX_DEPENDENCIES = 160_000;
 let holeScoreCacheHits = 0;
 let holeScoreCacheMisses = 0;
 
-function numericIndex(property: string | symbol): number | null {
-  if (typeof property !== "string" || !/^\d+$/.test(property)) return null;
-  return Number(property);
-}
-
-function trackArrayReads<T>(values: T[], dependencies: Map<number, T>): T[] {
-  return new Proxy(values, {
+function trackArrayReads<T>(values: T[], dependencies: Map<number, T>, dense: boolean): T[] {
+  if (!dense) return new Proxy(values, {
     get(target, property, receiver) {
-      const index = numericIndex(property);
-      if (index !== null) dependencies.set(index, target[index]);
+      if (typeof property === "string" && /^\d+$/.test(property)) dependencies.set(Number(property), target[Number(property)]);
       return Reflect.get(target, property, receiver);
     },
   });
+  // Track each cell once. A Proxy traps every read in every candidate shot;
+  // a release-scale solve reads the same cells millions of times. Resolve
+  // each lazy accessor to an ordinary value after its first read, retaining
+  // exactly the same dependency footprint without repeated trap overhead.
+  const prior = lastTrackedArray?.values === values ? lastTrackedArray.state as TrackedArray<T> : undefined;
+  if (prior && prior.tracked.length === values.length) {
+    for (const index of prior.readIndices) Object.defineProperty(prior.tracked, index, prior.descriptors[index]);
+    prior.readIndices.length = 0;
+    prior.dependencies = dependencies;
+    return prior.tracked;
+  }
+  const state: TrackedArray<T> = { tracked: values.slice(), descriptors: [], dependencies, readIndices: [] };
+  for (let index = 0; index < values.length; index++) {
+    const descriptor: PropertyDescriptor = {
+      configurable: true,
+      enumerable: true,
+      get() {
+        const value = values[index];
+        state.dependencies.set(index, value);
+        state.readIndices.push(index);
+        Object.defineProperty(state.tracked, index, { configurable: true, enumerable: true, writable: true, value });
+        return value;
+      },
+    };
+    state.descriptors.push(descriptor);
+    Object.defineProperty(state.tracked, index, descriptor);
+  }
+  // Undo history retains old elevation arrays. Retain accessor descriptors
+  // for only the latest root, rather than one closure set per undo snapshot.
+  lastTrackedArray = { values, state: state as TrackedArray<unknown> };
+  return state.tracked;
 }
+
+interface TrackedArray<T> {
+  tracked: T[];
+  descriptors: PropertyDescriptor[];
+  dependencies: Map<number, T>;
+  readIndices: number[];
+}
+let lastTrackedArray: { values: unknown[]; state: TrackedArray<unknown> } | undefined;
 
 function dependenciesMatch<T>(dependencies: Map<number, T>, values: T[]): boolean {
   for (const [index, previous] of dependencies) {
@@ -397,7 +439,22 @@ function dependenciesMatch<T>(dependencies: Map<number, T>, values: T[]): boolea
  */
 export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleScore {
   course = courseWithEffectiveSurfaces(course);
-  const cached = holeScoreCache.get(hole);
+  // These are the only hole fields consumed by scoreHoleUncached. Cosmetic
+  // IDs/names and authored setup catalogs must not retain duplicate payloads.
+  const equivalentKey = JSON.stringify([holeIndex, hole.tee?.x, hole.tee?.y, hole.green?.x, hole.green?.y, hole.parMode, hole.parManual]);
+  const obstacleSignature = JSON.stringify(course.obstacles);
+  // Preserve malformed legacy scoring behavior without allowing JSON's
+  // NaN/Infinity/null normalization to alias distinct cache inputs.
+  const cacheableInputs = Number.isInteger(holeIndex) && holeIndex >= 0 && !Object.is(holeIndex, -0)
+    && Number.isInteger(course.width) && course.width > 0 && Number.isInteger(course.height) && course.height > 0
+    && Number.isFinite(course.yardsPerTile ?? 10) && (course.yardsPerTile ?? 10) > 0
+    && (hole.parManual == null || (Number.isFinite(hole.parManual) && !Object.is(hole.parManual, -0)))
+    && [hole.tee, hole.green, ...course.obstacles].every((point) => !point || (Number.isInteger(point.x) && Number.isInteger(point.y) && !Object.is(point.x, -0) && !Object.is(point.y, -0)));
+  // Painting/undo retains old terrain roots. Secondary clone-sharing owns
+  // at most one latest root; primary per-hole entries retain baseline life.
+  if (equivalentHoleScoreCache?.tiles !== course.tiles) equivalentHoleScoreCache = { tiles: course.tiles, entries: new Map() };
+  const equivalents = equivalentHoleScoreCache.entries;
+  const cached = cacheableInputs ? holeScoreCache.get(hole) ?? equivalents?.get(equivalentKey) : undefined;
   const elevations = course.elevations ?? [];
   if (
     cached &&
@@ -405,27 +462,38 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
     cached.height === course.height &&
     cached.yardsPerTile === (course.yardsPerTile ?? 10) &&
     cached.holeIndex === holeIndex &&
+    cached.holeSignature === equivalentKey &&
     (!cached.themeSensitive || cached.theme === course.theme) &&
     cached.obstacles === course.obstacles &&
+    cached.obstacleSignature === obstacleSignature &&
     dependenciesMatch(cached.tileDependencies, course.tiles) &&
     dependenciesMatch(cached.elevationDependencies, elevations)
   ) {
     holeScoreCacheHits++;
+    // Equivalent clones borrow the bounded map's payload rather than adding
+    // another persistent WeakMap owner. Original per-hole miss entries keep
+    // the baseline undo/identity-cache behavior.
     return cached.result;
   }
 
   holeScoreCacheMisses++;
   const tileDependencies = new Map<number, Terrain>();
   const elevationDependencies = new Map<number, number>();
+  // Legacy malformed/sparse arrays or out-of-bounds markers retain the
+  // general Proxy recorder (including numeric out-of-range reads).
+  const dense = course.tiles.length === course.width * course.height
+    && Object.keys(course.tiles).length === course.tiles.length
+    && (!course.elevations || (course.elevations.length === course.tiles.length && Object.keys(course.elevations).length === course.elevations.length))
+    && [hole.tee, hole.green].every((point) => !point || inBounds(course, point));
   const trackedCourse: Course = {
     ...course,
-    tiles: trackArrayReads(course.tiles, tileDependencies),
+    tiles: course.tiles,
     ...(course.elevations
-      ? { elevations: trackArrayReads(course.elevations, elevationDependencies) }
+      ? { elevations: trackArrayReads(course.elevations, elevationDependencies, dense) }
       : {}),
   };
-  const result = scoreHoleUncached(trackedCourse, hole, holeIndex);
-  holeScoreCache.set(hole, {
+  const result = withScoringTileReads(course.tiles, tileDependencies, () => scoreHoleUncached(trackedCourse, hole, holeIndex));
+  const entry: HoleScoreCacheEntry = {
     width: course.width,
     height: course.height,
     yardsPerTile: course.yardsPerTile ?? 10,
@@ -436,10 +504,22 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
     // identical immutable geometry is safe to reuse across biome roots.
     themeSensitive: [...tileDependencies.values()].some((terrain) => terrain === "deep_rough"),
     obstacles: course.obstacles,
+    obstacleSignature,
+    holeSignature: equivalentKey,
     tileDependencies,
     elevationDependencies,
     result,
-  });
+  };
+  if (cacheableInputs) holeScoreCache.set(hole, entry);
+  const entries = equivalents;
+  // Bound both entry count and actual retained cell payload. The measured
+  // 36-hole release fixture uses 43,931 dependencies after the proved global
+  // suffix stop (previously 76,220); the unchanged 160,000 limit admits two
+  // comparable setup views without retaining millions of cells after edits.
+  if (cacheableInputs && entry.tileDependencies.size + entry.elevationDependencies.size <= EQUIVALENT_HOLE_SCORE_MAX_DEPENDENCIES) {
+    entries.set(equivalentKey, entry);
+    trimScoringDependencyCache(entries, 72, EQUIVALENT_HOLE_SCORE_MAX_DEPENDENCIES);
+  }
   return result;
 }
 
@@ -451,8 +531,26 @@ export function __getHoleScoreDependenciesForTests(hole: Hole): number[] {
   return [...(holeScoreCache.get(hole)?.tileDependencies.keys() ?? [])];
 }
 
+export function __getEquivalentHoleScoreCacheSizeForTests(course: Course): number {
+  return equivalentHoleScoreCache?.tiles === course.tiles ? equivalentHoleScoreCache.entries.size : 0;
+}
+
+export function __getEquivalentHoleScoreCacheDependenciesForTests(course: Course): number {
+  return scoringDependencyWeight(equivalentHoleScoreCache?.tiles === course.tiles ? equivalentHoleScoreCache.entries : undefined);
+}
+
+export function __getEquivalentHoleScoreCacheRetainedRootsForTests(): number {
+  return equivalentHoleScoreCache ? 1 : 0;
+}
+
+export function __getElevationReadTrackerRetainedRootsForTests(): number {
+  return lastTrackedArray ? 1 : 0;
+}
+
 export function __resetHoleScoreCacheForTests(): void {
   holeScoreCache = new WeakMap<Hole, HoleScoreCacheEntry>();
+  equivalentHoleScoreCache = undefined;
+  lastTrackedArray = undefined;
   holeScoreCacheHits = 0;
   holeScoreCacheMisses = 0;
 }

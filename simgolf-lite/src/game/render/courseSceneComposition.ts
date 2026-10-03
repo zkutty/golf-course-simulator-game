@@ -702,6 +702,19 @@ function candidateBounds(occupied: readonly HabitatTileCoordinate[]): HabitatGri
   return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
 }
 
+function* shapeAnchors(course: Course, cells: ReadonlySet<number>): Generator<Point> {
+  if (Number.isInteger(course.width) && course.width > 0
+    && Number.isInteger(course.height) && course.height > 0) {
+    // Every shape requires its anchor to be a source cell. Numeric cell order
+    // matches the original row-major scan; labels contain only inside points.
+    for (const value of [...cells].sort((left, right) => left - right)) yield pointFor(course, value);
+    return;
+  }
+  // Preserve the original scan for malformed dimensions, where cell decoding
+  // need not be the inverse of the original integer x/y loops.
+  for (let y = 0; y < course.height; y += 1) for (let x = 0; x < course.width; x += 1) yield { x, y };
+}
+
 function shapeCandidates(course: Course, labels: ReadonlyMap<number, EvidenceLabel>): readonly HabitatCandidate[] {
   const groups = new Map<string, { label: EvidenceLabel; cells: Set<number> }>();
   for (const [value, label] of labels) {
@@ -733,11 +746,14 @@ function shapeCandidates(course: Course, labels: ReadonlyMap<number, EvidenceLab
     // Only choose shapes already expressible by the reduced topology atlas.
     // We inspect all local source-edge possibilities, but render only a small,
     // separated deterministic subset rather than every overlapping square.
-    for (let y = 0; y < course.height; y += 1) for (let x = 0; x < course.width; x += 1) {
-      const square3 = Array.from({ length: 9 }, (_, index) => ({ x: x + index % 3, y: y + Math.floor(index / 3) }));
-      if (square3.every((point) => has(point.x, point.y))) {
-        if (policy.maxCells >= 9) add(square3);
-        for (const corner of [square3[0], square3[2], square3[6], square3[8]]) add(square3.filter((point) => point !== corner));
+    for (const { x, y } of shapeAnchors(course, cells)) {
+      // A corner-cut 3x3 occupies eight cells; smaller policies cannot add it.
+      if (policy.maxCells >= 8) {
+        const square3 = Array.from({ length: 9 }, (_, index) => ({ x: x + index % 3, y: y + Math.floor(index / 3) }));
+        if (square3.every((point) => has(point.x, point.y))) {
+          if (policy.maxCells >= 9) add(square3);
+          for (const corner of [square3[0], square3[2], square3[6], square3[8]]) add(square3.filter((point) => point !== corner));
+        }
       }
       const square2 = [{ x, y }, { x: x + 1, y }, { x, y: y + 1 }, { x: x + 1, y: y + 1 }];
       if (square2.every((point) => has(point.x, point.y))) add(square2);
