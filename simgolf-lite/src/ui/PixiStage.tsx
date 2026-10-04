@@ -1,3 +1,4 @@
+import { countManagedTextureSources } from "./renderer/countManagedTextureSources";
 import { ownSceneMeshGeometry } from "./renderer/ownedSceneMeshGeometry";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 // Pixi's strict-CSP adapter replaces runtime-generated shader/uniform
@@ -1865,7 +1866,7 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
           ...counts,
           attachedTextures: textures.size,
           attachedTextureSources: textureSources.size,
-          managedTextureSources: textureSystem.managedTextures?.length ?? -1,
+          managedTextureSources: countManagedTextureSources(textureSystem),
           canvasConnected: app.canvas.isConnected,
         };
       },

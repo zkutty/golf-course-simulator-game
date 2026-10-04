@@ -97,7 +97,7 @@
   },
   "dependencies": {
     "@sentry/react": "^10.67.0",
-    "pixi.js": "^8.14.3",
+    "pixi.js": "8.21.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
@@ -126,7 +126,7 @@
     "wrangler": "^4.113.0"
   },
   "overrides": {
-    "@xmldom/xmldom": "0.8.13"
+    "@xmldom/xmldom": "0.8.15"
   },
   "build": {
     "appId": "com.coursecraft.game",

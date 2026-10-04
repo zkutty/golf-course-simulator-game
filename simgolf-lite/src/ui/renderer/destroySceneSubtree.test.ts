@@ -8,16 +8,18 @@ describe("scene subtree ownership", () => {
     const graphics = root.addChild(new PIXI.Graphics().rect(0, 0, 8, 8).fill(0xffffff));
     const context = graphics.context;
     const system = new PIXI.GraphicsContextSystem({
-      renderableGC: { addManagedHash: vi.fn() },
+      uid: 701,
+      gc: { now: 0, addResourceHash: vi.fn() },
     } as unknown as ConstructorParameters<typeof PIXI.GraphicsContextSystem>[0]);
     system.getGpuContext(context);
-    expect(context.listenerCount("destroy")).toBe(1);
+    expect(context.listenerCount("unload")).toBe(2);
     const destroy = vi.spyOn(context, "destroy");
     destroySceneSubtree(root);
     destroySceneSubtree(root);
     expect(graphics.destroyed).toBe(true);
     expect(destroy).toHaveBeenCalledExactlyOnceWith(undefined);
     expect(context.listenerCount("destroy")).toBe(0);
+    expect(context.listenerCount("unload")).toBe(0);
     system.destroy();
     expect(destroy).toHaveBeenCalledTimes(1);
     expect(context.listenerCount("update")).toBe(0);
