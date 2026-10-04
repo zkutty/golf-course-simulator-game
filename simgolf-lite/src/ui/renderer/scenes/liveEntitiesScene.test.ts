@@ -335,8 +335,8 @@ describe("actual Pixi emote context ownership", () => {
     expect(background.context.instructions.map((instruction) => instruction.action)).toEqual(["fill", "stroke", "fill", "stroke", "fill", "stroke"]);
     expect(icon.context.instructions).toHaveLength(0);
     const managed: Record<string, unknown>[] = [];
-    const renderer = new PIXI.GraphicsContextSystem({ renderableGC: {
-      addManagedHash: (owner: object, key: string) => managed.push(Reflect.get(owner, key)),
+    const renderer = new PIXI.GraphicsContextSystem({ uid: 702, gc: {
+      now: 0, addResourceHash: (owner: object, key: string) => managed.push(Reflect.get(owner, key)),
     } } as unknown as ConstructorParameters<typeof PIXI.GraphicsContextSystem>[0]);
     const contexts = [background.context, icon.context];
     const destroyed = contexts.map((context) => vi.spyOn(context, "destroy"));
@@ -355,6 +355,7 @@ describe("actual Pixi emote context ownership", () => {
       expect(destroyed[index]).toHaveBeenCalledExactlyOnceWith(undefined);
       expect(context.listenerCount("update")).toBe(0);
       expect(context.listenerCount("destroy")).toBe(0);
+      expect(context.listenerCount("unload")).toBe(0);
     }
     expect(groupDestroy).toHaveBeenCalledTimes(1);
     expect(textureDestroy).not.toHaveBeenCalled();
@@ -385,9 +386,9 @@ describe("actual Pixi emote context ownership", () => {
   it("keeps GPU registrations flat through repeated bubble creation and expiry", () => {
     const scene = actualScene();
     let registry: Record<string, unknown> = {};
-    const renderer = new PIXI.GraphicsContextSystem({ renderableGC: {
-      addManagedHash: (owner: object, key: string) => {
-        if (key === "_gpuContextHash") registry = Reflect.get(owner, key);
+    const renderer = new PIXI.GraphicsContextSystem({ uid: 702, gc: {
+      now: 0, addResourceHash: (owner: object, key: string) => {
+        if (key === "items") registry = Reflect.get(owner, key);
       },
     } } as unknown as ConstructorParameters<typeof PIXI.GraphicsContextSystem>[0]);
     const ids = Array.from({ length: 100 }, (_, index) => index + 1).filter((id) => feeEmote(100, id));
