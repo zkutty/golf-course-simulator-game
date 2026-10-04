@@ -239,7 +239,7 @@ export function useLiveSimulation(args: {
   const { enabled, course, world, setWorld, setCourse, onDayCommitted, onCashTick, onAudioEvent, onRoundCompleted, publicThreeHoleOperation = false } = args;
 
   const [speed, setSpeedState] = useState<SpeedName>("paused");
-  const [status, setStatus] = useState<LiveStatus>({
+  const [status, setStatus] = useState<LiveStatus>(() => ({
     speed: "paused",
     dayIndex: 0,
     dayMinute: 0,
@@ -265,7 +265,7 @@ export function useLiveSimulation(args: {
       refunds: 0, credits: 0, goodwillVouchers: 0,
     },
     mobility: buildMobilityOperationsReports({ course, world, week: world.week, dayIndex: 0 }),
-  });
+  }));
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   // Latest inputs, mirrored into refs so the rAF loop never restarts. Speed is
