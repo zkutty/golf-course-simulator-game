@@ -3957,6 +3957,10 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
       highlight.blendMode = "screen";
       landformLayer.addChild(highlight);
     }
+    // Mesh buffers own typed copies; release construction arrays retained by the cleanup scope.
+    macroPositions.length = 0;
+    macroUvs.length = 0;
+    macroIndices.length = 0;
 
     // Boundaries are provenance only; the broad material field above owns
     // visible relief. Never emit lines, closed rings or shoulder backfaces.
