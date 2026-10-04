@@ -160,6 +160,23 @@ export interface LiveEntitiesSceneDependencies {
   readonly createText?: (options: PIXI.TextOptions) => PIXI.Text;
 }
 
+// These value-only styles belong to the module, not a scene or renderer. Reuse
+// their measurement-cache keys across restores; scene cleanup only detaches
+// each Text's listener and never destroys a shared style.
+const emoteTextStyles: Partial<Record<"value" | "warning" | "sleep" | "neutral", PIXI.TextStyle>> = {};
+
+function emoteTextStyle(kind: EmoteKind): PIXI.TextStyle {
+  const typography = kind === "zzz" ? "sleep"
+    : kind === "cashGood" ? "value"
+      : kind === "cashBad" || kind === "alert" ? "warning" : "neutral";
+  return emoteTextStyles[typography] ??= new PIXI.TextStyle({
+    fontFamily: "Arial, sans-serif",
+    fontWeight: "900",
+    fontSize: kind === "zzz" ? 13 : 16,
+    fill: kind === "cashGood" ? 0x2f8a4a : kind === "cashBad" || kind === "alert" ? 0xc0392b : 0x4a5568,
+  });
+}
+
 function buildEmoteBubble(
   kind: EmoteKind,
   dependencies: Required<Pick<LiveEntitiesSceneDependencies, "createContainer" | "createGraphics" | "createText">>,
@@ -217,12 +234,7 @@ function buildEmoteBubble(
     default: {
       const text = dependencies.createText({
         text: kind === "zzz" ? "Zz" : kind === "alert" ? "!" : "$",
-        style: {
-          fontFamily: "Arial, sans-serif",
-          fontWeight: "900",
-          fontSize: kind === "zzz" ? 13 : 16,
-          fill: kind === "cashGood" ? 0x2f8a4a : kind === "cashBad" || kind === "alert" ? 0xc0392b : 0x4a5568,
-        },
+        style: emoteTextStyle(kind),
       });
       text.anchor.set(0.5);
       text.position.set(0, centerY);
