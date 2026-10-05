@@ -286,7 +286,7 @@ export function createLiveEntitiesSceneSystem(
     entry.holder.parent?.removeChild(entry.holder);
     entry.ball.parent?.removeChild(entry.ball);
     entry.ballShadow.parent?.removeChild(entry.ballShadow);
-    entry.holder.destroy({ children: true });
+    destroySceneSubtree(entry.holder);
     entry.ball.destroy();
     entry.ballShadow.destroy();
     pool.delete(id);
