@@ -20,6 +20,8 @@ function point(x = 0, y = 0) {
 }
 
 class FakeGraphics {
+  destroyed = false;
+  removeChildren(): FakeGraphics[] { return []; }
   parent: FakeContainer | null = null;
   clear = vi.fn();
   circle = vi.fn();
@@ -28,10 +30,16 @@ class FakeGraphics {
   lineTo = vi.fn();
   roundRect = vi.fn();
   fill = vi.fn();
-  destroy = vi.fn();
+  destroy = vi.fn(() => { this.destroyed = true; });
 }
 
 class FakeContainer {
+  destroyed = false;
+  removeChildren(): Array<FakeContainer | FakeGraphics> {
+    const children = [...this.children];
+    for (const child of children) this.removeChild(child);
+    return children;
+  }
   children: Array<FakeContainer | FakeGraphics> = [];
   parent: FakeContainer | null = null;
   label = "";
@@ -39,6 +47,7 @@ class FakeContainer {
   visible = true;
   zIndex = 0;
   destroy = vi.fn((options?: { children?: boolean }) => {
+    this.destroyed = true;
     if (options?.children) {
       for (const child of this.children) child.destroy();
       this.children = [];

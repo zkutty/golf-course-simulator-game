@@ -1,4 +1,5 @@
 import * as PIXI from "pixi.js";
+import { destroySceneSubtree } from "../destroySceneSubtree";
 import { TERRAIN_PALETTES, terrainPattern } from "../../../accessibility/terrainPalettes";
 import type { ColorVisionMode } from "../../../game/onboarding/profile";
 import { effectiveTerrainForPaintPreview } from "../../../game/conditions/surfaceCare";
@@ -141,7 +142,7 @@ export function createOverlaysDiagnosticsSceneSystem(
 
   const clearPlayerShot = () => {
     playerShotOverlay?.parent?.removeChild(playerShotOverlay);
-    playerShotOverlay?.destroy({ children: true });
+    if (playerShotOverlay) destroySceneSubtree(playerShotOverlay);
     playerShotOverlay = null;
   };
 

@@ -18,10 +18,12 @@ function point(x = 0, y = 0) {
 }
 
 class FakeDisplay {
+  destroyed = false;
+  removeChildren(): FakeDisplay[] { return []; }
   parent: FakeContainer | null = null;
   label = "";
   position = point();
-  destroy = vi.fn((_options?: { children?: boolean }) => {});
+  destroy = vi.fn((_options?: { children?: boolean }) => { this.destroyed = true; });
 }
 
 class FakeGraphics extends FakeDisplay {
@@ -40,8 +42,14 @@ class FakeText extends FakeDisplay {
 }
 
 class FakeContainer extends FakeDisplay {
+  override removeChildren(): FakeDisplay[] {
+    const children = [...this.children];
+    for (const child of children) this.removeChild(child);
+    return children;
+  }
   children: FakeDisplay[] = [];
   override destroy = vi.fn((options?: { children?: boolean }) => {
+    this.destroyed = true;
     if (!options?.children) return;
     for (const child of this.children) child.destroy(options);
     this.children = [];
