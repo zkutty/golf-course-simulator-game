@@ -376,6 +376,26 @@ export const EQUIVALENT_HOLE_SCORE_MAX_DEPENDENCIES = 160_000;
 let holeScoreCacheHits = 0;
 let holeScoreCacheMisses = 0;
 
+function createDenseTrackedArray<T>(values: T[], dependencies: Map<number, T>): TrackedArray<T> {
+  const state: TrackedArray<T> = { tracked: values.slice(), descriptors: [], dependencies, readIndices: [] };
+  for (let index = 0; index < values.length; index++) {
+    const descriptor: PropertyDescriptor = {
+      configurable: true,
+      enumerable: true,
+      get() {
+        const value = values[index];
+        state.dependencies.set(index, value);
+        state.readIndices.push(index);
+        Object.defineProperty(state.tracked, index, { configurable: true, enumerable: true, writable: true, value });
+        return value;
+      },
+    };
+    state.descriptors.push(descriptor);
+    Object.defineProperty(state.tracked, index, descriptor);
+  }
+  return state;
+}
+
 function trackArrayReads<T>(values: T[], dependencies: Map<number, T>, dense: boolean): T[] {
   if (!dense) return new Proxy(values, {
     get(target, property, receiver) {
@@ -394,22 +414,7 @@ function trackArrayReads<T>(values: T[], dependencies: Map<number, T>, dense: bo
     prior.dependencies = dependencies;
     return prior.tracked;
   }
-  const state: TrackedArray<T> = { tracked: values.slice(), descriptors: [], dependencies, readIndices: [] };
-  for (let index = 0; index < values.length; index++) {
-    const descriptor: PropertyDescriptor = {
-      configurable: true,
-      enumerable: true,
-      get() {
-        const value = values[index];
-        state.dependencies.set(index, value);
-        state.readIndices.push(index);
-        Object.defineProperty(state.tracked, index, { configurable: true, enumerable: true, writable: true, value });
-        return value;
-      },
-    };
-    state.descriptors.push(descriptor);
-    Object.defineProperty(state.tracked, index, descriptor);
-  }
+  const state = createDenseTrackedArray(values, dependencies);
   // Undo history retains old elevation arrays. Retain accessor descriptors
   // for only the latest root, rather than one closure set per undo snapshot.
   lastTrackedArray = { values, state: state as TrackedArray<unknown> };
