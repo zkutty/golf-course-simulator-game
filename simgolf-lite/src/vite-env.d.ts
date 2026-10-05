@@ -95,6 +95,7 @@ interface Window {
       attachedTextureSources: number;
       managedTextureSources: number;
       canvasConnected: boolean;
+      emoteOwnership: import("./ui/renderer/scenes/emoteOwnershipSnapshot").EmoteOwnershipSnapshot;
     } | null;
     rendererAtlasState(): {
       requested: {

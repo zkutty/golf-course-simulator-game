@@ -1,3 +1,4 @@
+import { failedEmoteOwnership } from "./renderer/scenes/emoteOwnershipSnapshot";
 import { countManagedTextureSources } from "./renderer/countManagedTextureSources";
 import { ownSceneMeshGeometry } from "./renderer/ownedSceneMeshGeometry";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -1833,6 +1834,8 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
       // infer resource health from simulation objects or synthetic heap data.
       resourceSnapshot: () => {
         const app = appRef.current;
+        const layers = layersRef.current;
+        const liveEntities = liveEntitiesSceneRef.current;
         if (!app) return null;
         const textures = new Set<PIXI.Texture>();
         const textureSources = new Set<PIXI.TextureSource>();
@@ -1868,6 +1871,11 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
           attachedTextureSources: textureSources.size,
           managedTextureSources: countManagedTextureSources(textureSystem),
           canvasConnected: app.canvas.isConnected,
+          emoteOwnership: liveEntities?.emoteOwnership(
+            app.stage, layers?.screenOverlay ?? null,
+            appRef.current === app && layersRef.current === layers && liveEntitiesSceneRef.current === liveEntities,
+            window.__coursecraftPixiTest === api,
+          ) ?? failedEmoteOwnership("missing-current-live-scene"),
         };
       },
       rendererAtlasState: () => {

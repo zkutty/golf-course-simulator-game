@@ -3,7 +3,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   ZK682_STABILITY_THRESHOLDS,
-  createZk682StabilityReport,
+  createZk682ConservationStabilityReport,
+  writeZk682ConservationStabilityReport,
 } from "../scripts/zk682-stability-contract.mjs";
 
 import { clearReactComponentTimings } from "../scripts/react-component-timing-cleanup.mjs";
@@ -163,7 +164,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     await loadQuickSave(page);
     saveLoadSamples.push({ cycle, slotId: "quick-save", loaded: true, courseHash: await page.evaluate(() => window.__coursecraftTest!.state().courseHash), state: await canonicalState(page), ...await measure(page, cdp) });
   }
-  const saveLoadReport = createZk682StabilityReport({
+  const saveLoadReport = createZk682ConservationStabilityReport({
     gate: "save-load-resource-stability",
     candidateCommit: expectedCommit!,
     capturedAt: new Date().toISOString(),
@@ -172,7 +173,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     thresholds: ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"],
     samples: saveLoadSamples,
   });
-  await writeFile(resolve(outputDirectory, "save-load-resource-stability.json"), `${JSON.stringify(saveLoadReport, null, 2)}\n`);
+  await writeZk682ConservationStabilityReport(resolve(outputDirectory, "save-load-resource-stability.json"), saveLoadReport);
 
   // Run the actual mutable live simulation for at least two in-game hours.
   await page.keyboard.press("Digit3");
@@ -187,7 +188,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     longSessionSamples.push({ elapsedGameMinutes: Number((state.dayMinute - startMinute).toFixed(4)), courseHash: state.courseHash, state: { dayMinute: state.dayMinute, speed: state.speed, onCourse: state.golferPositions.length }, ...await measure(page, cdp) });
     expect(longSessionSamples.length, "bounded long-session producer").toBeLessThanOrEqual(10);
   }
-  const longSessionReport = createZk682StabilityReport({
+  const longSessionReport = createZk682ConservationStabilityReport({
     gate: "long-session-resource-stability",
     candidateCommit: expectedCommit!,
     capturedAt: new Date().toISOString(),
@@ -196,7 +197,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     thresholds: ZK682_STABILITY_THRESHOLDS["long-session-resource-stability"],
     samples: longSessionSamples,
   });
-  await writeFile(resolve(outputDirectory, "long-session-resource-stability.json"), `${JSON.stringify(longSessionReport, null, 2)}\n`);
+  await writeZk682ConservationStabilityReport(resolve(outputDirectory, "long-session-resource-stability.json"), longSessionReport);
 
   // Save a recovery point, then exercise editing, diagnostic overlay,
   // Chromium frozen/active lifecycle, and production load recovery.
@@ -243,7 +244,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   await loadQuickSave(page);
   const recovered = await page.evaluate(() => window.__coursecraftTest!.state());
   interactionSamples.push({ scenario: "recovery", passed: true, before: { savedCourseHash: recoveryPoint.courseHash, mutatedCourseHash: afterEdit.courseHash }, after: { courseHash: recovered.courseHash, quickSaveLoaded: true }, ...await measure(page, cdp) });
-  const interactionReport = createZk682StabilityReport({
+  const interactionReport = createZk682ConservationStabilityReport({
     gate: "editing-overlay-sleep-recovery",
     candidateCommit: expectedCommit!,
     capturedAt: new Date().toISOString(),
@@ -252,7 +253,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     thresholds: ZK682_STABILITY_THRESHOLDS["editing-overlay-sleep-recovery"],
     samples: interactionSamples,
   });
-  await writeFile(resolve(outputDirectory, "editing-overlay-sleep-recovery.json"), `${JSON.stringify(interactionReport, null, 2)}\n`);
+  await writeZk682ConservationStabilityReport(resolve(outputDirectory, "editing-overlay-sleep-recovery.json"), interactionReport);
 
   const timingCleanupPath = testInfo.outputPath("react-component-timing-cleanup.json");
   await writeFile(timingCleanupPath, `${JSON.stringify({

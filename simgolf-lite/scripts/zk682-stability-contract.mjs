@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
 
 export const ZK682_STABILITY_SCHEMA_VERSION = 2;
 
@@ -237,6 +238,7 @@ export function createZk682StabilityReport(input) {
 }
 
 export function validateZk682SupplementalStabilityReport(report, expectedGate, expectedCommit) {
+  if (report?.schemaVersion === 3) return validateConservationStabilityReport(report, expectedGate, expectedCommit);
   const errors = [];
   const expectedKeys = ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "browser", "thresholds", "samples", "observations", "summary", "errors", "passed"];
   if (!report || typeof report !== "object" || Array.isArray(report)) {
@@ -258,4 +260,129 @@ export function validateZk682SupplementalStabilityReport(report, expectedGate, e
     || report.passed !== recomputed.passed) errors.push("declared supplemental result does not match raw samples");
   if (report.passed !== true || recomputed.passed !== true) errors.push("supplemental stability report did not pass");
   return { valid: errors.length === 0, errors, passed: report.passed === true && recomputed.passed === true, observations: recomputed.observations };
+}
+
+// Explicit v3 semantics. The schema-2 evaluator/creator above remain the replay path.
+export const ZK682_DISPLAY_CONSERVATION_SCHEMA_VERSION = 3;
+const EMOTE_KINDS = new Set(["star", "happy", "angry", "storm", "zzz", "cashGood", "cashBad", "alert"]);
+const exactMetadataKeys = (value, keys) => value && typeof value === "object" && !Array.isArray(value)
+  && stableStabilityJson(Object.keys(value).sort()) === stableStabilityJson([...keys].sort());
+const identity = (value) => Number.isSafeInteger(value) && value >= 0;
+
+function admittedEmoteContribution(sample) {
+  const m = sample?.resources?.emoteOwnership;
+  if (!exactMetadataKeys(m, ["schemaVersion", "complete", "failure", "generation", "stageUID", "overlayUID", "currentOwner", "apiIdentityCurrent", "ownerCount", "scheduler", "groups", "contribution"])
+    || m.schemaVersion !== 1 || m.complete !== true || m.failure !== null || m.currentOwner !== true || m.apiIdentityCurrent !== true
+    || !identity(m.generation) || m.generation === 0 || !identity(m.stageUID) || !identity(m.overlayUID) || m.stageUID === m.overlayUID
+    || !Array.isArray(m.groups) || m.groups.length > 5 || m.ownerCount !== m.groups.length
+    || !Array.isArray(m.scheduler) || m.scheduler.length !== m.groups.length) throw new Error("missing or invalid current emote ownership metadata");
+  const scheduler = new Map();
+  for (const row of m.scheduler) {
+    if (!exactMetadataKeys(row, ["golferId", "kind"]) || !identity(row.golferId) || !EMOTE_KINDS.has(row.kind) || scheduler.has(row.golferId)) throw new Error("invalid emote scheduler identities");
+    scheduler.set(row.golferId, row.kind);
+  }
+  const uids = new Set([m.stageUID, m.overlayUID]);
+  const owners = new Set();
+  let displayObjects = 0, graphics = 0, text = 0;
+  for (const g of m.groups) {
+    if (!exactMetadataKeys(g, ["golferId", "builtKind", "schedulerKind", "uid", "className", "destroyed", "parentIsCurrentOverlay", "children"])
+      || !identity(g.golferId) || owners.has(g.golferId) || !EMOTE_KINDS.has(g.builtKind)
+      || g.builtKind !== g.schedulerKind || scheduler.get(g.golferId) !== g.builtKind
+      || !identity(g.uid) || uids.has(g.uid) || g.className !== "Container" || g.destroyed !== false || g.parentIsCurrentOverlay !== true) throw new Error("invalid built-kind/current emote group identity");
+    const glyph = g.builtKind === "zzz" ? "Zz" : g.builtKind === "alert" ? "!" : ["cashGood", "cashBad"].includes(g.builtKind) ? "$" : null;
+    if (!Array.isArray(g.children) || g.children.length !== (glyph === null ? 2 : 3)) throw new Error("invalid emote subtree shape");
+    owners.add(g.golferId); uids.add(g.uid);
+    displayObjects++;
+    for (const [index, child] of g.children.entries()) {
+      const expectedClass = glyph !== null && index === 1 ? "Text" : "Graphics";
+      if (!exactMetadataKeys(child, ["uid", "className", "destroyed", "parentIsGroup", "childCount", "text"])
+        || !identity(child.uid) || uids.has(child.uid) || child.className !== expectedClass || child.destroyed !== false
+        || child.parentIsGroup !== true || child.childCount !== 0 || child.text !== (expectedClass === "Text" ? glyph : null)) throw new Error("invalid emote child identity/glyph/leaf");
+      uids.add(child.uid); displayObjects++;
+      if (expectedClass === "Text") text++; else graphics++;
+    }
+  }
+  if (!exactMetadataKeys(m.contribution, ["displayObjects", "graphics", "text"])
+    || m.contribution.displayObjects !== displayObjects || m.contribution.graphics !== graphics || m.contribution.text !== text
+    || !Number.isSafeInteger(sample.resources.displayObjects) || sample.resources.displayObjects < displayObjects
+    || !Number.isSafeInteger(sample.resources.graphics) || sample.resources.graphics < graphics
+    || !Number.isSafeInteger(sample.resources.text) || sample.resources.text < text) throw new Error("emote contribution disagrees with exact subtrees/raw counts");
+  return displayObjects;
+}
+
+export function evaluateZk682ConservationStability(gate, samples, thresholds = ZK682_STABILITY_THRESHOLDS[gate]) {
+  const legacy = evaluateZk682Stability(gate, samples, thresholds);
+  const errors = legacy.errors.filter((error) => !error.startsWith("displayObjects grew ") && !error.startsWith("displayObjects ended "));
+  const metrics = { ...legacy.metrics };
+  const explained = [];
+  if (!Array.isArray(samples)) errors.push("v3 requires measured samples with current emote ownership");
+  else for (const [index, sample] of samples.entries()) {
+    try { explained.push(admittedEmoteContribution(sample)); }
+    catch (error) { errors.push(`sample ${index}: ${error.message}`); }
+  }
+  if (Array.isArray(samples) && samples.length > 0 && explained.length === samples.length
+    && legacy.metrics.displayObjects) {
+    const residualSamples = samples.map((sample, i) => ({ ...sample, resources: { ...sample.resources, displayObjects: sample.resources.displayObjects - explained[i] } }));
+    const residual = rendererTopologyMetric(residualSamples, "displayObjects");
+    const baselines = new Map();
+    const qualityCounts = new Map();
+    const conservationRows = samples.map((sample, i) => {
+      const quality = sample.rendererQuality;
+      if (!baselines.has(quality)) baselines.set(quality, i);
+      qualityCounts.set(quality, (qualityCounts.get(quality) ?? 0) + 1);
+      const baselineIndex = baselines.get(quality);
+      const observedChange = sample.resources.displayObjects - samples[baselineIndex].resources.displayObjects;
+      const explainedEmoteChange = explained[i] - explained[baselineIndex];
+      return { sampleIndex: i, rendererQuality: quality, baselineIndex, rawDisplayObjects: sample.resources.displayObjects,
+        explainedEmoteDisplayObjects: explained[i], residualDisplayObjects: residualSamples[i].resources.displayObjects,
+        observedChange, explainedEmoteChange, unexplainedDisplayChange: observedChange - explainedEmoteChange };
+    });
+    for (const [quality, count] of qualityCounts) if (count < 3) errors.push(`renderer quality ${quality} has ${count} measured report boundaries; at least 3 required (readiness polls do not count)`);
+    if (residual.maxGrowth > thresholds.resources.displayObjects.maxGrowth) errors.push(`unexplained displayObjects grew ${residual.maxGrowth} within one renderer quality; limit ${thresholds.resources.displayObjects.maxGrowth}`);
+    if (residual.endGrowth > thresholds.resources.displayObjects.maxEndGrowth) errors.push(`unexplained displayObjects ended ${residual.endGrowth} above its conserved quality baseline; limit ${thresholds.resources.displayObjects.maxEndGrowth}`);
+    metrics.displayObjects = { semantics: "current-emote-conservation-v3", formula: "R=D-E; G=R-R_first_measured_same_quality",
+      raw: legacy.metrics.displayObjects, residual, measuredBoundariesByQuality: Object.fromEntries(qualityCounts), samples: conservationRows };
+  }
+  const passed = errors.length === 0;
+  const observations = { ...legacy.observations };
+  if ("resourceGrowthBounded" in observations) observations.resourceGrowthBounded = passed;
+  if ("recoveryPassed" in observations) observations.recoveryPassed = passed;
+  return { passed, errors, metrics, observations,
+    legacyRawComparison: { passed: legacy.passed, errors: legacy.errors, summary: legacy.metrics, observations: legacy.observations } };
+}
+
+export function createZk682ConservationStabilityReport(input) {
+  const legacy = createZk682StabilityReport(input); // Keeps all original identity/budget assertions.
+  const result = evaluateZk682ConservationStability(input.gate, input.samples, input.thresholds);
+  return { ...legacy, schemaVersion: ZK682_DISPLAY_CONSERVATION_SCHEMA_VERSION,
+    observations: result.observations, summary: result.metrics, errors: result.errors, passed: result.passed,
+    legacyRawComparison: result.legacyRawComparison };
+}
+
+function validateConservationStabilityReport(report, expectedGate, expectedCommit) {
+  const errors = [];
+  const keys = ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "browser", "thresholds", "samples", "observations", "summary", "errors", "passed", "legacyRawComparison"];
+  if (!exactMetadataKeys(report, keys)) errors.push("supplemental v3 stability report keys are invalid");
+  if (report.gate !== expectedGate || !ZK682_STABILITY_THRESHOLDS[expectedGate]) errors.push("wrong supplemental stability gate");
+  if (!/^[0-9a-f]{40}$/.test(report.candidateCommit ?? "") || report.candidateCommit !== expectedCommit) errors.push("candidate commit mismatch");
+  if (typeof report.capturedAt !== "string" || Number.isNaN(Date.parse(report.capturedAt))) errors.push("capturedAt is invalid");
+  if (typeof report.command !== "string" || !report.command) errors.push("command is required");
+  if (report.browser?.name !== "chromium" || report.browser?.cdpHeap !== true || typeof report.browser?.version !== "string" || !report.browser.version) errors.push("real Chromium CDP heap evidence is required");
+  const thresholds = ZK682_STABILITY_THRESHOLDS[expectedGate];
+  if (stableStabilityJson(report.thresholds) !== stableStabilityJson(thresholds)) errors.push("thresholds differ from the immutable stability contract");
+  const r = evaluateZk682ConservationStability(expectedGate, report.samples, thresholds);
+  if (stableStabilityJson(report.observations) !== stableStabilityJson(r.observations)
+    || stableStabilityJson(report.summary) !== stableStabilityJson(r.metrics)
+    || stableStabilityJson(report.errors) !== stableStabilityJson(r.errors)
+    || stableStabilityJson(report.legacyRawComparison) !== stableStabilityJson(r.legacyRawComparison)
+    || report.passed !== r.passed) errors.push("declared supplemental result does not match raw samples");
+  if (report.passed !== true || r.passed !== true) errors.push("supplemental stability report did not pass");
+  return { valid: errors.length === 0, errors, passed: report.passed === true && r.passed === true, observations: r.observations };
+}
+
+
+/** Never migrate or overwrite an existing v2/v3 artifact in the caller's directory. */
+export async function writeZk682ConservationStabilityReport(path, report) {
+  assert.equal(report?.schemaVersion, ZK682_DISPLAY_CONSERVATION_SCHEMA_VERSION, "new producer writes schema 3 only");
+  await writeFile(path, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
 }

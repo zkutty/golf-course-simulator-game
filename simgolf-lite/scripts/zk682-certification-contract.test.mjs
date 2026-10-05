@@ -6,7 +6,7 @@ import test from "node:test";
 import { createPwaPersistenceReport } from "./pwa-save-evidence.mjs";
 import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence-contract.mjs";
 import { ZK682_RESOURCE_GROWTH_THRESHOLDS, createZk682ResourceGrowthReport } from "./zk682-resource-growth-contract.mjs";
-import { ZK682_STABILITY_THRESHOLDS, createZk682StabilityReport } from "./zk682-stability-contract.mjs";
+import { ZK682_STABILITY_THRESHOLDS, createZk682StabilityReport, createZk682ConservationStabilityReport } from "./zk682-stability-contract.mjs";
 import { ZK682_CERTIFICATION_ID, ZK682_CRITERIA, ZK682_GATE_CONTRACTS, ZK682_SCHEMA_VERSION, buildZk682Report, sha256, validateZk682EvidenceManifest } from "./zk682-certification-contract.mjs";
 
 const COMMIT = "1".repeat(40);
@@ -359,4 +359,35 @@ test("rejects relaxed fixture budget and physical evidence that does not match i
     assert(errors.some((error) => error.includes("normalized observations disagree with typed physical evidence")));
     assert(errors.some((error) => error.includes("physical scenario must exactly match headless")));
   } finally { cleanup(mismatched); }
+});
+
+
+test("schema-v3 conservation evidence is consumed and recomputed without changing v2 artifacts", () => {
+  const value = fixture();
+  try {
+    rewriteGate(value, "stability", (gate) => {
+      const ref = gate.observations.saveLoadEvidence;
+      const prior = JSON.parse(readFileSync(join(value.root, ref.path), "utf8"));
+      for (const sample of prior.samples) {
+        sample.resources.graphics = 0; sample.resources.text = 0;
+        sample.resources.emoteOwnership = { schemaVersion: 1, complete: true, failure: null, generation: 1, stageUID: 1, overlayUID: 2,
+          currentOwner: true, apiIdentityCurrent: true, ownerCount: 0, scheduler: [], groups: [], contribution: { displayObjects: 0, graphics: 0, text: 0 } };
+      }
+      const report = createZk682ConservationStabilityReport(prior);
+      assert.equal(report.passed, true);
+      const rewritten = write(value.root, ref.path, report);
+      ref.sha256 = rewritten.sha256;
+      gate.artifacts.find((a) => a.path === ref.path).sha256 = rewritten.sha256;
+    });
+    assert.deepEqual(validateZk682EvidenceManifest(value.manifest, value.options).errors, []);
+    rewriteGate(value, "stability", (gate) => {
+      const ref = gate.observations.saveLoadEvidence;
+      const report = JSON.parse(readFileSync(join(value.root, ref.path), "utf8"));
+      report.legacyRawComparison.passed = false;
+      const rewritten = write(value.root, ref.path, report);
+      ref.sha256 = rewritten.sha256;
+      gate.artifacts.find((a) => a.path === ref.path).sha256 = rewritten.sha256;
+    });
+    assert(validateZk682EvidenceManifest(value.manifest, value.options).errors.some((e) => e.includes("legacy raw result")));
+  } finally { cleanup(value); }
 });
