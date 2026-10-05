@@ -371,7 +371,7 @@ let holeScoreCache = new WeakMap<Hole, HoleScoreCacheEntry>();
 // Setup/rating consumers copy hole objects without changing their scoring
 // inputs. Reuse their exact result on the same immutable terrain root, rather
 // than repeating the expensive solver for each equivalent setup view.
-let equivalentHoleScoreCache: { tiles: Course["tiles"]; entries: Map<string, HoleScoreCacheEntry> } | undefined;
+let equivalentHoleScoreCache: { tiles: Course["tiles"]; entries: Map<string, HoleScoreCacheEntry>; lastSignature?: string } | undefined;
 export const EQUIVALENT_HOLE_SCORE_MAX_DEPENDENCIES = 160_000;
 let holeScoreCacheHits = 0;
 let holeScoreCacheMisses = 0;
@@ -453,7 +453,8 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
   // Painting/undo retains old terrain roots. Secondary clone-sharing owns
   // at most one latest root; primary per-hole entries retain baseline life.
   if (equivalentHoleScoreCache?.tiles !== course.tiles) equivalentHoleScoreCache = { tiles: course.tiles, entries: new Map() };
-  const equivalents = equivalentHoleScoreCache.entries;
+  const equivalentCache = equivalentHoleScoreCache;
+  const equivalents = equivalentCache.entries;
   const cached = cacheableInputs ? holeScoreCache.get(hole) ?? equivalents?.get(equivalentKey) : undefined;
   const elevations = course.elevations ?? [];
   if (
@@ -517,6 +518,12 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
   // suffix stop (previously 76,220); the unchanged 160,000 limit admits two
   // comparable setup views without retaining millions of cells after edits.
   if (cacheableInputs && entry.tileDependencies.size + entry.elevationDependencies.size <= EQUIVALENT_HOLE_SCORE_MAX_DEPENDENCIES) {
+    // Share only equal freshly serialized values in the existing latest root.
+    // A getter-reentrant solve may have replaced that root during this miss.
+    if (equivalentHoleScoreCache === equivalentCache) {
+      if (equivalentCache.lastSignature === obstacleSignature) entry.obstacleSignature = equivalentCache.lastSignature;
+      else equivalentCache.lastSignature = obstacleSignature;
+    }
     entries.set(equivalentKey, entry);
     trimScoringDependencyCache(entries, 72, EQUIVALENT_HOLE_SCORE_MAX_DEPENDENCIES);
   }
