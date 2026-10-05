@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { hashCanonicalValue } from "../../utils/canonical";
 import { createM27ReleaseReferenceCourse, createReferenceCourse } from "../testing/referenceCourse";
 import { EQUIVALENT_HOLE_SCORE_MAX_DEPENDENCIES, __getElevationReadTrackerRetainedRootsForTests, __getEquivalentHoleScoreCacheDependenciesForTests, __getEquivalentHoleScoreCacheRetainedRootsForTests, __getEquivalentHoleScoreCacheSizeForTests, __getHoleScoreCacheStatsForTests, __getHoleScoreDependenciesForTests, __resetHoleScoreCacheForTests, scoreCourseHoles, scoreHole } from "./holes";
@@ -48,6 +48,63 @@ describe("release-scale scoring read tracking", () => {
       expect(__getHoleScoreCacheStatsForTests().hits).toBe(before.hits);
       expect(__getEquivalentHoleScoreCacheSizeForTests(course)).toBe(0);
     }
+  });
+
+  it("serializes obstacle getters on every hit and miss and invalidates in-place edits", () => {
+    const course = createReferenceCourse();
+    const hole = course.holes[0];
+    let x = hole.tee!.x;
+    let getterReads = 0;
+    const obstacle = { type: "tree" as const, x, y: hole.tee!.y };
+    Object.defineProperty(obstacle, "x", { enumerable: true, get() { getterReads++; return x; } });
+    course.obstacles = [obstacle];
+    const stringify = vi.spyOn(JSON, "stringify");
+    try {
+      let calls = 0;
+      const serializeCount = () => stringify.mock.calls.filter(([value]) => value === course.obstacles).length;
+      const checkedScore = (index = 0) => {
+        const reads = getterReads;
+        const result = scoreHole(course, { ...hole }, index);
+        expect(serializeCount()).toBe(++calls);
+        expect(getterReads).toBeGreaterThan(reads);
+        return result;
+      };
+      const first = checkedScore();
+      expect(checkedScore()).toBe(first);
+      checkedScore(1); // Eligible miss sharing the equal fresh obstacle JSON.
+      expect(__getHoleScoreCacheStatsForTests()).toEqual({ hits: 1, misses: 2 });
+      x += 1;
+      const edited = checkedScore();
+      expect(__getHoleScoreCacheStatsForTests()).toEqual({ hits: 1, misses: 3 });
+      expect(checkedScore()).toBe(edited);
+      __resetHoleScoreCacheForTests();
+      expect(checkedScore()).toEqual(edited);
+    } finally {
+      stringify.mockRestore();
+    }
+  });
+
+  it("preserves the latest cache root when a scoring getter reenters with another course", () => {
+    const course = createReferenceCourse();
+    const nested = createReferenceCourse();
+    const elevations = course.elevations;
+    let nestedResult: ReturnType<typeof scoreHole> | undefined;
+    let reenter = true;
+    Object.defineProperty(course, "elevations", { enumerable: true, get() {
+      if (reenter) {
+        reenter = false;
+        nestedResult = scoreHole(nested, nested.holes[0], 0);
+      }
+      return elevations;
+    } });
+    const outerResult = scoreHole(course, course.holes[0], 0);
+    expect(nestedResult).toBeDefined();
+    expect(__getEquivalentHoleScoreCacheRetainedRootsForTests()).toBe(1);
+    expect(__getEquivalentHoleScoreCacheSizeForTests(course)).toBe(0);
+    expect(__getEquivalentHoleScoreCacheSizeForTests(nested)).toBe(1);
+    expect(scoreHole(nested, { ...nested.holes[0] }, 0)).toBe(nestedResult);
+    __resetHoleScoreCacheForTests();
+    expect(scoreHole({ ...course, elevations }, { ...course.holes[0] }, 0)).toEqual(outerResult);
   });
 
   it("retains secondary payload for only the latest terrain root across paint/undo", () => {
