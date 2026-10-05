@@ -23,6 +23,7 @@ export function createEstateSurveySceneSystem(layer: PIXI.Container): RenderScen
       const selectedIndex = estate.parcels.findIndex((parcel) => parcel.id === snapshot.selectedParcelId);
       const owned = new Set(estate.ownedParcelIds);
       const fill = new PIXI.Graphics();
+      if (!snapshot.surveyMode) fill.context.batchMode = "batch";
       const boundary = new PIXI.Graphics();
       const boundaryColor = snapshot.colorVision === "tritanopia"
         ? 0xff4f8b
