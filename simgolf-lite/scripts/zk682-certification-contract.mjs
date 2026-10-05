@@ -13,6 +13,8 @@ import {
 } from "./zk682-resource-growth-contract.mjs";
 import {
   evaluateZk682Stability,
+  evaluateZk682ConservationStability,
+  ZK682_DISPLAY_CONSERVATION_SCHEMA_VERSION,
   stableStabilityJson,
   ZK682_STABILITY_SCHEMA_VERSION,
   ZK682_STABILITY_THRESHOLDS,
@@ -276,11 +278,13 @@ const SUPPLEMENTAL_STABILITY_GATES = Object.freeze({
 
 function validateSupplementalStabilityEvidence(report, expectedGate, manifest, label, errors) {
   const schemaV1 = report?.schemaVersion === 1;
+  const schemaV3 = report?.schemaVersion === ZK682_DISPLAY_CONSERVATION_SCHEMA_VERSION;
   const expectedKeys = schemaV1
     ? ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "observations", "passed"]
     : ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "browser", "thresholds", "samples", "observations", "summary", "errors", "passed"];
+  if (schemaV3) expectedKeys.push("legacyRawComparison");
   if (!exactKeys(report, expectedKeys, label, errors)) return false;
-  if (![1, ZK682_STABILITY_SCHEMA_VERSION].includes(report.schemaVersion) || report.gate !== expectedGate) errors.push(`${label}: wrong supplemental stability schema/gate`);
+  if (![1, ZK682_STABILITY_SCHEMA_VERSION, ZK682_DISPLAY_CONSERVATION_SCHEMA_VERSION].includes(report.schemaVersion) || report.gate !== expectedGate) errors.push(`${label}: wrong supplemental stability schema/gate`);
   if (!validCommit(report.candidateCommit) || report.candidateCommit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
   if (!validCapturedAt(report.capturedAt)) errors.push(`${label}: capturedAt is invalid`);
   if (typeof report.command !== "string" || !report.command) errors.push(`${label}: command is required`);
@@ -307,7 +311,8 @@ function validateSupplementalStabilityEvidence(report, expectedGate, manifest, l
     if (report.passed !== passed) errors.push(`${label}: passed must agree with the typed observations`);
     return passed;
   }
-  const recomputed = evaluateZk682Stability(expectedGate, report.samples, ZK682_STABILITY_THRESHOLDS[expectedGate]);
+  const recomputed = (schemaV3 ? evaluateZk682ConservationStability : evaluateZk682Stability)(expectedGate, report.samples, ZK682_STABILITY_THRESHOLDS[expectedGate]);
+  if (schemaV3 && stableJson(recomputed.legacyRawComparison) !== stableJson(report.legacyRawComparison)) errors.push(`${label}: legacy raw result does not match raw samples`);
   if (stableJson(recomputed.observations) !== stableJson(report.observations)
     || stableJson(recomputed.metrics) !== stableJson(report.summary)
     || stableJson(recomputed.errors) !== stableJson(report.errors)

@@ -1,4 +1,5 @@
 import * as PIXI from "pixi.js";
+import { captureEmoteOwnership, nextEmoteOwnerGeneration, type EmoteOwnershipSnapshot } from "./emoteOwnershipSnapshot";
 import { destroySceneSubtree } from "../destroySceneSubtree";
 import type { GolferRenderData } from "../../../game/live/types";
 import type { Terrain } from "../../../game/models/types";
@@ -148,6 +149,7 @@ export interface LiveEntitiesSceneSystem extends RenderSceneSystem {
   tickEffects(nowMs: number, animationsEnabled: boolean): void;
   tickEntities(input: LiveEntityTickInput): void;
   diagnostics(): LiveEntityDiagnostics;
+  emoteOwnership(stage: PIXI.Container, overlay: PIXI.Container | null, currentOwner: boolean, apiIdentityCurrent: boolean): EmoteOwnershipSnapshot;
   golferGrounding(id: number, golfers: readonly GolferRenderData[]): GolferGroundingDiagnostics | null;
 }
 
@@ -262,6 +264,9 @@ export function createLiveEntitiesSceneSystem(
   let authority: LiveEntityAuthority | null = null;
   const pool = new Map<number, GolferEntry>();
   const bubbles = new Map<number, PIXI.Container>();
+  const builtEmoteKinds = new WeakMap<PIXI.Container, EmoteKind>();
+  let emoteGeneration = 0;
+  let emoteOwnerDisposed = false;
   let scheduler = createEmoteScheduler();
   let simMovingAt = 0;
   let ripples: Array<{ x: number; y: number; t0: number }> = [];
@@ -289,6 +294,7 @@ export function createLiveEntitiesSceneSystem(
   };
 
   const clear = () => {
+    emoteOwnerDisposed = true;
     for (const [id, entry] of pool) destroyEntry(id, entry, false);
     for (const container of bubbles.values()) {
       container.parent?.removeChild(container);
@@ -675,6 +681,7 @@ export function createLiveEntitiesSceneSystem(
         let container = bubbles.get(emote.golferId);
         if (!container) {
           container = buildEmoteBubble(emote.kind, bubbleDependencies);
+          builtEmoteKinds.set(container, emote.kind);
           layers.screenOverlay.addChild(container);
           bubbles.set(emote.golferId, container);
         }
@@ -689,11 +696,20 @@ export function createLiveEntitiesSceneSystem(
 
   return {
     id: "liveEntities",
-    create: cacheAuthority,
+    create: (snapshot) => {
+      cacheAuthority(snapshot);
+      emoteGeneration = nextEmoteOwnerGeneration();
+      emoteOwnerDisposed = false;
+    },
     update: cacheAuthority,
     destroy: clear,
     tickEffects,
     tickEntities,
+    emoteOwnership: (stage, overlay, currentOwner, apiIdentityCurrent) => captureEmoteOwnership({
+      generation: emoteGeneration, stage, overlay: layers.screenOverlay,
+      currentOwner: currentOwner && !emoteOwnerDisposed && overlay === layers.screenOverlay && authority !== null,
+      apiIdentityCurrent, bubbles, active: scheduler.active, builtKinds: builtEmoteKinds,
+    }),
     diagnostics: () => ({
       golfers: pool.size,
       bubbles: bubbles.size,

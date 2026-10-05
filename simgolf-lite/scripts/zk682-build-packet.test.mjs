@@ -4,11 +4,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { createZk682ConservationStabilityReport, createZk682StabilityReport, ZK682_STABILITY_THRESHOLDS } from "./zk682-stability-contract.mjs";
 import { createPwaPersistenceReport } from "./pwa-save-evidence.mjs";
 import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence-contract.mjs";
 import { createZk682ResourceGrowthReport, ZK682_RESOURCE_GROWTH_THRESHOLDS } from "./zk682-resource-growth-contract.mjs";
 import { buildZk682Report, sha256 } from "./zk682-certification-contract.mjs";
-import { buildZk682Packet, ZK682_PACKET_RECEIPTS } from "./zk682-build-packet.mjs";
+import { buildZk682Packet, ZK682_PACKET_RECEIPTS, inspectSupplemental } from "./zk682-build-packet.mjs";
 
 const NOW = "2026-09-29T12:00:00.000Z";
 const write = (root, path, value) => {
@@ -136,4 +137,28 @@ test("builder rejects relaxed timing budgets, wrong HEAD, and unbound raw files"
     await assert.rejects(() => buildZk682Packet({ root: extra.root, candidateCommit: extra.commit, invokeCertification: false }), /unbound raw evidence/);
     await assert.rejects(() => buildZk682Packet({ root: extra.root, candidateCommit: "f".repeat(40), invokeCertification: false }), /HEAD .* does not match candidate/);
   } finally { rmSync(extra.repository, { recursive: true, force: true }); }
+});
+
+
+test("schema-v3 packet handoff admits only recomputed evidence", async () => {
+  // Direct consumer test avoids creating a Git fixture or replaying full packet gates.
+  const root = mkdtempSync(join(tmpdir(), "zk682-v3-consumer-"));
+  const commit = "a".repeat(40);
+  try {
+    mkdirSync(join(root, "scripts"));
+    writeFileSync(join(root, "scripts/zk682-stability-contract.mjs"), readFileSync(new URL("./zk682-stability-contract.mjs", import.meta.url)));
+    const samples = Array.from({ length: 13 }, (_, cycle) => ({ cycle, loaded: cycle > 0, slotId: "quick-save", courseHash: "deadbeef", state: { screen: "game" }, rendererQuality: "high",
+      resources: { displayObjects: 100, graphics: 0, text: 0, attachedTextures: 0, attachedTextureSources: 0, managedTextureSources: 0, canvasConnected: true,
+        emoteOwnership: { schemaVersion: 1, complete: true, failure: null, generation: 1, stageUID: 1, overlayUID: 2, currentOwner: true, apiIdentityCurrent: true, ownerCount: 0, scheduler: [], groups: [], contribution: { displayObjects: 0, graphics: 0, text: 0 } } }, heap: { runtimeUsedBytes: 1000000 } }));
+    const report = createZk682ConservationStabilityReport({ candidateCommit: commit, capturedAt: NOW, command: "fixture", browser: { name: "chromium", version: "fixture", cdpHeap: true }, gate: "save-load-resource-stability", thresholds: ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"], samples });
+    assert.equal(await inspectSupplemental(report, report.gate, commit, root), true);
+    const legacy = createZk682StabilityReport(report);
+    assert.equal(await inspectSupplemental(legacy, report.gate, commit, root), true);
+    assert.equal(await inspectSupplemental(supplemental(report.gate, commit), report.gate, commit, root), true);
+    await assert.rejects(inspectSupplemental(legacy, report.gate, commit, join(root, "absent")), /schema-v2 stability evidence requires/);
+    const forged = structuredClone(report); forged.summary.displayObjects.residual.maxGrowth = -1;
+    await assert.rejects(inspectSupplemental(forged, report.gate, commit, root), /does not match raw samples/);
+    const missing = structuredClone(report); delete missing.samples[0].resources.emoteOwnership;
+    await assert.rejects(inspectSupplemental(missing, report.gate, commit, root), /does not match raw samples/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
