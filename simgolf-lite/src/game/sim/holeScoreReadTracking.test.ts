@@ -18,6 +18,74 @@ describe("release-scale scoring read tracking", () => {
     expect(__getEquivalentHoleScoreCacheDependenciesForTests(course)).toBeLessThan(EQUIVALENT_HOLE_SCORE_MAX_DEPENDENCIES);
   });
 
+  it("preserves custom slice targets and detached nonconstructible dense getters", () => {
+    const course = createReferenceCourse();
+    const hole = course.holes[0];
+    const expected = scoreHole(course, hole, 0);
+    __resetHoleScoreCacheForTests();
+    const elevations = course.elevations!;
+    const borrowed = Array<number>(elevations.length).fill(-999);
+    let sliceCalls = 0;
+    Object.defineProperty(elevations, "slice", { value() {
+      expect(this).toBe(elevations);
+      sliceCalls++;
+      return borrowed;
+    } });
+    const originalDefineProperty = Object.defineProperty;
+    const getters = new Map<number, () => number>();
+    const defineProperty = vi.spyOn(Object, "defineProperty").mockImplementation((target, key, descriptor) => {
+      if (target === borrowed && descriptor.get) getters.set(Number(key), descriptor.get);
+      return originalDefineProperty(target, key, descriptor);
+    });
+    try {
+      expect(scoreHole(course, hole, 0)).toEqual(expected);
+      expect(sliceCalls).toBe(1);
+      expect(getters.size).toBe(elevations.length);
+      const getter = getters.get(0)!;
+      expect(Object.hasOwn(getter, "prototype")).toBe(false);
+      expect(() => Reflect.construct(getter, [])).toThrow(TypeError);
+      elevations[0] = 13;
+      expect(getter.call({ 0: -100 })).toBe(13);
+      expect(getter.call(undefined)).toBe(13);
+      expect(Object.getOwnPropertyDescriptor(borrowed, "0")).toEqual({
+        configurable: true, enumerable: true, writable: true, value: 13,
+      });
+    } finally {
+      defineProperty.mockRestore();
+    }
+  });
+
+  it("preserves same-root reuse and nested-root publication when custom slice throws", () => {
+    const course = createReferenceCourse();
+    let sliceCalls = 0;
+    Object.defineProperty(course.elevations!, "slice", { value() {
+      sliceCalls++;
+      return Array.prototype.slice.call(this);
+    } });
+    scoreHole(course, course.holes[0], 0);
+    scoreHole(course, { ...course.holes[0] }, 1);
+    expect(sliceCalls).toBe(1);
+
+    const nested = createReferenceCourse();
+    let nestedSliceCalls = 0;
+    Object.defineProperty(nested.elevations!, "slice", { value() {
+      nestedSliceCalls++;
+      return Array.prototype.slice.call(this);
+    } });
+    const throwing = createReferenceCourse();
+    const failure = new Error("custom slice failure after nested scoring");
+    Object.defineProperty(throwing.elevations!, "slice", { value() {
+      scoreHole(nested, nested.holes[0], 0);
+      throw failure;
+    } });
+    expect(() => scoreHole(throwing, throwing.holes[0], 0)).toThrow(failure);
+    expect(__getElevationReadTrackerRetainedRootsForTests()).toBe(1);
+    const nestedScore = scoreHole(nested, { ...nested.holes[0] }, 1);
+    expect(nestedSliceCalls).toBe(1);
+    __resetHoleScoreCacheForTests();
+    expect(scoreHole({ ...nested, elevations: [...nested.elevations!] }, { ...nested.holes[0] }, 1)).toEqual(nestedScore);
+  });
+
   it("reuses equivalent immutable hole views and bounds retained edit history", () => {
     const course = createReferenceCourse();
     const hole = course.holes[0];
