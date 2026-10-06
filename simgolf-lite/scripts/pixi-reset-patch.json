@@ -44,9 +44,9 @@
     {
       "relativePath": "lib/scene/graphics/shared/GraphicsContextSystem.mjs",
       "originalSha256": "61a5a95e50ea3d3cce77e842fb499a7b9242e8b143870095f8d7ba420d91655b",
-      "patchedSha256": "26eaf974876677a4b56cc017047fcd43c1417e55d2ea4504f7f09113f1ca0f91",
+      "patchedSha256": "988890bddbcf109dcd74cdaefe428e72b0fc2db0c4b9dd5918b9d338d03390b8",
       "originalBytes": 6561,
-      "patchedBytes": 6906,
+      "patchedBytes": 7055,
       "edits": [
         {
           "before": "  init(options) {\n    const maxTextures = options.maxTextures;\n    this.batcher ? this.batcher._updateMaxTextures(maxTextures) : this.batcher = new DefaultBatcher({ maxTextures });\n    this.instructions.reset();\n  }",
@@ -59,6 +59,14 @@
         {
           "before": "//# sourceMappingURL=GraphicsContextSystem.mjs.map\n",
           "after": ""
+        },
+        {
+          "before": "import { ExtensionType } from '../../../extensions/Extensions.mjs';\n",
+          "after": "import { ExtensionType } from '../../../extensions/Extensions.mjs';\nimport { RendererType } from '../../../rendering/renderers/types.mjs';\n"
+        },
+        {
+          "before": "    const drawBatches = batcher.batches;\n    for (let i = 0; i < batcher.batchIndex; i++) {\n      const batch = drawBatches[i];\n      batch.bindGroup = getTextureBatchBindGroup(\n        batch.textures.textures,\n        batch.textures.count,\n        this._renderer.limits.maxBatchableTextures\n      );\n    }\n",
+          "after": "    if (this._renderer.type !== RendererType.WEBGL) {\n      const drawBatches = batcher.batches;\n      for (let i = 0; i < batcher.batchIndex; i++) {\n        const batch = drawBatches[i];\n        batch.bindGroup = getTextureBatchBindGroup(\n          batch.textures.textures,\n          batch.textures.count,\n          this._renderer.limits.maxBatchableTextures\n        );\n      }\n    }\n"
         }
       ],
       "inverseByteExact": true
@@ -66,9 +74,9 @@
     {
       "relativePath": "lib/scene/graphics/shared/GraphicsContextSystem.js",
       "originalSha256": "8dc1e7af15ef7ad74d4601e6beb32557b1bd77bbb70ed18937d56e32f11ded5a",
-      "patchedSha256": "c6579bc8bec2760f293b3d2e4a6e9d831f45586012b9babc8e2e299d712cb23b",
+      "patchedSha256": "2f85e8034620f89205bd124f4bc8c7258a895a6c51195d8affeb28da01444a52",
       "originalBytes": 6801,
-      "patchedBytes": 7162,
+      "patchedBytes": 7308,
       "edits": [
         {
           "before": "  init(options) {\n    const maxTextures = options.maxTextures;\n    this.batcher ? this.batcher._updateMaxTextures(maxTextures) : this.batcher = new DefaultBatcher.DefaultBatcher({ maxTextures });\n    this.instructions.reset();\n  }",
@@ -81,6 +89,14 @@
         {
           "before": "//# sourceMappingURL=GraphicsContextSystem.js.map\n",
           "after": ""
+        },
+        {
+          "before": "var Extensions = require('../../../extensions/Extensions.js');\n",
+          "after": "var Extensions = require('../../../extensions/Extensions.js');\nvar types = require('../../../rendering/renderers/types.js');\n"
+        },
+        {
+          "before": "    const drawBatches = batcher.batches;\n    for (let i = 0; i < batcher.batchIndex; i++) {\n      const batch = drawBatches[i];\n      batch.bindGroup = getTextureBatchBindGroup.getTextureBatchBindGroup(\n        batch.textures.textures,\n        batch.textures.count,\n        this._renderer.limits.maxBatchableTextures\n      );\n    }\n",
+          "after": "    if (this._renderer.type !== types.RendererType.WEBGL) {\n      const drawBatches = batcher.batches;\n      for (let i = 0; i < batcher.batchIndex; i++) {\n        const batch = drawBatches[i];\n        batch.bindGroup = getTextureBatchBindGroup.getTextureBatchBindGroup(\n          batch.textures.textures,\n          batch.textures.count,\n          this._renderer.limits.maxBatchableTextures\n        );\n      }\n    }\n"
         }
       ],
       "inverseByteExact": true
