@@ -84,6 +84,38 @@
         }
       ],
       "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/Batcher.mjs",
+      "originalSha256": "aaf2400fc4ecfd0ff17adcb82f842a4f201307e392e56730937e0b0cbc9f96d1",
+      "patchedSha256": "640a218e108077a165156195ed592ebc60401bcd7895537e5a66af7027bf2577",
+      "edits": [
+        {
+          "before": "function returnBatchToPool(batch) {\n  batch.elements = null;\n  batchPool[batchPoolIndex++] = batch;\n}",
+          "after": "function returnBatchToPool(batch) {\n  batch.textures.clear();\n  batch.elements = null;\n  batch.bindGroup = null;\n  batch.gpuBindGroup = null;\n  batch.batcher = null;\n  batchPool[batchPoolIndex++] = batch;\n}"
+        },
+        {
+          "before": "//# sourceMappingURL=Batcher.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/Batcher.js",
+      "originalSha256": "a26fa39eb80898840ba76a7e0b5e8d0cba30967bc4ee986821eeb043907d9bf9",
+      "patchedSha256": "d26dd0010fde9a8b8edb0ba3700d67fe9ff0a14fd69aa3dc9ee1b0a099353c70",
+      "edits": [
+        {
+          "before": "function returnBatchToPool(batch) {\n  batch.elements = null;\n  batchPool[batchPoolIndex++] = batch;\n}",
+          "after": "function returnBatchToPool(batch) {\n  batch.textures.clear();\n  batch.elements = null;\n  batch.bindGroup = null;\n  batch.gpuBindGroup = null;\n  batch.batcher = null;\n  batchPool[batchPoolIndex++] = batch;\n}"
+        },
+        {
+          "before": "//# sourceMappingURL=Batcher.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true
     }
   ]
 }
