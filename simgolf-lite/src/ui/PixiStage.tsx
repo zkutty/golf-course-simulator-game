@@ -2452,6 +2452,7 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
     // Their positions are deterministic and stay far from the scenery cap.
     if (model.coast) {
       const waves = new PIXI.Graphics();
+      waves.context.batchMode = "batch";
       for (let i = 0; i < 180; i++) {
         const a = ((i * 73 + props.worldSeed * 11) >>> 0) % 997 / 997;
         const b = ((i * 151 + props.worldSeed * 7 + 31) >>> 0) % 991 / 991;
