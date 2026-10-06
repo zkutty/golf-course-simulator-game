@@ -168,6 +168,44 @@
         }
       ],
       "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/BatchTextureArray.mjs",
+      "originalSha256": "c80a652e9e3c9e12034547a365348b1b9235aaa00c2a273adba1d4ef9d8f508b",
+      "patchedSha256": "e6c081cf642eb49ce243c61fb493c2807051c5deb6aad478212e8f91d9da7662",
+      "originalBytes": 513,
+      "patchedBytes": 466,
+      "edits": [
+        {
+          "before": "      this.ids[t.uid] = null;",
+          "after": "      delete this.ids[t.uid];"
+        },
+        {
+          "before": "//# sourceMappingURL=BatchTextureArray.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "stale sourceMappingURL removed, maps not modified or parsed"
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/BatchTextureArray.js",
+      "originalSha256": "c11312509faaa1981e7251a957e704c72694a7e4955e75a809ce85cfba88d8e8",
+      "patchedSha256": "0c60ed59a2629a7d5a3ca9a50c464934db28d05c85723bc5a6c5eacb89b7e269",
+      "originalBytes": 544,
+      "patchedBytes": 498,
+      "edits": [
+        {
+          "before": "      this.ids[t.uid] = null;",
+          "after": "      delete this.ids[t.uid];"
+        },
+        {
+          "before": "//# sourceMappingURL=BatchTextureArray.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "stale sourceMappingURL removed, maps not modified or parsed"
     }
   ]
 }
