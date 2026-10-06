@@ -54,7 +54,7 @@ function observeOwned(graphic: PIXI.Graphics, system: ReturnType<typeof contextS
     expect(destroy).toHaveBeenCalledExactlyOnceWith(undefined);
     expect(unload).toHaveBeenCalledTimes(1);
     for (const array of arrays) expect(array).toHaveLength(0);
-    expect(aliases.every((batch) => batch.geometryData === data)).toBe(true);
+    expect(aliases.every((batch) => [batch.geometryData, batch.texture, batch._batcher, batch._batch].every((reference) => reference === null))).toBe(true);
     expect(context.listenerCount("update")).toBe(0);
   };
 }

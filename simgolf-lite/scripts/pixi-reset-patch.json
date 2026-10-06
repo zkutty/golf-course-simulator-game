@@ -1,0 +1,45 @@
+{
+  "version": "8.21.0",
+  "integrity": "sha512-GJ/KqBtUuWDBPMQu2D0ZHsRCYOcWRjjKrpyC+3jPQI5JTqHMC5dH8l9sSyvoUT4qJidvRzs1fwFWRWceno2Ltw==",
+  "resolved": "https://registry.npmjs.org/pixi.js/-/pixi.js-8.21.0.tgz",
+  "files": [
+    {
+      "relativePath": "lib/scene/graphics/shared/BatchableGraphics.mjs",
+      "originalSha256": "344bf17c1a85721aac545460c8269466aaa6bc04ae7b6968b5c6a5f7d7f0949b",
+      "patchedSha256": "2f862eb4cc4c30c592b203853664a4f2f56bbabe9ecec7031c90a7132a485abc",
+      "originalBytes": 1954,
+      "patchedBytes": 2012,
+      "edits": [
+        {
+          "before": "  reset() {\n    this.applyTransform = true;\n    this.renderable = null;\n    this.topology = \"triangle-list\";\n  }",
+          "after": "  reset() {\n    this.applyTransform = true;\n    this.renderable = null;\n    this.texture = null;\n    this.geometryData = null;\n    this._batcher = null;\n    this._batch = null;\n    this.topology = \"triangle-list\";\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=BatchableGraphics.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "stale sourceMappingURL removed, maps not modified or parsed"
+    },
+    {
+      "relativePath": "lib/scene/graphics/shared/BatchableGraphics.js",
+      "originalSha256": "538b4c88501fc785406acfe05bf274287d7c8160cd61eef84e1260f6ede0a53c",
+      "patchedSha256": "ab816c15d71cc90ee009c38c888efe9d58feca1f29592f4721c49ea75432e4c0",
+      "originalBytes": 2006,
+      "patchedBytes": 2065,
+      "edits": [
+        {
+          "before": "  reset() {\n    this.applyTransform = true;\n    this.renderable = null;\n    this.topology = \"triangle-list\";\n  }",
+          "after": "  reset() {\n    this.applyTransform = true;\n    this.renderable = null;\n    this.texture = null;\n    this.geometryData = null;\n    this._batcher = null;\n    this._batch = null;\n    this.topology = \"triangle-list\";\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=BatchableGraphics.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "stale sourceMappingURL removed, maps not modified or parsed"
+    }
+  ]
+}
