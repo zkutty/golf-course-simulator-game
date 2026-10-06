@@ -1,4 +1,5 @@
 import { RecentRatingGeometry } from "./recentRatingGeometry";
+import { RecentSetupRatings } from "./recentSetupRatings";
 import type { Course, PinRotation, Point, TeeSet } from "../models/types";
 import { scoreCourseHoles } from "./holes";
 import { getGolferProfile, type GolferProfile } from "./golferProfiles";
@@ -185,7 +186,7 @@ interface RatingGeometryCache {
   greenSurface: Course["greenSurface"];
   greenProgram: Course["greenProgram"];
   greenLocalState: Course["greenLocalState"];
-  setups: Map<string, SetupRatingSummary>;
+  setups: RecentSetupRatings<SetupRatingSummary>;
   ratings?: Record<TeeSet, PublishedTeeRating>;
   rating?: RatingSummary;
 }
@@ -245,7 +246,7 @@ function withRatingGeometry<Result>(course: Course, operation: (entry: RatingGeo
       greenProgram: course.greenProgram,
       greenLocalState: course.greenLocalState,
       holeSignature,
-      setups: new Map(),
+      setups: new RecentSetupRatings<SetupRatingSummary>(),
     }),
     operation,
   );

@@ -7,6 +7,7 @@ import { createReferenceCourse } from "../testing/referenceCourse";
 import { architectureReferencePlans } from "../architecture/referencePlan";
 import * as holes from "./holes";
 import { computeCourseRatingAndSlope, computeRatingForSetup, computeRatingsByTee } from "./courseRating";
+import { RecentSetupRatings, OPTIONAL_SETUP_HISTORY_LIMIT } from "./recentSetupRatings";
 import { RecentRatingGeometry, RATING_GEOMETRY_HISTORY_LIMIT } from "./recentRatingGeometry";
 function fixture(): Course {
   const base = createReferenceCourse();
@@ -83,15 +84,16 @@ describe("rating geometry memo ownership", () => {
     expect(json(computeRatingsByTee(other))).toBe(json(computeRatingsByTee(course)));
     setups.forEach(({ result }, i) => expect(json(result)).toBe(held[i]));
   }, 180_000);
-  it("preserves optional reference-plan variants without silently capping their setup map", () => {
+  it("preserves nine hot optional reference-plan variants", () => {
     const course = fixture();
     const original = architectureReferencePlans(course, "member", "A");
-    for (let index = 0; index < 9; index++) {
+    const variants = Array.from({ length: 9 }, (_, index) => {
       const plans = original.map(plan => ({ ...plan, version: `${plan.version}:test-${index}` }));
       const result = computeRatingForSetup(course, "member", "A", plans);
-      expect(computeRatingForSetup(course, "member", "A", plans)).toBe(result);
       expect(json(result)).toBe(json(computeRatingForSetup({ ...course, tiles: [...course.tiles] }, "member", "A", plans)));
-    }
+      return { plans, result };
+    });
+    variants.forEach(({ plans, result }) => expect(computeRatingForSetup(course, "member", "A", plans)).toBe(result));
   }, 180_000);
   it("retains existing completed aliases on construction/solver failure and bounds failed partial retries", () => {
     const base = fixture();
@@ -139,4 +141,81 @@ describe("rating geometry memo ownership", () => {
     expect(json(computeRatingsByTee(next))).toBe(json(computeRatingsByTee({ ...next, tiles: [...next.tiles] })));
     expect(json(first)).toBe(json(computeRatingForSetup({ ...next, tiles: [...next.tiles] }, "forward", "A")));
   }, 180_000);
+  it("bounds successful optional histories separately for all nine pairs and keeps legacy/empty identities", () => {
+    const course = fixture();
+    const plans = architectureReferencePlans(course, "member", "A");
+    const legacy = new Map<string, ReturnType<typeof computeRatingForSetup>>();
+    const empty = new Map<string, ReturnType<typeof computeRatingForSetup>>();
+    for (const tee of ["forward", "member", "championship"] as const) {
+      for (const pin of ["A", "B", "C"] as const) {
+        const pair = `${tee}:${pin}`;
+        legacy.set(pair, computeRatingForSetup(course, tee, pin));
+        empty.set(pair, computeRatingForSetup(course, tee, pin, []));
+        const hot = Array.from({ length: OPTIONAL_SETUP_HISTORY_LIMIT }, (_, index) => {
+          const input = plans.map(plan => ({ ...plan, version: `optional-${pair}-${index}` }));
+          return { input, result: computeRatingForSetup(course, tee, pin, input) };
+        });
+        hot.forEach(({ input, result }) => expect(computeRatingForSetup(course, tee, pin, input)).toBe(result));
+        expect(computeRatingForSetup(course, tee, pin)).toBe(legacy.get(pair));
+        expect(computeRatingForSetup(course, tee, pin, [])).toBe(empty.get(pair));
+      }
+    }
+  }, 180_000);
+  it("preserves joined-key collisions, ordering, aliases and fail-before-publication", () => {
+    const course = fixture();
+    const plan = architectureReferencePlans(course, "member", "A")[0];
+    const legacy = computeRatingForSetup(course, "member", "A");
+    const empty = computeRatingForSetup(course, "member", "A", []);
+    expect(computeRatingForSetup(course, "member", "A", [{ ...plan, version: "legacy" }])).toBe(legacy);
+    expect(computeRatingForSetup(course, "member", "A", [{ ...plan, version: "" }])).toBe(empty);
+    const joined = [{ ...plan, version: "one" }, { ...plan, version: "two" }];
+    const published = computeRatingForSetup(course, "member", "A", joined);
+    expect(computeRatingForSetup(course, "member", "A", [{ ...plan, version: "one|two" }])).toBe(published);
+    expect(computeRatingForSetup(course, "member", "A", [...joined].reverse())).not.toBe(published);
+    const held = json(published);
+    const hot = Array.from({ length: 16 }, (_, index) => {
+      const input = [{ ...plan, version: `hot-${index}` }];
+      return { input, result: computeRatingForSetup(course, "member", "A", input) };
+    });
+    for (const error of [null, undefined, new Error("optional solver")]) {
+      const score = vi.spyOn(holes, "scoreCourseHoles").mockImplementationOnce(() => { throw error; });
+      let failed = false;
+      try { computeRatingForSetup(course, "member", "A", [{ ...plan, version: `failed-${String(error)}` }]); }
+      catch (actual) { failed = true; expect(actual).toBe(error); }
+      expect(failed).toBe(true); score.mockRestore();
+      hot.forEach(({ input, result }) => expect(computeRatingForSetup(course, "member", "A", input)).toBe(result));
+      let getterFailed = false;
+      try { computeRatingForSetup(course, "member", "A", [{ ...plan, get version(): string { throw error; } }]); }
+      catch (actual) { getterFailed = true; expect(actual).toBe(error); }
+      expect(getterFailed).toBe(true);
+    }
+    const succeeding = [{ ...plan, version: "success-after-failures" }];
+    computeRatingForSetup(course, "member", "A", succeeding);
+    hot.slice(1).forEach(({ input, result }) => expect(computeRatingForSetup(course, "member", "A", input)).toBe(result));
+    expect(computeRatingForSetup(course, "member", "A", hot[0].input)).not.toBe(hot[0].result);
+    expect(json(published)).toBe(held);
+    const rehydrated = computeRatingForSetup(course, "member", "A", joined);
+    expect(rehydrated).not.toBe(published);
+    expect(json(rehydrated)).toBe(held);
+    expect(json(rehydrated)).toBe(json(computeRatingForSetup({ ...course, tiles: course.tiles.slice() }, "member", "A", joined)));
+    expect(json(published)).toBe(held);
+  }, 180_000);
+  it("uses the real bounded helper for arbitrary runtime full keys without new errors", () => {
+    const cache = new RecentSetupRatings<{ value: number }>();
+    const held = { value: 1 };
+    cache.set("member:A:legacy", held);
+    cache.set("member:A:", held);
+    for (const tee of ["forward", "member", "championship"] as const) {
+      for (const pin of ["A", "B", "C"] as const) {
+        cache.set(`${tee}:${pin}:legacy`, held); cache.set(`${tee}:${pin}:`, held);
+        for (let index = 0; index < 16; index++) cache.set(`${tee}:${pin}:plan-${index}`, { value: index });
+      }
+    }
+    for (let index = 0; index < 64; index++) cache.set(`unknown-${index}`, { value: index });
+    expect(cache.size).toBe(178);
+    expect(cache.get("member:A:legacy")).toBe(held);
+    expect(cache.get("member:A:")).toBe(held);
+    expect(held.value).toBe(1);
+  });
+
 });
