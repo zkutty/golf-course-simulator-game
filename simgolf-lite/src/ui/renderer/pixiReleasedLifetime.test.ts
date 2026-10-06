@@ -37,8 +37,8 @@ describe("released Pixi public lifecycle", () => {
       destroySceneSubtree(root); destroySceneSubtree(root);
       expect(destroy).toHaveBeenCalledExactlyOnceWith(undefined);
       for (const array of arrays) expect(array).toHaveLength(0);
-      // The alias can survive pooling; its data no longer keeps course vertices.
-      expect(aliases.every((batch) => batch.geometryData === data)).toBe(true);
+      // Returned wrappers release all obsolete references; captured arrays are empty above.
+      expect(aliases.every((batch) => [batch.geometryData, batch.texture, batch._batcher, batch._batch].every((reference) => reference === null))).toBe(true);
     }
     system.destroy();
   });

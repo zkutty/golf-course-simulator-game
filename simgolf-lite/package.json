@@ -12,7 +12,7 @@
     "lint:i18n": "node scripts/check-i18n.mjs",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:ci": "vitest run --maxWorkers=1 --testTimeout=60000 && npm run test:audio-audit",
+    "test:ci": "vitest run --maxWorkers=1 --testTimeout=60000 && npm run test:audio-audit && npm run test:pixi",
     "test:e2e": "playwright test",
     "test:e2e:golden": "playwright test e2e/golden-path.e2e.ts e2e/vision-page.e2e.ts",
     "test:analysis-worker": "playwright test e2e/zk681-analysis-worker.e2e.ts",
@@ -93,7 +93,9 @@
     "repair:dispatch": "node scripts/bug-repair-dispatcher.mjs",
     "repair:dispatch:execute": "node scripts/bug-repair-dispatcher.mjs --execute",
     "deploy:check": "WRANGLER_LOG_PATH=/tmp/coursecraft-deploy-check.log wrangler deploy --dry-run --env=\"\"",
-    "deploy:check:staging": "WRANGLER_LOG_PATH=/tmp/coursecraft-deploy-check-staging.log wrangler deploy --dry-run --env staging"
+    "deploy:check:staging": "WRANGLER_LOG_PATH=/tmp/coursecraft-deploy-check-staging.log wrangler deploy --dry-run --env staging",
+    "postinstall": "node scripts/apply-pixi-reset-patch.mjs",
+    "test:pixi": "node --test scripts/test-pixi-reset-patch.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.67.0",
