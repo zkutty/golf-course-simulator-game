@@ -116,6 +116,42 @@
         }
       ],
       "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/utils/data/GCManagedHash.mjs",
+      "originalSha256": "2a6472beb90606b407c652c259a57ac60ef3f699ccf8fc77f3e3303934ab7ce5",
+      "patchedSha256": "76c485c087a1c08943255c847c9f3b81923d7ce7388e8ff7762b406872cd532a",
+      "originalBytes": 1424,
+      "patchedBytes": 1381,
+      "edits": [
+        {
+          "before": "    this.items[item.uid] = null;",
+          "after": "    delete this.items[item.uid];"
+        },
+        {
+          "before": "//# sourceMappingURL=GCManagedHash.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/utils/data/GCManagedHash.js",
+      "originalSha256": "66b4d6df40327941b3d0ea537a785a8ff9bb05d2746d26e786ffd1d9b00dbb08",
+      "patchedSha256": "b4ac3f7f42f8f0f503b079ade1b3f9da299298ed70aa0c71b3fdcb2a0ff24968",
+      "originalBytes": 1451,
+      "patchedBytes": 1409,
+      "edits": [
+        {
+          "before": "    this.items[item.uid] = null;",
+          "after": "    delete this.items[item.uid];"
+        },
+        {
+          "before": "//# sourceMappingURL=GCManagedHash.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true
     }
   ]
 }
