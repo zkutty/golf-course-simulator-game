@@ -40,6 +40,50 @@
       ],
       "inverseByteExact": true,
       "sourceMaps": "stale sourceMappingURL removed, maps not modified or parsed"
+    },
+    {
+      "relativePath": "lib/scene/graphics/shared/GraphicsContextSystem.mjs",
+      "originalSha256": "61a5a95e50ea3d3cce77e842fb499a7b9242e8b143870095f8d7ba420d91655b",
+      "patchedSha256": "26eaf974876677a4b56cc017047fcd43c1417e55d2ea4504f7f09113f1ca0f91",
+      "originalBytes": 6561,
+      "patchedBytes": 6906,
+      "edits": [
+        {
+          "before": "  init(options) {\n    const maxTextures = options.maxTextures;\n    this.batcher ? this.batcher._updateMaxTextures(maxTextures) : this.batcher = new DefaultBatcher({ maxTextures });\n    this.instructions.reset();\n  }",
+          "after": "  init(options) {\n    const maxTextures = options.maxTextures;\n    this.instructions ?? (this.instructions = new InstructionSet());\n    this.batcher ?? (this.batcher = new DefaultBatcher({ maxTextures }));\n    this.batcher._updateMaxTextures(maxTextures);\n    this.instructions.reset();\n  }"
+        },
+        {
+          "before": "  destroy() {\n    this.batcher.destroy();\n    this.instructions.destroy();\n    this.batcher = null;\n    this.instructions = null;\n  }",
+          "after": "  reset() {\n    const batcher = this.batcher;\n    const instructions = this.instructions;\n    this.batcher = null;\n    this.instructions = null;\n    let failed = false;\n    let firstError;\n    try { batcher?.destroy(); } catch (error) { failed = true; firstError = error; }\n    try { instructions?.destroy(); } catch (error) { if (!failed) { failed = true; firstError = error; } }\n    if (failed) throw firstError;\n  }\n  destroy() {\n    this.reset();\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=GraphicsContextSystem.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/scene/graphics/shared/GraphicsContextSystem.js",
+      "originalSha256": "8dc1e7af15ef7ad74d4601e6beb32557b1bd77bbb70ed18937d56e32f11ded5a",
+      "patchedSha256": "c6579bc8bec2760f293b3d2e4a6e9d831f45586012b9babc8e2e299d712cb23b",
+      "originalBytes": 6801,
+      "patchedBytes": 7162,
+      "edits": [
+        {
+          "before": "  init(options) {\n    const maxTextures = options.maxTextures;\n    this.batcher ? this.batcher._updateMaxTextures(maxTextures) : this.batcher = new DefaultBatcher.DefaultBatcher({ maxTextures });\n    this.instructions.reset();\n  }",
+          "after": "  init(options) {\n    const maxTextures = options.maxTextures;\n    this.instructions ?? (this.instructions = new InstructionSet.InstructionSet());\n    this.batcher ?? (this.batcher = new DefaultBatcher.DefaultBatcher({ maxTextures }));\n    this.batcher._updateMaxTextures(maxTextures);\n    this.instructions.reset();\n  }"
+        },
+        {
+          "before": "  destroy() {\n    this.batcher.destroy();\n    this.instructions.destroy();\n    this.batcher = null;\n    this.instructions = null;\n  }",
+          "after": "  reset() {\n    const batcher = this.batcher;\n    const instructions = this.instructions;\n    this.batcher = null;\n    this.instructions = null;\n    let failed = false;\n    let firstError;\n    try { batcher?.destroy(); } catch (error) { failed = true; firstError = error; }\n    try { instructions?.destroy(); } catch (error) { if (!failed) { failed = true; firstError = error; } }\n    if (failed) throw firstError;\n  }\n  destroy() {\n    this.reset();\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=GraphicsContextSystem.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true
     }
   ]
 }
