@@ -1,6 +1,7 @@
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { clearReactComponentTimings } from "../scripts/react-component-timing-cleanup.mjs";
 import {
   ZK682_RESOURCE_GROWTH_THRESHOLDS,
   createZk682ResourceGrowthReport,
@@ -111,7 +112,11 @@ async function routeThroughTitle(page: Page) {
   await pauseSimulation(page);
 }
 
-async function collectPostGcCheckpoint(page: Page, cdp: CDPSession, cycle: number, exercised: { theme: Theme; quality: Quality } | null) {
+type TimingCleanupReceipt = { cycle: number; cleanup: ReturnType<typeof clearReactComponentTimings> };
+
+async function collectPostGcCheckpoint(page: Page, cdp: CDPSession, cycle: number, exercised: { theme: Theme; quality: Quality } | null, timingCleanup: TimingCleanupReceipt[]) {
+  if (timingCleanup.length >= 7) throw new Error("Timing cleanup receipt bound exceeded");
+  timingCleanup.push({ cycle, cleanup: await page.evaluate(clearReactComponentTimings) });
   await cdp.send("HeapProfiler.collectGarbage");
   await page.waitForTimeout(150);
   const heap = await cdp.send("Runtime.getHeapUsage");
@@ -204,7 +209,8 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
     "parkland:high", "parkland:low", "parkland:medium",
   ]);
 
-  const samples = [await collectPostGcCheckpoint(page, cdp, 0, null)];
+  const timingCleanup: TimingCleanupReceipt[] = [];
+  const samples = [await collectPostGcCheckpoint(page, cdp, 0, null, timingCleanup)];
   console.log(`[zk682-resource-growth] collected baseline`);
   const sequence: Array<{ theme: Theme; quality: Quality }> = [
     { theme: "links", quality: "low" },
@@ -218,7 +224,7 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
     await setRendererFixture(page, transition.theme, transition.quality);
     await rotateFullCircle(page);
     await routeThroughTitle(page);
-    samples.push(await collectPostGcCheckpoint(page, cdp, index + 1, transition));
+    samples.push(await collectPostGcCheckpoint(page, cdp, index + 1, transition, timingCleanup));
     console.log(`[zk682-resource-growth] collected cycle ${index + 1}/${sequence.length}`);
   }
 
@@ -252,6 +258,16 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
     samples,
   });
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  expect(timingCleanup).toHaveLength(7);
+  const timingCleanupPath = resolve(dirname(outputPath), "zk682-react-component-timing-cleanup.json");
+  const timingCleanupJson = `${JSON.stringify({
+    measurementProtocol: "exclusive-react-development-component-measures-cleared-before-existing-gc-v1",
+    preserves: "same-name collisions, scheduler and application measures",
+    samples: timingCleanup,
+  }, null, 2)}\n`;
+  if (Buffer.byteLength(timingCleanupJson, "utf8") > 8192) throw new Error("Timing cleanup artifact byte cap exceeded");
+  await writeFile(timingCleanupPath, timingCleanupJson, "utf8");
+  await testInfo.attach("zk682-react-component-timing-cleanup", { path: timingCleanupPath, contentType: "application/json" });
   await testInfo.attach("zk682-resource-growth-report", { path: outputPath, contentType: "application/json" });
   await testInfo.attach("zk682-resource-growth-final", { path: finalCapturePath, contentType: "image/png" });
   console.log(`[zk682-resource-growth] ${JSON.stringify({ summary: report.summary, thresholds: report.thresholds, passed: report.passed })}`);

@@ -40,6 +40,180 @@
       ],
       "inverseByteExact": true,
       "sourceMaps": "stale sourceMappingURL removed, maps not modified or parsed"
+    },
+    {
+      "relativePath": "lib/scene/graphics/shared/GraphicsContextSystem.mjs",
+      "originalSha256": "61a5a95e50ea3d3cce77e842fb499a7b9242e8b143870095f8d7ba420d91655b",
+      "patchedSha256": "988890bddbcf109dcd74cdaefe428e72b0fc2db0c4b9dd5918b9d338d03390b8",
+      "originalBytes": 6561,
+      "patchedBytes": 7055,
+      "edits": [
+        {
+          "before": "  init(options) {\n    const maxTextures = options.maxTextures;\n    this.batcher ? this.batcher._updateMaxTextures(maxTextures) : this.batcher = new DefaultBatcher({ maxTextures });\n    this.instructions.reset();\n  }",
+          "after": "  init(options) {\n    const maxTextures = options.maxTextures;\n    this.instructions ?? (this.instructions = new InstructionSet());\n    this.batcher ?? (this.batcher = new DefaultBatcher({ maxTextures }));\n    this.batcher._updateMaxTextures(maxTextures);\n    this.instructions.reset();\n  }"
+        },
+        {
+          "before": "  destroy() {\n    this.batcher.destroy();\n    this.instructions.destroy();\n    this.batcher = null;\n    this.instructions = null;\n  }",
+          "after": "  reset() {\n    const batcher = this.batcher;\n    const instructions = this.instructions;\n    this.batcher = null;\n    this.instructions = null;\n    let failed = false;\n    let firstError;\n    try { batcher?.destroy(); } catch (error) { failed = true; firstError = error; }\n    try { instructions?.destroy(); } catch (error) { if (!failed) { failed = true; firstError = error; } }\n    if (failed) throw firstError;\n  }\n  destroy() {\n    this.reset();\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=GraphicsContextSystem.mjs.map\n",
+          "after": ""
+        },
+        {
+          "before": "import { ExtensionType } from '../../../extensions/Extensions.mjs';\n",
+          "after": "import { ExtensionType } from '../../../extensions/Extensions.mjs';\nimport { RendererType } from '../../../rendering/renderers/types.mjs';\n"
+        },
+        {
+          "before": "    const drawBatches = batcher.batches;\n    for (let i = 0; i < batcher.batchIndex; i++) {\n      const batch = drawBatches[i];\n      batch.bindGroup = getTextureBatchBindGroup(\n        batch.textures.textures,\n        batch.textures.count,\n        this._renderer.limits.maxBatchableTextures\n      );\n    }\n",
+          "after": "    if (this._renderer.type !== RendererType.WEBGL) {\n      const drawBatches = batcher.batches;\n      for (let i = 0; i < batcher.batchIndex; i++) {\n        const batch = drawBatches[i];\n        batch.bindGroup = getTextureBatchBindGroup(\n          batch.textures.textures,\n          batch.textures.count,\n          this._renderer.limits.maxBatchableTextures\n        );\n      }\n    }\n"
+        }
+      ],
+      "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/scene/graphics/shared/GraphicsContextSystem.js",
+      "originalSha256": "8dc1e7af15ef7ad74d4601e6beb32557b1bd77bbb70ed18937d56e32f11ded5a",
+      "patchedSha256": "2f85e8034620f89205bd124f4bc8c7258a895a6c51195d8affeb28da01444a52",
+      "originalBytes": 6801,
+      "patchedBytes": 7308,
+      "edits": [
+        {
+          "before": "  init(options) {\n    const maxTextures = options.maxTextures;\n    this.batcher ? this.batcher._updateMaxTextures(maxTextures) : this.batcher = new DefaultBatcher.DefaultBatcher({ maxTextures });\n    this.instructions.reset();\n  }",
+          "after": "  init(options) {\n    const maxTextures = options.maxTextures;\n    this.instructions ?? (this.instructions = new InstructionSet.InstructionSet());\n    this.batcher ?? (this.batcher = new DefaultBatcher.DefaultBatcher({ maxTextures }));\n    this.batcher._updateMaxTextures(maxTextures);\n    this.instructions.reset();\n  }"
+        },
+        {
+          "before": "  destroy() {\n    this.batcher.destroy();\n    this.instructions.destroy();\n    this.batcher = null;\n    this.instructions = null;\n  }",
+          "after": "  reset() {\n    const batcher = this.batcher;\n    const instructions = this.instructions;\n    this.batcher = null;\n    this.instructions = null;\n    let failed = false;\n    let firstError;\n    try { batcher?.destroy(); } catch (error) { failed = true; firstError = error; }\n    try { instructions?.destroy(); } catch (error) { if (!failed) { failed = true; firstError = error; } }\n    if (failed) throw firstError;\n  }\n  destroy() {\n    this.reset();\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=GraphicsContextSystem.js.map\n",
+          "after": ""
+        },
+        {
+          "before": "var Extensions = require('../../../extensions/Extensions.js');\n",
+          "after": "var Extensions = require('../../../extensions/Extensions.js');\nvar types = require('../../../rendering/renderers/types.js');\n"
+        },
+        {
+          "before": "    const drawBatches = batcher.batches;\n    for (let i = 0; i < batcher.batchIndex; i++) {\n      const batch = drawBatches[i];\n      batch.bindGroup = getTextureBatchBindGroup.getTextureBatchBindGroup(\n        batch.textures.textures,\n        batch.textures.count,\n        this._renderer.limits.maxBatchableTextures\n      );\n    }\n",
+          "after": "    if (this._renderer.type !== types.RendererType.WEBGL) {\n      const drawBatches = batcher.batches;\n      for (let i = 0; i < batcher.batchIndex; i++) {\n        const batch = drawBatches[i];\n        batch.bindGroup = getTextureBatchBindGroup.getTextureBatchBindGroup(\n          batch.textures.textures,\n          batch.textures.count,\n          this._renderer.limits.maxBatchableTextures\n        );\n      }\n    }\n"
+        }
+      ],
+      "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/Batcher.mjs",
+      "originalSha256": "aaf2400fc4ecfd0ff17adcb82f842a4f201307e392e56730937e0b0cbc9f96d1",
+      "patchedSha256": "640a218e108077a165156195ed592ebc60401bcd7895537e5a66af7027bf2577",
+      "edits": [
+        {
+          "before": "function returnBatchToPool(batch) {\n  batch.elements = null;\n  batchPool[batchPoolIndex++] = batch;\n}",
+          "after": "function returnBatchToPool(batch) {\n  batch.textures.clear();\n  batch.elements = null;\n  batch.bindGroup = null;\n  batch.gpuBindGroup = null;\n  batch.batcher = null;\n  batchPool[batchPoolIndex++] = batch;\n}"
+        },
+        {
+          "before": "//# sourceMappingURL=Batcher.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/Batcher.js",
+      "originalSha256": "a26fa39eb80898840ba76a7e0b5e8d0cba30967bc4ee986821eeb043907d9bf9",
+      "patchedSha256": "d26dd0010fde9a8b8edb0ba3700d67fe9ff0a14fd69aa3dc9ee1b0a099353c70",
+      "edits": [
+        {
+          "before": "function returnBatchToPool(batch) {\n  batch.elements = null;\n  batchPool[batchPoolIndex++] = batch;\n}",
+          "after": "function returnBatchToPool(batch) {\n  batch.textures.clear();\n  batch.elements = null;\n  batch.bindGroup = null;\n  batch.gpuBindGroup = null;\n  batch.batcher = null;\n  batchPool[batchPoolIndex++] = batch;\n}"
+        },
+        {
+          "before": "//# sourceMappingURL=Batcher.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/utils/data/GCManagedHash.mjs",
+      "originalSha256": "2a6472beb90606b407c652c259a57ac60ef3f699ccf8fc77f3e3303934ab7ce5",
+      "patchedSha256": "1c7c374ed7d6257d6e336dbb0a6fad9c55cdd100b5747fb0e8cf0e89441c1c28",
+      "originalBytes": 1424,
+      "patchedBytes": 1381,
+      "edits": [
+        {
+          "before": "    this.items[item.uid] = null;",
+          "after": "    delete this.items[item.uid];"
+        },
+        {
+          "before": "    item._gpuData[this._renderer.uid] = null;",
+          "after": "    delete item._gpuData[this._renderer.uid];"
+        },
+        {
+          "before": "//# sourceMappingURL=GCManagedHash.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/utils/data/GCManagedHash.js",
+      "originalSha256": "66b4d6df40327941b3d0ea537a785a8ff9bb05d2746d26e786ffd1d9b00dbb08",
+      "patchedSha256": "d59ae0f88120bcf3ca8f775d9018bf5408be94fa71ab8dc632e646af0d2ec0eb",
+      "originalBytes": 1451,
+      "patchedBytes": 1409,
+      "edits": [
+        {
+          "before": "    this.items[item.uid] = null;",
+          "after": "    delete this.items[item.uid];"
+        },
+        {
+          "before": "    item._gpuData[this._renderer.uid] = null;",
+          "after": "    delete item._gpuData[this._renderer.uid];"
+        },
+        {
+          "before": "//# sourceMappingURL=GCManagedHash.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/BatchTextureArray.mjs",
+      "originalSha256": "c80a652e9e3c9e12034547a365348b1b9235aaa00c2a273adba1d4ef9d8f508b",
+      "patchedSha256": "e6c081cf642eb49ce243c61fb493c2807051c5deb6aad478212e8f91d9da7662",
+      "originalBytes": 513,
+      "patchedBytes": 466,
+      "edits": [
+        {
+          "before": "      this.ids[t.uid] = null;",
+          "after": "      delete this.ids[t.uid];"
+        },
+        {
+          "before": "//# sourceMappingURL=BatchTextureArray.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "stale sourceMappingURL removed, maps not modified or parsed"
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/BatchTextureArray.js",
+      "originalSha256": "c11312509faaa1981e7251a957e704c72694a7e4955e75a809ce85cfba88d8e8",
+      "patchedSha256": "0c60ed59a2629a7d5a3ca9a50c464934db28d05c85723bc5a6c5eacb89b7e269",
+      "originalBytes": 544,
+      "patchedBytes": 498,
+      "edits": [
+        {
+          "before": "      this.ids[t.uid] = null;",
+          "after": "      delete this.ids[t.uid];"
+        },
+        {
+          "before": "//# sourceMappingURL=BatchTextureArray.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "stale sourceMappingURL removed, maps not modified or parsed"
     }
   ]
 }

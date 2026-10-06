@@ -1,3 +1,5 @@
+import { RecentRatingGeometry } from "./recentRatingGeometry";
+import { RecentSetupRatings } from "./recentSetupRatings";
 import type { Course, PinRotation, Point, TeeSet } from "../models/types";
 import { scoreCourseHoles } from "./holes";
 import { getGolferProfile, type GolferProfile } from "./golferProfiles";
@@ -184,7 +186,7 @@ interface RatingGeometryCache {
   greenSurface: Course["greenSurface"];
   greenProgram: Course["greenProgram"];
   greenLocalState: Course["greenLocalState"];
-  setups: Map<string, SetupRatingSummary>;
+  setups: RecentSetupRatings<SetupRatingSummary>;
   ratings?: Record<TeeSet, PublishedTeeRating>;
   rating?: RatingSummary;
 }
@@ -193,7 +195,7 @@ interface RatingGeometryCache {
 // live on the Course root but do not affect a physical course rating. Key the
 // expensive shot-solver work by immutable geometry instead of root identity so
 // operations-only updates reuse it.
-const ratingGeometryCache = new WeakMap<Course["tiles"], RatingGeometryCache[]>();
+const ratingGeometryCache = new WeakMap<Course["tiles"], RecentRatingGeometry<RatingGeometryCache>>();
 const holeSignatureCache = new WeakMap<Course["holes"], string>();
 
 function ratingHoleSignature(course: Course): string {
@@ -215,104 +217,108 @@ function ratingHoleSignature(course: Course): string {
   return signature;
 }
 
-function ratingGeometry(course: Course): RatingGeometryCache {
-  const entries = ratingGeometryCache.get(course.tiles) ?? [];
-  if (entries.length === 0) ratingGeometryCache.set(course.tiles, entries);
+function withRatingGeometry<Result>(course: Course, operation: (entry: RatingGeometryCache) => Result): Result {
+  let entries = ratingGeometryCache.get(course.tiles);
+  if (!entries) {
+    entries = new RecentRatingGeometry<RatingGeometryCache>();
+    ratingGeometryCache.set(course.tiles, entries);
+  }
   const holeSignature = ratingHoleSignature(course);
   const yardsPerTile = course.yardsPerTile ?? 10;
-  const cached = entries.find((entry) =>
-    entry.elevations === course.elevations &&
-    entry.obstacles === course.obstacles &&
-    entry.width === course.width &&
-    entry.height === course.height &&
-    entry.yardsPerTile === yardsPerTile &&
-    entry.greenSurface === course.greenSurface &&
-    entry.greenProgram === course.greenProgram &&
-    entry.greenLocalState === course.greenLocalState &&
-    entry.holeSignature === holeSignature
+  return entries.run(
+    (entry) =>
+      entry.elevations === course.elevations &&
+      entry.obstacles === course.obstacles &&
+      entry.width === course.width &&
+      entry.height === course.height &&
+      entry.yardsPerTile === yardsPerTile &&
+      entry.greenSurface === course.greenSurface &&
+      entry.greenProgram === course.greenProgram &&
+      entry.greenLocalState === course.greenLocalState &&
+      entry.holeSignature === holeSignature,
+    () => ({
+      elevations: course.elevations,
+      obstacles: course.obstacles,
+      width: course.width,
+      height: course.height,
+      yardsPerTile,
+      greenSurface: course.greenSurface,
+      greenProgram: course.greenProgram,
+      greenLocalState: course.greenLocalState,
+      holeSignature,
+      setups: new RecentSetupRatings<SetupRatingSummary>(),
+    }),
+    operation,
   );
-  if (cached) return cached;
-  const created: RatingGeometryCache = {
-    elevations: course.elevations,
-    obstacles: course.obstacles,
-    width: course.width,
-    height: course.height,
-    yardsPerTile,
-    greenSurface: course.greenSurface,
-    greenProgram: course.greenProgram,
-    greenLocalState: course.greenLocalState,
-    holeSignature,
-    setups: new Map(),
-  };
-  entries.push(created);
-  return created;
 }
 
 export function computeRatingForSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation, referencePlans?: readonly ArchitectureReferencePlan[]): SetupRatingSummary {
   course = courseWithEffectiveSurfaces(course);
-  const setups = ratingGeometry(course).setups;
-  const planKey = referencePlans?.map((plan) => plan.version).join("|") ?? "legacy";
-  const cacheKey = `${teeSet}:${pinRotation}:${planKey}`;
-  const cached = setups.get(cacheKey);
-  if (cached) return cached;
-  const setupCourse = courseForSetup(course, teeSet, pinRotation);
-  const holeSummary = scoreCourseHoles(setupCourse);
-  const scratch = getGolferProfile("SCRATCH", setupCourse);
-  const bogey = getGolferProfile("BOGEY", setupCourse);
-  const holesUsed = holeSummary.holes.length >= 18 ? 18 : 9;
-  let scratchTotal = 0;
-  let bogeyTotal = 0;
-  let effectiveYardage = 0;
-  let pinDelta = 0;
-  let validHoles = 0;
-  let setupComplete = true;
-  const plansByHole = new Map(referencePlans?.map((plan) => [plan.holeId, plan]) ?? []);
-  for (let i = 0; i < Math.min(holesUsed, course.holes.length); i++) {
-    const original = course.holes[i];
-    const tee = getTeeBox(original, teeSet);
-    const pin = getPinPosition(original, pinRotation);
-    if (!tee || !pin) setupComplete = false;
-    const fairness = analyzePinFairness(setupCourse, original, pin, pinRotation);
-    const referencePlan = plansByHole.get(original.id ?? "");
-    const coarsePenalty = coarsePinDifficultyPenalty(setupCourse, pin);
-    // Retain the published coarse-rating baseline while the authoritative fine
-    // surface and automatic-putt model add only their newly observed excess.
-    const scratchAutomaticDelta = fairness.cohorts.scratch.scoreDelta * .25;
-    const scratchPutting = 2 + coarsePenalty + scratchAutomaticDelta;
-    const bogeyAutomaticDelta = scratchAutomaticDelta
-      + Math.max(0, fairness.cohorts.bogey.scoreDelta - fairness.cohorts.scratch.scoreDelta) * .12;
-    const bogeyPutting = 2 + coarsePenalty * BALANCE.courseSetup.pinDifficulty.bogeySensitivity + bogeyAutomaticDelta;
-    const info = holeSummary.holes[i];
-    scratchTotal += computeExpectedScoreForHole(setupCourse, i, scratch, referencePlan, info, scratchPutting);
-    bogeyTotal += computeExpectedScoreForHole(setupCourse, i, bogey, referencePlan, info, bogeyPutting);
-    if (!fairness.legal) setupComplete = false;
-    const referenceComplete = referencePlan ? !!referencePlan.tee && !!referencePlan.pin : !!info?.isComplete && info.isValid;
-    if (referenceComplete && tee && pin && fairness.legal) {
-      validHoles++;
-      effectiveYardage += referencePlan ? referencePlan.effectiveYardage : info!.effectiveDistance * setupCourse.yardsPerTile;
-      pinDelta += coarsePenalty + (fairness.cohorts.scratch.scoreDelta + fairness.cohorts.bogey.scoreDelta) / 2;
+  return withRatingGeometry(course, (geometry) => {
+    const setups = geometry.setups;
+    const planKey = referencePlans?.map((plan) => plan.version).join("|") ?? "legacy";
+    const cacheKey = `${teeSet}:${pinRotation}:${planKey}`;
+    const cached = setups.get(cacheKey);
+    if (cached) return cached;
+    const setupCourse = courseForSetup(course, teeSet, pinRotation);
+    const holeSummary = scoreCourseHoles(setupCourse);
+    const scratch = getGolferProfile("SCRATCH", setupCourse);
+    const bogey = getGolferProfile("BOGEY", setupCourse);
+    const holesUsed = holeSummary.holes.length >= 18 ? 18 : 9;
+    let scratchTotal = 0;
+    let bogeyTotal = 0;
+    let effectiveYardage = 0;
+    let pinDelta = 0;
+    let validHoles = 0;
+    let setupComplete = true;
+    const plansByHole = new Map(referencePlans?.map((plan) => [plan.holeId, plan]) ?? []);
+    for (let i = 0; i < Math.min(holesUsed, course.holes.length); i++) {
+      const original = course.holes[i];
+      const tee = getTeeBox(original, teeSet);
+      const pin = getPinPosition(original, pinRotation);
+      if (!tee || !pin) setupComplete = false;
+      const fairness = analyzePinFairness(setupCourse, original, pin, pinRotation);
+      const referencePlan = plansByHole.get(original.id ?? "");
+      const coarsePenalty = coarsePinDifficultyPenalty(setupCourse, pin);
+      // Retain the published coarse-rating baseline while the authoritative fine
+      // surface and automatic-putt model add only their newly observed excess.
+      const scratchAutomaticDelta = fairness.cohorts.scratch.scoreDelta * .25;
+      const scratchPutting = 2 + coarsePenalty + scratchAutomaticDelta;
+      const bogeyAutomaticDelta = scratchAutomaticDelta
+        + Math.max(0, fairness.cohorts.bogey.scoreDelta - fairness.cohorts.scratch.scoreDelta) * .12;
+      const bogeyPutting = 2 + coarsePenalty * BALANCE.courseSetup.pinDifficulty.bogeySensitivity + bogeyAutomaticDelta;
+      const info = holeSummary.holes[i];
+      scratchTotal += computeExpectedScoreForHole(setupCourse, i, scratch, referencePlan, info, scratchPutting);
+      bogeyTotal += computeExpectedScoreForHole(setupCourse, i, bogey, referencePlan, info, bogeyPutting);
+      if (!fairness.legal) setupComplete = false;
+      const referenceComplete = referencePlan ? !!referencePlan.tee && !!referencePlan.pin : !!info?.isComplete && info.isValid;
+      if (referenceComplete && tee && pin && fairness.legal) {
+        validHoles++;
+        effectiveYardage += referencePlan ? referencePlan.effectiveYardage : info!.effectiveDistance * setupCourse.yardsPerTile;
+        pinDelta += coarsePenalty + (fairness.cohorts.scratch.scoreDelta + fairness.cohorts.bogey.scoreDelta) / 2;
+      }
     }
-  }
-  const mult = holesUsed === 9 ? 2 : 1;
-  const expectedScratchScore = scratchTotal * mult;
-  const expectedBogeyScore = bogeyTotal * mult;
-  const slopeRaw = expectedBogeyScore - expectedScratchScore;
-  const result: SetupRatingSummary = {
-    teeSet,
-    pinRotation,
-    holesUsed,
-    expectedScratchScore: round1(expectedScratchScore),
-    expectedBogeyScore: round1(expectedBogeyScore),
-    courseRating: round1(expectedScratchScore),
-    slopeRaw: round1(slopeRaw),
-    slope: Math.round(clamp((113 * slopeRaw) / 20, 55, 155)),
-    effectiveYardage: Math.round(effectiveYardage * mult),
-    setupComplete: setupComplete && validHoles === Math.min(holesUsed, course.holes.length),
-    validHoles,
-    pinDifficultyDelta: round1(pinDelta * mult),
-  };
-  setups.set(cacheKey, result);
-  return result;
+    const mult = holesUsed === 9 ? 2 : 1;
+    const expectedScratchScore = scratchTotal * mult;
+    const expectedBogeyScore = bogeyTotal * mult;
+    const slopeRaw = expectedBogeyScore - expectedScratchScore;
+    const result: SetupRatingSummary = {
+      teeSet,
+      pinRotation,
+      holesUsed,
+      expectedScratchScore: round1(expectedScratchScore),
+      expectedBogeyScore: round1(expectedBogeyScore),
+      courseRating: round1(expectedScratchScore),
+      slopeRaw: round1(slopeRaw),
+      slope: Math.round(clamp((113 * slopeRaw) / 20, 55, 155)),
+      effectiveYardage: Math.round(effectiveYardage * mult),
+      setupComplete: setupComplete && validHoles === Math.min(holesUsed, course.holes.length),
+      validHoles,
+      pinDifficultyDelta: round1(pinDelta * mult),
+    };
+    setups.set(cacheKey, result);
+    return result;
+  });
 }
 
 function averageSetups(teeSet: TeeSet, setups: SetupRatingSummary[]): PublishedTeeRating {
@@ -353,33 +359,35 @@ function emptyPublishedRating(course: Course, teeSet: TeeSet): PublishedTeeRatin
 }
 
 export function computeRatingsByTee(course: Course): Record<TeeSet, PublishedTeeRating> {
-  const geometry = ratingGeometry(course);
-  const cached = geometry.ratings;
-  if (cached) return cached;
-  const result = Object.fromEntries(TEE_SETS.map((teeSet) => {
-    const configuredRotations = PIN_ROTATIONS.filter((rotation) => course.holes.some((hole) => getTeeBox(hole, teeSet) && getPinPosition(hole, rotation)));
-    if (configuredRotations.length === 0) return [teeSet, emptyPublishedRating(course, teeSet)];
-    return [teeSet, averageSetups(teeSet, configuredRotations.map((rotation) => computeRatingForSetup(course, teeSet, rotation)))];
-  })) as Record<TeeSet, PublishedTeeRating>;
-  geometry.ratings = result;
-  return result;
+  return withRatingGeometry(course, (geometry) => {
+    const cached = geometry.ratings;
+    if (cached) return cached;
+    const result = Object.fromEntries(TEE_SETS.map((teeSet) => {
+      const configuredRotations = PIN_ROTATIONS.filter((rotation) => course.holes.some((hole) => getTeeBox(hole, teeSet) && getPinPosition(hole, rotation)));
+      if (configuredRotations.length === 0) return [teeSet, emptyPublishedRating(course, teeSet)];
+      return [teeSet, averageSetups(teeSet, configuredRotations.map((rotation) => computeRatingForSetup(course, teeSet, rotation)))];
+    })) as Record<TeeSet, PublishedTeeRating>;
+    geometry.ratings = result;
+    return result;
+  });
 }
 
 // Compatibility contract: all legacy consumers continue to see the stable
 // published Member rating, independent of the selected daily pin rotation.
 export function computeCourseRatingAndSlope(course: Course): RatingSummary {
-  const geometry = ratingGeometry(course);
-  const cached = geometry.rating;
-  if (cached) return cached;
-  const member = computeRatingsByTee(course).member;
-  const result: RatingSummary = {
-    holesUsed: member.holesUsed,
-    expectedScratchScore: member.expectedScratchScore,
-    expectedBogeyScore: member.expectedBogeyScore,
-    courseRating: member.courseRating,
-    slopeRaw: member.slopeRaw,
-    slope: member.slope,
-  };
-  geometry.rating = result;
-  return result;
+  return withRatingGeometry(course, (geometry) => {
+    const cached = geometry.rating;
+    if (cached) return cached;
+    const member = computeRatingsByTee(course).member;
+    const result: RatingSummary = {
+      holesUsed: member.holesUsed,
+      expectedScratchScore: member.expectedScratchScore,
+      expectedBogeyScore: member.expectedBogeyScore,
+      courseRating: member.courseRating,
+      slopeRaw: member.slopeRaw,
+      slope: member.slope,
+    };
+    geometry.rating = result;
+    return result;
+  });
 }
