@@ -136,13 +136,17 @@
     {
       "relativePath": "lib/utils/data/GCManagedHash.mjs",
       "originalSha256": "2a6472beb90606b407c652c259a57ac60ef3f699ccf8fc77f3e3303934ab7ce5",
-      "patchedSha256": "76c485c087a1c08943255c847c9f3b81923d7ce7388e8ff7762b406872cd532a",
+      "patchedSha256": "1c7c374ed7d6257d6e336dbb0a6fad9c55cdd100b5747fb0e8cf0e89441c1c28",
       "originalBytes": 1424,
       "patchedBytes": 1381,
       "edits": [
         {
           "before": "    this.items[item.uid] = null;",
           "after": "    delete this.items[item.uid];"
+        },
+        {
+          "before": "    item._gpuData[this._renderer.uid] = null;",
+          "after": "    delete item._gpuData[this._renderer.uid];"
         },
         {
           "before": "//# sourceMappingURL=GCManagedHash.mjs.map\n",
@@ -154,13 +158,17 @@
     {
       "relativePath": "lib/utils/data/GCManagedHash.js",
       "originalSha256": "66b4d6df40327941b3d0ea537a785a8ff9bb05d2746d26e786ffd1d9b00dbb08",
-      "patchedSha256": "b4ac3f7f42f8f0f503b079ade1b3f9da299298ed70aa0c71b3fdcb2a0ff24968",
+      "patchedSha256": "d59ae0f88120bcf3ca8f775d9018bf5408be94fa71ab8dc632e646af0d2ec0eb",
       "originalBytes": 1451,
       "patchedBytes": 1409,
       "edits": [
         {
           "before": "    this.items[item.uid] = null;",
           "after": "    delete this.items[item.uid];"
+        },
+        {
+          "before": "    item._gpuData[this._renderer.uid] = null;",
+          "after": "    delete item._gpuData[this._renderer.uid];"
         },
         {
           "before": "//# sourceMappingURL=GCManagedHash.js.map\n",
