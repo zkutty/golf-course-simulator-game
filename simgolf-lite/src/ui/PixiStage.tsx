@@ -8,6 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import "pixi.js/unsafe-eval";
 import { destroySceneSubtree } from "./renderer/destroySceneSubtree";
 import * as PIXI from "pixi.js";
+import { initializeRendererModules } from "./renderer/initializeRendererModules";
 import { completeNativeSceneDisposers, guardNativeRendererCleanup, NativeRendererSession, type NativeRendererLease } from "./renderer/nativeRendererSession";
 import { NativeRendererOwner } from "./renderer/nativeRendererOwner";
 import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../game/models/types";
@@ -2075,18 +2076,24 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
       const width = Math.max(container.clientWidth || 800, 100);
       const height = Math.max(container.clientHeight || 600, 100);
 
-      const app = await owner.acquire(generation);
-      if (!app) return;
-      mount.application = app;
-      if (cancelled || !owner.isCurrent(generation)) return;
-      const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule] = await Promise.all([
-        import("./renderer/scenes/deferredWorldScenes"),
-        import("./renderer/scenes/terrainWaterScene"),
-        import("../game/render/courseSceneComposition"),
-        import("../game/render/courseSceneCamera"),
-        import("./renderer/viewportInputController"),
-      ]);
-      if (cancelled || !owner.isCurrent(generation)) return;
+      const initialized = await initializeRendererModules({
+        loadModules: () => Promise.all([
+          import("./renderer/scenes/deferredWorldScenes"),
+          import("./renderer/scenes/terrainWaterScene"),
+          import("../game/render/courseSceneComposition"),
+          import("../game/render/courseSceneCamera"),
+          import("./renderer/viewportInputController"),
+        ]),
+        acquire: () => owner.acquire(generation),
+        acquired: (app) => { mount.application = app; },
+        isCurrent: () => !cancelled && owner.isCurrent(generation),
+      });
+      // The helper returns across a microtask boundary; recheck before atlas/scene work.
+      if (!initialized || cancelled || !owner.isCurrent(generation)) return;
+      const {
+        application: app,
+        modules: [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule],
+      } = initialized;
 
       const activation = await loadAtlases(
         initialRendererConfigRef.current.theme,
