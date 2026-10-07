@@ -1,6 +1,7 @@
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { captureVisibleCanvas } from "../scripts/zk682-public-canvas-capture.mjs";
 import { clearReactComponentTimings } from "../scripts/react-component-timing-cleanup.mjs";
 import {
   ZK682_RESOURCE_GROWTH_THRESHOLDS,
@@ -308,7 +309,8 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
   if (Buffer.byteLength(timingCleanupJson, "utf8") > 8192) throw new Error("Timing cleanup artifact byte cap exceeded");
   await writeFile(timingCleanupPath, timingCleanupJson, { encoding: "utf8", flag: "wx" });
   // Preserve quantitative artifacts before the required final image capture.
-  await page.locator(".cc-pixi-stage canvas").screenshot({ path: finalCapturePath });
+  const captureReceipt = await captureVisibleCanvas(page, finalCapturePath);
+  await writeFile(resolve(dirname(outputPath), "zk682-canvas-capture-receipt.json"), `${JSON.stringify(captureReceipt, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
   await testInfo.attach("zk682-react-component-timing-cleanup", { path: timingCleanupPath, contentType: "application/json" });
   await testInfo.attach("zk682-resource-growth-report", { path: outputPath, contentType: "application/json" });
   await testInfo.attach("zk682-resource-growth-final", { path: finalCapturePath, contentType: "image/png" });
