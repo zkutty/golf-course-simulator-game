@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { clearReactComponentTimings } from "../scripts/react-component-timing-cleanup.mjs";
 import {
   ZK682_RESOURCE_GROWTH_THRESHOLDS,
+  ZK682_MATCHED_WARMUP_PROTOCOL,
   createZk682ResourceGrowthReport,
 } from "../scripts/zk682-resource-growth-contract.mjs";
 
@@ -156,6 +157,10 @@ async function collectPostGcCheckpoint(page: Page, cdp: CDPSession, cycle: numbe
       theme: browser.state.course?.theme,
       quality: browser.state.graphics?.quality,
       rotation: browser.state.camera?.rotation,
+      width: browser.state.course?.width,
+      height: browser.state.course?.height,
+      holesOpen: browser.state.course?.holesOpen,
+      speed: browser.state.simulation?.speed,
     },
     heap: {
       runtimeUsedBytes: heap.usedSize,
@@ -192,6 +197,22 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
   }).toBe("game");
   await waitForRenderer(page, "parkland", "high");
   await pauseSimulation(page);
+
+  // Warm the same large Quick Start course used by every measured remount.
+  // Its e2e seed is source-bound; dimensions and paused state are observed here.
+  await routeThroughTitle(page);
+  const warmupFixture = await page.evaluate(() => {
+    const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
+    return {
+      width: state.course?.width,
+      height: state.course?.height,
+      holesOpen: state.course?.holesOpen,
+      quality: state.graphics?.quality,
+      speed: state.simulation?.speed,
+      screen: state.screen,
+    };
+  });
+  expect(warmupFixture).toEqual({ width: 220, height: 140, holesOpen: 9, quality: "high", speed: "paused", screen: "game" });
 
   // Fully warm the finite 3-biome × 3-quality atlas residency before taking
   // a baseline. Intentional cache population is not a post-warmup leak.
@@ -253,7 +274,12 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
     warmup: {
       baseBundles: warmupAtlas.baseBundles,
       transitions: themes.length * qualities.length,
-      routeTeardowns: 1,
+      routeTeardowns: 2,
+      rotations: 1,
+      protocol: ZK682_MATCHED_WARMUP_PROTOCOL,
+      states: themes.flatMap((theme) => qualities.map((quality) => ({ theme, quality }))),
+      fixture: warmupFixture,
+      seed: { value: 424242, qualification: "source-bound-e2e-quick-start" },
     },
     samples,
   });

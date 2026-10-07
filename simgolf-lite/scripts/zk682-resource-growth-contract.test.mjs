@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ZK682_RESOURCE_GROWTH_SCHEMA_VERSION,
   ZK682_RESOURCE_GROWTH_THRESHOLDS,
+  ZK682_MATCHED_WARMUP_PROTOCOL,
   createZk682ResourceGrowthReport,
   evaluateZk682ResourceGrowth,
 } from "./zk682-resource-growth-contract.mjs";
@@ -138,4 +139,66 @@ test("rejects local and abbreviated source identities", () => {
       samples,
     }), /full candidate SHA/);
   }
+});
+
+function matchedWarmupInput() {
+  const baseBundles = ["desert:high", "desert:low", "desert:medium", "links:high", "links:low", "links:medium", "parkland:high", "parkland:low", "parkland:medium"];
+  const fixture = { width: 220, height: 140, holesOpen: 9, quality: "high", speed: "paused", screen: "game" };
+  return {
+    source: { commit: "a".repeat(40), mode: "e2e" }, capturedAt: "2026-10-07T12:00:00.000Z",
+    command: "canonical matched-course warmup", browser: { name: "chromium", version: "test", cdpHeap: true },
+    thresholds: ZK682_RESOURCE_GROWTH_THRESHOLDS,
+    warmup: { protocol: ZK682_MATCHED_WARMUP_PROTOCOL, transitions: 9, routeTeardowns: 2, rotations: 1, baseBundles,
+      states: ["parkland", "links", "desert"].flatMap((theme) => ["low", "medium", "high"].map((quality) => ({ theme, quality }))),
+      fixture, seed: { value: 424242, qualification: "source-bound-e2e-quick-start" } },
+    samples: Array.from({ length: 7 }, (_, cycle) => ({ ...sample(cycle), state: { ...fixture, theme: "parkland" } })),
+  };
+}
+
+test("accepts declared matched-course warmup without changing numerical evaluation", () => {
+  const input = matchedWarmupInput();
+  const report = createZk682ResourceGrowthReport(input);
+  assert.equal(report.passed, true);
+  assert.equal(report.warmup.protocol, ZK682_MATCHED_WARMUP_PROTOCOL);
+  assert.deepEqual(report.summary, evaluateZk682ResourceGrowth(input.samples).metrics);
+});
+
+test("rejects unsupported matched warmup protocols, counts, and configurations", () => {
+  const mutations = [
+    (input) => { input.warmup.protocol = "unknown"; },
+    (input) => { input.warmup.protocol = null; },
+    (input) => { input.warmup.transitions = 8; },
+    (input) => { input.warmup.routeTeardowns = 1; },
+    (input) => { input.warmup.rotations = 2; },
+    (input) => { input.warmup.states[0].quality = "high"; },
+    (input) => { input.warmup.baseBundles.pop(); },
+    (input) => { input.samples.pop(); },
+    (input) => { input.samples[3].cycle = 0; },
+  ];
+  for (const mutate of mutations) {
+    const input = matchedWarmupInput(); mutate(input);
+    assert.throws(() => createZk682ResourceGrowthReport(input), /warmup|checkpoint/);
+  }
+});
+
+test("rejects mismatched warmup geometry, paused state, and seed qualification", () => {
+  for (const [key, value] of [["width", 64], ["height", 64], ["holesOpen", 3], ["quality", "low"], ["speed", "1x"], ["screen", "menu"]]) {
+    const input = matchedWarmupInput(); input.warmup.fixture[key] = value;
+    assert.throws(() => createZk682ResourceGrowthReport(input), /observed fixture/);
+  }
+  for (const seed of [{ value: 2, qualification: "source-bound-e2e-quick-start" }, { value: 424242, qualification: "runtime-observed" }]) {
+    const input = matchedWarmupInput(); input.warmup.seed = seed;
+    assert.throws(() => createZk682ResourceGrowthReport(input), /seed qualification/);
+  }
+  const input = matchedWarmupInput(); input.samples[3].state.width = 64;
+  assert.throws(() => createZk682ResourceGrowthReport(input), /measured checkpoint/);
+});
+
+test("retains legacy warmup reports without assigning the matched protocol", () => {
+  const input = matchedWarmupInput(); input.warmup = { baseBundles: residency.baseBundles, transitions: 9, routeTeardowns: 1 };
+  input.samples = Array.from({ length: 6 }, (_, cycle) => sample(cycle));
+  const report = createZk682ResourceGrowthReport(input);
+  assert.deepEqual(report.warmup, input.warmup);
+  assert.equal(Object.hasOwn(report.warmup, "protocol"), false);
+  assert.equal(report.schemaVersion, 1);
 });
