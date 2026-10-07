@@ -18,7 +18,7 @@
     "test:analysis-worker": "playwright test e2e/zk681-analysis-worker.e2e.ts",
     "test:viewport-input": "playwright test e2e/zk679-viewport-input.e2e.ts e2e/zk679-editor-input.e2e.ts --workers=1 --retries=0",
     "test:release:browsers": "playwright test --config playwright.release.config.ts",
-    "test:desktop": "node --test desktop/*.test.mjs",
+    "test:desktop": "node --test desktop/*.test.mjs scripts/desktop-native-architecture.test.mjs",
     "test:desktop:persistence:contract": "node --test desktop/persistenceCertification.test.mjs scripts/zk682-desktop-persistence-contract.test.mjs",
     "build:desktop": "node scripts/build-desktop.mjs",
     "desktop": "npm run build:desktop && electron .",
@@ -95,7 +95,10 @@
     "deploy:check": "WRANGLER_LOG_PATH=/tmp/coursecraft-deploy-check.log wrangler deploy --dry-run --env=\"\"",
     "deploy:check:staging": "WRANGLER_LOG_PATH=/tmp/coursecraft-deploy-check-staging.log wrangler deploy --dry-run --env staging",
     "postinstall": "node scripts/apply-pixi-reset-patch.mjs",
-    "test:pixi": "node --test scripts/test-pixi-reset-patch.mjs"
+    "test:pixi": "node --test scripts/test-pixi-reset-patch.mjs",
+    "desktop:release:check": "node scripts/desktop-release.mjs --check",
+    "desktop:release": "node scripts/desktop-release.mjs",
+    "test:desktop:architecture": "node --test scripts/desktop-native-architecture.test.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.67.0",
