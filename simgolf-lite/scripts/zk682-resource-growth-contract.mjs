@@ -22,12 +22,15 @@ export const ZK682_RESOURCE_GROWTH_THRESHOLDS = Object.freeze({
   }),
 });
 
-export const ZK682_MATCHED_WARMUP_PROTOCOL = "matched-large-course-atlas-v2";
+export const ZK682_MATCHED_WARMUP_PROTOCOL = "matched-large-course-atlas-v3";
 
 function validateMatchedWarmup(warmup, samples) {
   // Reports without a protocol remain legacy reports; never reinterpret them.
   if (!Object.hasOwn(warmup, "protocol")) return;
-  assert.equal(warmup.protocol, ZK682_MATCHED_WARMUP_PROTOCOL, "unsupported warmup protocol");
+  assert.ok(warmup.protocol === ZK682_MATCHED_WARMUP_PROTOCOL || warmup.protocol === "matched-large-course-atlas-v2", "unsupported warmup protocol");
+  if (warmup.protocol === ZK682_MATCHED_WARMUP_PROTOCOL) {
+    assert.equal(warmup.themeLoads, 3, "decomposed warmup requires three theme loads");
+  }
   assert.equal(warmup.transitions, 9, "matched warmup requires nine atlas states");
   assert.equal(warmup.routeTeardowns, 2, "matched warmup requires two title routes");
   assert.equal(warmup.rotations, 1, "matched warmup requires one full rotation");

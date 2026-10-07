@@ -221,7 +221,19 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
   const themes: Theme[] = ["parkland", "links", "desert"];
   const qualities: Quality[] = ["low", "medium", "high"];
   for (const theme of themes) {
-    for (const quality of qualities) await setRendererFixture(page, theme, quality);
+    // Warm-only theme assignment: activate once, then exercise all qualities.
+    await page.evaluate(({ requestedTheme }) => {
+      window.__coursecraftTest!.setRendererThemeFixture(requestedTheme);
+    }, { requestedTheme: theme });
+    await waitForRenderer(page, theme, await page.evaluate(() => (
+      window.__coursecraftPixiTest!.rendererAtlasState().requested.quality
+    )));
+    for (const quality of qualities) {
+      await page.evaluate(({ requestedQuality }) => {
+        window.__coursecraftTest!.setGraphicsQualityFixture(requestedQuality);
+      }, { requestedQuality: quality });
+      await waitForRenderer(page, theme, quality);
+    }
   }
   await rotateFullCircle(page);
   await routeThroughTitle(page);
@@ -256,7 +268,6 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
   );
   await mkdir(dirname(outputPath), { recursive: true });
   const finalCapturePath = resolve(dirname(outputPath), "zk682-resource-growth-final.png");
-  await page.locator(".cc-pixi-stage canvas").screenshot({ path: finalCapturePath });
   const rendererState = await page.evaluate(() => (
     window.__coursecraftPixiTest!.rendererAtlasState() as unknown as {
       pathMaterialCrossSection: { commit: string };
@@ -276,6 +287,7 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
     warmup: {
       baseBundles: warmupAtlas.baseBundles,
       transitions: themes.length * qualities.length,
+      themeLoads: themes.length,
       routeTeardowns: 2,
       rotations: 1,
       protocol: ZK682_MATCHED_WARMUP_PROTOCOL,
@@ -285,7 +297,7 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
     },
     samples,
   });
-  await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
   expect(timingCleanup).toHaveLength(7);
   const timingCleanupPath = resolve(dirname(outputPath), "zk682-react-component-timing-cleanup.json");
   const timingCleanupJson = `${JSON.stringify({
@@ -294,7 +306,9 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
     samples: timingCleanup,
   }, null, 2)}\n`;
   if (Buffer.byteLength(timingCleanupJson, "utf8") > 8192) throw new Error("Timing cleanup artifact byte cap exceeded");
-  await writeFile(timingCleanupPath, timingCleanupJson, "utf8");
+  await writeFile(timingCleanupPath, timingCleanupJson, { encoding: "utf8", flag: "wx" });
+  // Preserve quantitative artifacts before the required final image capture.
+  await page.locator(".cc-pixi-stage canvas").screenshot({ path: finalCapturePath });
   await testInfo.attach("zk682-react-component-timing-cleanup", { path: timingCleanupPath, contentType: "application/json" });
   await testInfo.attach("zk682-resource-growth-report", { path: outputPath, contentType: "application/json" });
   await testInfo.attach("zk682-resource-growth-final", { path: finalCapturePath, contentType: "image/png" });

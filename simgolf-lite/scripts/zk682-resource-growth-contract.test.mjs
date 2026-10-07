@@ -148,7 +148,7 @@ function matchedWarmupInput() {
     source: { commit: "a".repeat(40), mode: "e2e" }, capturedAt: "2026-10-07T12:00:00.000Z",
     command: "canonical matched-course warmup", browser: { name: "chromium", version: "test", cdpHeap: true },
     thresholds: ZK682_RESOURCE_GROWTH_THRESHOLDS,
-    warmup: { protocol: ZK682_MATCHED_WARMUP_PROTOCOL, transitions: 9, routeTeardowns: 2, rotations: 1, baseBundles,
+    warmup: { protocol: ZK682_MATCHED_WARMUP_PROTOCOL, transitions: 9, themeLoads: 3, routeTeardowns: 2, rotations: 1, baseBundles,
       states: ["parkland", "links", "desert"].flatMap((theme) => ["low", "medium", "high"].map((quality) => ({ theme, quality }))),
       fixture, seed: { value: 424242, qualification: "source-bound-e2e-quick-start" } },
     samples: Array.from({ length: 7 }, (_, cycle) => ({ ...sample(cycle), state: { ...fixture, theme: "parkland" } })),
@@ -168,9 +168,12 @@ test("rejects unsupported matched warmup protocols, counts, and configurations",
     (input) => { input.warmup.protocol = "unknown"; },
     (input) => { input.warmup.protocol = null; },
     (input) => { input.warmup.transitions = 8; },
+    (input) => { input.warmup.themeLoads = 9; },
+    (input) => { delete input.warmup.themeLoads; },
     (input) => { input.warmup.routeTeardowns = 1; },
     (input) => { input.warmup.rotations = 2; },
     (input) => { input.warmup.states[0].quality = "high"; },
+    (input) => { [input.warmup.states[0], input.warmup.states[1]] = [input.warmup.states[1], input.warmup.states[0]]; },
     (input) => { input.warmup.baseBundles.pop(); },
     (input) => { input.samples.pop(); },
     (input) => { input.samples[3].cycle = 0; },
@@ -208,4 +211,14 @@ test("retains legacy warmup reports without assigning the matched protocol", () 
   assert.deepEqual(report.warmup, input.warmup);
   assert.equal(Object.hasOwn(report.warmup, "protocol"), false);
   assert.equal(report.schemaVersion, 1);
+});
+
+test("retains the prior v2 warmup declaration without assigning theme-load evidence", () => {
+  const input = matchedWarmupInput();
+  input.warmup.protocol = "matched-large-course-atlas-v2";
+  delete input.warmup.themeLoads;
+  const report = createZk682ResourceGrowthReport(input);
+  assert.equal(report.warmup.protocol, "matched-large-course-atlas-v2");
+  assert.equal(Object.hasOwn(report.warmup, "themeLoads"), false);
+  assert.equal(report.passed, true);
 });
