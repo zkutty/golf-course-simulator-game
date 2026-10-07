@@ -35,7 +35,7 @@ function validateMatchedWarmup(warmup, samples) {
   const qualities = ["low", "medium", "high"];
   assert.deepEqual(warmup.states, themes.flatMap((theme) => qualities.map((quality) => ({ theme, quality }))), "matched warmup configuration mismatch");
   assert.deepEqual(warmup.baseBundles, ["desert:high", "desert:low", "desert:medium", "links:high", "links:low", "links:medium", "parkland:high", "parkland:low", "parkland:medium"], "matched warmup atlas evidence mismatch");
-  const fixture = { width: 220, height: 140, holesOpen: 9, quality: "high", speed: "paused", screen: "game" };
+  const fixture = { width: 220, height: 140, holesOpen: 0, holeSlots: 9, quality: "high", speed: "paused", screen: "game" };
   assert.deepEqual(warmup.fixture, fixture, "matched warmup observed fixture mismatch");
   assert.deepEqual(warmup.seed, { value: 424242, qualification: "source-bound-e2e-quick-start" }, "matched warmup seed qualification mismatch");
   assert.ok(Array.isArray(samples) && samples.length === 7, "matched warmup requires baseline plus six measured checkpoints");

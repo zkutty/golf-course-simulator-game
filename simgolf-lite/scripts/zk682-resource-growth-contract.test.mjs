@@ -143,7 +143,7 @@ test("rejects local and abbreviated source identities", () => {
 
 function matchedWarmupInput() {
   const baseBundles = ["desert:high", "desert:low", "desert:medium", "links:high", "links:low", "links:medium", "parkland:high", "parkland:low", "parkland:medium"];
-  const fixture = { width: 220, height: 140, holesOpen: 9, quality: "high", speed: "paused", screen: "game" };
+  const fixture = { width: 220, height: 140, holesOpen: 0, holeSlots: 9, quality: "high", speed: "paused", screen: "game" };
   return {
     source: { commit: "a".repeat(40), mode: "e2e" }, capturedAt: "2026-10-07T12:00:00.000Z",
     command: "canonical matched-course warmup", browser: { name: "chromium", version: "test", cdpHeap: true },
@@ -182,7 +182,7 @@ test("rejects unsupported matched warmup protocols, counts, and configurations",
 });
 
 test("rejects mismatched warmup geometry, paused state, and seed qualification", () => {
-  for (const [key, value] of [["width", 64], ["height", 64], ["holesOpen", 3], ["quality", "low"], ["speed", "1x"], ["screen", "menu"]]) {
+  for (const [key, value] of [["width", 64], ["height", 64], ["holesOpen", 9], ["holeSlots", 3], ["quality", "low"], ["speed", "1x"], ["screen", "menu"]]) {
     const input = matchedWarmupInput(); input.warmup.fixture[key] = value;
     assert.throws(() => createZk682ResourceGrowthReport(input), /observed fixture/);
   }
@@ -192,6 +192,13 @@ test("rejects mismatched warmup geometry, paused state, and seed qualification",
   }
   const input = matchedWarmupInput(); input.samples[3].state.width = 64;
   assert.throws(() => createZk682ResourceGrowthReport(input), /measured checkpoint/);
+  const wrongOpen = matchedWarmupInput(); wrongOpen.samples[3].state.holesOpen = 9;
+  assert.throws(() => createZk682ResourceGrowthReport(wrongOpen), /measured checkpoint/);
+  const wrongSlots = matchedWarmupInput(); wrongSlots.samples[3].state.holeSlots = 0;
+  assert.throws(() => createZk682ResourceGrowthReport(wrongSlots), /measured checkpoint/);
+  const swapped = matchedWarmupInput();
+  [swapped.warmup.fixture.holesOpen, swapped.warmup.fixture.holeSlots] = [swapped.warmup.fixture.holeSlots, swapped.warmup.fixture.holesOpen];
+  assert.throws(() => createZk682ResourceGrowthReport(swapped), /observed fixture/);
 });
 
 test("retains legacy warmup reports without assigning the matched protocol", () => {

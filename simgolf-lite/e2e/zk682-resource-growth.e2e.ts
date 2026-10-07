@@ -160,6 +160,7 @@ async function collectPostGcCheckpoint(page: Page, cdp: CDPSession, cycle: numbe
       width: browser.state.course?.width,
       height: browser.state.course?.height,
       holesOpen: browser.state.course?.holesOpen,
+      holeSlots: browser.state.course?.holeSetups?.length,
       speed: browser.state.simulation?.speed,
     },
     heap: {
@@ -207,12 +208,13 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
       width: state.course?.width,
       height: state.course?.height,
       holesOpen: state.course?.holesOpen,
+      holeSlots: state.course?.holeSetups?.length,
       quality: state.graphics?.quality,
       speed: state.simulation?.speed,
       screen: state.screen,
     };
   });
-  expect(warmupFixture).toEqual({ width: 220, height: 140, holesOpen: 9, quality: "high", speed: "paused", screen: "game" });
+  expect(warmupFixture).toEqual({ width: 220, height: 140, holesOpen: 0, holeSlots: 9, quality: "high", speed: "paused", screen: "game" });
 
   // Fully warm the finite 3-biome × 3-quality atlas residency before taking
   // a baseline. Intentional cache population is not a post-warmup leak.
