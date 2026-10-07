@@ -1,0 +1,72 @@
+name: Desktop post-signing preparation
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_commit:
+        required: true
+        type: string
+      artifact_run_id:
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '26'
+      - run: node --test simgolf-lite/scripts/desktop-post-signing.test.mjs simgolf-lite/scripts/desktop-post-signing-workflow.test.mjs
+  verify:
+    needs: contract
+    if: github.event_name == 'workflow_dispatch' && vars.DESKTOP_SIGNED_EVIDENCE_ENABLED == 'true' && inputs.candidate_commit == github.sha
+    environment: desktop-post-signing-verification
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin
+          - os: windows-2022
+            platform: win32
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 11
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      ENABLED: ${{ vars.DESKTOP_SIGNED_EVIDENCE_ENABLED }}
+      CANDIDATE: ${{ inputs.candidate_commit }}
+      EXPECTED_COMMIT: ${{ github.sha }}
+      ARTIFACT_RUN_ID: ${{ inputs.artifact_run_id }}
+      GITHUB_SHA: ${{ github.sha }}
+      VITE_COMMIT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '26'
+      - run: node --input-type=module -e "import { assertDispatch } from './simgolf-lite/scripts/desktop-post-signing-contract.mjs'; assertDispatch(process.env)"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: coursecraft-signed-inputs-${{ matrix.platform }}-${{ github.sha }}
+          run-id: ${{ inputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/signed-inputs
+      - name: Emit preparatory evidence (always incomplete)
+        shell: bash
+        run: node simgolf-lite/scripts/desktop-post-signing.mjs --request "$RUNNER_TEMP/signed-inputs/request.json" --artifact-root "$RUNNER_TEMP/signed-inputs" --out "$RUNNER_TEMP/post-signing.json" --candidate "$CANDIDATE"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: incomplete-post-signing-${{ matrix.platform }}-${{ github.sha }}
+          path: ${{ runner.temp }}/post-signing.json
+          if-no-files-found: error
+  incomplete:
+    needs: [contract, verify]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Authenticated container, authority and native execution producers are absent; ZK388 INCOMPLETE.'; exit 2

@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "coursecraft-desktop-post-signing-v1",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "phase": {
+          "const": "POST_SIGNING"
+        },
+        "domain": {
+          "type": "string",
+          "enum": [
+            "REAL",
+            "FIXTURE"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "darwin",
+            "win32"
+          ]
+        },
+        "candidateCommit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "packageVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        },
+        "payloadRoot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "expectedPublisherIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "pattern": "^(?:[A-Z0-9]{10}|[A-F0-9]{40})$"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "phase",
+        "domain",
+        "platform",
+        "candidateCommit",
+        "packageVersion",
+        "artifacts",
+        "payloadRoot",
+        "expectedPublisherIds"
+      ],
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "dmg",
+            "zip",
+            "nsis"
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "bytes",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "gate": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_RUN",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]{1,64}$"
+        }
+      },
+      "required": [
+        "status",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "report": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "phase": {
+          "const": "POST_SIGNING"
+        },
+        "domain": {
+          "type": "string",
+          "enum": [
+            "REAL",
+            "FIXTURE"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "darwin",
+            "win32"
+          ]
+        },
+        "candidateCommit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "packageVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "overall": {
+          "type": "string",
+          "enum": [
+            "INCOMPLETE",
+            "FIXTURE_ONLY"
+          ]
+        },
+        "certificationEligible": {
+          "const": false
+        },
+        "policyQualification": {
+          "const": "DECLARED_EXPECTATIONS_NOT_AUTHENTICATED_AUTHORITY"
+        },
+        "gates": {
+          "type": "object",
+          "properties": {
+            "finalHashIdentity": {
+              "$ref": "#/$defs/gate"
+            },
+            "payloadMetadataIdentity": {
+              "$ref": "#/$defs/gate"
+            },
+            "postSigningArchitecture": {
+              "$ref": "#/$defs/gate"
+            },
+            "platformSignature": {
+              "$ref": "#/$defs/gate"
+            },
+            "publisherIdentity": {
+              "$ref": "#/$defs/gate"
+            },
+            "timestampPolicy": {
+              "$ref": "#/$defs/gate"
+            },
+            "notarization": {
+              "$ref": "#/$defs/gate"
+            },
+            "staple": {
+              "$ref": "#/$defs/gate"
+            },
+            "containerPayloadLinkage": {
+              "$ref": "#/$defs/gate"
+            },
+            "nativeExecution": {
+              "$ref": "#/$defs/gate"
+            },
+            "authority": {
+              "$ref": "#/$defs/gate"
+            }
+          },
+          "required": [
+            "finalHashIdentity",
+            "payloadMetadataIdentity",
+            "postSigningArchitecture",
+            "platformSignature",
+            "publisherIdentity",
+            "timestampPolicy",
+            "notarization",
+            "staple",
+            "containerPayloadLinkage",
+            "nativeExecution",
+            "authority"
+          ],
+          "additionalProperties": false
+        },
+        "declaredArtifacts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        },
+        "observedArtifacts": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "phase",
+        "domain",
+        "platform",
+        "candidateCommit",
+        "packageVersion",
+        "overall",
+        "certificationEligible",
+        "policyQualification",
+        "gates",
+        "declaredArtifacts",
+        "observedArtifacts"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
