@@ -90,7 +90,7 @@ test("release config retains source-map exclusion and smoke default separation",
   assert.deepEqual(config.mac.target.map((v) => v.arch), [["universal"], ["universal"]]);
   assert.deepEqual(config.win.target[0].arch, ["x64"]);
   assert.ok(config.files.includes("!node_modules/pixi.js/**/*.map"));
-  assert.equal(config.directories.output, "desktop-release-dist");
+  assert.equal(config.directories.output, "desktop-dist/release");
 });
 
 function extentMacho(cpu = 0x0100000c) {
@@ -145,7 +145,7 @@ test("direct configuration hook rejects missing notarization before build", asyn
   const previous={...process.env};
   try {
     for(const n of ['APPLE_ID','APPLE_APP_SPECIFIC_PASSWORD','APPLE_TEAM_ID','APPLE_API_KEY','APPLE_API_KEY_ID','APPLE_API_ISSUER','APPLE_KEYCHAIN','APPLE_KEYCHAIN_PROFILE']) delete process.env[n];
-    process.env.VITE_COMMIT_SHA='a'.repeat(40); process.env.CSC_LINK='fixture'; process.env.CSC_KEY_PASSWORD='fixture'; delete process.env.CSC_IDENTITY_AUTO_DISCOVERY;
+    process.env.VITE_COMMIT_SHA='a'.repeat(40); process.env.GITHUB_SHA=process.env.VITE_COMMIT_SHA; process.env.CSC_LINK='fixture'; process.env.CSC_KEY_PASSWORD='fixture'; delete process.env.CSC_IDENTITY_AUTO_DISCOVERY;
     await assert.rejects(()=>config.beforeBuild({platform:{nodeName:'darwin'}}),/notarization/);
   } finally { for(const n of Object.keys(process.env)) if(!(n in previous)) delete process.env[n]; Object.assign(process.env,previous); }
 });
