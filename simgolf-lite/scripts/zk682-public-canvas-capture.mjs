@@ -25,7 +25,7 @@ function readCanvas(node) {
 export async function captureVisibleCanvas(page, outputPath) {
   const locator = page.locator(".cc-pixi-stage canvas");
   assert.equal(await locator.count(), 1, "Exactly one canvas required");
-  const handle = await locator.elementHandle({ timeout: 10000 });
+  const handle = await page.$(".cc-pixi-stage canvas", { strict: true });
   assert.ok(handle, "Attached canvas required");
   let failed = false, primary, result;
   try {
