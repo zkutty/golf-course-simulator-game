@@ -13,6 +13,9 @@ type Theme = "parkland" | "links" | "desert";
 type Quality = "low" | "medium" | "high";
 
 test.use({
+  trace: "off",
+  video: "off",
+  screenshot: "off",
   launchOptions: { args: ["--enable-precise-memory-info"] },
 });
 
