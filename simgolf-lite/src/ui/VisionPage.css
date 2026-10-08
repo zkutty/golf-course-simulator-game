@@ -1,11 +1,13 @@
+@import "./brandTokens.css";
+
 .cc-vision {
-  --vision-ink: #14261d;
-  --vision-forest: #173d2a;
-  --vision-moss: #4e7451;
-  --vision-cream: #f4eedf;
-  --vision-paper: #fffaf0;
-  --vision-gold: #e0b75a;
-  --vision-rust: #9b4c31;
+  --vision-ink: var(--brand-ink);
+  --vision-forest: var(--brand-forest);
+  --vision-moss: var(--brand-moss);
+  --vision-cream: var(--brand-cream);
+  --vision-paper: var(--brand-paper);
+  --vision-gold: var(--brand-gold);
+  --vision-rust: var(--brand-rust);
   position: fixed;
   inset: 0;
   z-index: 120000;

@@ -103,8 +103,10 @@
 }
 
 .cc-design-dock__body {
+  height: 136px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) minmax(210px, 260px);
+  grid-template-rows: 124px;
   gap: 6px;
   padding: 6px;
 }
@@ -126,9 +128,11 @@
 
 .cc-design-palette {
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-auto-flow: column;
-  grid-template-rows: repeat(2, minmax(48px, auto));
+  grid-template-rows: repeat(2, 54px);
+  grid-auto-rows: 54px;
   grid-auto-columns: 64px;
   gap: 4px;
   overflow-x: auto;
@@ -140,12 +144,14 @@
 
 .cc-design-palette-panel {
   min-width: 0;
+  min-height: 0;
 }
 
 .cc-design-card {
   position: relative;
   width: 64px;
-  min-height: 48px;
+  height: 54px;
+  box-sizing: border-box;
   display: grid;
   grid-template-rows: minmax(28px, 1fr) auto;
   place-items: center;
@@ -167,9 +173,8 @@
 }
 
 .cc-design-card[aria-selected="true"] {
-  border: 3px solid #173c24;
-  padding: 0;
   background: #e5f0df;
+  box-shadow: inset 0 0 0 2px #173c24;
 }
 
 .cc-design-card[data-affordable="false"] {
@@ -296,9 +301,12 @@
 
 .cc-design-inspector {
   min-width: 0;
+  height: 124px;
+  box-sizing: border-box;
   display: grid;
   align-content: start;
   gap: 3px;
+  overflow-y: auto;
   padding: 5px 7px;
   border: 1px inset #c1aa73;
   border-radius: 5px;
@@ -395,6 +403,7 @@
   }
 
   .cc-design-dock__shell {
+    height: 100%;
     max-height: 100%;
     display: flex;
     flex-direction: column;
@@ -427,8 +436,11 @@
   }
 
   .cc-design-dock__body {
+    height: auto;
+    flex: 1 1 0;
     min-height: 0;
     grid-template-columns: 58px minmax(0, 1fr);
+    grid-template-rows: minmax(110px, 1fr) minmax(112px, 148px);
     overflow: auto;
   }
 
@@ -438,6 +450,7 @@
   }
 
   .cc-design-palette {
+    height: 100%;
     grid-auto-flow: row;
     grid-template-rows: none;
     grid-template-columns: repeat(2, 64px);
@@ -448,8 +461,14 @@
     touch-action: pan-y;
   }
 
+  .cc-design-palette-panel {
+    overflow: hidden;
+  }
+
   .cc-design-inspector {
     grid-column: 1 / -1;
+    height: auto;
+    min-height: 0;
   }
 }
 

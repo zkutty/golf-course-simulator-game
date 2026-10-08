@@ -1,0 +1,13 @@
+/* Shared CourseCraft identity. Keep these independent of any page layout. */
+:where(.cc-start-menu, .cc-vision, .cc-design-dock) {
+  --brand-ink: #14261d;
+  --brand-forest: #173d2a;
+  --brand-moss: #4e7451;
+  --brand-cream: #f4eedf;
+  --brand-paper: #fffaf0;
+  --brand-gold: #e0b75a;
+  --brand-rust: #9b4c31;
+  --brand-muted: #58675c;
+  --brand-rule: #c7cbbb;
+  --brand-focus: #9b4c31;
+}
