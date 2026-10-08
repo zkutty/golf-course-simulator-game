@@ -973,7 +973,7 @@ jobs:
           await c.verifyPrepared(process.env.GITHUB_WORKSPACE,resolve(process.env.GITHUB_WORKSPACE,'target'),process.env.VERIFIED_TARGET_SHA,process.env.DRIVER_SHA);
           NODE
           set -o noclobber
-          env GITHUB_SHA="$VERIFIED_TARGET_SHA" VITE_COMMIT_SHA="$VERIFIED_TARGET_SHA" ZK682_EXPECTED_COMMIT="$VERIFIED_TARGET_SHA" npx playwright test --config playwright.zk682-current-capture-phase.generated.config.ts e2e/zk682-current-capture-phase.generated.ts --workers=1 --retries=0 --list > artifacts/current-capture-phase-eebb/source/discovery.log
+          env GITHUB_SHA="$VERIFIED_TARGET_SHA" VITE_COMMIT_SHA="$VERIFIED_TARGET_SHA" ZK682_EXPECTED_COMMIT="$VERIFIED_TARGET_SHA" npx playwright test --config playwright.zk682-current-capture-phase.generated.config.ts e2e/zk682-current-capture-phase.generated.ts --workers=1 --retries=0 --list --reporter=line > artifacts/current-capture-phase-eebb/source/discovery.log
           cat artifacts/current-capture-phase-eebb/source/discovery.log
           grep -Eq '^Total: 1 test in 1 file$' artifacts/current-capture-phase-eebb/source/discovery.log
       - name: Run one derived direct Playwright diagnostic with target aliases
