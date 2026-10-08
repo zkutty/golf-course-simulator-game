@@ -1,3 +1,5 @@
+import pngjs from "pngjs";
+const { PNG } = pngjs;
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,10 +9,21 @@ import { createPwaPersistenceReport } from "./pwa-save-evidence.mjs";
 import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence-contract.mjs";
 import { ZK682_RESOURCE_GROWTH_THRESHOLDS, createZk682ResourceGrowthReport } from "./zk682-resource-growth-contract.mjs";
 import { ZK682_STABILITY_THRESHOLDS, createZk682StabilityReport, createZk682ConservationStabilityReport } from "./zk682-stability-contract.mjs";
-import { ZK682_CERTIFICATION_ID, ZK682_CRITERIA, ZK682_GATE_CONTRACTS, ZK682_SCHEMA_VERSION, buildZk682Report, sha256, validateZk682EvidenceManifest } from "./zk682-certification-contract.mjs";
+import { ZK682_CERTIFICATION_ID, ZK682_CRITERIA, ZK682_GATE_CONTRACTS, ZK682_SCHEMA_VERSION, buildZk682Report, sha256, inspectZk682RendererCompleteness, ZK682_RENDERER_COMPLETENESS_PROTOCOL, validateZk682EvidenceManifest } from "./zk682-certification-contract.mjs";
 
 const COMMIT = "1".repeat(40);
 const LOCK = Buffer.from("lockfile fixture\n");
+
+function rendererCompleteFixture(commit) {
+  const image = new PNG({ width: 2, height: 1 }); image.data.set([255,0,0,255,0,0,255,255]);
+  const png = PNG.sync.write(image);
+  const state = { current: true, connected: true, visible: true, tag: "CANVAS", x: 0, y: 0, width: 2, height: 1, viewportWidth: 1280, viewportHeight: 720, intrinsicWidth: 2, intrinsicHeight: 1, dpr: 1, zoom: 1 };
+  const capture = { method: "public-page-screenshot-canvas-viewport-clip-v1", clip: { x: 0, y: 0, width: 2, height: 1 }, before: state, after: { ...state }, bytes: png.length, sha256: sha256(png), qualification: "Fixture decoded PNG; not actual browser proof" };
+  const cleanup = { measurementProtocol: "exclusive-react-development-component-measures-cleared-before-existing-gc-v1", preserves: "same-name collisions, scheduler and application measures", samples: Array.from({length:7},(_,cycle)=>({cycle,cleanup:{measureEntriesBefore:3,reactComponentEntriesBefore:2,clearedEntries:2,clearedNames:1,preservedCollisionNames:0,measureEntriesAfter:1}})) };
+  const commandReceipt = { schemaVersion:1,kind:"command-receipt",receiptId:"renderer-resource-growth",candidateCommit:commit,capturedAt:NOW,command:["npx","playwright","test","e2e/zk682-resource-growth.e2e.ts","--workers=1","--retries=0"],exitCode:0,durationMs:1,passed:true };
+  return { png, capture, cleanup, commandReceipt };
+}
+
 const NOW = "2026-09-29T12:00:00.000Z";
 function write(root, path, value) {
   const absolute = join(root, path);
@@ -122,8 +135,14 @@ function fixture({ physical = false, lowEndP95 = 32, adjustment = false } = {}) 
       const saveLoad = write(root, "raw/save-load.json", saveLoadReport);
       const longSession = write(root, "raw/long-session.json", longSessionReport);
       const interaction = write(root, "raw/interaction.json", interactionReport);
-      artifacts = [resource, saveLoad, longSession, interaction];
-      observations = { routeChangesStable: true, saveLoadsStable: true, longSessionStable: true, interactionRecoveryPassed: true, routeChanges: 6, saveLoads: saveLoadReport.observations.saveLoads, sessionMinutes: longSessionReport.observations.sessionMinutes, resourceGrowthEvidence: resource, saveLoadEvidence: saveLoad, longSessionEvidence: longSession, interactionRecoveryEvidence: interaction };
+      const complete = rendererCompleteFixture(COMMIT);
+      const cleanup = write(root,"raw/renderer-cleanup.json",complete.cleanup);
+      const capture = write(root,"raw/renderer-capture.json",complete.capture);
+      const command = write(root,"raw/renderer-command.json",complete.commandReceipt);
+      const png = write(root,"raw/renderer-final.png",complete.png);
+      const rendererCompleteness = { protocol:ZK682_RENDERER_COMPLETENESS_PROTOCOL,cleanup,capture,command,png };
+      artifacts = [resource, saveLoad, longSession, interaction, cleanup, capture, command, png];
+      observations = { routeChangesStable: true, saveLoadsStable: true, longSessionStable: true, interactionRecoveryPassed: true, routeChanges: 6, saveLoads: saveLoadReport.observations.saveLoads, sessionMinutes: longSessionReport.observations.sessionMinutes, rendererCompleteness, resourceGrowthEvidence: resource, saveLoadEvidence: saveLoad, longSessionEvidence: longSession, interactionRecoveryEvidence: interaction };
     } else {
       artifacts = [write(root, `raw/${gateId}.txt`, `${gateId}\n`)];
       observations = genericObservations(gateId, lowEndP95);
@@ -390,4 +409,55 @@ test("schema-v3 conservation evidence is consumed and recomputed without changin
     });
     assert(validateZk682EvidenceManifest(value.manifest, value.options).errors.some((e) => e.includes("legacy raw result")));
   } finally { cleanup(value); }
+});
+
+test("renderer completeness validates independent typed artifacts and bounded PNG decode", () => {
+  const valid = { candidateCommit: COMMIT, resource: resourceReport(), ...rendererCompleteFixture(COMMIT) };
+  assert.equal(inspectZk682RendererCompleteness(valid).passed,true);
+  for(const mutate of [
+    x=>{x.commandReceipt.exitCode=1;x.commandReceipt.passed=false;},
+    x=>{x.commandReceipt.candidateCommit="2".repeat(40);},
+    x=>{x.commandReceipt.command=["fixture"];},
+    x=>{x.cleanup.samples.pop();},x=>{x.cleanup.samples[0]=null;},x=>{x.cleanup=null;},x=>{x.cleanup.samples[0].cleanup=null;},x=>{x.commandReceipt=null;},x=>{x.cleanup.samples[0].cycle=1;},
+    x=>{x.cleanup.samples[0].cleanup.measureEntriesAfter=9;},
+    x=>{x.capture.before.x=-0.0005;},x=>{x.capture.after.connected=false;},
+    x=>{x.capture.clip.width=3;},x=>{x.capture.sha256="0".repeat(64);},
+    x=>{x.png=Buffer.from("not PNG");},
+    x=>{const image=new PNG({width:2,height:1});image.data.fill(255);x.png=PNG.sync.write(image);x.capture.bytes=x.png.length;x.capture.sha256=sha256(x.png);},
+    x=>{const image=new PNG({width:2,height:1});image.data.set([255,0,0,0,0,0,255,0]);x.png=PNG.sync.write(image);x.capture.bytes=x.png.length;x.capture.sha256=sha256(x.png);},
+    x=>{x.png=x.png.subarray(0,x.png.length-8);x.capture.bytes=x.png.length;x.capture.sha256=sha256(x.png);},
+    x=>{x.png=Buffer.alloc(12*1024*1024+1);x.capture.bytes=x.png.length;x.capture.sha256=sha256(x.png);},
+    x=>{x.png.writeUInt32BE(0xffffffff,16);x.capture.sha256=sha256(x.png);},
+    x=>{x.capture.extra=true;},x=>{x.commandReceipt.exitCode=null;},
+  ]) { const changed=structuredClone(valid);changed.png=Buffer.from(changed.png);mutate(changed);assert.equal(inspectZk682RendererCompleteness(changed).passed,false); }
+});
+
+test("renderer PNG unsupported encodings reject before pngjs decode", () => {
+  const decode = PNG.sync.read; let calls = 0;
+  try {
+    PNG.sync.read = () => { calls++; throw Error("decode must not run"); };
+    for (const [offset, value] of [[24,16],[25,3],[26,1],[27,1],[28,1]]) {
+      const evidence = { candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT) };
+      evidence.png[offset]=value; evidence.capture.sha256=sha256(evidence.png);
+      const checked=inspectZk682RendererCompleteness(evidence);
+      assert.equal(checked.passed,false);assert.ok(checked.errors.some(error=>error.includes("Unsupported PNG encoding")));
+    }
+    for (const transform of [
+      png => Buffer.concat([png.subarray(0,33),png.subarray(8,33),png.subarray(33)]),
+      png => Buffer.concat([png,Buffer.from([0])]),
+      png => png.subarray(0,png.length-12),
+    ]) {
+      const evidence={candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT)};
+      evidence.png=transform(evidence.png);evidence.capture.bytes=evidence.png.length;evidence.capture.sha256=sha256(evidence.png);
+      const checked=inspectZk682RendererCompleteness(evidence);assert.equal(checked.passed,false);assert.ok(checked.errors.some(error=>/duplicate IHDR|terminal|IEND/.test(error)));
+    }
+    assert.equal(calls,0);
+  } finally { PNG.sync.read=decode; }
+});
+
+test("renderer completeness supports canonical noninterlaced RGB PNG", () => {
+  const evidence={candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT)};
+  const image=new PNG({width:2,height:1});image.data.set([255,0,0,255,0,0,255,255]);
+  evidence.png=PNG.sync.write(image,{colorType:2});evidence.capture.bytes=evidence.png.length;evidence.capture.sha256=sha256(evidence.png);
+  assert.equal(evidence.png[25],2);assert.equal(inspectZk682RendererCompleteness(evidence).passed,true);
 });
