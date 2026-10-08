@@ -18,6 +18,7 @@ on:
           - startup-diagnostic
           - renderer-recording-ablation
           - canonical-renderer-verification
+          - capture-phase-diagnostic
 
 permissions:
   contents: read
@@ -827,3 +828,113 @@ jobs:
           CANONICAL_COMPLETE: ${{ steps.canonical_artifact_bounds.outputs.complete }}
         working-directory: target/simgolf-lite
         run: test "$CANONICAL_COMPLETE" = "true"
+
+  capture-phase-diagnostic:
+    if: ${{ inputs.mode == 'capture-phase-diagnostic' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TARGET_SHA: ${{ inputs.candidate_sha }}
+      DRIVER_SHA: ${{ github.sha }}
+      CI: 'true'
+      COURSECRAFT_ZK682_RESOURCE_REPORT: artifacts/capture-phase-diagnostic/run/renderer-resource-growth.json
+      ZK682_G2_TARGET_APP: ${{ github.workspace }}/target/simgolf-lite
+      ZK682_G2_DRIVER_APP: ${{ github.workspace }}/simgolf-lite
+      ZK682_CANONICAL_SOURCE_ROOT: ${{ github.workspace }}/target/simgolf-lite
+    steps:
+      - name: Checkout exact workflow driver
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+      - name: Checkout separate exact target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          path: target
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: target/simgolf-lite/package-lock.json
+      - name: Verify pinned driver target and prepare exact diagnostic inverses
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          test -x /bin/ps
+          test -x /usr/bin/pgrep
+          # BEGIN G2 BOOTSTRAP
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';import {readFileSync,lstatSync,realpathSync,writeFileSync} from 'node:fs';import {resolve} from 'node:path';import {pathToFileURL} from 'node:url';import {createHash} from 'node:crypto';
+          export const driverG2Pins={"scripts/zk682-capture-phase-diagnostic/prepare.mjs":"738f3bfc03ee9ae94d1117f8935803a43e2e123ca22ee0f02fef623253e039fa","scripts/zk682-capture-phase-diagnostic/prepare.test.mjs":"f0043f274e7ee65b4c944af092c8b8b49dae4d23d4ae1871bfe0a99ea47171de","scripts/zk682-workflow.test.mjs":"f92e8f17049b1eda8396ce2603c075faa74a81abdd722a5649c193b2276a3efa"};
+          export function verifyBootstrap(root,pins=driverG2Pins){assert.deepEqual(Object.keys(pins).sort(),Object.keys(driverG2Pins).sort());return Object.entries(pins).map(([name,pin])=>{const path=resolve(root,'simgolf-lite',name),stat=lstatSync(path);assert.ok(stat.isFile()&&!stat.isSymbolicLink());assert.equal(realpathSync(path),path);const bytes=readFileSync(path),actual=createHash('sha256').update(bytes).digest('hex');assert.equal(actual,pin,'G2 source mismatch '+name);return {name,sha256:actual,bytes:bytes.length};});}
+          if(process.env.ZK682_G2_BOOTSTRAP_TEST!=='1'){const root=process.env.GITHUB_WORKSPACE;verifyBootstrap(root);const p=await import(pathToFileURL(resolve(root,'simgolf-lite/scripts/zk682-capture-phase-diagnostic/prepare.mjs')).href),identity=p.prepare(root,resolve(root,'target'),process.env.TARGET_SHA,process.env.DRIVER_SHA,driverG2Pins);writeFileSync(process.env.GITHUB_ENV,'VERIFIED_TARGET_SHA='+identity.targetCommit+'\nDRIVER_SUPERVISOR='+resolve(root,'simgolf-lite/scripts/linux-diagnostic-supervisor.py')+'\n',{flag:'a'});process.stdout.write('G2_SOURCE_IDENTITY '+JSON.stringify(identity)+'\n');}
+          NODE
+          # END G2 BOOTSTRAP
+      - name: Install exact target isolated dependencies
+        working-directory: target/simgolf-lite
+        run: npm ci
+      - name: G1 actual capture controls
+        working-directory: target/simgolf-lite
+        run: node --test "$GITHUB_WORKSPACE/simgolf-lite/scripts/zk682-capture-phase-diagnostic/capture.test.mjs"
+      - name: G2 actual prepare inverse controller controls
+        working-directory: target/simgolf-lite
+        run: node --test "$GITHUB_WORKSPACE/simgolf-lite/scripts/zk682-capture-phase-diagnostic/prepare.test.mjs"
+      - name: G2 extracted workflow routing and bootstrap controls
+        working-directory: target/simgolf-lite
+        run: node --test --test-name-pattern='^G2 ' "$GITHUB_WORKSPACE/simgolf-lite/scripts/zk682-workflow.test.mjs"
+      - name: Install target default Chrome
+        working-directory: target/simgolf-lite
+        run: npx playwright install --with-deps chromium
+      - name: Linux supervisor capability smoke
+        working-directory: target/simgolf-lite
+        run: python3 "$DRIVER_SUPERVISOR" --out artifacts/capture-phase-diagnostic/smoke --seconds 5 --parent-seconds 60 --artifact-cap 1048576 -- python3 -c "print('owned supervisor smoke')"
+      - name: Discover exactly one generated full endpoint
+        shell: bash
+        working-directory: target/simgolf-lite
+        run: |
+          env GITHUB_SHA="$VERIFIED_TARGET_SHA" VITE_COMMIT_SHA="$VERIFIED_TARGET_SHA" ZK682_EXPECTED_COMMIT="$VERIFIED_TARGET_SHA" npx playwright test --config playwright.zk682-capture-phase.generated.config.ts --workers=1 --retries=0 --list > artifacts/capture-phase-diagnostic/source/discovery.log
+          cat artifacts/capture-phase-diagnostic/source/discovery.log
+          grep -Eq '^Total: 1 test in 1 file$' artifacts/capture-phase-diagnostic/source/discovery.log
+      - name: Run one supervised full endpoint diagnostic
+        shell: bash
+        working-directory: target/simgolf-lite
+        run: |
+          env GITHUB_SHA="$VERIFIED_TARGET_SHA" VITE_COMMIT_SHA="$VERIFIED_TARGET_SHA" ZK682_EXPECTED_COMMIT="$VERIFIED_TARGET_SHA" python3 "$DRIVER_SUPERVISOR" --out artifacts/capture-phase-diagnostic/run --seconds 1850 --parent-seconds 1910 --artifact-cap 1048576 -- npx playwright test --config playwright.zk682-capture-phase.generated.config.ts --workers=1 --retries=0
+      - name: Preserve bounded actual ledger partial evidence and owned cleanup
+        id: phase_bounds
+        if: always()
+        working-directory: target/simgolf-lite
+        run: node "$GITHUB_WORKSPACE/simgolf-lite/scripts/zk682-capture-phase-diagnostic/prepare.mjs" finalize
+      - name: Upload explicit bounded diagnostic partials including actual PNG
+        if: ${{ always() && steps.phase_bounds.conclusion == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: zk682-capture-phase-diagnostic-${{ inputs.candidate_sha }}-${{ github.run_id }}
+          path: |
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/run/owned-command-receipt.json
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/run/renderer-resource-growth.json
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/run/zk682-react-component-timing-cleanup.json
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/run/zk682-canvas-capture-receipt.json
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/run/zk682-resource-growth-final.png
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/run/stdout.log
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/run/stderr.log
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/run/late-finalization-hold.json
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/source/identity.json
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/source/provenance.json
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/source/discovery.log
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/source/phase-ledger.json
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/source/completeness.json
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/smoke/owned-command-receipt.json
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/smoke/stdout.log
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/smoke/stderr.log
+            target/simgolf-lite/artifacts/capture-phase-diagnostic/smoke/late-finalization-hold.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Require actual exit zero complete phase and PNG evidence
+        if: always()
+        env:
+          DIAGNOSTIC_COMPLETE: ${{ steps.phase_bounds.outputs.complete }}
+        working-directory: target/simgolf-lite
+        run: test "$DIAGNOSTIC_COMPLETE" = "true"
