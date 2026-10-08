@@ -68,11 +68,11 @@ test("ZK-690 chapter cards expose the exact six axes and start with localized ac
 
   const backNine = page.getByTestId("campaign-card-back-nine");
   await expect(backNine).toHaveAccessibleName(/1\. The Back Nine/i);
-  await expect(backNine).toHaveAccessibleName(/Completed.*Gold.*best: week 8.*\$50,000.*replayable/i);
+  await expect(backNine).toHaveAccessibleName(/Completed.*Gold medal.*Best result: week 8.*\$50,000.*replayable/i);
   await expect(backNine).toHaveAccessibleDescription(/Responsibility preview/i);
   const locked = page.getByTestId("campaign-card-links-by-the-sea");
   await expect(locked).toBeDisabled();
-  await expect(locked).toHaveAccessibleName(/4\. Links by the Sea.*Complete the previous scenario to unlock/i);
+  await expect(locked).toHaveAccessibleName(/4\. Links by the Sea.*Locked/i);
   await expect(locked).toHaveAccessibleDescription(/Responsibility preview/i);
   await backNine.focus();
   await page.keyboard.press("Enter");

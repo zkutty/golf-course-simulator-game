@@ -5,7 +5,7 @@ import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
 import { I18nContext } from "../i18n/context";
 import { translate } from "../i18n/core";
 import type { MessageKey } from "../i18n/catalog";
-import { ContentLibraryPanel } from "./ContentLibraryPanel";
+import { ContentLibraryPanelContent } from "./ContentLibraryPanelContent";
 import { holeTemplateLibrarySummary } from "./contentLibraryProvenance";
 import type { HoleTemplateV1 } from "../game/holeTemplates/types";
 
@@ -28,7 +28,7 @@ describe("ZK-652 library provenance copy", () => {
   it("renders localized policy guidance and an unchecked attestation with capture disabled", () => {
     const html = renderToStaticMarkup(createElement(I18nContext.Provider, {
       value: { locale: "en", setLocale: () => {}, t: (key, params) => translate("en", key, params) },
-    }, createElement(ContentLibraryPanel, { course: DEFAULT_COURSE, world: DEFAULT_WORLD, onTestPlay: () => {}, onClose: () => {} })));
+    }, createElement(ContentLibraryPanelContent, { course: DEFAULT_COURSE, world: DEFAULT_WORLD, onTestPlay: () => {}, onClose: () => {} })));
     expect(html).toContain('type="checkbox"');
     expect(html).not.toContain('checked=""');
     expect(html).toMatch(/<button disabled="" type="button">Save hole template<\/button>/);

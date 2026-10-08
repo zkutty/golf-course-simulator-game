@@ -28,6 +28,7 @@ import {
   auditSeasonalCoverageContract,
 } from "../render/seasonalCoverage";
 import { TERRAIN_KINDS } from "../render/terrainMaterials";
+import { WILDLIFE_REGISTRY, auditWildlifeOwnership, auditWildlifeRegistry } from "../wildlife/registry";
 import { createM22VisualReferenceCourse } from "./referenceCourse";
 
 export const BIOME_AUTHORING_REPORT_VERSION = 2 as const;
@@ -389,6 +390,9 @@ export function auditBiomeAuthoring(input: {
   residencyBudgetBytes?: number;
   fixtures?: readonly BiomeReferenceFixture[];
   seasonalContract?: unknown;
+  /** Authoring-only injection for negative controls; never an asset loader. */
+  wildlifeRegistry?: unknown;
+  wildlifeOwnership?: unknown;
 }): BiomeAuthoringAuditReport {
   const budgetBytes = input.payloadBudgetBytes ?? BIOME_SELECTED_PAYLOAD_BUDGET_BYTES;
   const residencyBudgetBytes = input.residencyBudgetBytes
@@ -397,6 +401,15 @@ export function auditBiomeAuthoring(input: {
   const findings: BiomeAuditFinding[] = [];
   const payloads: BiomePayloadTierReport[] = [];
   const coverage: BiomeCoverageReport[] = [];
+  const wildlifeErrors = [
+    ...auditWildlifeRegistry(input.wildlifeRegistry === undefined ? WILDLIFE_REGISTRY : input.wildlifeRegistry),
+    ...auditWildlifeOwnership(input.wildlifeOwnership === undefined
+      ? Object.fromEntries(BIOME_KEYS.map(biome => [biome, getBiomeDefinition(biome).content.wildlife]))
+      : input.wildlifeOwnership, BIOME_KEYS),
+  ];
+  for (const detail of wildlifeErrors) {
+    findings.push({ category: "required", biome: BIOME_KEYS.find(biome => detail.startsWith(biome) || detail.startsWith(`wildlife.${biome}.`)) ?? BIOME_KEYS[0], asset: "wildlife.contract", detail });
+  }
   const seasonalErrors = auditSeasonalCoverageContract(
     input.seasonalContract ?? SEASONAL_COVERAGE_CONTRACT,
   );

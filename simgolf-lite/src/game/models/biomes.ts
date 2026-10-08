@@ -1,4 +1,5 @@
 import type { Terrain } from "./types";
+import type { WildlifeBundleOwnership } from "../wildlife/contracts";
 
 /**
  * The four-season club calendar is stable save/gameplay state. Biomes map
@@ -175,6 +176,8 @@ export interface BiomeDefinition<Key extends string = string> {
     };
   };
   content: {
+    /** Planned authoring ownership only; missing/unapproved wildlife is omitted. */
+    wildlife: WildlifeBundleOwnership<Key>;
     materials: {
       terrain: Key;
       details: Key;
@@ -345,6 +348,7 @@ export const BIOME_DEFINITIONS = defineBiomes({
       },
     },
     content: {
+      wildlife: { profile: "parkland", bundleOwner: "parkland", delivery: "planned", fallback: "omit" },
       materials: { terrain: "parkland", details: "parkland", fields: "parkland" },
       props: { natural: "parkland" },
       structures: { buildings: "parkland", decorations: "parkland" },
@@ -432,6 +436,7 @@ export const BIOME_DEFINITIONS = defineBiomes({
       },
     },
     content: {
+      wildlife: { profile: "links", bundleOwner: "links", delivery: "planned", fallback: "omit" },
       materials: { terrain: "links", details: "links", fields: "links" },
       props: { natural: "links" },
       structures: { buildings: "links", decorations: "links" },
@@ -517,6 +522,7 @@ export const BIOME_DEFINITIONS = defineBiomes({
       },
     },
     content: {
+      wildlife: { profile: "desert", bundleOwner: "desert", delivery: "planned", fallback: "omit" },
       materials: { terrain: "desert", details: "desert", fields: "desert" },
       props: { natural: "desert" },
       structures: { buildings: "desert", decorations: "desert" },
@@ -939,6 +945,11 @@ export function auditBiomeDefinitions(
 
   for (const key of definitionKeys) {
     const definition = definitions[key];
+    const wildlife = definition.content.wildlife;
+    if (!wildlife || wildlife.profile !== key || wildlife.bundleOwner !== key
+      || wildlife.delivery !== "planned" || wildlife.fallback !== "omit") {
+      errors.push(`${key}: wildlife requires same-biome planned ownership and omit fallback`);
+    }
     if (definition.key !== key) errors.push(`${key}: definition key must match registry key`);
     if (!definition.label.trim() || !definition.blurb.trim()) errors.push(`${key}: display copy is required`);
     if (!keys.has(definition.compatibility.fallbackBiome)) errors.push(`${key}: fallback biome is not registered`);

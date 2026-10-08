@@ -18,7 +18,12 @@ export type UiIconName =
   | "content"
   | "photo"
   | "inspect"
-  | "close";
+  | "close"
+  | "locked"
+  | "completed"
+  | "parkland"
+  | "links"
+  | "desert";
 
 const PATHS: Record<UiIconName, ReactNode> = {
   design: <path d="M4 19 19 4m-2-1 4 4-3 3-4-4 3-3ZM4 14v6h6" />,
@@ -39,6 +44,11 @@ const PATHS: Record<UiIconName, ReactNode> = {
   photo: <path d="M4 7h4l1.5-2h5L16 7h4v12H4V7Zm8 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" />,
   inspect: <><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4M11 8v6m-3-3h6" /></>,
   close: <path d="m6 6 12 12M18 6 6 18" />,
+  locked: <><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 1 1 8 0v3m-4 4v3" /></>,
+  completed: <><path d="M8 4h8v4a4 4 0 0 1-8 0V4Zm0 2H4v2c0 3 2 5 5 5m7-7h4v2c0 3-2 5-5 5m-3 0v3m-4 2h8" /><path d="m10 8 1.4 1.4L14 7" /></>,
+  parkland: <><path d="M12 3 5 11h4l-3 4h5v6h2v-6h5l-3-4h4L12 3Z" /><path d="M5 21h14" /></>,
+  links: <><path d="M12 21V5m0 7-5-4m5 8 5-4" /><path d="M12 5 9 2m3 3 3-3M7 8l-3 1m13 3 3 1" /></>,
+  desert: <><path d="M12 21V9m0 4-4-3m4 6 4-3" /><path d="M12 9c-2-2-1-4 0-6 1 2 2 4 0 6Zm-4 1-3-1m11 4 3-1M4 21h16" /></>,
 };
 
 export function IconUi({ name, size = 18, className }: { name: UiIconName; size?: number; className?: string }) {

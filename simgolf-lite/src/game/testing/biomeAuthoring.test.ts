@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { normalizeAtlasManifest, type AtlasManifest } from "../../render/atlasManifest";
-import { BIOME_KEYS } from "../models/biomes";
+import { BIOME_DEFINITIONS, BIOME_KEYS } from "../models/biomes";
+import { WILDLIFE_REGISTRY } from "../wildlife/registry";
 import { DECORATION_KINDS } from "../models/decorations";
 import { TERRAIN_KINDS } from "../render/terrainMaterials";
 import { SEASONAL_COVERAGE_CONTRACT } from "../render/seasonalCoverage";
@@ -275,5 +276,28 @@ describe("ZK-564 deterministic biome authoring fixtures", () => {
       quality: "high",
       asset: "cumulative-residency",
     }));
+  });
+  it("makes missing planned wildlife ownership a required authoring failure", () => {
+    const manifest = realManifest();
+    const owners = Object.fromEntries(BIOME_KEYS.map(biome => [biome, BIOME_DEFINITIONS[biome].content.wildlife]));
+    delete (owners as Record<string, unknown>).links;
+    const report = auditBiomeAuthoring({ manifest, inventory: realInventory(manifest), wildlifeOwnership: owners });
+    expect(report.pass).toBe(false);
+    expect(report.findings).toContainEqual(expect.objectContaining({ category: "required", biome: "links", asset: "wildlife.contract", detail: "links: wildlife ownership: object is required" }));
+  });
+
+  it("makes prohibited clips and invented approvals required authoring failures", () => {
+    const manifest = realManifest();
+    const registry = structuredClone(WILDLIFE_REGISTRY) as unknown as {
+      parkland: { species: { clips: string[] }[] };
+      desert: { provenance: { reviews: { ecology: string } } };
+    };
+    registry.parkland.species[0].clips = ["forage"];
+    registry.desert.provenance.reviews.ecology = "approved";
+    const report = auditBiomeAuthoring({ manifest, inventory: realInventory(manifest), wildlifeRegistry: registry });
+    expect(report.pass).toBe(false);
+    expect(report.findings).toContainEqual(expect.objectContaining({ category: "required", asset: "wildlife.contract", detail: expect.stringContaining("prohibited or unknown clip") }));
+    expect(report.findings).toContainEqual(expect.objectContaining({ category: "required", biome: "desert", asset: "wildlife.contract", detail: expect.stringContaining("reviews.ecology") }));
+    expect(auditBiomeAuthoring({ manifest, inventory: realInventory(manifest), wildlifeRegistry: null }).pass).toBe(false);
   });
 });

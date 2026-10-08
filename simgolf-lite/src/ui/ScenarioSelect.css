@@ -1,0 +1,136 @@
+.campaign-scenario-list {
+  display: grid;
+  gap: 10px;
+  max-height: 56vh;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.campaign-scenario-notice {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .82);
+  color: #3d4a3e;
+}
+
+.campaign-scenario-card {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 3px solid rgba(255, 255, 255, .25);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .92);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.campaign-scenario-card.is-completed {
+  border-color: #f2c14e;
+}
+
+.campaign-scenario-card:disabled {
+  background: rgba(255, 255, 255, .55);
+  cursor: not-allowed;
+  opacity: .72;
+}
+
+.campaign-scenario-card:focus-visible {
+  outline: 3px solid #23624a;
+  outline-offset: 2px;
+}
+
+.campaign-scenario-icon {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: #e8efe4;
+  color: #365e42;
+}
+
+.campaign-scenario-icon.is-locked {
+  background: #ecebe7;
+  color: #656861;
+}
+
+.campaign-scenario-icon.is-completed {
+  background: #fff1c2;
+  color: #8a6d1a;
+}
+
+.campaign-scenario-copy {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.campaign-scenario-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  min-width: 0;
+}
+
+.campaign-scenario-title {
+  color: #3d4a3e;
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.campaign-scenario-meta {
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+}
+
+.campaign-scenario-status {
+  color: #58665a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.campaign-scenario-blurb {
+  margin-top: 1px;
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.campaign-scenario-responsibility {
+  margin-top: 1px;
+  color: #4b5563;
+  font-size: 11px;
+}
+
+.campaign-scenario-result {
+  margin-top: 1px;
+  color: #765d15;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media (max-width: 520px) {
+  .campaign-scenario-card {
+    align-items: flex-start;
+    gap: 9px;
+    padding: 11px 10px;
+  }
+
+  .campaign-scenario-icon {
+    flex-basis: 30px;
+    width: 30px;
+    height: 30px;
+  }
+}

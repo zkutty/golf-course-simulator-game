@@ -1,96 +1,95 @@
 import { useMemo } from "react";
-import { formatCurrency } from "../i18n/format";
+import { formatCurrency, formatWeekLabel } from "../i18n/format";
 import { SCENARIOS } from "../game/scenarios/scenarios";
 import type { ScenarioDefinition } from "../game/scenarios/types";
 import { isScenarioUnlocked, loadCareer } from "../utils/careerStore";
 import { getBiomeDefinition } from "../game/models/biomes";
-import { T } from "../i18n/T";
+import { IconUi } from "../assets/icons/IconUi";
 import { useI18n } from "../i18n/useI18n";
 import { IS_DEMO, scenarioAvailableInEdition } from "../config/edition";
 import type { MessageKey } from "../i18n/catalog";
+import "./ScenarioSelect.css";
 
 // Career scenario ladder (ZKU-164): card list with medal states —
 // locked / unlocked / completed (+ best-result stats), sequential unlock.
 
 export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) => void }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const career = useMemo(() => loadCareer(), []);
   const ladder = useMemo(() => [...SCENARIOS]
     .filter((scenario) => scenarioAvailableInEdition(scenario.id))
     .sort((a, b) => a.order - b.order), []);
 
   return (
-    <div style={{ display: "grid", gap: 10, maxHeight: "56vh", overflowY: "auto", padding: 2 }}>
-      {IS_DEMO && <p style={{ margin: 0, padding: "8px 10px", borderRadius: 9, background: "rgba(255,255,255,.82)", color: "#3d4a3e" }}>{t("demo.chapterNotice")}</p>}
+    <div className="campaign-scenario-list">
+      {IS_DEMO && <p className="campaign-scenario-notice">{t("demo.chapterNotice")}</p>}
       {ladder.map((s) => {
         const unlocked = isScenarioUnlocked(career, ladder, s.id);
         const rec = career.scenarios[s.id];
         const completed = rec?.completed === true;
-        const medal = rec?.bestMedal === "gold"
+        const medalType = rec?.bestMedal;
+        const medal = medalType === "gold"
           ? t("campaign.medal.gold")
-          : rec?.bestMedal === "silver"
+          : medalType === "silver"
             ? t("campaign.medal.silver")
-            : rec?.bestMedal === "bronze"
+            : medalType === "bronze"
               ? t("campaign.medal.bronze")
               : null;
         const profileLabel = t(`newGame.experience.profile.${s.experienceProfile}.label` as MessageKey);
         const pressureLabel = t(`newGame.pressure.${s.economicPressure}.label` as MessageKey);
         const responsibility = t(`campaign.responsibility.${s.experienceProfile}` as MessageKey);
+        const statusKey = completed ? "campaign.card.status.completed" : unlocked ? "campaign.card.status.unlocked" : "campaign.card.status.locked";
+        const statusLabel = t(statusKey);
+        const statusIcon = completed ? "completed" : !unlocked ? "locked" : getBiomeDefinition(s.theme).key;
+        const resultParts = [
+          rec?.bestWeek != null ? formatWeekLabel(rec.bestWeek, locale, "week") : null,
+          rec?.bestCash != null ? formatCurrency(rec.bestCash, locale) : null,
+        ].filter((part): part is string => part != null);
+        const resultLabel = resultParts.length > 0 ? t("campaign.card.bestResult", { result: resultParts.join(" · ") }) : "";
+        const medalLabel = medalType ? t(`campaign.card.medal.${medalType}` as MessageKey) : "";
+        const accessibleName = [
+          `${s.order}. ${t(s.nameKey)}`,
+          t("campaign.card.aria", { chapter: s.order, profile: profileLabel, pressure: pressureLabel, responsibility }),
+          statusLabel,
+          medalLabel,
+          resultLabel,
+          completed ? t("scenario.replayable") : "",
+        ].filter(Boolean).join(". ");
         return (
           <button
             key={s.id}
+            type="button"
+            className={`campaign-scenario-card${completed ? " is-completed" : ""}`}
             data-testid={`campaign-card-${s.id}`}
             disabled={!unlocked}
-            aria-describedby={`campaign-card-responsibility-${s.id}`}
+            aria-label={accessibleName}
+            aria-describedby={`campaign-card-blurb-${s.id} campaign-card-responsibility-${s.id}`}
             onClick={() => props.onStart(s)}
-            style={{
-              textAlign: "left",
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              padding: "12px 14px",
-              borderRadius: 14,
-              border: completed
-                ? "3px solid #F2C14E"
-                : "3px solid rgba(255,255,255,0.25)",
-              background: unlocked ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.55)",
-              cursor: unlocked ? "pointer" : "not-allowed",
-              opacity: unlocked ? 1 : 0.6,
-            }}
           >
-            <div style={{ fontSize: 26, width: 34, textAlign: "center" }}>
-              {completed ? "🏅" : unlocked ? getBiomeDefinition(s.theme).presentation.preview.icon : "🔒"}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-                <span
-                  style={{
-                    fontFamily: "var(--font-heading)",
-                    fontWeight: 800,
-                    fontSize: 15,
-                    color: "#3d4a3e",
-                  }}
-                >
+            <span className={`campaign-scenario-icon is-${statusIcon}`} aria-hidden="true"><IconUi name={statusIcon} size={24} /></span>
+            <span className="campaign-scenario-copy">
+              <span className="campaign-scenario-heading">
+                <span className="campaign-scenario-title">
                   {s.order}. {t(s.nameKey)}
                 </span>
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", color: "#6b7280" }}>
-                  {getBiomeDefinition(s.theme).label.toUpperCase()} • {t("campaign.card.axes", { profile: profileLabel, pressure: pressureLabel }).toUpperCase()}
+                <span className="campaign-scenario-meta">
+                  {t(`designDock.biome.${s.theme}` as MessageKey).toUpperCase()} • {t("campaign.card.axes", { profile: profileLabel, pressure: pressureLabel }).toUpperCase()}
                 </span>
-              </div>
-              <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2 }}>
+                <span className="campaign-scenario-status">{statusLabel}</span>
+              </span>
+              <span id={`campaign-card-blurb-${s.id}`} className="campaign-scenario-blurb">
                 {unlocked ? t(s.blurbKey) : t("scenario.locked")}
-              </div>
-              <div id={`campaign-card-responsibility-${s.id}`} data-testid={`campaign-card-responsibility-${s.id}`} style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>
+              </span>
+              <span id={`campaign-card-responsibility-${s.id}`} data-testid={`campaign-card-responsibility-${s.id}`} className="campaign-scenario-responsibility">
                 {t("campaign.card.responsibility", { responsibility })}
-              </div>
+              </span>
               {completed && (
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#8a6d1a", marginTop: 4 }}>
-                  <T id="auto.ui.scenarioselect.completed" />{medal ? ` · ${medal}` : ""}{rec?.bestWeek != null ? ` — best: week ${rec.bestWeek}` : ""}
-                  {rec?.bestCash != null ? `, ${formatCurrency(rec.bestCash)}` : ""}
-                  {t("scenario.replayable")}
-                </div>
+                <span className="campaign-scenario-result">
+                  {medal ? `${medal} · ` : ""}{resultLabel || statusLabel}
+                  {` · ${t("scenario.replayable")}`}
+                </span>
               )}
-            </div>
+            </span>
           </button>
         );
       })}
