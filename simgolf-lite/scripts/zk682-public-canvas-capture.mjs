@@ -32,7 +32,7 @@ export function decodeStrictPng(png,expected){
   let visible=false,different=false;const first=pixels.readUInt32BE(0);for(let i=0;i<pixels.length;i+=4){visible ||= pixels[i+3]>0;different ||= pixels.readUInt32BE(i)!==first;}assert.ok(visible&&different,'nonuniform visible pixels required');return {width,height,pixels,pixelSHA256:sha256(pixels)};
 }
 export async function capturePublicCDPCanvas(page,{canvasClip,timing={now:()=>performance.now(),set:setTimeout,clear:clearTimeout}}){
-  assert.equal(typeof canvasClip,'function','pinned baseline canvasClip required');const started=timing.now(),deadline=started+CAPTURE_MS,timeoutError=new Error('Public CDP capture deadline10000ms exceeded');let expired=false,closed=false,session,handle,failed=false,primary,result;
+  assert.equal(typeof canvasClip,'function','pinned baseline canvasClip required');const started=timing.now(),deadline=started+CAPTURE_MS,timeoutError=new Error('Public CDP capture deadline10000ms exceeded');let expired=false,closed=false,session,handle,rawHandle,failed=false,primary,result;
   const cleanupTasks=new Map();
   const cleanup=(object,method)=>{if(!object)return Promise.resolve();if(!cleanupTasks.has(object)){const task=Promise.resolve().then(()=>object[method]());task.catch(()=>{});cleanupTasks.set(object,task);}return cleanupTasks.get(object);};
   let rejectDeadline;const timeout=new Promise((_,reject)=>{rejectDeadline=reject;});timeout.catch(()=>{});const timer=timing.set(()=>{expired=true;rejectDeadline(timeoutError);},CAPTURE_MS);
@@ -40,13 +40,19 @@ export async function capturePublicCDPCanvas(page,{canvasClip,timing={now:()=>pe
   const within=async promise=>{guard();const value=await Promise.race([Promise.resolve(promise),timeout]);guard();return value;};
   const owned=async(promise,method)=>{const pending=Promise.resolve(promise);pending.then(object=>{if(expired||closed||timing.now()>=deadline)cleanup(object,method);},()=>{});return within(pending);};
   try{
-    assert.equal(await within(page.locator('.cc-pixi-stage canvas').count()),1,'exactly one canvas');handle=await owned(page.$('.cc-pixi-stage canvas',{strict:true}),'dispose');assert.ok(handle,'attached canvas required');const before=await within(handle.evaluate(readCanvas)),clip=canvasClip(before);
+    assert.equal(await within(page.locator('.cc-pixi-stage canvas').count()),1,'exactly one canvas');rawHandle=await owned(page.evaluateHandle(() => {
+      const matches=document.querySelectorAll('.cc-pixi-stage canvas');
+      if(matches.length!==1)throw new Error('Exactly one current document canvas required');
+      const node=matches[0];
+      if(!(node instanceof HTMLCanvasElement)||node.ownerDocument!==document||!node.isConnected)throw new Error('Current document connected HTMLCanvasElement required');
+      return node;
+    }),'dispose');assert.ok(rawHandle,'attached raw canvas handle required');handle=rawHandle.asElement();assert.ok(handle,'attached canvas element required');guard();const before=await within(handle.evaluate(readCanvas)),clip=canvasClip(before);
     session=await owned(page.context().newCDPSession(page),'detach');const response=await within(session.send('Page.captureScreenshot',{format:'png',clip:{...clip,scale:1},fromSurface:true,captureBeyondViewport:false,optimizeForSpeed:false}));
     const png=strictBase64(response?.data),decoded=decodeStrictPng(png,clip);guard();const after=await within(handle.evaluate(readCanvas));canvasClip(after);assert.deepEqual(after,before,'canvas identity/current connection/geometry changed');
     result={png,receipt:{method:'public-cdp-page-captureScreenshot-canvas-viewport-clip-v1',clip,before,after,bytes:png.length,sha256:sha256(png),pixelSHA256:decoded.pixelSHA256,qualification:'Diagnostic public CDP comparison only; both APIs may share Chromium backend; no canonical receipt enum or causal claim'}};
   }catch(error){failed=true;primary=error;}
   // Start both disposals even if one fails or the capture deadline has elapsed.
-  const disposal=[cleanup(session,'detach'),cleanup(handle,'dispose')];
+  const disposal=[cleanup(session,'detach'),cleanup(rawHandle,'dispose')];
   try{const outcomes=await within(Promise.allSettled(disposal));for(const outcome of outcomes)if(outcome.status==='rejected'&&!failed){failed=true;primary=outcome.reason;}}catch(error){if(!failed){failed=true;primary=error;}}
   closed=true;timing.clear(timer);if(failed)throw primary;guard();result.receipt.elapsedMs=timing.now()-started;result.receipt.deadlineHostMs=deadline;
   // No publisher or file API: late/failed results cannot escape this helper.
