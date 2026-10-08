@@ -15,7 +15,10 @@ test("M7 reputation progression, clock, live overview, and follow flow", async (
   const progression = page.getByTestId("progression-panel");
   await expect(progression).toBeVisible();
   await expect(progression.getByRole("heading", { name: "Local Favorite" })).toBeVisible();
-  await expect(progression.getByText("🔒 Regional Draw", { exact: true })).toBeVisible();
+  const regionalTier = progression.getByTestId("progression-tier-regional");
+  await expect(regionalTier.getByText("Regional Draw", { exact: true })).toBeVisible();
+  await expect(regionalTier.getByTestId("progression-status-regional")).toHaveText("Unlocks at 45 reputation");
+  await expect(regionalTier.locator("svg[aria-hidden='true']")).toHaveCount(1);
   await page.screenshot({ path: "/tmp/coursecraft-m7-progression.png", fullPage: true });
   await progression.getByRole("button", { name: "Close progression" }).click();
 

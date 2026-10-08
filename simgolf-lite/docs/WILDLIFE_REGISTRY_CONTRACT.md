@@ -75,3 +75,55 @@ ZK-660 remains open. Renderer/audio/fixture consumer integration, scenic
 metadata migration, approved assets, selected-biome loading, manifest ownership,
 measured payload/residency/performance, spatial/welfare certification and human
 reviews remain later packets. None is inferred passing from this foundation.
+
+## Candidate metadata audit appendix (P3)
+
+`auditWildlifeCandidate(atlas, provenance)` in
+`src/game/wildlife/candidateAudit.ts` consumes the existing candidate interfaces
+as untrusted input. It returns `structuralErrors`, `productionBlockers` and a
+literal `productionEligible: false`. Complete synthetic metadata may have zero
+structural errors; no declared license, permitted redistribution, named reviewer
+or approved decision establishes actual rights or human approval. Private-only
+redistribution and rejected decisions add explicit production blockers. All
+results still require authoritative external rights, exact-byte provenance and
+human adoption/review proof, which this packet does not implement or certify.
+
+Pivot coordinates are normalized to the declared source canvas, using the
+bible's explicit G `(0.5, 1)` convention. G and W require `[0.5, 1]`; P retains
+an in-bounds declared foot pivot and nonempty natural-support declaration so a
+tail may extend below contact; F declares an interior body pivot and no natural
+support. The audit cannot identify a foot/body/support in pixels. Quiet-flight
+uses F and the Flight `96×64` source canvas, including S/M birds; other cycles
+use the species' non-Flight source canvases. Perch/branch-walk require P,
+remote-travel requires G, and W is reserved for waterbird still/glide. Registry
+clip restrictions still override family availability, including flight-only
+mallards and the sole Desert roadrunner travel exception. Canvas dimensions,
+two-pixel gutter and declared two-pixel drift ceiling use source pixels at 2×;
+pivot coordinates do not. At least five authored direction rows are required;
+mirror/anatomy/light suitability requires later visual review.
+
+The audit checks owned roster identity, family/clip/frame/fps compatibility,
+canvas/anchor/pivot declarations, required own fields, SHA-256 syntax and
+cross-record identity, reference IDs/hashes, cleanup descriptions/terminal hash,
+calendar-valid ISO dates or UTC timestamps, and all six review records. The
+atlas source hash denotes the exact candidate image bytes and must match the
+provenance production hash; every review must reference that hash. Empty cleanup
+lineage is permitted only when raw and production hashes match; otherwise the
+last cleanup hash must match production. Intermediate parent relationships are
+not present in the existing interface and cannot be proved. Date-only records
+compare calendar days; timestamps compare instants when both have that precision.
+No hashes are computed, evidence links fetched, dates authenticated, reviewers
+verified or approval service enforced.
+
+The interfaces have no per-frame rectangles/contact measurements, per-cycle
+transition pivot pairs, support geometry or flight height field. Structural
+completeness therefore does not certify atlas packing/ownership of every frame,
+visible-contact drift, cross-cycle attachment transitions, natural support,
+flight height, transparent padding, lighting, silhouettes, welfare, locality,
+accessibility, delivery or runtime spatial safety. Those remain future measured
+and human gates. There are no asset references, runtime consumers or activation
+changes here. Negative tests cover malformed and incompatible metadata, exact
+hash/date/lineage/review mismatches, private-only/rejected declarations and a
+fresh import/audit with a throwing fetch spy and zero requests. Rollback removes
+the two candidate audit files and this appendix; no save or asset migration is
+required.

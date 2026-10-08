@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { GameTabs } from "../gameui";
 import { buildGolfopediaEntries, type GolfopediaSection } from "./golfopediaData";
 import { BINDING_ACTIONS, BINDING_LABEL_KEYS, displayBinding } from "../../accessibility/keybindings";
@@ -19,6 +19,8 @@ export function GolfopediaModal(props: {
   economicPressure?: EconomicPressure;
 }) {
   const { t } = useI18n();
+  const tabsId = `${useId()}-golfopedia-tabs`;
+  const panelId = `${tabsId}-panel`;
   const entries = useMemo(
     () => buildGolfopediaEntries(t, props.theme, props.economicPressure),
     [props.economicPressure, props.theme, t],
@@ -78,7 +80,7 @@ export function GolfopediaModal(props: {
           </div>
           <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
             <div data-golfopedia-tabs data-tooltip-skip style={{ maxWidth: "100%", overflowX: "auto", paddingBottom: 2 }}>
-              <GameTabs tabs={SECTIONS} activeTab={section} onTabChange={(tab) => {
+              <GameTabs id={tabsId} panelId={panelId} tabs={SECTIONS} activeTab={section} onTabChange={(tab) => {
                 const nextSection = tab as GolfopediaSection;
                 setSection(nextSection);
                 setQuery("");
@@ -88,7 +90,7 @@ export function GolfopediaModal(props: {
             <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={translateCurrent("auto.ui.help.golfopediamodal.search.terrain.stats.controls")} aria-label={translateCurrent("auto.ui.help.golfopediamodal.search.golfopedia")} style={{ width: "100%", minWidth: 0, boxSizing: "border-box", borderRadius: 999, border: "1px solid rgba(61,74,62,.35)", padding: "11px 15px", background: "#fffdf6" }} />
           </div>
         </header>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(190px, 30%) 1fr", minHeight: 0, flex: 1 }}>
+        <div id={panelId} role="tabpanel" aria-labelledby={`${tabsId}-tab-${SECTIONS.indexOf(section)}`} style={{ display: "grid", gridTemplateColumns: "minmax(190px, 30%) 1fr", minHeight: 0, flex: 1 }}>
           <nav data-tooltip-skip style={{ overflowY: "auto", borderRight: "1px solid rgba(61,74,62,.2)", padding: 10 }}>
             {filtered.map((entry) => <button data-golfopedia-sidebar-entry key={entry.id} aria-current={selected.id === entry.id ? "page" : undefined} onClick={() => setSelectedId(entry.id)} style={{ display: "block", width: "100%", textAlign: "left", border: 0, borderRadius: 9, padding: "10px 11px", marginBottom: 4, background: selected.id === entry.id ? "#3d4a3e" : "transparent", color: selected.id === entry.id ? "white" : "#3d4a3e", cursor: "pointer", fontWeight: 800 }}>{entry.title}</button>)}
             {filtered.length === 0 && <div style={{ padding: 12, color: "#6b7280", fontSize: 13 }}><T id="auto.ui.help.golfopediamodal.no.entries.match.that.search" /></div>}

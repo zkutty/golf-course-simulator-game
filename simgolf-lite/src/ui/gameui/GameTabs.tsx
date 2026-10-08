@@ -1,14 +1,35 @@
-import type { CSSProperties } from "react";
+import { useId, useRef, type CSSProperties, type KeyboardEvent } from "react";
 
 export interface GameTabsProps {
   tabs: string[];
   activeTab: string;
   onTabChange: (tab: string) => void;
+  id?: string;
+  panelId?: string;
 }
 
-export function GameTabs({ tabs, activeTab, onTabChange }: GameTabsProps) {
+export function GameTabs({ tabs, activeTab, onTabChange, id, panelId }: GameTabsProps) {
+  const generatedId = useId();
+  const tablistId = id ?? generatedId;
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const activeIndex = Math.max(0, tabs.indexOf(activeTab));
+  const navigate = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let next: number;
+    switch (event.key) {
+      case "ArrowRight": next = (index + 1) % tabs.length; break;
+      case "ArrowLeft": next = (index - 1 + tabs.length) % tabs.length; break;
+      case "Home": next = 0; break;
+      case "End": next = tabs.length - 1; break;
+      default: return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    buttons.current[next]?.focus();
+    onTabChange(tabs[next]);
+  };
   return (
     <div
+      id={tablistId}
       data-gameui="tabs"
       role="tablist"
       style={{
@@ -21,21 +42,21 @@ export function GameTabs({ tabs, activeTab, onTabChange }: GameTabsProps) {
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.4)",
       }}
     >
-      {tabs.map((t) => {
-        const isActive = t === activeTab;
+      {tabs.map((t, index) => {
+        const isActive = index === activeIndex;
         const btn: CSSProperties = {
           padding: "10px 14px",
           borderRadius: 999,
           border: "1px solid rgba(0,0,0,0.06)",
           background: isActive ? "var(--cc-forest)" : "transparent",
           color: isActive ? "#fff" : "#5c6a5c",
-          fontSize: 13,
+          fontSize: ".8125rem",
           fontWeight: 800,
           cursor: "pointer",
           boxShadow: isActive ? "0 10px 20px rgba(0,0,0,0.14)" : undefined,
         };
         return (
-          <button data-gameui="tab" key={t} role="tab" aria-selected={isActive} onClick={() => onTabChange(t)} style={btn}>
+          <button data-gameui="tab" key={index} type="button" ref={(node) => { buttons.current[index] = node; }} id={`${tablistId}-tab-${index}`} role="tab" aria-selected={isActive} aria-controls={panelId} tabIndex={isActive ? 0 : -1} onKeyDown={(event) => navigate(event, index)} onClick={() => onTabChange(t)} style={btn}>
             {t}
           </button>
         );
@@ -97,7 +118,6 @@ export function PillTabs({ tabs, activeTab, onTabChange }: PillTabsProps) {
     </div>
   );
 }
-
 
 
 

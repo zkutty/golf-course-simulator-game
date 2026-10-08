@@ -1,0 +1,38 @@
+/* Settings follows the profile's root text scale, including native controls. */
+[data-testid="options-screen"] { font-size: 1rem; }
+.cc-options-panel,
+.cc-options-panel *,
+[data-testid="options-screen"] [data-testid="keybindings-panel"],
+[data-testid="options-screen"] [data-testid="keybindings-panel"] * { box-sizing: border-box; }
+.cc-options-panel { min-width: 0; max-height: min(760px, calc(100dvh - 32px)) !important; }
+.cc-options-panel > header { gap: 12px; }
+.cc-options-panel > header > div { min-width: 0; overflow-wrap: anywhere; }
+.cc-options-panel > header button { flex-shrink: 0; }
+.cc-options-panel input { font: inherit; }
+.cc-options-panel button,
+[data-testid="options-screen"] [data-testid="keybindings-panel"] button { font-family: inherit; font-size: 1rem; }
+.cc-options-panel [data-gameui="button"] { font-size: .875rem !important; }
+.cc-options-panel [data-gameui="tabs"] { display: flex; flex-wrap: wrap; align-items: stretch; }
+.cc-options-panel [data-gameui="tab"] { flex: 1 1 0; min-width: 0; font-size: .8125rem; overflow-wrap: anywhere; }
+.cc-options-panel button:focus-visible,
+.cc-options-panel select:focus-visible,
+.cc-options-panel input:focus-visible { outline: 3px solid var(--ui-focus); outline-offset: 2px; }
+.cc-options-content { min-height: 0; min-width: 0; scroll-padding-block: 12px; }
+.cc-options-row { min-width: 0; overflow-wrap: anywhere; }
+.cc-options-row > *, .cc-options-row input, .cc-options-row select { min-width: 0; max-width: 100%; }
+.cc-options-row input[type="range"] { width: 100%; }
+.cc-options-panel > footer { flex-wrap: wrap; }
+.cc-options-panel > footer button { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+[data-testid="options-screen"] [data-testid="keybindings-panel"] { min-width: 0; overflow-wrap: anywhere; }
+[data-testid="options-screen"] [data-testid="keybindings-panel"] footer { flex-wrap: wrap; }
+[data-testid="options-screen"] [data-testid="keybindings-panel"] footer button { min-width: 0; max-width: 100%; font-size: .875rem !important; }
+@media (max-width: 560px) {
+  .cc-options-panel > header { padding: 12px !important; }
+  .cc-options-panel > nav { padding: 0 10px 10px !important; }
+  .cc-options-panel [data-gameui="tab"] { flex-basis: calc(50% - 8px); padding-inline: 6px !important; }
+  .cc-options-content { padding: 4px 12px 12px !important; }
+  .cc-options-row { grid-template-columns: minmax(0, 1fr) !important; gap: 8px !important; }
+  .cc-options-panel > footer { padding: 12px !important; }
+  [data-testid="options-screen"] [data-testid="keybindings-panel"] { padding: 12px !important; }
+  [data-testid="options-screen"] [data-testid="keybindings-panel"] > div > div { grid-template-columns: minmax(0, 1fr) !important; gap: 6px !important; }
+}

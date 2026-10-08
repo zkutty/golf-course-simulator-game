@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   DEFAULT_APP_PROFILE,
   type AppProfile,
@@ -11,6 +11,7 @@ import { useI18n } from "../i18n/useI18n";
 import { T } from "../i18n/T";
 import { useAudio } from "../audio/audioContext";
 import type { MusicContext } from "../audio/AudioManager";
+import "./SettingsModal.css";
 
 export interface SettingsModalProps {
   open: boolean;
@@ -30,6 +31,9 @@ function copyProfile(profile: AppProfile): AppProfile {
 export function SettingsModal(props: SettingsModalProps) {
   const [tab, setTab] = useState<ProfileTab>("gameplay");
   const [bindingsOpen, setBindingsOpen] = useState(false);
+  const id = useId();
+  const tabsId = `${id}-options-tabs`;
+  const panelId = `${id}-options-panel`;
   const trapRef = useFocusTrap<HTMLElement>(props.open && !bindingsOpen, props.onClose);
   const { t } = useI18n();
   if (!props.open) return null;
@@ -50,11 +54,11 @@ export function SettingsModal(props: SettingsModalProps) {
     <div role="dialog" aria-modal="true" aria-labelledby="options-title" data-testid="options-screen" style={{ position: "fixed", inset: 0, background: "rgba(15,24,18,.68)", display: "grid", placeItems: "center", padding: 16, zIndex: 99990 }} onClick={props.onClose}>
       <section className="cc-tycoon-panel cc-options-panel" ref={trapRef} style={{ width: "min(820px, 100%)", maxHeight: "min(760px, 92vh)", overflow: "hidden", display: "grid", gridTemplateRows: "auto auto minmax(0,1fr) auto", borderRadius: 20, background: "#f7f0df", border: "2px solid #a9987f", boxShadow: "0 24px 64px rgba(0,0,0,.42)" }} onClick={(event) => event.stopPropagation()}>
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 22px 12px" }}>
-          <div><div id="options-title" style={{ fontFamily: "var(--font-heading)", fontSize: 28, fontWeight: 900, color: "#344338" }}>{t("common.options")}</div><div style={{ fontSize: 12, color: "#687266" }}>{t("options.subtitle")}</div></div>
+          <div><div id="options-title" style={{ fontFamily: "var(--font-heading)", fontSize: "1.75rem", fontWeight: 900, color: "#344338" }}>{t("common.options")}</div><div style={{ fontSize: ".75rem", color: "#687266" }}>{t("options.subtitle")}</div></div>
           <button aria-label={t("options.close")} onClick={props.onClose} style={{ border: "1px solid #687266", borderRadius: 9, background: "#fffaf0", padding: "8px 11px", cursor: "pointer", fontWeight: 900 }}>✕</button>
         </header>
-        <nav aria-label={t("options.tabs.label")} style={{ padding: "0 20px 14px", overflowX: "auto" }}><GameTabs tabs={TABS.map((id) => t(TAB_KEYS[id]))} activeTab={t(TAB_KEYS[tab])} onTabChange={(next) => setTab(TABS.find((id) => t(TAB_KEYS[id]) === next) ?? tab)} /></nav>
-        <div style={{ overflowY: "auto", padding: "4px 24px 22px" }}>
+        <nav aria-label={t("options.tabs.label")} style={{ padding: "0 20px 14px", overflowX: "auto" }}><GameTabs id={tabsId} panelId={panelId} tabs={TABS.map((id) => t(TAB_KEYS[id]))} activeTab={t(TAB_KEYS[tab])} onTabChange={(next) => setTab(TABS.find((id) => t(TAB_KEYS[id]) === next) ?? tab)} /></nav>
+        <div className="cc-options-content" id={panelId} role="tabpanel" aria-labelledby={`${tabsId}-tab-${TABS.indexOf(tab)}`} style={{ overflowY: "auto", padding: "4px 24px 22px" }}>
           {tab === "gameplay" && <GameplayTab profile={props.profile} change={change} onProfileChange={props.onProfileChange} />}
           {tab === "graphics" && <GraphicsTab profile={props.profile} change={change} />}
           {tab === "audio" && <AudioTab profile={props.profile} change={change} />}
@@ -77,7 +81,7 @@ export function SettingsModal(props: SettingsModalProps) {
 type Change = <T extends ProfileTab>(key: T, patch: Partial<AppProfile[T]>) => void;
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return <label style={{ display: "grid", gridTemplateColumns: "minmax(180px,1fr) minmax(180px,1fr)", alignItems: "center", gap: 18, padding: "13px 0", borderBottom: "1px solid rgba(61,74,62,.12)" }}><span><span style={{ display: "block", fontWeight: 800, color: "#344338" }}>{label}</span>{hint && <span style={{ display: "block", fontSize: 12, color: "#72776b", marginTop: 2 }}>{hint}</span>}</span>{children}</label>;
+  return <label className="cc-options-row" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", alignItems: "center", gap: 18, padding: "13px 0", borderBottom: "1px solid rgba(61,74,62,.12)" }}><span><span style={{ display: "block", fontWeight: 800, color: "#344338" }}>{label}</span>{hint && <span style={{ display: "block", fontSize: ".75rem", color: "#72776b", marginTop: 2 }}>{hint}</span>}</span>{children}</label>;
 }
 const selectStyle: React.CSSProperties = { width: "100%", border: "1px solid #9ba293", borderRadius: 8, background: "#fffdf6", padding: 9, font: "inherit" };
 
@@ -87,7 +91,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (che
 }
 
 function Range({ value, onChange, min = 0, max = 1, step = .05, label }: { value: number; onChange: (value: number) => void; min?: number; max?: number; step?: number; label: string }) {
-  return <span style={{ display: "grid", gridTemplateColumns: "1fr 54px", gap: 10, alignItems: "center" }}><input aria-label={label} type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /><output style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Math.round(value * 100)}%</output></span>;
+  return <span style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 10, alignItems: "center" }}><input aria-label={label} type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} /><output style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{Math.round(value * 100)}%</output></span>;
 }
 
 function GameplayTab({ profile, change, onProfileChange }: { profile: AppProfile; change: Change; onProfileChange: (profile: AppProfile) => void }) {
