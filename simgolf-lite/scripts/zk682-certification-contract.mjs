@@ -825,7 +825,7 @@ export function inspectZk682RendererCompleteness({ candidateCommit, resource, cl
     });
   }
   if (keys(capture, ["method", "clip", "before", "after", "bytes", "sha256", "qualification"], "capture")) {
-    if (capture.method !== "public-page-screenshot-canvas-viewport-clip-v1" || typeof capture.qualification !== "string" || !capture.qualification) fail("capture method/qualification invalid");
+    if (!["public-page-screenshot-canvas-viewport-clip-v1", "public-cdp-page-captureScreenshot-canvas-viewport-clip-v1"].includes(capture.method) || typeof capture.qualification !== "string" || !capture.qualification) fail("capture method/qualification invalid");
     const fields = ["current", "connected", "visible", "tag", "x", "y", "width", "height", "viewportWidth", "viewportHeight", "intrinsicWidth", "intrinsicHeight", "dpr", "zoom"];
     const before = capture.before, after = capture.after;
     if (keys(before, fields, "capture before") && keys(after, fields, "capture after")) {
