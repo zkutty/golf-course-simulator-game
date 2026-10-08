@@ -16,6 +16,7 @@ on:
           - certification
           - renderer-diagnostic
           - startup-diagnostic
+          - renderer-recording-ablation
 
 permissions:
   contents: read
@@ -525,4 +526,128 @@ jobs:
             simgolf-lite/artifacts/linux-startup-diagnostic/performance.json
             simgolf-lite/artifacts/linux-startup-supervisor-smoke/owned-command-receipt.json
             simgolf-lite/artifacts/linux-startup-source/identity.json
+          if-no-files-found: error
+
+  renderer-recording-ablation:
+    if: ${{ inputs.mode == 'renderer-recording-ablation' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      DIAG_DRIVER_SHA: ${{ inputs.candidate_sha }}
+      CI: 'true'
+      PERF_FIXTURE: m27
+      PERF_THEME: parkland
+      PERF_WARMUP_S: '8'
+      PERF_MEASURE_S: '20'
+      PERF_ASSERT_FRAME: '0'
+      PERF_OUTPUT_PATH: artifacts/linux-renderer-recording-ablation/performance.json
+      COURSECRAFT_ZK682_RESOURCE_REPORT: artifacts/linux-renderer-recording-ablation/renderer-resource-growth.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 3
+      - name: Verify exact candidate and Linux ownership tools
+        shell: bash
+        run: |
+          [[ "$DIAG_DRIVER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$DIAG_DRIVER_SHA"
+          test -x /bin/ps
+          test -x /usr/bin/pgrep
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Verify App equivalence and prepare recording-off config
+        shell: bash
+        run: |
+          # BEGIN RECORDING CONTROLLER
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {execFileSync} from 'node:child_process';
+          import {readFileSync,writeFileSync,mkdirSync,lstatSync} from 'node:fs';
+          import {resolve,dirname} from 'node:path';import {createHash} from 'node:crypto';
+          export const baseline='ab8f4e2cde4d54666db6406ca5aeee598d207768';
+          export const baseDriver='d7fc6efb1ca5a191b7e35a951eee3b3d896c2ea8';
+          export const sourcePaths=['src','public','package.json','package-lock.json','vite.config.ts','scripts/pixi-reset-patch.json','scripts/perf-smoke.mjs','e2e/zk682-resource-growth.e2e.ts','scripts/react-component-timing-cleanup.mjs','scripts/zk682-resource-growth-contract.mjs','scripts/zk682-public-canvas-capture.mjs'];
+          export const edits=[['trace: "retain-on-failure"','trace: "off"'],['video: "retain-on-failure"','video: "off"'],['screenshot: "only-on-failure"','screenshot: "off"']];
+          export function transformConfig(before){let after=before;for(const [from,to]of edits){assert.equal(after.split(from).length-1,1,'single config literal required');assert.equal(after.split(to).length-1,0,'unexpected off literal');after=after.replace(from,to);}let inverse=after;for(const [from,to]of [...edits].reverse()){assert.equal(inverse.split(to).length-1,1);inverse=inverse.replace(to,from);}assert.equal(inverse,before);return after;}
+          export function verifyApp(cwd,driver,appBaseline=baseline,parent=baseDriver){assert.match(driver,/^[0-9a-f]{40}$/);const git=(...args)=>execFileSync('git',['-C','..',...args],{cwd,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:10000,maxBuffer:65536}).trim();assert.equal(git('rev-parse','HEAD'),driver);git('cat-file','-e',appBaseline+'^{commit}');assert.equal(git('rev-parse','HEAD^'),parent);assert.equal(git('rev-parse','HEAD^^'),appBaseline);git('diff','--exit-code',appBaseline,'HEAD','--',...sourcePaths.map(path=>'simgolf-lite/'+path));return {driverCommit:driver,appBaseline,sourceEquivalent:true};}
+          export function childAliases(identity){assert.equal(identity.sourceEquivalent,true);return {DIAG_DRIVER_SHA:identity.driverCommit,ZK682_EXPECTED_COMMIT:identity.appBaseline,GITHUB_SHA:identity.appBaseline,VITE_COMMIT_SHA:identity.appBaseline};}
+          export const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+          export const diagnosticPins={"diagnostics/zk682-linux-renderer.diagnostic.ts": "c2857fd6549ac9b19c4748f56474ad18773bf32bb73c7d95b6f3dd8e0427e7e4", "scripts/zk682-linux-phase.mjs": "5cfe187372dd624c5807a9cb32f904f348e066230ec687c2000fe6b20eb7e5e3", "scripts/zk682-linux-cleanup-timing.mjs": "00c6aa6e08f6631708d3a1d80beed2f45de5da72bcfe8f065b6971ca39205767", "scripts/zk682-linux-capture.mjs": "ffc01e240447053a12f6fbcec2dfe21eae250b98c2a3150f2ca52a915be07422", "scripts/linux-diagnostic-supervisor.py": "7fa51db57c8c377262a16a712203721c5c53ba71344f2b53268350a9f76020d7", "playwright.zk682-linux-diagnostic.config.ts": "7f50ac4107be61109ae6c6ebef887c43f61351fecacfffd55db4b39de2fa85e8"};
+          export function prepare(cwd,driver){const identity=verifyApp(cwd,driver);const rows=[];for(const [name,pin]of Object.entries(diagnosticPins)){const file=resolve(cwd,name);assert.equal(lstatSync(file).isSymbolicLink(),false);const bytes=readFileSync(file);assert.equal(hash(bytes),pin,'diagnostic source mismatch '+name);rows.push({path:name,sha256:pin});}const original=readFileSync(resolve(cwd,'playwright.zk682-linux-diagnostic.config.ts'),'utf8');const transformed=transformConfig(original);const config=resolve(cwd,'playwright.zk682-recording-off.generated.config.ts');writeFileSync(config,transformed,{flag:'wx'});mkdirSync(resolve(cwd,'artifacts/linux-recording-source'),{recursive:true});writeFileSync(resolve(cwd,'artifacts/linux-recording-source/identity.json'),JSON.stringify({...identity,recording:'off',explicitProducerPng:'unchanged; scalar upload excludes PNG, so uploaded data alone cannot provide PNG visual QA',sourceHashes:rows,config:{path:config,donorSHA256:hash(original),generatedSHA256:hash(transformed),inverseByteExact:true}},null,2)+'\n',{flag:'wx'});const aliases=childAliases(identity);assert.ok(process.env.GITHUB_ENV);writeFileSync(process.env.GITHUB_ENV,Object.entries({DIAG_APP_BASELINE:identity.appBaseline,ZK682_EXPECTED_COMMIT:identity.appBaseline,VITE_COMMIT_SHA:identity.appBaseline}).map(([key,value])=>key+'='+value).join('\n')+'\n',{flag:'a'});return identity;}
+          if(process.env.ZK682_RECORDING_CONTROLLER_TEST!=='1')prepare(process.cwd(),process.env.DIAG_DRIVER_SHA);
+          NODE
+          # END RECORDING CONTROLLER
+      - name: Linux supervisor capability smoke
+        run: python3 scripts/linux-diagnostic-supervisor.py --out artifacts/linux-recording-supervisor-smoke --seconds 5 --parent-seconds 60 --artifact-cap 1048576 -- python3 -c "print('owned supervisor smoke')"
+      - name: Validate isolated diagnostic discovery (no browser)
+        shell: bash
+        run: |
+          env GITHUB_SHA="$DIAG_APP_BASELINE" VITE_COMMIT_SHA="$DIAG_APP_BASELINE" ZK682_EXPECTED_COMMIT="$DIAG_APP_BASELINE" npx playwright test --config playwright.zk682-recording-off.generated.config.ts --list > artifacts/linux-recording-source/discovery.log
+          cat artifacts/linux-recording-source/discovery.log
+          grep -Eq '^Total: 1 test in 1 file$' artifacts/linux-recording-source/discovery.log
+      - name: Run one diagnostic (no certificate credit)
+        run: env GITHUB_SHA="$DIAG_APP_BASELINE" VITE_COMMIT_SHA="$DIAG_APP_BASELINE" ZK682_EXPECTED_COMMIT="$DIAG_APP_BASELINE" python3 scripts/linux-diagnostic-supervisor.py --out artifacts/linux-renderer-recording-ablation --seconds 1850 --parent-seconds 1910 --artifact-cap 1048576 -- npx playwright test --config playwright.zk682-recording-off.generated.config.ts --workers=1 --retries=0
+      - name: Extract bounded renderer phase rows
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          import json,pathlib
+          root=pathlib.Path('artifacts/linux-renderer-recording-ablation')
+          log=root/'stdout.log'
+          if log.exists():
+              if log.stat().st_size>262144: raise SystemExit('Diagnostic stdout bound exceeded')
+              rows=[]
+              for line in log.read_text(errors='replace').splitlines():
+                  try: row=json.loads(line)
+                  except ValueError: continue
+                  if isinstance(row,dict) and 'name' in row and 'stage' in row and 'hostMs' in row: rows.append(row)
+              data=(json.dumps({'certificateCredit':False,'rows':rows})+'\n').encode()
+              if len(rows)>512 or len(data)>65536: raise SystemExit('Phase artifact bound exceeded')
+              with (root/'phase.json').open('xb') as output: output.write(data)
+          PYCODE
+      - name: Validate diagnostic artifact allowlist size
+        id: recording_artifact_bounds
+        if: always()
+        shell: bash
+        run: |
+          # BEGIN RECORDING BOUNDS
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';import {existsSync,lstatSync} from 'node:fs';import {resolve} from 'node:path';
+          export const artifactLimits=Object.freeze({'owned-command-receipt.json':1048576,'phase.json':65536,'stdout.log':262144,'stderr.log':262144,'renderer-resource-growth.json':65536,'zk682-react-component-timing-cleanup.json':65536,'zk682-canvas-capture-receipt.json':65536});
+          export function boundedArtifact(root,name){assert.ok(Object.hasOwn(artifactLimits,name),'Unknown artifact name');const file=resolve(root,name);assert.ok(!lstatSync(root).isSymbolicLink(),'Root symlink refused');const stat=lstatSync(file,{throwIfNoEntry:false});if(!stat)return 0;assert.ok(!stat.isSymbolicLink()&&stat.isFile(),'Artifact ownership refused');assert.ok(stat.size<=artifactLimits[name],'Artifact bound exceeded');return stat.size;}
+          export function validateBounds(root,aux){let total=0;for(const name of Object.keys(artifactLimits))total+=boundedArtifact(root,name);for(const file of aux){const stat=lstatSync(file,{throwIfNoEntry:false});if(!stat)continue;assert.ok(!stat.isSymbolicLink()&&stat.isFile()&&stat.size<=65536,'Source/smoke bound exceeded');total+=stat.size;}assert.ok(total<=1048576,'Upload total bound exceeded');return total;}
+          if(process.env.ZK682_RECORDING_BOUNDS_TEST!=='1')validateBounds('artifacts/linux-renderer-recording-ablation',['artifacts/linux-recording-source/identity.json','artifacts/linux-recording-supervisor-smoke/owned-command-receipt.json']);
+          NODE
+          # END RECORDING BOUNDS
+      - name: Remove generated config after verified owned closure
+        if: always()
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import {readFileSync,existsSync,unlinkSync} from 'node:fs';
+          const receipt='artifacts/linux-renderer-recording-ablation/owned-command-receipt.json';
+          if(existsSync(receipt)&&JSON.parse(readFileSync(receipt)).closureVerified===true)unlinkSync('playwright.zk682-recording-off.generated.config.ts');
+          NODE
+      - name: Upload diagnostic scalar evidence only
+        if: ${{ always() && steps.recording_artifact_bounds.conclusion == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: zk682-renderer-recording-ablation-${{ inputs.candidate_sha }}-${{ github.run_id }}
+          path: |
+            simgolf-lite/artifacts/linux-renderer-recording-ablation/owned-command-receipt.json
+            simgolf-lite/artifacts/linux-renderer-recording-ablation/phase.json
+            simgolf-lite/artifacts/linux-renderer-recording-ablation/stdout.log
+            simgolf-lite/artifacts/linux-renderer-recording-ablation/stderr.log
+            simgolf-lite/artifacts/linux-renderer-recording-ablation/renderer-resource-growth.json
+            simgolf-lite/artifacts/linux-renderer-recording-ablation/zk682-react-component-timing-cleanup.json
+            simgolf-lite/artifacts/linux-renderer-recording-ablation/zk682-canvas-capture-receipt.json
+            simgolf-lite/artifacts/linux-recording-supervisor-smoke/owned-command-receipt.json
+            simgolf-lite/artifacts/linux-recording-source/identity.json
           if-no-files-found: error
