@@ -1,3 +1,4 @@
+import type { HoleTemplateFidelityV1, HoleTemplateProvenanceV1 } from "../holeTemplates/types";
 import type { ObjectiveState } from "./objectives";
 import type { TournamentCalendar } from "../tournaments/types";
 import type { PropertyCourseState, PropertyEnterpriseState } from "../property/types";
@@ -182,13 +183,19 @@ export type HoleIndexSource = "auto" | "manual" | "legacy";
 
 /**
  * Bounded attribution retained by an installed portable hole. The source
- * template, confidence evidence, placement plan, and source asset deliberately
- * remain outside the save; only the identity and credit needed after install
- * are persisted.
+ * template, confidence evidence, placement plan, and source pixels remain
+ * outside the save. Bounded provenance retains the rights policy after install.
  */
 export interface HoleTemplateAttribution {
   templateId: string;
   sourceLabel: string;
+  /** Optional only for historical placed holes; omitted rights never grant redistribution. */
+  sourceKind?: HoleTemplateProvenanceV1["sourceKind"];
+  importedAt?: string;
+  rightsAttested?: boolean;
+  redistribution?: HoleTemplateProvenanceV1["redistribution"];
+  sourceAssetRetained?: false;
+  fidelity?: HoleTemplateFidelityV1;
   licenseName?: string;
   attribution?: string;
 }

@@ -35,9 +35,13 @@ export interface HoleTemplateProvenanceV1 {
   licenseName?: string;
   attribution?: string;
   redistribution: HoleTemplateRedistribution;
-  /** Source imagery is never necessary to place or play the blueprint. */
+  /** Always false: source pixels are transient and never enter saved content. */
   sourceAssetRetained: boolean;
 }
+
+export type HoleTemplateFidelityV1 =
+  | { tier: "sketch" }
+  | { tier: "calibrated"; controlPointsReviewed: true; reviewedControlPointCount: number; verifiedYardage: number };
 
 export interface HoleTemplateConfidenceV1 {
   scale: number;
@@ -88,6 +92,9 @@ export interface HoleTemplateV1 {
   decorations: HoleTemplateDecorationV1[];
   provenance: HoleTemplateProvenanceV1;
   confidence: HoleTemplateConfidenceV1;
+  /** Historical V1 packages omit this field and are safely treated as Sketch.
+   * Keep it omitted during normalization to preserve their signed checksum. */
+  fidelity?: HoleTemplateFidelityV1;
 }
 
 export interface HoleTemplateValidationIssue {

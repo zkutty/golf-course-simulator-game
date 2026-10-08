@@ -1,3 +1,4 @@
+import { effectiveHoleTemplateFidelity, requiredHoleTemplateAttribution } from "./provenancePolicy";
 import { canonicalJson } from "../../utils/canonical";
 import { economicPressureForWorld, terrainCostMult } from "../balance/experience";
 import { isOwnedTile } from "../estate/estate";
@@ -215,7 +216,13 @@ function transformHole(template: HoleTemplateV1, placement: ResolvedHoleTemplate
       templateId: template.id,
       sourceLabel: template.provenance.sourceLabel,
       ...(template.provenance.licenseName ? { licenseName: template.provenance.licenseName } : {}),
-      ...(template.provenance.attribution ? { attribution: template.provenance.attribution } : {}),
+      sourceKind: template.provenance.sourceKind,
+      importedAt: template.provenance.importedAt,
+      rightsAttested: template.provenance.rightsAttested,
+      redistribution: template.provenance.redistribution,
+      sourceAssetRetained: false,
+      fidelity: structuredClone(effectiveHoleTemplateFidelity(template.fidelity)),
+      ...(requiredHoleTemplateAttribution(template.provenance) ? { attribution: requiredHoleTemplateAttribution(template.provenance) } : {}),
     },
   };
 }

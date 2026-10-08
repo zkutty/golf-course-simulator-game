@@ -4,6 +4,7 @@ import { packageText, validatePackageText, PACKAGE_LIMITS } from "./packageForma
 import { holeTemplatePackageText, validateHoleTemplatePackageText } from "./holeTemplatePackage";
 import type { ContentLibraryEntry, ContentPackageKind, ContentPackageV1, CoursePackageV1, HoleTemplatePackageV1, PackageValidationResult, WorkshopPublishResult } from "./types";
 import { isLandTheme } from "../models/biomes";
+import { holeTemplateUsePolicy, type HoleTemplateExportIntent } from "../holeTemplates/provenancePolicy";
 
 const MANIFEST_KEY = "coursecraft_content_library_v1";
 const PACKAGE_PREFIX = "coursecraft_content_";
@@ -55,8 +56,12 @@ function quarantineKey() {
   return `${QUARANTINE_PREFIX}${Date.now().toString(36)}-${quarantineSequence.toString(36)}`;
 }
 
-async function quarantine(platform: PlatformServices, text: string) {
-  await platform.files.writeTextAtomic(quarantineKey(), text.slice(0, PACKAGE_LIMITS.maxTextBytes));
+async function quarantine(platform: PlatformServices, text: string, redactSource = false) {
+  // Rejected blueprint input can contain embedded source pixels. Keep only a
+  // diagnostic receipt, never the untrusted source, in local quarantine.
+  await platform.files.writeTextAtomic(quarantineKey(), redactSource || /coursecraft-hole-template|sourceAssetRetained|"provenance"|"templateAttribution"/.test(text)
+    ? JSON.stringify({ kind: "hole-template", rejected: true, sourceDiscarded: true })
+    : text.slice(0, PACKAGE_LIMITS.maxTextBytes));
 }
 
 function placeholder(item: PlatformWorkshopItem, state: ContentLibraryEntry["state"]): ContentLibraryEntry {
@@ -259,11 +264,23 @@ export async function deleteContentPackage(contentId: string, platform = platfor
   return true;
 }
 
-export async function exportContentPackage(contentId: string, platform = platformServices): Promise<boolean> {
+export async function exportContentPackage(contentId: string, platform = platformServices, intent: HoleTemplateExportIntent = "private_copy"): Promise<boolean> {
   const entry = (await readManifest(platform)).find((item) => item.contentId === contentId);
   if (!entry) return false;
   const text = await platform.files.readText(entry.packageKey);
   if (!text) return false;
+  const validation = await validateStoredPackageText(text);
+  if (validation.status !== "compatible" && validation.status !== "migratable") return false;
+  const value = validation.value;
+  if (isHoleTemplatePackage(value)) {
+    if (!holeTemplateUsePolicy(value.payload.template.provenance, intent).allowed) return false;
+  } else if (intent === "redistribution") {
+    for (const hole of value.payload.course.holes) {
+      if (!hole.templateAttribution) continue;
+      const { templateId: _templateId, fidelity: _fidelity, ...provenance } = hole.templateAttribution;
+      if (!holeTemplateUsePolicy(provenance, intent).allowed) return false;
+    }
+  }
   const safeName = entry.title.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "coursecraft-package";
   const extension = isHoleTemplateKind(entry.kind) ? ".coursecraft-hole-template" : ".coursecraft-course";
   return platform.files.chooseExport(`${safeName}${extension}`, text);
@@ -350,6 +367,8 @@ export async function publishContentPackage(
   if (validation.status !== "compatible" && validation.status !== "migratable") return null;
   if (!isCoursePackage(validation.value)) return null;
   const value = validation.value;
+  // M63's Workshop exclusion also follows a blueprint into a course package.
+  if (value.payload.course.holes.some((hole) => hole.templateAttribution != null)) return null;
   const result = await platform.workshop.publish({
     contentId,
     title: value.manifest.title,

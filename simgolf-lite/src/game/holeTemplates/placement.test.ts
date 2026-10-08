@@ -126,6 +126,18 @@ function planned(args: {
 }
 
 describe("HoleTemplate V1 serialization", () => {
+  it("preserves reviewed fidelity and bounded provenance through canonicalization and placement, retaining required credit only", () => {
+    const source = template({
+      provenance: { ...template().provenance, sourceKind: "open_data", redistribution: "attribution", licenseName: "CC BY 4.0", attribution: "Dataset author" },
+      fidelity: { tier: "calibrated", controlPointsReviewed: true, reviewedControlPointCount: 2, verifiedYardage: 180 },
+    });
+    const canonical = canonicalHoleTemplateJson(source);
+    expect(canonicalHoleTemplateJson(JSON.parse(canonical))).toBe(canonical);
+    expect(planned({ template: source }).mutations.addHole.templateAttribution).toEqual({ templateId: source.id, ...source.provenance, fidelity: source.fidelity });
+    const privateSource = template({ provenance: { ...template().provenance, attribution: "Unrequired credit" } });
+    expect(planned({ template: privateSource }).mutations.addHole.templateAttribution).toMatchObject({ fidelity: { tier: "sketch" }, rightsAttested: true, redistribution: "private_only", sourceAssetRetained: false });
+    expect(planned({ template: privateSource }).mutations.addHole.templateAttribution).not.toHaveProperty("attribution");
+  });
   it("uses a verified browser-safe SHA-256 implementation", () => {
     expect(sha256Hex("")).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     expect(sha256Hex("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");

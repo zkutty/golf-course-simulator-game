@@ -2,6 +2,7 @@ import { CURRENT_SAVE_SCHEMA_VERSION } from "../../utils/saveFacade";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { normalizeM51CourseMobilityState, remapM51CourseMobilityBuildingIds, validateM51CourseMobilityInput } from "../m51/mobility";
 import { validateCoursePlayability, validateScenarioAuthoring } from "../scenarioAuthoring/authoring";
+import { placedHoleProvenanceIssues } from "../holeTemplates/provenancePolicy";
 import type { Course, CourseLayout, Hole, Terrain } from "../models/types";
 import { validateHoleCourseSetup } from "../models/courseSetup";
 import type {
@@ -171,6 +172,7 @@ function validateCourse(course: unknown, errors: string[]): course is Course {
       continue;
     }
     if (typeof hole.id !== "string" || !ID_PATTERN.test(hole.id)) errors.push(`course.holes[${index}]: stable hole ID is invalid`);
+    if (hole.templateAttribution !== undefined) errors.push(...placedHoleProvenanceIssues(hole.templateAttribution, `course.holes[${index}].templateAttribution`).map((issue) => `${issue.path}: ${issue.message}`));
     if (!validPoint(hole.tee, width, height) || !validPoint(hole.green, width, height)) errors.push(`course.holes[${index}]: tee/green must be in bounds or null`);
     for (const key of ["teeBoxes", "pinPositions"] as const) {
       if (hole[key] !== undefined) {

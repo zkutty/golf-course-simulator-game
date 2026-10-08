@@ -1,4 +1,5 @@
 import { canonicalJson } from "../../utils/canonical";
+import { fidelityPolicyIssues, provenancePolicyIssues } from "./provenancePolicy";
 import { DECORATION_KINDS, decorationSpec, decorationTiles } from "../models/decorations";
 import { ELEVATION_MAX, ELEVATION_MIN } from "../models/elevation";
 import { isPlantId, plantDefinition } from "../models/plantRegistry";
@@ -22,8 +23,6 @@ const TERRAIN_VALUES = new Set<Terrain>([
   "fairway", "rough", "deep_rough", "sand", "waste_area",
   "water", "wetland", "green", "tee", "path",
 ]);
-const SOURCE_KINDS = new Set(["player_photo", "course_web_page", "open_data", "licensed_provider", "manual"]);
-const REDISTRIBUTION_VALUES = new Set(["allowed", "attribution", "share_alike", "private_only", "unknown"]);
 const DECORATION_KIND_VALUES = new Set<string>(DECORATION_KINDS);
 const OBSTACLE_TYPES = new Set(["tree", "bush", "rock"]);
 
@@ -259,6 +258,7 @@ function normalizeTemplate(value: HoleTemplateV1): HoleTemplateV1 {
       redistribution: value.provenance.redistribution,
       sourceAssetRetained: value.provenance.sourceAssetRetained,
     },
+    ...(value.fidelity ? { fidelity: { ...value.fidelity } } : {}),
     confidence: {
       scale: value.confidence.scale,
       terrain: value.confidence.terrain,
@@ -272,7 +272,7 @@ function normalizeTemplate(value: HoleTemplateV1): HoleTemplateV1 {
 export function validateHoleTemplateV1(input: unknown): HoleTemplateValidationResult {
   const issues: HoleTemplateValidationIssue[] = [];
   if (!isRecord(input)) return { ok: false, issues: [{ code: "missing_value", path: "template", message: "Expected a HoleTemplate object." }] };
-  unknownFields(input, ["format", "version", "id", "title", "description", "width", "height", "yardsPerTile", "cells", "hole", "obstacles", "decorations", "provenance", "confidence"], "template", issues);
+  unknownFields(input, ["format", "version", "id", "title", "description", "width", "height", "yardsPerTile", "cells", "hole", "obstacles", "decorations", "provenance", "confidence", "fidelity"], "template", issues);
   if (input.format !== HOLE_TEMPLATE_FORMAT || input.version !== HOLE_TEMPLATE_VERSION) {
     issue(issues, "unsupported_version", "template.version", `Only ${HOLE_TEMPLATE_FORMAT} V${HOLE_TEMPLATE_VERSION} is supported.`);
   }
@@ -322,18 +322,7 @@ export function validateHoleTemplateV1(input: unknown): HoleTemplateValidationRe
   if (!Array.isArray(input.decorations) || input.decorations.length > MAX_FEATURES) issue(issues, "invalid_value", "template.decorations", "Expected at most 20,000 decorations.");
   for (const [index, decoration] of (Array.isArray(input.decorations) ? input.decorations : []).entries()) validateDecoration(decoration, index, width, height, issues);
 
-  if (!isRecord(input.provenance)) issue(issues, "missing_value", "template.provenance", "Provenance is required.");
-  else {
-    unknownFields(input.provenance, ["sourceKind", "sourceLabel", "importedAt", "rightsAttested", "licenseName", "attribution", "redistribution", "sourceAssetRetained"], "template.provenance", issues);
-    if (!SOURCE_KINDS.has(input.provenance.sourceKind as string)) issue(issues, "invalid_value", "template.provenance.sourceKind", "Unsupported source kind.");
-    validText(input.provenance.sourceLabel, "template.provenance.sourceLabel", issues, { nonEmpty: true });
-    if (!validText(input.provenance.importedAt, "template.provenance.importedAt", issues) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(input.provenance.importedAt) || Number.isNaN(Date.parse(input.provenance.importedAt))) issue(issues, "invalid_value", "template.provenance.importedAt", "Use a canonical ISO-8601 UTC timestamp.");
-    if (typeof input.provenance.rightsAttested !== "boolean") issue(issues, "invalid_value", "template.provenance.rightsAttested", "Rights attestation must be true or false.");
-    if (input.provenance.licenseName !== undefined) validText(input.provenance.licenseName, "template.provenance.licenseName", issues);
-    if (input.provenance.attribution !== undefined) validText(input.provenance.attribution, "template.provenance.attribution", issues);
-    if (!REDISTRIBUTION_VALUES.has(input.provenance.redistribution as string)) issue(issues, "invalid_value", "template.provenance.redistribution", "Unsupported redistribution policy.");
-    if (typeof input.provenance.sourceAssetRetained !== "boolean") issue(issues, "invalid_value", "template.provenance.sourceAssetRetained", "Source retention must be true or false.");
-  }
+  issues.push(...provenancePolicyIssues(input.provenance), ...fidelityPolicyIssues(input.fidelity));
 
   if (!isRecord(input.confidence)) issue(issues, "missing_value", "template.confidence", "Confidence evidence is required.");
   else {

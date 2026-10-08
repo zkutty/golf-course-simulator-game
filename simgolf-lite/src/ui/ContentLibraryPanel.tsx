@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Course, World } from "../game/models/types";
 import type { ContentLibraryEntry, ContentPackageKind } from "../game/contentPackages/types";
+import { holeTemplateLibrarySummary, type HoleTemplateLibrarySummary } from "./contentLibraryProvenance";
+import { effectiveHoleTemplateFidelity } from "../game/holeTemplates/provenancePolicy";
 import { createCoursePackage } from "../game/contentPackages/packageFormat";
 import { captureHoleTemplate, createHoleTemplatePackage } from "../game/contentPackages/holeTemplatePackage";
 import { buildPackageTestRun } from "../game/scenarioAuthoring/authoring";
@@ -12,6 +14,7 @@ import {
   publishContentPackage,
   readAuthoredPackage,
   readAuthoredHoleTemplatePackage,
+  readHoleTemplatePackage,
   readContentPackage,
   refreshWorkshopLibrary,
   saveAuthoredPackage,
@@ -19,6 +22,8 @@ import {
 } from "../game/contentPackages/library";
 import { platformServices } from "../platform";
 import { useI18n } from "../i18n/useI18n";
+
+const isHoleTemplate = (kind: ContentPackageKind) => kind === "hole-template";
 
 export function ContentLibraryPanel(props: {
   course: Course;
@@ -36,13 +41,24 @@ export function ContentLibraryPanel(props: {
   const [status, setStatus] = useState(t("content.ready"));
   const [kindFilter, setKindFilter] = useState<"all" | ContentLibraryEntry["kind"]>("all");
   const [holeId, setHoleId] = useState(props.course.holes[0]?.id ?? "");
-  const isHoleTemplate = (kind: ContentPackageKind) => kind === "hole-template";
-
-  const reload = async () => setEntries(await listContentLibrary());
+  const [captureRightsAttested, setCaptureRightsAttested] = useState(false);
+  const [templateMetadata, setTemplateMetadata] = useState<Record<string, HoleTemplateLibrarySummary>>({});
+  const reload = useCallback(async () => {
+    setEntries([]);
+    setTemplateMetadata({});
+    const next = await listContentLibrary();
+    const templates: Record<string, HoleTemplateLibrarySummary> = {};
+    for (const entry of next.filter((entry) => isHoleTemplate(entry.kind))) {
+      const value = await readHoleTemplatePackage(entry.contentId);
+      if (value) templates[entry.contentId] = holeTemplateLibrarySummary(value.payload.template);
+    }
+    setEntries(next);
+    setTemplateMetadata(templates);
+  }, []);
   useEffect(() => {
     closeRef.current?.focus();
-    void reload();
-  }, []);
+    void reload().catch(() => setStatus(t("content.failed")));
+  }, [reload, t]);
 
   const run = async (action: () => Promise<string>) => {
     setBusy(true);
@@ -93,7 +109,8 @@ export function ContentLibraryPanel(props: {
 
   const authorHole = () => run(async () => {
     const hole = props.course.holes.find((candidate) => candidate.id === holeId);
-    if (!hole) throw new Error("Choose a completed hole to capture.");
+    if (!hole) throw new Error(t("content.chooseCompletedHole"));
+    if (!captureRightsAttested) throw new Error(t("content.holeRightsRequired"));
     const id = `author-${author.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 72) || "local"}`;
     const previous = await readAuthoredHoleTemplatePackage(id, title.trim(), platformServices);
     const template = captureHoleTemplate(props.course, hole, {
@@ -101,8 +118,8 @@ export function ContentLibraryPanel(props: {
       title,
       description,
       yardsPerTile: 5,
-      provenance: { sourceKind: "manual", sourceLabel: "Player-built hole", importedAt: new Date().toISOString(), rightsAttested: true, redistribution: "private_only", sourceAssetRetained: false },
-      confidence: { scale: 1, terrain: 1, elevation: 1, notes: ["Captured from a player-built local hole."] },
+      provenance: { sourceKind: "manual", sourceLabel: t("content.playerBuiltSource"), importedAt: new Date().toISOString(), rightsAttested: captureRightsAttested, redistribution: "private_only", sourceAssetRetained: false },
+      confidence: { scale: 1, terrain: 1, elevation: 1, notes: [t("content.playerBuiltCaptureNote")] },
     });
     const value = await createHoleTemplatePackage({
       template, title, description, author: { id, displayName: author }, requiredGameVersion: __APP_VERSION__, theme: props.course.theme ?? "parkland",
@@ -151,13 +168,17 @@ export function ContentLibraryPanel(props: {
               <option value="">{t("content.captureHolePlaceholder")}</option>
               {props.course.holes.map((hole, index) => <option key={hole.id} value={hole.id}>{t("content.holeLabel", { number: index + 1 })}</option>)}
             </select>
-            <button disabled={busy || !holeId} type="button" onClick={() => void authorHole()}>{t("content.saveHoleTemplate")}</button>
+            <button disabled={busy || !holeId || !captureRightsAttested} type="button" onClick={() => void authorHole()}>{t("content.saveHoleTemplate")}</button>
             <button disabled={busy} type="button" onClick={() => void importFile()}>{t("content.import")}</button>
             <button disabled={busy || !platformServices.capabilities.workshop} type="button" onClick={() => void run(async () => {
               await refreshWorkshopLibrary();
               return t("content.refreshed");
             })}>{t("content.refresh")}</button>
           </div>
+          <label style={{ gridColumn: "1 / -1" }}><input type="checkbox" checked={captureRightsAttested} disabled={busy} onChange={(event) => setCaptureRightsAttested(event.target.checked)} /> {t("content.holeRightsAttestation")}</label>
+          <p style={{ gridColumn: "1 / -1", margin: 0 }}>{t("content.holePrivacyGuidance")}</p>
+          <p style={{ gridColumn: "1 / -1", margin: 0 }}>{t("content.holeFidelityGuidance")}</p>
+          <p style={{ gridColumn: "1 / -1", margin: 0 }}>{t("content.holeSourceGuidance")}</p>
         </form>
         <p role="status" aria-live="polite" style={{ margin: 0 }}>{status}</p>
         <label style={{ display: "grid", gap: 4 }}>{t("content.filterPackages")}
@@ -173,12 +194,17 @@ export function ContentLibraryPanel(props: {
                 <div><strong>{entry.title}</strong><br /><small>{t("content.entrySummary", { author: entry.author, theme: entry.theme, revision: entry.revision, source: entry.source })}</small></div>
                 <span>{entry.state}</span>
               </div>
+              {templateMetadata[entry.contentId] && <p style={{ margin: "6px 0" }}>{t("content.holeProvenanceSummary", {
+                source: templateMetadata[entry.contentId].provenance.sourceLabel,
+                importedAt: templateMetadata[entry.contentId].provenance.importedAt,
+                fidelity: t(effectiveHoleTemplateFidelity(templateMetadata[entry.contentId].fidelity).tier === "calibrated" ? "content.holeFidelityCalibrated" : "content.holeFidelitySketch"),
+              })}</p>}
               <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                 {!isHoleTemplate(entry.kind) && <button disabled={busy} onClick={() => void testPlay(entry)}>{t("content.testPlay")}</button>}
                 <button disabled={busy} onClick={() => void run(async () => {
                   const ok = await exportContentPackage(entry.contentId);
-                  return ok ? t("content.exported") : t("content.importCanceled");
-                })}>{t("content.export")}</button>
+                  return ok ? t(isHoleTemplate(entry.kind) ? "content.holePrivateCopyExported" : "content.exported") : t("content.importCanceled");
+                })}>{t(isHoleTemplate(entry.kind) ? "content.holePrivateCopyExport" : "content.export")}</button>
                 {!isHoleTemplate(entry.kind) && <button disabled={busy || !platformServices.capabilities.workshop} onClick={() => void publish(entry)}>{t("content.publish")}</button>}
                 <button disabled={busy} onClick={() => void run(async () => {
                   await deleteContentPackage(entry.contentId);

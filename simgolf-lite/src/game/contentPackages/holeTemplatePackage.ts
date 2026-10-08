@@ -4,6 +4,7 @@ import { validateHoleTemplateV1 } from "../holeTemplates/serialization";
 import { decorationTiles } from "../models/decorations";
 import { BIOME_KEYS } from "../models/biomes";
 import type { HoleTemplateCellV1, HoleTemplateV1 } from "../holeTemplates/types";
+import { provenancePolicyIssues } from "../holeTemplates/provenancePolicy";
 import type { HoleTemplatePackageV1, PackageValidationResult } from "./types";
 
 export const HOLE_TEMPLATE_PACKAGE_FORMAT = "coursecraft-hole-template-package" as const;
@@ -137,6 +138,12 @@ export function captureHoleTemplate(course: Course, hole: Hole, input: {
   confidence: HoleTemplateV1["confidence"];
 }): HoleTemplateV1 {
   if (!hole.tee || !hole.green) throw new Error("A captured hole needs tee and green markers.");
+  let provenance = input.provenance;
+  if (hole.templateAttribution) {
+    const { templateId: _templateId, fidelity: _fidelity, ...inherited } = hole.templateAttribution;
+    if (provenancePolicyIssues(inherited).length) throw new Error("Review the original source rights before recapturing a historical imported hole.");
+    provenance = inherited as HoleTemplateV1["provenance"];
+  }
   const points = [hole.tee, hole.green, ...(hole.waypoints ?? []), ...Object.values(hole.teeBoxes ?? {}).filter((point): point is Point => point != null), ...Object.values(hole.pinPositions ?? {}).filter((point): point is Point => point != null)];
   const routeMinX = Math.min(...points.map((point) => point.x));
   const routeMaxX = Math.max(...points.map((point) => point.x));
@@ -193,7 +200,8 @@ export function captureHoleTemplate(course: Course, hole: Hole, input: {
     },
     obstacles: obstacles.filter(inBounds).map(({ origin: _origin, ...obstacle }) => ({ ...obstacle, ...local(obstacle, bounds) })),
     decorations: decorations.filter(inBounds).map(({ origin: _origin, ...decoration }) => ({ ...decoration, ...local(decoration, bounds) })),
-    provenance: structuredClone(input.provenance),
+    provenance: structuredClone(provenance),
     confidence: structuredClone(input.confidence),
+    fidelity: { tier: "sketch" },
   };
 }

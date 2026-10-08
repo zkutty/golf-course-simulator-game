@@ -1,7 +1,8 @@
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { IconUi } from "../assets/icons";
 import type { MessageKey } from "../i18n/catalog";
 import { translateCurrent } from "../i18n/core";
+import "./ContextualInspectorPanel.css";
 import {
   biomeContextAttributes,
   type BiomeUiTheme,
@@ -105,6 +106,7 @@ export function ContextualInspectorPanel(props: {
   biomeContext?: BiomeUiTheme;
 }) {
   const [focus, setFocus] = useState<InspectorFocus>(props.initialFocus ?? "course");
+  const tabRefs = useRef<Partial<Record<InspectorFocus, HTMLButtonElement | null>>>({});
   const copy = FOCUS_COPY[focus];
   const openers: Record<InspectorFocus, () => void> = {
     course: props.onOpenCourses,
@@ -112,6 +114,30 @@ export function ContextualInspectorPanel(props: {
     property: props.onOpenProperty,
     people: props.onOpenPeople,
     legacy: props.onOpenLegacy,
+  };
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, candidate: InspectorFocus) => {
+    let nextIndex: number;
+    switch (event.key) {
+      case "ArrowRight":
+        nextIndex = (FOCUS_ORDER.indexOf(candidate) + 1) % FOCUS_ORDER.length;
+        break;
+      case "ArrowLeft":
+        nextIndex = (FOCUS_ORDER.indexOf(candidate) - 1 + FOCUS_ORDER.length) % FOCUS_ORDER.length;
+        break;
+      case "Home":
+        nextIndex = 0;
+        break;
+      case "End":
+        nextIndex = FOCUS_ORDER.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const nextFocus = FOCUS_ORDER[nextIndex];
+    setFocus(nextFocus);
+    tabRefs.current[nextFocus]?.focus();
   };
 
   return (
@@ -136,7 +162,7 @@ export function ContextualInspectorPanel(props: {
         <button className="cc-inspector-icon-button" aria-label={translateCurrent("inspector.close")} onClick={props.onClose} style={{ ...buttonStyle, padding: "5px 8px" }}><IconUi name="close" /></button>
       </header>
 
-      <div role="tablist" aria-label={translateCurrent("inspector.focus.aria")} style={{ display: "flex", gap: 5, margin: "13px 0 12px", flexWrap: "wrap" }}>
+      <div role="tablist" aria-orientation="horizontal" aria-label={translateCurrent("inspector.focus.aria")} style={{ display: "flex", gap: 5, margin: "13px 0 12px", flexWrap: "wrap" }}>
         {FOCUS_ORDER.map((candidate) => (
           <button
             key={candidate}
@@ -144,7 +170,10 @@ export function ContextualInspectorPanel(props: {
             role="tab"
             aria-selected={focus === candidate}
             aria-controls="contextual-inspector-content"
+            tabIndex={focus === candidate ? 0 : -1}
+            ref={(element) => { tabRefs.current[candidate] = element; }}
             onClick={() => setFocus(candidate)}
+            onKeyDown={(event) => handleTabKeyDown(event, candidate)}
             className="cc-inspector-tab"
             data-active={focus === candidate}
             style={buttonStyle}
@@ -156,7 +185,7 @@ export function ContextualInspectorPanel(props: {
 
       <div id="contextual-inspector-content" role="tabpanel" aria-labelledby={`contextual-inspector-tab-${focus}`} tabIndex={0}>
       {focus === "course" && <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+        <div className="cc-inspector-metrics" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
           <Metric label={translateCurrent("inspector.metric.course")} value={props.courseName} />
           <Metric label={translateCurrent("inspector.metric.holes")} value={`${props.validHoles}/9`} />
           <Metric label={translateCurrent("inspector.metric.condition")} value={`${Math.round(props.condition * 100)}%`} />
@@ -172,7 +201,7 @@ export function ContextualInspectorPanel(props: {
       </>}
 
       {focus === "operations" && <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+        <div className="cc-inspector-metrics" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
           <Metric label={translateCurrent("inspector.metric.cash")} value={props.cash} />
           <Metric label={translateCurrent("inspector.metric.reputation")} value={`${props.reputation}/100`} />
           <Metric label={translateCurrent("inspector.metric.week")} value={String(props.week)} />
@@ -188,7 +217,7 @@ export function ContextualInspectorPanel(props: {
       </>}
 
       {focus === "property" && <>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+        <div className="cc-inspector-metrics" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
           <Metric label={translateCurrent("inspector.metric.cash")} value={props.cash} />
           <Metric label={translateCurrent("inspector.metric.golfers")} value={String(props.golfers)} />
           <Metric label={translateCurrent("inspector.metric.complaints")} value={String(props.openComplaints)} />
