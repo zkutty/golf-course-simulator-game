@@ -76,3 +76,24 @@ test("workflow verdict rejects candidate drift, machine failures, and non-physic
   assert.equal(verifyZk682WorkflowReport({ candidateCommit: COMMIT, machinePassed: false, decision: "HOLD", blockers: [{ criterionId: "core-build" }] }, COMMIT).valid, false);
   assert.equal(verifyZk682WorkflowReport({ candidateCommit: COMMIT, machinePassed: true, decision: "HOLD", blockers: [{ criterionId: "core-build" }] }, COMMIT).valid, false);
 });
+
+
+test("diagnostic modes cannot launch certification batch and preserve missing-mode default", () => {
+  for (const id of ["linux-evidence", "native-evidence", "aggregate"]) {
+    const start=jobsText.indexOf(`  ${id}:\n`);
+    assert.match(jobsText.slice(start,start+150), /!inputs\.mode \|\| inputs\.mode == 'certification'/);
+  }
+  for (const id of ["renderer", "startup"]) {
+    const start=jobsText.indexOf(`  ${id}-diagnostic:\n`);
+    assert.notEqual(start,-1);
+    const next=jobsText.slice(start+4).search(/\n  [a-z][a-z-]*:\n/);
+    const end=next<0?-1:start+4+next;
+    const block=jobsText.slice(start,end<0?undefined:end);
+    assert.match(block,new RegExp(`inputs\\.mode == '${id}-diagnostic'`));
+  }
+  assert.match(workflow,/git -C \.\. diff --exit-code ab8f4e2/);
+  assert.match(workflow,/default: certification/);
+  assert.match(workflow,/--seconds 1850 --parent-seconds 1910/);
+  assert.match(workflow,/--seconds 600 --parent-seconds 660/);
+  assert.doesNotMatch(workflow,/artifacts\/linux-[^\n]*\/\*\.(?:png|zip|webm)/);
+});

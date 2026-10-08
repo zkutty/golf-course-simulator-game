@@ -7,6 +7,15 @@ on:
         description: Full 40-character commit SHA to certify
         required: true
         type: string
+      mode:
+        description: Certification or diagnostic-only workload (no certificate credit)
+        required: false
+        default: certification
+        type: choice
+        options:
+          - certification
+          - renderer-diagnostic
+          - startup-diagnostic
 
 permissions:
   contents: read
@@ -17,6 +26,7 @@ defaults:
 
 jobs:
   linux-evidence:
+    if: ${{ !inputs.mode || inputs.mode == 'certification' }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -157,6 +167,7 @@ jobs:
           retention-days: 90
 
   native-evidence:
+    if: ${{ !inputs.mode || inputs.mode == 'certification' }}
     name: ${{ matrix.platform }}-${{ matrix.architecture }} native evidence
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -225,6 +236,7 @@ jobs:
           retention-days: 30
 
   aggregate:
+    if: ${{ !inputs.mode || inputs.mode == 'certification' }}
     needs: [linux-evidence, native-evidence]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -289,3 +301,228 @@ jobs:
           node scripts/zk682-workflow-verdict.mjs \
             --report release/zk682/certification-report.json \
             --expected-commit "$ZK682_EXPECTED_COMMIT"
+
+  renderer-diagnostic:
+    if: ${{ inputs.mode == 'renderer-diagnostic' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ZK682_EXPECTED_COMMIT: ${{ inputs.candidate_sha }}
+      VITE_COMMIT_SHA: ${{ inputs.candidate_sha }}
+      CI: 'true'
+      PERF_FIXTURE: m27
+      PERF_THEME: parkland
+      PERF_WARMUP_S: '8'
+      PERF_MEASURE_S: '20'
+      PERF_ASSERT_FRAME: '0'
+      PERF_OUTPUT_PATH: artifacts/linux-renderer-diagnostic/performance.json
+      COURSECRAFT_ZK682_RESOURCE_REPORT: artifacts/linux-renderer-diagnostic/renderer-resource-growth.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 2
+      - name: Verify exact candidate and Linux ownership tools
+        shell: bash
+        run: |
+          [[ "$ZK682_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$ZK682_EXPECTED_COMMIT"
+          git cat-file -e ab8f4e2cde4d54666db6406ca5aeee598d207768^{commit}
+          git -C .. diff --exit-code ab8f4e2cde4d54666db6406ca5aeee598d207768 HEAD -- simgolf-lite/src simgolf-lite/public simgolf-lite/package.json simgolf-lite/package-lock.json simgolf-lite/vite.config.ts simgolf-lite/scripts/pixi-reset-patch.json simgolf-lite/scripts/perf-smoke.mjs simgolf-lite/e2e/zk682-resource-growth.e2e.ts simgolf-lite/scripts/react-component-timing-cleanup.mjs simgolf-lite/playwright.config.ts
+          test -x /bin/ps
+          test -x /usr/bin/pgrep
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Record exact diagnostic source identity
+        shell: bash
+        run: |
+          mkdir -p artifacts/linux-renderer-source
+          python3 - <<'PYCODE'
+          import hashlib,json,pathlib,subprocess
+          names=['scripts/perf-smoke.mjs','e2e/zk682-resource-growth.e2e.ts','scripts/react-component-timing-cleanup.mjs','playwright.config.ts']
+          rows=[{'path':n,'sha256':hashlib.sha256(pathlib.Path(n).read_bytes()).hexdigest()} for n in names]
+          data={'candidateCommit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'underlyingAppBaseline':'ab8f4e2cde4d54666db6406ca5aeee598d207768','qualification':'Diagnostic commit distinct; root app-byte-equivalence admission required. Driver UNKNOWN until actually observed.','sourceHashes':rows}
+          with pathlib.Path('artifacts/linux-renderer-source/identity.json').open('x') as output: json.dump(data,output)
+          PYCODE
+      - name: Linux supervisor capability smoke
+        run: python3 scripts/linux-diagnostic-supervisor.py --out artifacts/linux-renderer-supervisor-smoke --seconds 5 --parent-seconds 60 --artifact-cap 1048576 -- python3 -c "print('owned supervisor smoke')"
+      - name: Validate isolated diagnostic discovery (no browser)
+        run: npx playwright test --config playwright.zk682-linux-diagnostic.config.ts --list
+      - name: Run one diagnostic (no certificate credit)
+        run: python3 scripts/linux-diagnostic-supervisor.py --out artifacts/linux-renderer-diagnostic --seconds 1850 --parent-seconds 1910 --artifact-cap 1048576 -- npx playwright test --config playwright.zk682-linux-diagnostic.config.ts --workers=1 --retries=0
+      - name: Extract bounded renderer phase rows
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          import json,pathlib
+          root=pathlib.Path('artifacts/linux-renderer-diagnostic')
+          log=root/'stdout.log'
+          if log.exists():
+              if log.stat().st_size>262144: raise SystemExit('Diagnostic stdout bound exceeded')
+              rows=[]
+              for line in log.read_text(errors='replace').splitlines():
+                  try: row=json.loads(line)
+                  except ValueError: continue
+                  if isinstance(row,dict) and 'name' in row and 'stage' in row and 'hostMs' in row: rows.append(row)
+              data=(json.dumps({'certificateCredit':False,'rows':rows})+'\n').encode()
+              if len(rows)>512 or len(data)>65536: raise SystemExit('Phase artifact bound exceeded')
+              with (root/'phase.json').open('xb') as output: output.write(data)
+          PYCODE
+      - name: Validate diagnostic artifact allowlist size
+        id: renderer_artifact_bounds
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          import pathlib
+          root=pathlib.Path('artifacts/linux-renderer-diagnostic')
+          names=['owned-command-receipt.json', 'phase.json', 'stdout.log', 'stderr.log', 'renderer-resource-growth.json', 'zk682-react-component-timing-cleanup.json', 'zk682-canvas-capture-receipt.json']
+          total=0
+          for name in names:
+              file=root/name
+              if file.exists():
+                  if file.is_symlink() or not file.is_file(): raise SystemExit('Artifact ownership admission refused')
+                  size=file.stat().st_size
+                  limit=1048576 if name=='owned-command-receipt.json' else (262144 if name.endswith('.log') else 65536)
+                  if size>limit: raise SystemExit('Diagnostic artifact size bound exceeded')
+                  total+=size
+          for name in ['artifacts/linux-renderer-source/identity.json','artifacts/linux-renderer-supervisor-smoke/owned-command-receipt.json']:
+              file=pathlib.Path(name)
+              if file.exists():
+                  if file.is_symlink() or file.stat().st_size>65536: raise SystemExit('Diagnostic source/smoke artifact bound exceeded')
+                  total+=file.stat().st_size
+          if total>1048576: raise SystemExit('Diagnostic upload total bound exceeded')
+          PYCODE
+      - name: Upload diagnostic scalar evidence only
+        if: ${{ always() && steps.renderer_artifact_bounds.conclusion == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: zk682-renderer-diagnostic-${{ inputs.candidate_sha }}-${{ github.run_id }}
+          path: |
+            simgolf-lite/artifacts/linux-renderer-diagnostic/owned-command-receipt.json
+            simgolf-lite/artifacts/linux-renderer-diagnostic/phase.json
+            simgolf-lite/artifacts/linux-renderer-diagnostic/stdout.log
+            simgolf-lite/artifacts/linux-renderer-diagnostic/stderr.log
+            simgolf-lite/artifacts/linux-renderer-diagnostic/renderer-resource-growth.json
+            simgolf-lite/artifacts/linux-renderer-diagnostic/zk682-react-component-timing-cleanup.json
+            simgolf-lite/artifacts/linux-renderer-diagnostic/zk682-canvas-capture-receipt.json
+            simgolf-lite/artifacts/linux-renderer-supervisor-smoke/owned-command-receipt.json
+            simgolf-lite/artifacts/linux-renderer-source/identity.json
+          if-no-files-found: error
+
+  startup-diagnostic:
+    if: ${{ inputs.mode == 'startup-diagnostic' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ZK682_EXPECTED_COMMIT: ${{ inputs.candidate_sha }}
+      VITE_COMMIT_SHA: ${{ inputs.candidate_sha }}
+      CI: 'true'
+      PERF_FIXTURE: m27
+      PERF_FIXTURE_READY_TIMEOUT_MS: '300000'
+      PERF_THEME: parkland
+      PERF_WARMUP_S: '8'
+      PERF_MEASURE_S: '20'
+      PERF_ASSERT_FRAME: '0'
+      PERF_OUTPUT_PATH: artifacts/linux-startup-diagnostic/performance.json
+      COURSECRAFT_ZK682_RESOURCE_REPORT: artifacts/linux-startup-diagnostic/renderer-resource-growth.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 2
+      - name: Verify exact candidate and Linux ownership tools
+        shell: bash
+        run: |
+          [[ "$ZK682_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$ZK682_EXPECTED_COMMIT"
+          git cat-file -e ab8f4e2cde4d54666db6406ca5aeee598d207768^{commit}
+          git -C .. diff --exit-code ab8f4e2cde4d54666db6406ca5aeee598d207768 HEAD -- simgolf-lite/src simgolf-lite/public simgolf-lite/package.json simgolf-lite/package-lock.json simgolf-lite/vite.config.ts simgolf-lite/scripts/pixi-reset-patch.json simgolf-lite/scripts/perf-smoke.mjs simgolf-lite/e2e/zk682-resource-growth.e2e.ts simgolf-lite/scripts/react-component-timing-cleanup.mjs simgolf-lite/playwright.config.ts
+          test -x /bin/ps
+          test -x /usr/bin/pgrep
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Record exact diagnostic source identity
+        shell: bash
+        run: |
+          mkdir -p artifacts/linux-startup-source
+          python3 - <<'PYCODE'
+          import hashlib,json,pathlib,subprocess
+          names=['scripts/perf-smoke.mjs','e2e/zk682-resource-growth.e2e.ts','scripts/react-component-timing-cleanup.mjs','playwright.config.ts']
+          rows=[{'path':n,'sha256':hashlib.sha256(pathlib.Path(n).read_bytes()).hexdigest()} for n in names]
+          data={'candidateCommit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'underlyingAppBaseline':'ab8f4e2cde4d54666db6406ca5aeee598d207768','qualification':'Diagnostic commit distinct; root app-byte-equivalence admission required. Driver UNKNOWN until actually observed.','sourceHashes':rows}
+          with pathlib.Path('artifacts/linux-startup-source/identity.json').open('x') as output: json.dump(data,output)
+          PYCODE
+      - name: Linux supervisor capability smoke
+        run: python3 scripts/linux-diagnostic-supervisor.py --out artifacts/linux-startup-supervisor-smoke --seconds 5 --parent-seconds 60 --artifact-cap 1048576 -- python3 -c "print('owned supervisor smoke')"
+      - name: Run one diagnostic (no certificate credit)
+        run: python3 scripts/linux-diagnostic-supervisor.py --out artifacts/linux-startup-diagnostic --seconds 600 --parent-seconds 660 --artifact-cap 1048576 -- node scripts/linux-readiness-perf-smoke.mjs
+      - name: Extract bounded renderer phase rows
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          import json,pathlib
+          root=pathlib.Path('artifacts/linux-startup-diagnostic')
+          log=root/'stdout.log'
+          if log.exists():
+              if log.stat().st_size>262144: raise SystemExit('Diagnostic stdout bound exceeded')
+              rows=[]
+              for line in log.read_text(errors='replace').splitlines():
+                  try: row=json.loads(line)
+                  except ValueError: continue
+                  if isinstance(row,dict) and 'name' in row and 'stage' in row and 'hostMs' in row: rows.append(row)
+              data=(json.dumps({'certificateCredit':False,'rows':rows})+'\n').encode()
+              if len(rows)>512 or len(data)>65536: raise SystemExit('Phase artifact bound exceeded')
+              with (root/'phase.json').open('xb') as output: output.write(data)
+          PYCODE
+      - name: Validate diagnostic artifact allowlist size
+        id: startup_artifact_bounds
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          import pathlib
+          root=pathlib.Path('artifacts/linux-startup-diagnostic')
+          names=['owned-command-receipt.json', 'phase.json', 'stdout.log', 'stderr.log', 'performance.json']
+          total=0
+          for name in names:
+              file=root/name
+              if file.exists():
+                  if file.is_symlink() or not file.is_file(): raise SystemExit('Artifact ownership admission refused')
+                  size=file.stat().st_size
+                  limit=1048576 if name=='owned-command-receipt.json' else (262144 if name.endswith('.log') else 65536)
+                  if size>limit: raise SystemExit('Diagnostic artifact size bound exceeded')
+                  total+=size
+          for name in ['artifacts/linux-startup-source/identity.json','artifacts/linux-startup-supervisor-smoke/owned-command-receipt.json']:
+              file=pathlib.Path(name)
+              if file.exists():
+                  if file.is_symlink() or file.stat().st_size>65536: raise SystemExit('Diagnostic source/smoke artifact bound exceeded')
+                  total+=file.stat().st_size
+          if total>1048576: raise SystemExit('Diagnostic upload total bound exceeded')
+          PYCODE
+      - name: Upload diagnostic scalar evidence only
+        if: ${{ always() && steps.startup_artifact_bounds.conclusion == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: zk682-startup-diagnostic-${{ inputs.candidate_sha }}-${{ github.run_id }}
+          path: |
+            simgolf-lite/artifacts/linux-startup-diagnostic/owned-command-receipt.json
+            simgolf-lite/artifacts/linux-startup-diagnostic/phase.json
+            simgolf-lite/artifacts/linux-startup-diagnostic/stdout.log
+            simgolf-lite/artifacts/linux-startup-diagnostic/stderr.log
+            simgolf-lite/artifacts/linux-startup-diagnostic/performance.json
+            simgolf-lite/artifacts/linux-startup-supervisor-smoke/owned-command-receipt.json
+            simgolf-lite/artifacts/linux-startup-source/identity.json
+          if-no-files-found: error
