@@ -40,7 +40,7 @@ export async function capturePublicCDPCanvas(page,{canvasClip,timing={now:()=>pe
   const within=async promise=>{guard();const value=await Promise.race([Promise.resolve(promise),timeout]);guard();return value;};
   const owned=async(promise,method)=>{const pending=Promise.resolve(promise);pending.then(object=>{if(expired||closed||timing.now()>=deadline)cleanup(object,method);},()=>{});return within(pending);};
   try{
-    assert.equal(await within(page.locator('.cc-pixi-stage canvas').count()),1,'exactly one canvas');rawHandle=await owned(page.evaluateHandle(() => {
+    rawHandle=await owned(page.evaluateHandle(() => {
       const matches=document.querySelectorAll('.cc-pixi-stage canvas');
       if(matches.length!==1)throw new Error('Exactly one current document canvas required');
       const node=matches[0];
