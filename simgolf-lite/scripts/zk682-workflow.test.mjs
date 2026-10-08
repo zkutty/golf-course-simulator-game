@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {createHash} from "node:crypto";
 import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, unlinkSync, symlinkSync } from "node:fs";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
@@ -122,3 +123,34 @@ test('startup verification actual smoke helper requires bounded successful owned
 
 
 test('startup verification bounded source-list subprocess exceeds64KiB but rejects1MiB overflow',async()=>{const c=await controller();let observed=[];const runner=(command,args,options)=>{assert.equal(command,'git');assert.deepEqual(args,['-C','/fixture','ls-files','simgolf-lite/src']);observed.push(options.maxBuffer);return spawnSync(process.execPath,['-e',"process.stdout.write(Array.from({length:2356},(_,i)=>'simgolf-lite/src/'+i+'-'+ 'x'.repeat(64)+'.ts').join('\\n'))"],options);};const listing=c.git('/fixture',['ls-files','simgolf-lite/src'],1048576,runner);assert(Buffer.byteLength(listing)>65536);assert(Buffer.byteLength(listing)<=1048576);assert.equal(listing.split('\n').length,2356);assert.deepEqual(observed,[1048576]);assert.throws(()=>c.git('/fixture',['ls-files','simgolf-lite/src'],65536,runner));const overflow=(command,args,options)=>{assert.equal(options.maxBuffer,1048576);const result=spawnSync(process.execPath,['-e',"process.stdout.write('x'.repeat(1048577))"],options);assert(result.error,'Actual child output overflow must reject');return result;};assert.throws(()=>c.git('/fixture',['ls-files','simgolf-lite/src'],1048576,overflow));assert.throws(()=>c.git('/fixture',['rev-parse','HEAD'],1048576,()=>{throw Error('Must not spawn');}));assert.throws(()=>c.git('/fixture',['ls-files','simgolf-lite/src'],Infinity,()=>{throw Error('Must not spawn');}));});
+
+
+// Q_STARTUP_DEMAND_VERIFICATION_TESTS_BEGIN
+test('Q startup verification actual demand pin guard accepts complete files and rejects stale missing symlink oversized sources',async()=>{
+  const c=await controller();const root=mkdtempSync(join(tmpdir(),'zk682-Q-demand-pins-'));
+  const keys=Object.keys(c.DEMAND_PINS),contents=Object.fromEntries(keys.map((key,i)=>[key,'source-fixture-'+i])),expected=Object.fromEntries(keys.map(key=>[key,createHash('sha256').update(contents[key]).digest('hex')]));
+  const restore=()=>{for(const key of keys){const file=join(root,key);mkdirSync(join(file,'..'),{recursive:true});rmSync(file,{force:true});writeFileSync(file,contents[key]);}};
+  try{
+    assert.equal(c.TARGET,'0d4307addd412c9653b0ec50af142cead8cac955');assert.equal(keys.length,3);restore();
+    const rows=c.verifyDemandPins(root,expected);assert.deepEqual(rows.map(x=>[x.path,x.sha256]),keys.map(key=>[key,expected[key]]));
+    assert.throws(()=>c.verifyDemandPins(root),/Demand source pin mismatch/);
+    for(const key of keys){writeFileSync(join(root,key),'stale');assert.throws(()=>c.verifyDemandPins(root,expected));restore();unlinkSync(join(root,key));assert.throws(()=>c.verifyDemandPins(root,expected));restore();}
+    const file=join(root,keys[1]);unlinkSync(file);symlinkSync(join(root,keys[0]),file);assert.throws(()=>c.verifyDemandPins(root,expected),/ownership/);restore();
+    writeFileSync(file,'x'.repeat(1048577));assert.throws(()=>c.verifyDemandPins(root,expected),/size/);restore();
+    for(const invalid of [{},{...expected,extra:'a'.repeat(64)},{...expected,[keys[0]]:'not-a-hash'}])assert.throws(()=>c.verifyDemandPins(root,invalid),/pin set/);
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test('Q startup verification exact full workflow inverse preserves accepted routing producer budgets and source-list guard',()=>{
+  const restored=workflow
+    .replace('          ref: 0d4307addd412c9653b0ec50af142cead8cac955\n          path: target','          ref: ab8f4e2cde4d54666db6406ca5aeee598d207768\n          path: target')
+    .replace('          test "$(git rev-parse HEAD)" = 0d4307addd412c9653b0ec50af142cead8cac955','          test "$(git rev-parse HEAD)" = ab8f4e2cde4d54666db6406ca5aeee598d207768')
+    .replace("          export const TARGET='0d4307addd412c9653b0ec50af142cead8cac955';","          export const TARGET='ab8f4e2cde4d54666db6406ca5aeee598d207768';")
+    .replace(new RegExp('^          // Q_DEMAND_PIN_GUARD_BEGIN\n[\\s\\S]*?^          // Q_DEMAND_PIN_GUARD_END\n','m'),'')
+    .replace("const demandSourcePins=verifyDemandPins(target);const names=[","const names=[")
+    .replace('supervisorSha256:SUPERVISOR,demandSourcePins,pins,','supervisorSha256:SUPERVISOR,pins,');
+  assert.equal(createHash('sha256').update(restored).digest('hex'),'122cb645cda1b1e5b54378f5a5b9fcd85ceb0ba9cde0f162023810516ceb7978');
+  assert.notEqual(createHash('sha256').update(restored.replace("PERF_WARMUP_S:'8'","PERF_WARMUP_S:'9'")).digest('hex'),'122cb645cda1b1e5b54378f5a5b9fcd85ceb0ba9cde0f162023810516ceb7978');
+  assert(startupBlock.indexOf('verifyDemandPins(target)')<startupBlock.indexOf('const smoke=runSmoke'));assert(startupBlock.includes('appSourceFileCount:sourceRows.length'));assert(startupBlock.includes("git(target,['ls-files','simgolf-lite/src'],1048576)"));
+});
+// Q_STARTUP_DEMAND_VERIFICATION_TESTS_END
