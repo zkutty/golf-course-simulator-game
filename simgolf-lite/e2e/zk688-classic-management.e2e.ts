@@ -13,7 +13,7 @@ async function openSystemControlPanel(page: Page) {
   await page.getByTestId("workspace-legacy").click();
   await page.getByTestId("open-seasons-legacy").click();
   const panel = page.getByTestId("seasons-legacy-panel");
-  await panel.getByRole("button", { name: "Club identity", exact: true }).click();
+  await panel.getByRole("tab", { name: "Club identity", exact: true }).click();
   await panel.getByText("Manual system overrides", { exact: true }).click();
   return panel;
 }
@@ -50,7 +50,7 @@ test("ZK-688 Classic keeps the ordinary management loop visible and makes back-o
   await enterClassicFixture(page);
 
   const panel = page.getByTestId("seasons-legacy-panel");
-  await panel.getByRole("button", { name: "Club identity", exact: true }).click();
+  await panel.getByRole("tab", { name: "Club identity", exact: true }).click();
   await expect(panel.getByTestId("system-control-summary")).toContainText("Classic · 13 automated · 0 direct");
   await panel.getByText("Manual system overrides", { exact: true }).click();
   await expect(panel.locator("[data-testid^=system-policy-]")).toHaveCount(7);
@@ -59,13 +59,13 @@ test("ZK-688 Classic keeps the ordinary management loop visible and makes back-o
 
   await panel.getByTestId("back-office-policy-drainage").getByRole("button", { name: "Take control" }).click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").systemControl.systems.find((system: { id: string }) => system.id === "drainage"))).toMatchObject({ visibility: "full", mode: "manual", source: "save-override" });
-  await panel.getByRole("button", { name: "Season", exact: true }).click();
+  await panel.getByRole("tab", { name: "Season", exact: true }).click();
   await expect(panel.getByTestId("improve-drainage")).toBeVisible();
-  await panel.getByRole("button", { name: "Club identity", exact: true }).click();
+  await panel.getByRole("tab", { name: "Club identity", exact: true }).click();
   await panel.getByText("Manual system overrides", { exact: true }).click();
   await panel.getByTestId("system-policy-drainage").getByRole("button", { name: "Return" }).click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").systemControl.systems.find((system: { id: string }) => system.id === "drainage"))).toMatchObject({ visibility: "hidden", mode: "automated", source: "profile-default" });
-  await panel.getByRole("button", { name: "Season", exact: true }).click();
+  await panel.getByRole("tab", { name: "Season", exact: true }).click();
   await expect(panel.getByTestId("improve-drainage")).toHaveCount(0);
   await panel.getByRole("button", { name: "Close", exact: true }).click();
 

@@ -19,7 +19,7 @@ test("ZK-685 profile policy, takeover, return, and graduation stay visible and a
   await page.evaluate(() => window.__coursecraftTest!.setM39Fixture());
 
   const panel = page.getByTestId("seasons-legacy-panel");
-  await panel.getByRole("button", { name: "Club identity", exact: true }).click();
+  await panel.getByRole("tab", { name: "Club identity", exact: true }).click();
   await expect(panel.getByTestId("system-control-summary")).toContainText("Relaxed · 13 automated · 0 direct");
   await panel.getByText("Manual system overrides", { exact: true }).click();
   await expect(panel.getByTestId("system-policy-maintenance")).toBeVisible();

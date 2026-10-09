@@ -18,7 +18,7 @@ async function openNavigator(page: Page) {
     await page.getByTestId("open-seasons-legacy").click();
     panel = page.getByTestId("seasons-legacy-panel");
   }
-  await panel.getByRole("button", { name: "Club identity", exact: true }).click();
+  await panel.getByRole("tab", { name: "Club identity", exact: true }).click();
   await expect(panel.getByTestId("simulation-operations")).toBeVisible();
   return panel;
 }
@@ -136,7 +136,12 @@ test("ZK-689 Simulation exposes all thirteen responsibilities through existing s
   const tournaments = page.getByTestId("tournament-panel");
   await expect(tournaments).toBeFocused();
   await tournaments.getByTestId("tournament-tier").selectOption("championship");
-  await expect(tournaments.getByTestId("tournament-readiness").locator("li").filter({ hasText: "✕" }).first()).toBeVisible();
+  const unmetRequirement = tournaments.getByTestId("tournament-readiness").locator("li[data-requirement][data-passed=false]").first();
+  await expect(unmetRequirement).toBeVisible();
+  await expect(unmetRequirement).toHaveAttribute("data-passed", "false");
+  await expect(unmetRequirement.locator(".cc-tournament__state")).toHaveText("Unmet");
+  await expect(unmetRequirement.locator(".cc-tournament__state")).toBeVisible();
+  await expect(unmetRequirement.locator("svg[aria-hidden=true]")).toBeVisible();
   const beforeBlockedTournament = await page.evaluate(() => {
     const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
     return { cash: state.economy.cash, scheduled: state.tournament.scheduled };

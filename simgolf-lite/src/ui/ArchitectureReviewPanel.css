@@ -1,0 +1,101 @@
+.cc-architecture-review,
+.cc-architecture-review * {
+  box-sizing: border-box;
+}
+
+.cc-architecture-review {
+  position: absolute;
+  z-index: 145;
+  top: 3.625rem;
+  right: .875rem;
+  width: min(26.875rem, calc(100% - 1.75rem));
+  max-height: calc(100% - 7.25rem);
+  overflow: auto;
+  padding: .875rem;
+  color: #26362d;
+  font-size: 1rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+}
+
+.cc-architecture-review :where(div, span, p, strong, b, small, label, section, details, nav, header) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cc-architecture-review :where(button, select, input) {
+  font: inherit;
+  line-height: inherit;
+  color: inherit;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cc-architecture-review button {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-height: 2.25rem;
+  border: 1px solid #806946;
+  border-radius: .25rem;
+  padding: .375rem .5rem;
+  cursor: pointer;
+}
+
+.cc-architecture-review label {
+  display: grid;
+  align-content: start;
+  gap: .25rem;
+}
+
+.cc-architecture-review select {
+  width: 100%;
+  min-height: 2.25rem;
+  background: #fffdf6;
+}
+
+.cc-architecture-review > header svg {
+  display: block;
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.cc-architecture-review small {
+  font-size: .8125em;
+}
+
+.cc-architecture-review :where(button, select, summary):focus-visible {
+  outline: .1875rem solid #175bd1;
+  outline-offset: .125rem;
+}
+
+.cc-architecture-review button[aria-pressed="true"] {
+  border-width: .1875rem;
+  border-style: double;
+  font-weight: 700;
+}
+
+.cc-architecture-review section > div[style*="display: flex"],
+.cc-architecture-review > div:last-child {
+  flex-wrap: wrap;
+}
+
+.cc-architecture-severity {
+  display: block;
+  font-weight: 700;
+  font-size: .8125em;
+}
+
+@media (max-width: 30rem) {
+  .cc-architecture-review .cc-architecture-evidence {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .cc-architecture-review {
+    top: 3.25rem;
+    right: .5rem;
+    width: calc(100% - 1rem);
+    max-height: calc(100% - 5.75rem);
+    padding: .625rem;
+  }
+}

@@ -31,7 +31,7 @@ test("M33 safe retained phase, resident claim, mitigation, and save reconciliati
   await page.getByTestId("open-seasons-legacy").click();
   const seasons = page.getByTestId("seasons-legacy-panel");
   await expect(seasons).toBeVisible({ timeout: 45_000 });
-  await seasons.getByRole("button", { name: "Club identity", exact: true }).click();
+  await seasons.getByRole("tab", { name: "Club identity", exact: true }).click();
   await seasons.getByText("Back-office systems", { exact: true }).click();
   await seasons.getByTestId("back-office-policy-community").getByRole("button", { name: "Take control", exact: true }).click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").systemControl.systems.find((system: { id: string }) => system.id === "community"))).toMatchObject({ visibility: "full", mode: "manual", source: "save-override" });

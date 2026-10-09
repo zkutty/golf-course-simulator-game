@@ -14,18 +14,20 @@ test("M24 explains readiness, books a prescribed setup, and runs it", async ({ p
   await expect(requirements).toHaveCount(10);
   await expect(requirements.evaluateAll((items) => items.map((item) => ({
     id: item.getAttribute("data-requirement"),
-    passed: item.querySelector("span[aria-hidden=true]")?.textContent,
+    passed: item.getAttribute("data-passed"),
+    state: item.querySelector(".cc-tournament__state")?.textContent,
+    icon: item.querySelector("svg")?.getAttribute("aria-hidden"),
   })))).resolves.toEqual([
-    { id: "reputation", passed: "✓" },
-    { id: "deposit", passed: "✓" },
-    { id: "date", passed: "✓" },
-    { id: "calendar", passed: "✓" },
-    { id: "holes", passed: "✓" },
-    { id: "rotations", passed: "✓" },
-    { id: "route", passed: "✓" },
-    { id: "rating", passed: "✓" },
-    { id: "slope", passed: "✓" },
-    { id: "pin-fairness", passed: "✓" },
+    { id: "reputation", passed: "true", state: "Met", icon: "true" },
+    { id: "deposit", passed: "true", state: "Met", icon: "true" },
+    { id: "date", passed: "true", state: "Met", icon: "true" },
+    { id: "calendar", passed: "true", state: "Met", icon: "true" },
+    { id: "holes", passed: "true", state: "Met", icon: "true" },
+    { id: "rotations", passed: "true", state: "Met", icon: "true" },
+    { id: "route", passed: "true", state: "Met", icon: "true" },
+    { id: "rating", passed: "true", state: "Met", icon: "true" },
+    { id: "slope", passed: "true", state: "Met", icon: "true" },
+    { id: "pin-fairness", passed: "true", state: "Met", icon: "true" },
   ]);
   const readinessShot = await page.screenshot({ path: "artifacts/m24-readiness.png", fullPage: true });
   await testInfo.attach("m24-readiness", { body: readinessShot, contentType: "image/png" });

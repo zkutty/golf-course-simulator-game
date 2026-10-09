@@ -1,0 +1,50 @@
+.cc-seasons-panel {
+  position: absolute;
+  z-index: 205;
+  top: 3.625rem;
+  right: .875rem;
+  width: min(38.75rem, calc(100% - 1.75rem));
+  max-height: calc(100% - 5.375rem);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: .1875rem solid #755824;
+  border-radius: .875rem;
+  background: linear-gradient(145deg,#fbf1d0,#dbe7cf);
+  color: #302819;
+  box-shadow: 0 1.25rem 3.4375rem rgba(0,0,0,.45);
+  padding: .875rem;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.cc-seasons-panel *, .cc-seasons-panel *::before, .cc-seasons-panel *::after { box-sizing: border-box; }
+.cc-seasons-header { display: flex; justify-content: space-between; gap: .75rem; align-items: flex-start; }
+.cc-seasons-header > div { min-width: 0; }
+.cc-seasons-close { flex: 0 0 auto; display: grid; place-items: center; min-width: 2.5rem; min-height: 2.5rem; }
+.cc-seasons-close svg { width: 1.125rem; height: 1.125rem; }
+.cc-seasons-tabs { margin: .75rem 0; }
+.cc-seasons-tabs [role="tablist"] { border-radius: .625rem !important; gap: .375rem !important; padding: .375rem !important; flex-wrap: wrap; }
+.cc-seasons-tabs [role="tab"] { padding: .5rem .625rem !important; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.cc-seasons-body { min-height: 0; min-width: 0; overflow-y: auto; scrollbar-gutter: stable; padding: .125rem; }
+.cc-seasons-body section, .cc-seasons-body article, .cc-seasons-body label { min-width: 0; }
+.cc-seasons-panel button, .cc-seasons-panel select { font-family: inherit; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.cc-seasons-panel select { font-size: inherit; width: 100%; display: block; margin-top: .25rem; padding: .375rem; }
+.cc-seasons-panel button:disabled { cursor: default !important; opacity: .65; }
+.cc-seasons-panel :focus-visible { outline: .1875rem solid #385a8c; outline-offset: .125rem; }
+.cc-seasons-body ol, .cc-seasons-body ul { padding-inline-start: 1.375rem; }
+.cc-seasons-forecast { display: grid; grid-template-columns: repeat(7,minmax(5.25rem,1fr)); gap: .3125rem; overflow-x: auto; max-width: 100%; padding-bottom: .375rem; }
+.cc-seasons-body [data-operation-system] > div[style*="display: flex"] { flex-wrap: wrap; }
+@media (max-width: 40rem) {
+  .cc-seasons-panel { top: 3.625rem; right: .375rem; width: calc(100% - .75rem); max-height: calc(100% - 4rem); padding: .5rem; }
+  .cc-seasons-header { gap: .375rem; }
+  .cc-seasons-tabs [role="tab"] { flex: 1 1 auto; }
+}
+@media (max-width: 24rem) {
+  .cc-seasons-header h2 { font-size: 1.125rem; line-height: 1.2; }
+  .cc-seasons-header small { font-size: .6875rem; letter-spacing: .06em !important; }
+  .cc-seasons-header [data-testid="club-calendar-date"] { font-size: .8125rem; }
+  .cc-seasons-tabs [role="tablist"] { display: grid !important; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .25rem !important; }
+  .cc-seasons-tabs [role="tab"] { padding: .375rem .25rem !important; }
+}

@@ -133,20 +133,22 @@ for (const fixture of VISUAL_FIXTURES) {
     expect(projection.traces).toHaveLength(architecture.overlay.traces);
     expect(projection.points).toHaveLength(architecture.overlay.points);
 
+    // Element screenshots include HTML above the canvas. Hide only the review
+    // during capture so its responsive geometry cannot mask renderer pixels.
     const overlayPath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-reference.png`);
-    await canvas.screenshot({ path: overlayPath });
+    await canvas.screenshot({ path: overlayPath, style: '[data-testid="architecture-review"] { visibility: hidden !important; }' });
     const routesState = await showReferenceLayer(page, "traces");
     expect(routesState).toEqual({ layer: "traces", visibleRouteLayers: 1, cellsVisible: false, tracesVisible: true, pointsVisible: false });
     const routesPath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-routes-only.png`);
-    const routesShot = await canvas.screenshot({ path: routesPath });
+    const routesShot = await canvas.screenshot({ path: routesPath, style: '[data-testid="architecture-review"] { visibility: hidden !important; }' });
     const landingsState = await showReferenceLayer(page, "points");
     expect(landingsState).toEqual({ layer: "points", visibleRouteLayers: 1, cellsVisible: false, tracesVisible: false, pointsVisible: true });
     const landingsPath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-landings-only.png`);
-    const landingsShot = await canvas.screenshot({ path: landingsPath });
+    const landingsShot = await canvas.screenshot({ path: landingsPath, style: '[data-testid="architecture-review"] { visibility: hidden !important; }' });
     const baselineState = await showReferenceLayer(page, "none");
     expect(baselineState).toEqual({ layer: "none", visibleRouteLayers: 0, cellsVisible: false, tracesVisible: false, pointsVisible: false });
     const baselinePath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-baseline.png`);
-    const baselineShot = await canvas.screenshot({ path: baselinePath });
+    const baselineShot = await canvas.screenshot({ path: baselinePath, style: '[data-testid="architecture-review"] { visibility: hidden !important; }' });
     const routesPng = PNG.sync.read(routesShot);
     const landingsPng = PNG.sync.read(landingsShot);
     const baselinePng = PNG.sync.read(baselineShot);

@@ -19,7 +19,7 @@ test("ZK-687 recovery remains cozy, inspectable, and offers only evidenced takeo
   await page.evaluate(() => window.__coursecraftTest!.setZk687RecoveryFixture());
 
   const panel = page.getByTestId("seasons-legacy-panel");
-  await panel.getByRole("button", { name: "Club identity", exact: true }).click();
+  await panel.getByRole("tab", { name: "Club identity", exact: true }).click();
   const audit = panel.getByTestId("relaxed-recovery-audit");
   await expect(audit).toContainText("Recovery reserve · 1 actions");
   await audit.getByText(/Recovery reserve/).click();

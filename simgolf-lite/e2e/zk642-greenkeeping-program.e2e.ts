@@ -18,7 +18,7 @@ test("ZK-642 green programs expose persistent advanced targets and realized trad
   await page.getByTestId("workspace-legacy").click();
   await page.getByTestId("open-seasons-legacy").click();
   const seasons = page.getByTestId("seasons-legacy-panel");
-  await seasons.getByRole("button", { name: "Club identity", exact: true }).click();
+  await seasons.getByRole("tab", { name: "Club identity", exact: true }).click();
   await seasons.getByText("Back-office systems", { exact: true }).click();
   const localizedTurf = seasons.getByTestId("back-office-policy-localized-turf");
   await localizedTurf.getByRole("button", { name: "Take control", exact: true }).click();

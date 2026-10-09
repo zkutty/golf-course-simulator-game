@@ -136,7 +136,7 @@ test("ZK-813 Classic control takeover remains authoritative and save-safe", asyn
   await enterGame(page);
   await page.evaluate(() => window.__coursecraftTest!.setZk688ClassicFixture());
   const panel = page.getByTestId("seasons-legacy-panel");
-  await panel.getByRole("button", { name: "Club identity", exact: true }).click();
+  await panel.getByRole("tab", { name: "Club identity", exact: true }).click();
   await panel.getByText("Back-office systems", { exact: true }).click();
   const drainage = panel.getByTestId("back-office-policy-drainage");
   await drainage.getByRole("button", { name: "Take control" }).click();
@@ -161,7 +161,7 @@ test("ZK-813 Classic control takeover remains authoritative and save-safe", asyn
   await page.getByTestId("workspace-legacy").click();
   await page.getByTestId("open-seasons-legacy").click();
   const reloadedPanel = page.getByTestId("seasons-legacy-panel");
-  await reloadedPanel.getByRole("button", { name: "Club identity", exact: true }).click();
+  await reloadedPanel.getByRole("tab", { name: "Club identity", exact: true }).click();
   await reloadedPanel.getByText("Manual system overrides", { exact: true }).click();
   await expect(reloadedPanel.getByTestId("system-policy-drainage")).toContainText("manual (save override)");
   const shot = await page.screenshot({ path: testInfo.outputPath("zk813-classic-authority-reload.png"), fullPage: true });

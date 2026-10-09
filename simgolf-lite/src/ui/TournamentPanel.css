@@ -1,0 +1,60 @@
+.cc-tournament {
+  box-sizing: border-box;
+  position: absolute;
+  top: 54px;
+  left: 10px;
+  z-index: 180;
+  width: min(30rem, calc(100% - 20px));
+  max-height: calc(100% - 126px);
+  min-width: 0;
+  overflow: auto;
+  border: 2px solid #8a6826;
+  border-radius: .875rem;
+  background: #fbf4df;
+  color: #253126;
+  box-shadow: 0 14px 38px rgba(0,0,0,.36);
+  font: 400 .875rem/1.5 var(--font-body);
+  overflow-wrap: anywhere;
+  scroll-padding-block: .75rem;
+}
+.cc-tournament *, .cc-tournament *::before, .cc-tournament *::after { box-sizing: border-box; min-width: 0; }
+.cc-tournament :is(h2, h3) { margin: 0; }
+.cc-tournament h2 { font-size: 1.25rem; line-height: 1.3; }
+.cc-tournament h3 { font-size: 1rem; line-height: 1.4; }
+.cc-tournament small, .cc-tournament__detail, .cc-tournament__warning { font-size: .8rem; line-height: 1.5; }
+.cc-tournament small { display: block; }
+.cc-tournament :is(button, select) { font: inherit; color: inherit; min-height: 2.75rem; max-width: 100%; border: 1px solid #9e8a60; border-radius: .4375rem; padding: .55rem; background: #fffdf6; }
+.cc-tournament button { cursor: pointer; }
+.cc-tournament :is(button, select, summary):focus-visible, .cc-tournament:focus-visible { outline: 3px solid var(--ui-focus, #0079a8); outline-offset: -3px; }
+.cc-tournament__header { display: flex; justify-content: space-between; align-items: start; gap: .75rem; padding: .75rem .875rem; background: #334f38; color: #fff8dc; border-bottom: 2px solid #c39a43; }
+.cc-tournament .cc-tournament__close { flex: 0 0 auto; width: 2.75rem; background: #3d5942; color: #fff; border-color: #a1b2a2; }
+.cc-tournament__close svg { display: block; width: 1.25rem; height: 1.25rem; margin: auto; }
+.cc-tournament__body { padding: .875rem; display: grid; gap: 1rem; }
+.cc-tournament__schedule, .cc-tournament__readiness { display: grid; gap: .55rem; }
+.cc-tournament__field { display: grid; gap: .25rem; }
+.cc-tournament__field select { width: 100%; }
+.cc-tournament__stats { display: flex; flex-wrap: wrap; gap: .5rem; padding: .55rem; border-radius: .5rem; background: #e9e8d5; }
+.cc-tournament__stats > span { flex: 1 1 6rem; }
+.cc-tournament__readiness { border: 1px solid #c9b783; border-radius: .55rem; background: #fff9ec; padding: .55rem; }
+.cc-tournament__requirements, .cc-tournament__leaderboard { display: grid; gap: .35rem; list-style: none; padding: 0; margin: 0; }
+.cc-tournament__requirement { border-top: 1px solid #d9cfb4; padding-top: .35rem; }
+.cc-tournament__requirement-heading { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
+.cc-tournament__requirement-heading svg { flex: 0 0 auto; width: 1rem; height: 1rem; }
+.cc-tournament__state { font-size: .8rem; font-weight: 800; }
+.cc-tournament__warning, .cc-tournament__live-label { color: #8a2e20; }
+.cc-tournament .cc-tournament__book { background: #426143; border-color: #426143; color: white; font-weight: 900; }
+.cc-tournament__notice, .cc-tournament__cancellation { padding: .55rem; border-radius: .5rem; background: #f8e2dc; color: #672b20; }
+.cc-tournament__cancellation { border: 1px solid #b65a45; }
+.cc-tournament__notice[data-success="true"] { background: #e2f2df; color: #264127; }
+.cc-tournament__event { padding: .5rem 0; border-top: 1px solid #c6c4ac; }
+.cc-tournament__event summary { cursor: pointer; }
+.cc-tournament__results { margin-top: .45rem; }
+.cc-tournament__live-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem; margin-bottom: .5rem; }
+.cc-tournament__live-label { font-weight: 900; }
+.cc-tournament__standing { display: grid; grid-template-columns: 1.5rem minmax(0,1fr); align-items: start; gap: .25rem .5rem; padding: .5rem; border-radius: .45rem; background: #efeddf; }
+.cc-tournament__standing:nth-child(-n+3) { background: #f0e5c5; }
+.cc-tournament__entrant { white-space: normal; }
+.cc-tournament__progress { grid-column: 2; }
+.cc-tournament__score { grid-column: 2; font-variant-numeric: tabular-nums; }
+.cc-tournament__score[data-score="-1"] { color: #1d6b3a; }
+.cc-tournament__score[data-score="1"] { color: #a23a2b; }

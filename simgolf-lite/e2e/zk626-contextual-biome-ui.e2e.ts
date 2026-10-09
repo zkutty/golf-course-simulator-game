@@ -279,7 +279,7 @@ test("ZK-626 identifies seasonal and upkeep reports without changing their comma
       );
     }
 
-    await seasons.getByRole("button", { name: "Legacy", exact: true }).click();
+    await seasons.getByRole("tab", { name: "Legacy", exact: true }).click();
     for (const testId of ["yearbook-empty-state", "timeline-empty-state"]) {
       const empty = seasons.getByTestId(testId);
       await expect(empty).toHaveAttribute("data-biome-context", "empty-state");

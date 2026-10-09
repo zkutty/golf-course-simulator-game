@@ -27,7 +27,7 @@ test("M39 forecasts, strategic responses, charters, automation, and annual legac
   const forecastShot = await page.screenshot({ path: "artifacts/m39-season-forecast.png", fullPage: true });
   await testInfo.attach("m39-season-forecast", { body: forecastShot, contentType: "image/png" });
 
-  await panel.getByRole("button", { name: "Club identity" }).click();
+  await panel.getByRole("tab", { name: "Club identity" }).click();
   await expect(panel.getByTestId("charter-destination-retreat")).toContainText("Current charter");
   await panel.getByTestId("automation-preset").selectOption("stewardship");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").seasons.automation.preset)).toBe("stewardship");
@@ -36,14 +36,14 @@ test("M39 forecasts, strategic responses, charters, automation, and annual legac
   const identityShot = await page.screenshot({ path: "artifacts/m39-charter-automation.png", fullPage: true });
   await testInfo.attach("m39-charter-automation", { body: identityShot, contentType: "image/png" });
 
-  await panel.getByRole("button", { name: "Season" }).click();
+  await panel.getByRole("tab", { name: "Season" }).click();
   const cashBefore = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").economy.cash);
   await page.getByTestId("improve-drainage").click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").seasons.operations.drainageLevel)).toBe(1);
   const cashAfter = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").economy.cash);
   expect(cashAfter).toBeLessThan(cashBefore);
 
-  await panel.getByRole("button", { name: "Legacy" }).click();
+  await panel.getByRole("tab", { name: "Legacy" }).click();
   const yearbook = page.getByTestId("yearbook-1");
   await expect(yearbook).toBeVisible();
   await expect(yearbook).toContainText("Course of the Year");
