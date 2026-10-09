@@ -9,6 +9,15 @@ export function readCanvas(node){
   const matches=document.querySelectorAll('.cc-pixi-stage canvas'),rect=node.getBoundingClientRect(),style=getComputedStyle(node);
   return {current:matches.length===1&&matches[0]===node,connected:node.isConnected,visible:style.display!=='none'&&style.visibility!=='hidden'&&style.visibility!=='collapse'&&Number(style.opacity)>0,tag:node.tagName,x:rect.x,y:rect.y,width:rect.width,height:rect.height,viewportWidth:innerWidth,viewportHeight:innerHeight,intrinsicWidth:node.width,intrinsicHeight:node.height,dpr:devicePixelRatio,zoom:visualViewport?.scale??1};
 }
+function readOwnedCanvas(envelope){
+  if(!envelope||typeof envelope!=='object'||Object.getPrototypeOf(envelope)!==null)throw new Error('Private null-prototype canvas envelope required');
+  const keys=Reflect.ownKeys(envelope),descriptor=Object.getOwnPropertyDescriptor(envelope,'node');
+  if(keys.length!==1||keys[0]!=='node'||!descriptor||!Object.prototype.hasOwnProperty.call(descriptor,'value')||descriptor.enumerable!==true||descriptor.writable!==false||descriptor.configurable!==false)throw new Error('Private single own immutable canvas DATA property required');
+  const node=descriptor.value;
+  if(!(node instanceof HTMLCanvasElement)||node.ownerDocument!==document)throw new Error('Private current document HTMLCanvasElement required');
+  const matches=document.querySelectorAll('.cc-pixi-stage canvas'),rect=node.getBoundingClientRect(),style=getComputedStyle(node);
+  return {current:matches.length===1&&matches[0]===node,connected:node.isConnected,visible:style.display!=='none'&&style.visibility!=='hidden'&&style.visibility!=='collapse'&&Number(style.opacity)>0,tag:node.tagName,x:rect.x,y:rect.y,width:rect.width,height:rect.height,viewportWidth:innerWidth,viewportHeight:innerHeight,intrinsicWidth:node.width,intrinsicHeight:node.height,dpr:devicePixelRatio,zoom:visualViewport?.scale??1};
+}
 export function strictBase64(data){
   assert.equal(typeof data,'string','CDP base64 string required');assert.ok(data.length>0&&data.length<=4*Math.ceil(MAX_PNG_BYTES/3)&&data.length%4===0,'base64 preallocation size refused');
   assert.match(data,/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/,'strict base64 required');
@@ -45,10 +54,10 @@ export async function capturePublicCDPCanvas(page,{canvasClip,timing={now:()=>pe
       if(matches.length!==1)throw new Error('Exactly one current document canvas required');
       const node=matches[0];
       if(!(node instanceof HTMLCanvasElement)||node.ownerDocument!==document||!node.isConnected)throw new Error('Current document connected HTMLCanvasElement required');
-      return node;
-    }),'dispose');assert.ok(rawHandle,'attached raw canvas handle required');handle=rawHandle.asElement();assert.ok(handle,'attached canvas element required');guard();const before=await within(handle.evaluate(readCanvas)),clip=canvasClip(before);
+      return Object.defineProperty(Object.create(null),'node',{value:node,enumerable:true,writable:false,configurable:false});
+    }),'dispose');assert.ok(rawHandle,'attached raw canvas handle required');handle=rawHandle;guard();const before=await within(handle.evaluate(readOwnedCanvas)),clip=canvasClip(before);
     session=await owned(page.context().newCDPSession(page),'detach');const response=await within(session.send('Page.captureScreenshot',{format:'png',clip:{...clip,scale:1},fromSurface:true,captureBeyondViewport:false,optimizeForSpeed:false}));
-    const png=strictBase64(response?.data),decoded=decodeStrictPng(png,clip);guard();const after=await within(handle.evaluate(readCanvas));canvasClip(after);assert.deepEqual(after,before,'canvas identity/current connection/geometry changed');
+    const png=strictBase64(response?.data),decoded=decodeStrictPng(png,clip);guard();const after=await within(handle.evaluate(readOwnedCanvas));canvasClip(after);assert.deepEqual(after,before,'canvas identity/current connection/geometry changed');
     result={png,receipt:{method:'public-cdp-page-captureScreenshot-canvas-viewport-clip-v1',clip,before,after,bytes:png.length,sha256:sha256(png),pixelSHA256:decoded.pixelSHA256,qualification:'Diagnostic public CDP comparison only; both APIs may share Chromium backend; no canonical receipt enum or causal claim'}};
   }catch(error){failed=true;primary=error;}
   // Start both disposals even if one fails or the capture deadline has elapsed.
