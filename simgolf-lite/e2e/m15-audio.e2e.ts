@@ -283,7 +283,7 @@ test("ZK-443 bounds Player Pro audio", async ({ page }, testInfo) => {
   await page.evaluate(() => window.__coursecraftTest!.setPlayerProFixture());
   await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-player-pro").click();
-  await page.getByTestId("player-pro-panel").getByRole("button", { name: "Play", exact: true }).click();
+  await page.getByTestId("player-pro-panel").getByRole("tab", { name: "Play", exact: true }).click();
   await page.getByTestId("start-player-round").click();
   await expectTrack(page, "/audio/music/suno/player-pro-01.mp3");
   await sampleAudio(page, samples, "player-pro");

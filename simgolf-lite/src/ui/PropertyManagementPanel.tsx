@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import "./PropertyManagementPanel.css";
+import { IconUi, type UiIconName } from "../assets/icons/IconUi";
 import { formatCurrency, formatNumber } from "../i18n/format";
 import { TEE_SETS, type Course, type World } from "../game/models/types";
 import {
@@ -27,6 +29,8 @@ const TAB_COPY: Record<Tab, { icon: string; label: string; categories: PropertyA
   ledger: { icon: "📒", label: "Ledger", categories: [] },
 };
 
+const TAB_ICONS: Record<Tab, UiIconName> = { campus: "courses", resort: "property", community: "people", ledger: "records" };
+
 const CATEGORY_COPY: Partial<Record<PropertyAssetCategory, { title: string; help: string }>> = {
   access: { title: "Arrival and access", help: "Road and parking capacity is shared by golfers, practice customers, diners, event guests, hotel guests, and residents. Surface and condition both affect throughput." },
   practice: { title: "Practice academy", help: "Buckets, bays, putting, short game, and practice holes create direct revenue while improving customer skill and loyalty." },
@@ -44,6 +48,7 @@ export function PropertyManagementPanel(props: {
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("campus");
+  const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
   const [referenceReady, setReferenceReady] = useState(false);
   useEffect(() => {
@@ -99,7 +104,23 @@ export function PropertyManagementPanel(props: {
   };
   const tabInfo = TAB_COPY[activeTab];
 
-  if (!referenceReady) return <section role="dialog" aria-label={translateCurrent("property.aria")} data-testid="property-management-panel" aria-busy="true" className="cc-tycoon-panel"><button aria-label={translateCurrent("property.close")} onClick={props.onClose} style={closeButton}>✕</button>{translateCurrent("deferredSurface.loading", { surface: translateCurrent("property.aria") })}</section>;
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, key: Tab) => {
+    const index = availableTabs.indexOf(key);
+    let nextIndex: number;
+    switch (event.key) {
+      case "ArrowRight": nextIndex = (index + 1) % availableTabs.length; break;
+      case "ArrowLeft": nextIndex = (index - 1 + availableTabs.length) % availableTabs.length; break;
+      case "Home": nextIndex = 0; break;
+      case "End": nextIndex = availableTabs.length - 1; break;
+      default: return;
+    }
+    event.preventDefault();
+    const next = availableTabs[nextIndex];
+    setTab(next);
+    tabRefs.current[next]?.focus();
+  };
+
+  if (!referenceReady) return <section role="dialog" aria-modal="false" aria-label={translateCurrent("property.aria")} data-testid="property-management-panel" aria-busy="true" className="cc-tycoon-panel cc-property-shell"><div className="cc-property-loading"><button className="cc-property-close" aria-label={translateCurrent("property.close")} onClick={props.onClose}><IconUi name="close" /></button><p role="status">{translateCurrent("deferredSurface.loading", { surface: translateCurrent("property.aria") })}</p></div></section>;
 
   return (
     <section
@@ -107,35 +128,35 @@ export function PropertyManagementPanel(props: {
       aria-modal="false"
       aria-label={translateCurrent("property.aria")}
       data-testid="property-management-panel"
-      className="cc-tycoon-panel"
-      style={{ position: "absolute", zIndex: 1200, top: 58, left: 12, width: "min(720px, calc(100vw - 24px))", maxHeight: "calc(100vh - 70px)", overflow: "hidden", display: "flex", flexDirection: "column", border: "3px solid #7b5b2d", boxShadow: "0 18px 50px rgba(20,28,20,.38)" }}
+      aria-busy="false"
+      className="cc-tycoon-panel cc-property-shell"
     >
-      <header style={{ padding: "14px 16px 10px", background: "linear-gradient(135deg,#f9edcc,#e4d09d)", borderBottom: "1px solid rgba(70,55,25,.28)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".12em", color: "#74623f", textTransform: "uppercase" }}>{translateCurrent("property.eyebrow")}</div>
-            <h2 style={{ margin: "2px 0 3px", color: "#334438" }}>{translateCurrent("property.title")}</h2>
-            <div style={{ fontSize: 12, color: "#5d685d" }}>{translateCurrent("property.subtitle")}</div>
+      <header className="cc-property-header">
+        <div className="cc-property-heading">
+          <div className="cc-property-heading-copy">
+            <div className="cc-property-eyebrow">{translateCurrent("property.eyebrow")}</div>
+            <h2>{translateCurrent("property.title")}</h2>
+            <div className="cc-property-subtitle">{translateCurrent("property.subtitle")}</div>
           </div>
-          <button aria-label={translateCurrent("property.close")} onClick={props.onClose} style={closeButton}>✕</button>
+          <button className="cc-property-close" aria-label={translateCurrent("property.close")} onClick={props.onClose}><IconUi name="close" /></button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(70px,1fr))", gap: 7, marginTop: 12 }}>
-          <Metric label={translateCurrent("property.metric.cash")} value={formatCurrency(props.world.cash)} />
-          <Metric label={translateCurrent("property.metric.arrival")} value={formatNumber(summary.accessCapacity)} />
-          <Metric label={translateCurrent("property.metric.assets")} value={formatNumber(summary.assets.length)} />
-          <Metric label={translateCurrent("property.metric.customers")} value={formatNumber(summary.enterprise.customers.length)} />
-          <Metric label={translateCurrent("property.metric.homes")} value={formatNumber(summary.occupiedHomes)} />
-          <Metric label={translateCurrent("property.metric.complaints")} value={formatNumber(summary.openComplaints)} warning={summary.openComplaints > 0} />
+        <div className="cc-property-metrics">
+          <ShellMetric label={translateCurrent("property.metric.cash")} value={formatCurrency(props.world.cash)} />
+          <ShellMetric label={translateCurrent("property.metric.arrival")} value={formatNumber(summary.accessCapacity)} />
+          <ShellMetric label={translateCurrent("property.metric.assets")} value={formatNumber(summary.assets.length)} />
+          <ShellMetric label={translateCurrent("property.metric.customers")} value={formatNumber(summary.enterprise.customers.length)} />
+          <ShellMetric label={translateCurrent("property.metric.homes")} value={formatNumber(summary.occupiedHomes)} />
+          <ShellMetric label={translateCurrent("property.metric.complaints")} value={formatNumber(summary.openComplaints)} warning={summary.openComplaints > 0} />
         </div>
       </header>
 
-      <nav aria-label={translateCurrent("property.sections")} style={{ display: "grid", gridTemplateColumns: `repeat(${availableTabs.length},1fr)`, gap: 5, padding: 8, background: "#f7f3e8", borderBottom: "1px solid #d7cfbd" }}>
-        {availableTabs.map((key) => <button key={key} data-testid={`property-tab-${key}`} aria-pressed={activeTab === key} onClick={() => setTab(key)} style={{ ...tabButton, ...(activeTab === key ? activeTabButton : {}) }}>{TAB_COPY[key].icon} {TAB_COPY[key].label}</button>)}
+      <nav role="tablist" aria-orientation="horizontal" aria-label={translateCurrent("property.sections")} className="cc-property-tabs">
+        {availableTabs.map((key) => <button key={key} id={`property-tab-${key}`} data-testid={`property-tab-${key}`} role="tab" aria-selected={activeTab === key} aria-controls="property-shell-tabpanel" tabIndex={activeTab === key ? 0 : -1} ref={element => { tabRefs.current[key] = element; }} onKeyDown={event => handleTabKeyDown(event, key)} onClick={() => setTab(key)}><IconUi name={TAB_ICONS[key]} className="cc-property-tab-icon" /><span>{translateCurrent(`property.tab.${key}`)}</span></button>)}
       </nav>
 
-      {notice && <div role="status" data-testid="property-notice" style={{ padding: "8px 13px", fontSize: 12, fontWeight: 800, color: notice.ok ? "#245c34" : "#8a332b", background: notice.ok ? "#e7f3e7" : "#fbe9e5", borderBottom: "1px solid rgba(50,50,50,.12)" }}>{notice.message}</div>}
+      {notice && <div role="status" data-testid="property-notice" className={`cc-property-notice ${notice.ok ? "is-success" : "is-error"}`}><strong><IconUi name={notice.ok ? "completed" : "inspect"} /> {translateCurrent(notice.ok ? "property.notice.success" : "property.notice.error")}: </strong><span data-testid="property-notice-message">{notice.message}</span></div>}
 
-      <div style={{ overflowY: "auto", padding: 12, background: "rgba(255,252,243,.96)" }}>
+      <div role="tabpanel" id="property-shell-tabpanel" aria-labelledby={`property-tab-${activeTab}`} tabIndex={0} className="cc-property-body">
         {activeTab !== "ledger" && <PropertyMap course={props.course} summary={summary} />}
         {activeTab === "ledger" ? <LedgerView summary={summary} world={props.world} /> : tabInfo.categories.map((category) => {
           const copy = CATEGORY_COPY[category]!;
@@ -184,6 +205,10 @@ export function PropertyManagementPanel(props: {
       </div>
     </section>
   );
+}
+
+function ShellMetric(props: { label: string; value: string; warning?: boolean }) {
+  return <div className={`cc-property-metric${props.warning ? " is-warning" : ""}`}><div>{props.label}</div><strong>{props.value}</strong>{props.warning && <IconUi name="inspect" className="cc-property-metric-warning" />}</div>;
 }
 
 function AssetCard(props: { course: Course; kind: PropertyAssetKind; asset?: PropertyAsset; detailed: boolean; onCommand: (command: PropertyCommand) => void }) {
@@ -481,8 +506,5 @@ function Metric(props: { label: string; value: string; warning?: boolean }) {
   return <div style={{ padding: "6px 7px", background: props.warning ? "#f8e2dc" : "rgba(255,255,255,.68)", border: "1px solid rgba(76,67,45,.15)", borderRadius: 7, minWidth: 0 }}><div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: ".07em", color: "#766d59", whiteSpace: "nowrap" }}>{props.label}</div><strong style={{ color: props.warning ? "#8a332b" : "#344338", fontSize: 12 }}>{props.value}</strong></div>;
 }
 
-const closeButton = { border: "1px solid #88754d", borderRadius: 8, background: "#fffaf0", padding: "7px 10px", cursor: "pointer", fontWeight: 900 } as const;
-const tabButton = { border: "1px solid #c9c0ae", borderRadius: 7, padding: "7px 5px", background: "#fffdf8", color: "#536054", fontWeight: 800, fontSize: 11, cursor: "pointer" } as const;
-const activeTabButton = { background: "#466d49", color: "white" } as const;
 const smallButton = { border: "1px solid #9c927e", borderRadius: 6, padding: "5px 7px", background: "#fffaf0", color: "#3c493d", fontWeight: 800, fontSize: 10, cursor: "pointer" } as const;
 const compactLabel = { fontSize: 10, display: "flex", alignItems: "center", gap: 3 } as const;

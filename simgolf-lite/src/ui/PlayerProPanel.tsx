@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { IconUi } from "../assets/icons";
+import "./PlayerProPanel.css";
 import type { Course, PinRotation, TeeSet, World } from "../game/models/types";
 import {
   PLAYER_PRO_SKILLS,
@@ -54,20 +56,7 @@ registerPlayerProSocialCatalog();
 
 type ProTab = "career" | "play" | "training" | "matches" | "tournaments" | PlayerProSocialSurface;
 
-const panelStyle = {
-  position: "absolute",
-  top: 54,
-  left: 10,
-  zIndex: 205,
-  width: "min(640px,calc(100% - 20px))",
-  maxHeight: "calc(100% - 126px)",
-  overflow: "auto",
-  borderRadius: 14,
-  border: "2px solid #6f5324",
-  background: "linear-gradient(155deg,#fff9e8,#ead39c)",
-  color: "#2f2b1e",
-  boxShadow: "0 16px 40px rgba(0,0,0,.38)",
-} as const;
+const PRO_TAB_ORDER: readonly ProTab[] = ["career", "play", "training", "matches", "tournaments", "people", "challenges", "teamBuilder", "equipment", "wardrobe", "collection", "custody"];
 
 function labelKey(skill: PlayerProSkill): MessageKey {
   return `playerPro.skill.${skill}` as MessageKey;
@@ -430,24 +419,47 @@ export function PlayerProPanel(props: {
     return started.ok ? started.round : null;
   }, [layoutId, pinRotation, props.course, props.day, props.world, teeSet]);
 
-  const tabs: ProTab[] = ["career", "play", "training", "matches", "tournaments"];
-  const socialTabs: PlayerProSocialSurface[] = ["people", "challenges", "teamBuilder", "equipment", "wardrobe", "collection", "custody"];
+  const tabRefs = useRef<Partial<Record<ProTab, HTMLButtonElement | null>>>({});
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, candidate: ProTab) => {
+    const current = PRO_TAB_ORDER.indexOf(candidate);
+    let next: number;
+    switch (event.key) {
+      case "ArrowRight": next = (current + 1) % PRO_TAB_ORDER.length; break;
+      case "ArrowLeft": next = (current - 1 + PRO_TAB_ORDER.length) % PRO_TAB_ORDER.length; break;
+      case "Home": next = 0; break;
+      case "End": next = PRO_TAB_ORDER.length - 1; break;
+      default: return;
+    }
+    event.preventDefault();
+    const selected = PRO_TAB_ORDER[next];
+    setTab(selected);
+    tabRefs.current[selected]?.focus();
+  };
   return (
-    <aside role="dialog" aria-modal="false" aria-labelledby="player-pro-title" data-testid="player-pro-panel" style={panelStyle}>
-      <header style={{ position: "sticky", top: 0, zIndex: 1, display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "#314d36", color: "#fff8dc", borderBottom: "2px solid #c89c43" }}>
-        <div style={{ width: 40, height: 40, borderRadius: "50%", display: "grid", placeItems: "center", background: "#f3d990", color: "#30452f", fontSize: 22 }} aria-hidden="true">🏌️</div>
-        <div style={{ minWidth: 0, flex: 1 }}><small>{t("playerPro.title")}</small><h2 id="player-pro-title" style={{ margin: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{props.career.identity.name}</h2></div>
-        <button aria-label={t("playerPro.close")} onClick={props.onClose}>✕</button>
+    <aside className="cc-player-pro-panel" role="dialog" aria-modal="false" aria-labelledby="player-pro-title" data-testid="player-pro-panel">
+      <header className="cc-player-pro-header">
+        <div className="cc-player-pro-avatar" aria-hidden="true"><IconUi name="player" /></div>
+        <div className="cc-player-pro-heading"><small>{t("playerPro.title")}</small><h2 id="player-pro-title">{props.career.identity.name}</h2></div>
+        <button className="cc-player-pro-close" type="button" aria-label={t("playerPro.close")} onClick={props.onClose}><IconUi name="close" /></button>
       </header>
 
-      <nav aria-label={t("playerPro.title")} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(76px,1fr))", gap: 4, padding: 8, borderBottom: "1px solid rgba(62,48,24,.16)" }}>
-        {tabs.map((candidate) => <button key={candidate} data-testid={`player-pro-tab-${candidate}`} aria-pressed={tab === candidate} onClick={() => setTab(candidate)} style={{ padding: "7px 3px", borderRadius: 7, border: tab === candidate ? "2px solid #466243" : "1px solid rgba(52,43,25,.15)", background: tab === candidate ? "#d9ebcf" : "rgba(255,255,255,.55)", fontSize: 10, fontWeight: 800 }}>{t(`playerPro.tab.${candidate}` as MessageKey)}</button>)}
-      </nav>
-      <nav aria-label={t("playerPro.social.nav")} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(78px,1fr))", gap: 4, padding: "0 8px 8px", borderBottom: "1px solid rgba(62,48,24,.16)" }}>
-        {socialTabs.map((candidate) => <button key={candidate} data-testid={`player-pro-tab-${candidate}`} aria-pressed={tab === candidate} onClick={() => setTab(candidate)} style={{ padding: "7px 3px", borderRadius: 7, border: tab === candidate ? "2px solid #466243" : "1px solid rgba(52,43,25,.15)", background: tab === candidate ? "#d9ebcf" : "rgba(255,255,255,.55)", fontSize: 10, fontWeight: 800 }}>{t(`playerPro.tab.${candidate}` as MessageKey)}</button>)}
+      <nav className="cc-player-pro-tabs" role="tablist" aria-orientation="horizontal" aria-label={t("playerPro.title")}>
+        {PRO_TAB_ORDER.map((candidate) => <button
+          key={candidate}
+          id={`player-pro-tab-${candidate}`}
+          data-testid={`player-pro-tab-${candidate}`}
+          type="button"
+          role="tab"
+          aria-selected={tab === candidate}
+          aria-controls={`player-pro-surface-${candidate}`}
+          tabIndex={tab === candidate ? 0 : -1}
+          ref={(element) => { tabRefs.current[candidate] = element; }}
+          onClick={() => setTab(candidate)}
+          onKeyDown={(event) => handleTabKeyDown(event, candidate)}
+        >{t(`playerPro.tab.${candidate}` as MessageKey)}</button>)}
       </nav>
 
-      <div id={`player-pro-surface-${tab}`} role="region" aria-label={t(`playerPro.tab.${tab}` as MessageKey)} style={{ padding: 14, display: "grid", gap: 14 }}>
+      <div className="cc-player-pro-body" id={`player-pro-surface-${tab}`} role="tabpanel" aria-labelledby={`player-pro-tab-${tab}`} tabIndex={0}>
         {notice && <div role="status" style={{ padding: 8, borderRadius: 8, background: notice.startsWith("✓") ? "#dfeeda" : "#f7dfd7", color: "#492b20" }}>{notice}</div>}
 
         {tab === "career" && <>

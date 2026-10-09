@@ -208,7 +208,7 @@ test("ZK-690 post-choice automation cannot advance; a real Player Pro round supp
   await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-player-pro").click();
   const pro = page.getByTestId("player-pro-panel");
-  await pro.getByRole("button", { name: "Play", exact: true }).click();
+  await pro.getByRole("tab", { name: "Play", exact: true }).click();
   await page.getByTestId("start-player-round").click();
   await page.getByTestId("player-shot-hud").getByRole("button", { name: "Auto-finish" }).click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").campaign.phaseIndex), { timeout: 20_000 }).toBe(1);

@@ -11,7 +11,7 @@ async function openBuilder(page: Page) {
   await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-player-pro").click();
   const panel = page.getByTestId("player-pro-panel");
-  await panel.getByRole("button", { name: "Matches", exact: true }).click();
+  await panel.getByRole("tab", { name: "Matches", exact: true }).click();
   const builder = page.getByTestId("challenge-contract-builder");
   await expect(builder).toBeVisible();
   return builder;
@@ -60,7 +60,7 @@ test("four-ball terms become operative and post-shot concession settles once", a
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().cash)).toBe(9_900);
   if (!await page.getByTestId("player-pro-panel").count()) await page.getByTestId("open-player-pro").click();
   await expect(page.getByTestId("player-pro-panel")).toBeVisible();
-  await page.getByTestId("player-pro-panel").getByRole("button", { name: "Matches", exact: true }).click();
+  await page.getByTestId("player-pro-panel").getByRole("tab", { name: "Matches", exact: true }).click();
   await expect(builder).toContainText("conceded");
   await attach(page, testInfo, "zk725-team-concession-settled");
   expect(errors).toEqual([]);
@@ -85,7 +85,7 @@ test("ordinary item loss creates named custody and an authored winning rematch r
   await page.getByRole("button", { name: "Concede", exact: true }).click();
   if (!await page.getByTestId("player-pro-panel").count()) await page.getByTestId("open-player-pro").click();
   await expect(page.getByTestId("player-pro-panel")).toBeVisible();
-  await page.getByTestId("player-pro-panel").getByRole("button", { name: "Matches", exact: true }).click();
+  await page.getByTestId("player-pro-panel").getByRole("tab", { name: "Matches", exact: true }).click();
   await expect(builder).toContainText("Player Ordinary Keepsake · held · Rival One");
   await attach(page, testInfo, "zk725-named-rival-custody");
   await page.getByTestId("prepare-rematch-custody:player-challenge:725101:1:player-ordinary-keepsake").click();
@@ -96,7 +96,7 @@ test("ordinary item loss creates named custody and an authored winning rematch r
   await page.getByRole("button", { name: "Auto-finish", exact: true }).click();
   if (!await page.getByTestId("player-pro-panel").count()) await page.getByTestId("open-player-pro").click();
   await expect(page.getByTestId("player-pro-panel")).toBeVisible({ timeout: 15_000 });
-  await page.getByTestId("player-pro-panel").getByRole("button", { name: "Matches", exact: true }).click();
+  await page.getByTestId("player-pro-panel").getByRole("tab", { name: "Matches", exact: true }).click();
   await expect(builder).toContainText("Player Ordinary Keepsake · recovered · Rival One");
   await attach(page, testInfo, "zk725-rematch-recovered");
   expect(errors).toEqual([]);
@@ -125,7 +125,7 @@ test("high-prestige stakes require the second confirmation and tie/refund return
 
   if (!await page.getByTestId("player-pro-panel").count()) await page.getByTestId("open-player-pro").click();
   await expect(page.getByTestId("player-pro-panel")).toBeVisible();
-  await page.getByTestId("player-pro-panel").getByRole("button", { name: "Matches", exact: true }).click();
+  await page.getByTestId("player-pro-panel").getByRole("tab", { name: "Matches", exact: true }).click();
   await page.getByTestId("challenge-player-cash").fill("100");
   await page.getByTestId("challenge-rival-cash").fill("100");
   await builder.getByText("Side bets", { exact: true }).click();
@@ -136,7 +136,7 @@ test("high-prestige stakes require the second confirmation and tie/refund return
   await page.evaluate(() => window.__coursecraftTest!.forceChallengeTieCompletion());
   await expect(page.getByTestId("player-pro-panel")).toBeVisible({ timeout: 15_000 });
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().cash)).toBe(10_000);
-  await page.getByTestId("player-pro-panel").getByRole("button", { name: "Matches", exact: true }).click();
+  await page.getByTestId("player-pro-panel").getByRole("tab", { name: "Matches", exact: true }).click();
   await expect(builder).toContainText("tied");
   await attach(page, testInfo, "zk725-prestige-and-tie-refund");
   expect(errors).toEqual([]);

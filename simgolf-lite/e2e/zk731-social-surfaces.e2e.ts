@@ -27,7 +27,7 @@ test("ZK-731 seven social surfaces retain keyboard focus and never render unreve
     const button = page.getByTestId(`player-pro-tab-${surface}`);
     await button.focus();
     await page.keyboard.press("Enter");
-    await expect(button).toHaveAttribute("aria-pressed", "true");
+    await expect(button).toHaveAttribute("aria-selected", "true");
     expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.testid)).toBe(`player-pro-tab-${surface}`);
   }
 

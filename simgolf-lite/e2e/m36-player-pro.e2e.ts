@@ -18,7 +18,7 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   await expect(panel).toBeVisible();
   await expect(panel).toContainText("Casey Fairway");
   await expect(panel).toContainText("Six-skill profile");
-  await panel.getByRole("button", { name: "Play", exact: true }).click();
+  await panel.getByRole("tab", { name: "Play", exact: true }).click();
   await expect(page.getByTestId("player-pro-route")).toHaveValue("player-pro-slice");
   // The round-start handler is intentionally split with the equipment mentor;
   // preload the existing module so this test observes the UI path, not import latency.

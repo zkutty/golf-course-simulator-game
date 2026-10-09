@@ -1,0 +1,75 @@
+.cc-property-shell {
+  position: absolute;
+  z-index: 1200;
+  top: 58px;
+  left: 12px;
+  width: min(720px, calc(100vw - 24px));
+  max-height: calc(100dvh - 70px);
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  border: 3px solid #7b5b2d;
+  box-shadow: 0 18px 50px rgba(20, 28, 20, .38);
+  font-size: .875rem;
+}
+.cc-property-shell,
+.cc-property-shell > header *,
+.cc-property-tabs *,
+.cc-property-notice *,
+.cc-property-loading * { box-sizing: border-box; }
+.cc-property-header {
+  flex: none;
+  padding: .75rem;
+  background: linear-gradient(135deg, #f9edcc, #e4d09d);
+  border-bottom: 1px solid rgba(70, 55, 25, .28);
+}
+.cc-property-heading { display: flex; align-items: start; gap: .5rem; }
+.cc-property-heading-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cc-property-eyebrow { font-size: .6875rem; font-weight: 900; letter-spacing: .12em; color: #594a2b; text-transform: uppercase; }
+.cc-property-heading h2 { margin: .125rem 0 .1875rem; font-size: 1.25rem; line-height: 1.2; color: #334438; }
+.cc-property-subtitle { font-size: .75rem; line-height: 1.4; color: #414e41; }
+.cc-property-close {
+  flex: none;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: .375rem;
+  border: 1px solid #88754d;
+  border-radius: .5rem;
+  background: #fffaf0;
+  color: #334438;
+  font-size: 1.25rem;
+  line-height: 1;
+  font-weight: 900;
+  cursor: pointer;
+}
+.cc-property-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .4375rem; margin-top: .75rem; }
+.cc-property-metric { min-width: 0; padding: .375rem .4375rem; background: rgba(255, 255, 255, .68); border: 1px solid rgba(76, 67, 45, .3); border-radius: .4375rem; overflow-wrap: anywhere; }
+.cc-property-metric > div { font-size: .6875rem; line-height: 1.3; text-transform: uppercase; letter-spacing: .04em; color: #584f3d; }
+.cc-property-metric > strong { font-size: .8125rem; line-height: 1.4; color: #344338; }
+.cc-property-metric.is-warning { background: #f8e2dc; border-style: dashed; }
+.cc-property-metric.is-warning > strong { color: #8a332b; }
+.cc-property-metric-warning { margin-left: .25rem; font-weight: 900; color: #8a332b; }
+.cc-property-tabs { flex: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .3125rem; padding: .5rem; background: #f7f3e8; border-bottom: 1px solid #d7cfbd; }
+.cc-property-tabs button { min-width: 0; min-height: 2.75rem; display: flex; justify-content: center; align-items: center; gap: .25rem; padding: .4375rem .3125rem; border: 1px solid #9a907e; border-radius: .4375rem; background: #fffdf8; color: #3d493e; font-weight: 800; font-size: .8125rem; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+.cc-property-tabs button[aria-selected="true"] { background: #466d49; color: white; box-shadow: inset 0 -3px 0 #fff4cf; border-color: #334e36; }
+.cc-property-tab-icon { flex: none; width: 1rem; height: 1rem; }
+.cc-property-close > svg { width: 1.25rem; height: 1.25rem; }
+.cc-property-notice svg, .cc-property-metric-warning { width: 1em; height: 1em; vertical-align: -.125em; }
+.cc-property-tabs button[aria-selected="true"]:focus-visible { background: #fffdf8; color: #334e36; box-shadow: inset 0 -4px 0 #334e36; }
+.cc-property-notice { flex: none; padding: .5rem .75rem; font-size: .8125rem; line-height: 1.4; overflow-wrap: anywhere; border-bottom: 1px solid rgba(50, 50, 50, .3); }
+.cc-property-notice.is-success { color: #245c34; background: #e7f3e7; }
+.cc-property-notice.is-error { color: #8a332b; background: #fbe9e5; }
+.cc-property-body { flex: 1 1 auto; min-height: 8rem; overflow: auto; padding: .75rem; background: rgba(255, 252, 243, .96); }
+.cc-property-shell > .cc-property-loading { padding: .75rem; font-size: .875rem; overflow-wrap: anywhere; }
+.cc-property-loading .cc-property-close { float: right; margin: 0 0 .5rem .5rem; }
+.cc-property-shell > header button:focus-visible,
+.cc-property-tabs button:focus-visible,
+.cc-property-loading button:focus-visible,
+.cc-property-body:focus-visible { outline: 3px solid #175bd1; outline-offset: -3px; }
+@media (max-width: 600px) {
+  .cc-property-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cc-property-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 380px) {
+  .cc-property-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

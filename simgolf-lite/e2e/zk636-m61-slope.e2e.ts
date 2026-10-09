@@ -22,7 +22,7 @@ async function enterPlayerProRound(page: Page) {
   await page.evaluate(() => window.__coursecraftTest!.setPlayerProFixture());
   await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-player-pro").click();
-  await page.getByTestId("player-pro-panel").getByRole("button", { name: "Play", exact: true }).click();
+  await page.getByTestId("player-pro-panel").getByRole("tab", { name: "Play", exact: true }).click();
   await page.getByTestId("start-player-round").click();
   const hud = page.getByTestId("player-shot-hud");
   await expect.poll(() => page.evaluate(() => {

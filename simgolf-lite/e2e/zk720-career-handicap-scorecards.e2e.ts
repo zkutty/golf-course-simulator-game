@@ -50,7 +50,7 @@ test("ZK-720 renders frozen handicap scorecards on compact and desktop surfaces"
   await expect(page.getByTestId("player-handicap-summary")).toContainText("Provisional");
   await expect(page.getByTestId("player-handicap-index")).toHaveText(/^\+?\d+\.\d$/);
 
-  await panel.getByRole("button", { name: "Play", exact: true }).click();
+  await panel.getByRole("tab", { name: "Play", exact: true }).click();
   const preview = page.getByTestId("player-round-scorecard");
   await expect(preview).toBeVisible();
   await expect(preview).toContainText("rating");
