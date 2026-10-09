@@ -4,6 +4,7 @@ import { BALANCE } from "../../balance/balanceConfig";
 import { evalShotBase } from "./shotEval";
 import { isWaterHazard } from "../../models/terrainRules";
 import { courseWithEffectiveSurfaces } from "../../conditions/surfaceCare";
+import { readScoringTile } from "../scoringTileReads";
 import type { ShotHandedness, ShotSlopeContext } from "../../models/shotSlope";
 
 function clamp01(x: number) {
@@ -39,7 +40,7 @@ function bresenham(a: Point, b: Point): Point[] {
 
 function tileAt(course: Course, p: Point) {
   if (p.x < 0 || p.y < 0 || p.x >= course.width || p.y >= course.height) return "rough";
-  return course.tiles[p.y * course.width + p.x];
+  return readScoringTile(course.tiles, p.y * course.width + p.x);
 }
 
 export function evalShotWithWaterCarry(args: {
@@ -114,5 +115,4 @@ export function evalShotWithWaterCarry(args: {
 
   return base;
 }
-
 

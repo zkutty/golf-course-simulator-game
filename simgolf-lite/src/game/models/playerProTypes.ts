@@ -1,3 +1,4 @@
+import type { BunkerPresentationComponent } from "../render/bunkerPresentation";
 import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import type { ReliefResolution, ShotRuling, SharedShotOutcome } from "../rules/contracts";
 import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
@@ -78,6 +79,8 @@ export interface PlayerRoundCourseSnapshot {
   height: number;
   yardsPerTile: number;
   tiles: string[];
+  /** Frozen presentation only; missing on legacy rounds uses deterministic fallback. */
+  bunkerPresentation?: BunkerPresentationComponent[];
   elevations: number[];
   obstacles: Array<PlayerProPoint & { type: string }>;
   holes: PlayerRoundHoleSnapshot[];

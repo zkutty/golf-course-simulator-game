@@ -1,3 +1,4 @@
+import { destroySceneSubtree } from "../destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import {
   CLOUD_COUNT,
@@ -82,7 +83,7 @@ function drawHeron(graphics: PIXI.Graphics, flying: boolean): void {
 function removeAndDestroy(displayObject: PIXI.Container | PIXI.Sprite | PIXI.Graphics | null): void {
   if (!displayObject || displayObject.destroyed) return;
   displayObject.parent?.removeChild(displayObject);
-  displayObject.destroy({ children: true });
+  destroySceneSubtree(displayObject);
 }
 
 /**
@@ -117,7 +118,7 @@ export function createAtmosphereSceneSystem(
 
   const destroy = () => {
     if (!layers.seasonalTerrain.destroyed) {
-      layers.seasonalTerrain.removeChildren().forEach((child) => child.destroy({ children: true }));
+      layers.seasonalTerrain.removeChildren().forEach(destroySceneSubtree);
     }
     for (const cloud of clouds.splice(0)) removeAndDestroy(cloud);
     removeAndDestroy(shimmer);

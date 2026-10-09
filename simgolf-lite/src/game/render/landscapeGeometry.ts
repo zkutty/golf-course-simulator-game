@@ -150,6 +150,10 @@ function fnv1a(value: string): string {
   return (hash >>> 0).toString(36);
 }
 
+export function landscapeTopologyKey(terrain: Terrain, cells: readonly number[], width: number, height: number): string {
+  return `${terrain}-${fnv1a(`${width}x${height}:${cells.join(",")}`)}`;
+}
+
 export function ringSignedArea(ring: readonly SurfacePoint[]): number {
   let area = 0;
   for (let index = 0; index < ring.length; index++) {
@@ -346,6 +350,7 @@ function buildLandscapeComponentSkeletons(
   tiles: readonly Terrain[],
   width: number,
   height: number,
+  outputMode: "complete" | "membership-only" = "complete",
 ): LandscapeComponentSkeleton[] {
   if (width <= 0 || height <= 0 || tiles.length !== width * height) return [];
   const visited = new Uint8Array(tiles.length);
@@ -388,10 +393,11 @@ function buildLandscapeComponentSkeletons(
       terrain,
       cells,
       bounds: { minX, minY, maxX, maxY },
-      topologyKey: `${terrain}-${fnv1a(`${width}x${height}:${cells.join(",")}`)}`,
+      topologyKey: landscapeTopologyKey(terrain, cells, width, height),
       boundaryContextKey: "",
     });
   }
+  if (outputMode === "membership-only") return components;
   for (const component of components) {
     const owned = new Set(component.cells);
     const halo = new Set<number>();
@@ -455,15 +461,21 @@ function sharedRingsForSkeletons(
   skeletons: readonly LandscapeComponentSkeleton[],
   options: LandscapeOptions,
 ): ReadonlyMap<number, SurfacePoint[][]> {
+  const sharedOptions = {
+    cornerRadius: options.cornerRadius ?? 0.36,
+    cornerSegments: options.cornerSegments ?? 3,
+  };
+  const ringsOnly = typeof sharedOptions.cornerRadius === "number"
+    && Number.isFinite(sharedOptions.cornerRadius)
+    && typeof sharedOptions.cornerSegments === "number"
+    && Number.isFinite(sharedOptions.cornerSegments);
   return buildSharedBoundaryContours(
     tiles,
     width,
     height,
     skeletons.map((skeleton, id) => ({ id, terrain: skeleton.terrain, cells: skeleton.cells })),
-    {
-      cornerRadius: options.cornerRadius ?? 0.36,
-      cornerSegments: options.cornerSegments ?? 3,
-    },
+    sharedOptions,
+    ringsOnly ? "rings-only" : "full",
   ).ringsByComponent;
 }
 
@@ -497,7 +509,16 @@ export function createLandscapeComponentCache(): LandscapeComponentCache {
     update(tiles, width, height, options = {}) {
       const styleKey = `${width}x${height}:${options.cornerRadius ?? 0.36}:${options.cornerSegments ?? 3}`;
       const skeletons = buildLandscapeComponentSkeletons(tiles, width, height);
-      const sharedRings = sharedRingsForSkeletons(tiles, width, height, skeletons, options);
+      // Preserve the eager helper's option reads, including accessor errors.
+      const sharedOptions = {
+        cornerRadius: options.cornerRadius ?? 0.36,
+        cornerSegments: options.cornerSegments ?? 3,
+      };
+      // Malformed/coercible options keep the original eager arithmetic path.
+      let sharedRings = Number.isFinite(sharedOptions.cornerRadius)
+        && Number.isFinite(sharedOptions.cornerSegments)
+        ? undefined
+        : sharedRingsForSkeletons(tiles, width, height, skeletons, sharedOptions);
       const components: LandscapeComponent[] = [];
       const changed: LandscapeComponent[] = [];
       let hits = 0;
@@ -511,6 +532,8 @@ export function createLandscapeComponentCache(): LandscapeComponentCache {
           components.push(cached);
           next.set(key, cached);
         } else {
+          // Hits return existing components; only a miss consumes these rings.
+          sharedRings ??= sharedRingsForSkeletons(tiles, width, height, skeletons, sharedOptions);
           const component = materializeLandscapeComponent(
             skeleton,
             width,
@@ -591,11 +614,11 @@ interface FlatGroup {
   priority: number;
 }
 
-function deriveFlatGroups(course: Course): FlatGroup[] {
+function deriveFlatGroups(course: Course, inputMode: "full" | "topology-only"): FlatGroup[] {
   const groups: FlatGroup[] = [];
-  const components = buildLandscapeComponents(course.tiles, course.width, course.height, {
-    cornerRadius: 0,
-  });
+  const components = inputMode === "topology-only"
+    ? buildLandscapeComponentSkeletons(course.tiles, course.width, course.height, "membership-only")
+    : buildLandscapeComponents(course.tiles, course.width, course.height, { cornerRadius: 0 });
   for (const component of components) {
     if (
       component.terrain !== "water" &&
@@ -650,6 +673,9 @@ function deriveFlatGroups(course: Course): FlatGroup[] {
 export function buildVisualHeightfield(
   course: Course,
   theme: LandTheme = getBiomeDefinition(course.theme).key,
+  // Renderer-normalized data needs only connected cell membership for pads.
+  // Default full mode preserves the public contour reads and error behavior.
+  inputMode: "full" | "topology-only" = "full",
 ): VisualHeightfield {
   const materialOwner = getBiomeDefinition(theme).content.materials.terrain;
   const width = course.width;
@@ -661,7 +687,7 @@ export function buildVisualHeightfield(
     targets[index] = terrainTargetHeight(course, index);
   }
 
-  const flatGroups = deriveFlatGroups(course);
+  const flatGroups = deriveFlatGroups(course, inputMode);
   for (const group of flatGroups) {
     for (const index of group.cells) targets[index] = group.target;
   }

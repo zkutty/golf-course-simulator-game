@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { nextRotation, worldToIso, type IsoRotation } from "../../game/render/iso";
 import type { Course } from "../../game/models/types";
 import { DEFAULT_KEYBINDINGS } from "../../accessibility/keybindings";
+import type { ViewportPointerEventType, ViewportPointerListener } from "./viewportPointerEvents";
 import {
   ViewportInputController,
   fitViewportZoomForTileBounds,
@@ -44,7 +46,13 @@ function harness() {
     unobserve() {}
     disconnect() {}
   }
-  const stageListeners = new Map<string, (event: never) => void>();
+  const pointerListeners = new Map<ViewportPointerEventType, ViewportPointerListener>();
+  const pointerEvents = {
+    on: vi.fn((name: ViewportPointerEventType, listener: ViewportPointerListener) => pointerListeners.set(name, listener)),
+    off: vi.fn((name: ViewportPointerEventType) => pointerListeners.delete(name)),
+    suspend: vi.fn(),
+    destroy: vi.fn(),
+  };
   const app = {
     screen: { width: 800, height: 600 },
     renderer: { resize: vi.fn((width: number, height: number) => {
@@ -53,8 +61,6 @@ function harness() {
     }) },
     stage: {
       hitArea: null,
-      on: vi.fn((name: string, listener: (event: never) => void) => stageListeners.set(name, listener)),
-      off: vi.fn((name: string) => stageListeners.delete(name)),
     },
     ticker: {
       add: vi.fn((listener: (value: { deltaMS: number }) => void) => { ticker = listener; }),
@@ -100,9 +106,10 @@ function harness() {
     terrain: () => terrain,
     now: () => now,
     resizeObserver: FakeResizeObserver as unknown as typeof ResizeObserver,
+    pointerEvents,
   });
   return {
-    app, config, controller, element, overlay, terrain, windowTarget, world, stageListeners,
+    app, config, controller, element, overlay, terrain, windowTarget, world, pointerEvents, pointerListeners,
     advance(ms: number) { now += ms; ticker?.({ deltaMS: ms }); },
     resize(width: number, height: number) {
       element.clientWidth = width;
@@ -138,9 +145,9 @@ describe("ViewportInputController", () => {
   });
 
   it("owns one listener/ticker lifecycle and applies/culls its initialized frame", () => {
-    const { app, config, controller, terrain, world } = harness();
+    const { app, config, controller, terrain, world, pointerEvents } = harness();
     expect(app.ticker.add).toHaveBeenCalledTimes(1);
-    expect(app.stage.on).toHaveBeenCalledTimes(3);
+    expect(pointerEvents.on).toHaveBeenCalledTimes(3);
 
     controller.initializeDefault();
     expect(controller.cameraSnapshot()).toMatchObject({ cx: 12, cy: 8, tcx: 12, tcy: 8, zoom: 1.25, tzoom: 1.25, initialized: true });
@@ -150,7 +157,11 @@ describe("ViewportInputController", () => {
 
     controller.destroy();
     expect(app.ticker.remove).toHaveBeenCalledTimes(1);
-    expect(app.stage.off).toHaveBeenCalledTimes(3);
+    expect(pointerEvents.off).toHaveBeenCalledTimes(3);
+    expect(pointerEvents.suspend).toHaveBeenCalledTimes(1);
+    expect(pointerEvents.destroy).toHaveBeenCalledTimes(1);
+    controller.destroy();
+    expect(pointerEvents.destroy).toHaveBeenCalledTimes(1);
     expect(controller.snapshot().attached).toBe(false);
   });
 
@@ -287,7 +298,7 @@ describe("ViewportInputController", () => {
   });
 
   it("owns wheel, pan, rotation and stage hover/click arbitration", () => {
-    const { config, controller, element, overlay, stageListeners } = harness();
+    const { config, controller, element, overlay, pointerListeners } = harness();
     const primary = vi.fn();
     config.onPrimaryPointer = primary;
     controller.update(config);
@@ -303,9 +314,9 @@ describe("ViewportInputController", () => {
     expect(controller.snapshot().input.panning).toBe(false);
     window.dispatchEvent(keyEvent("e", "KeyE"));
     expect(config.onRotationCommit).toHaveBeenCalledWith(90);
-    stageListeners.get("pointermove")?.({ global: { x: 400, y: 300 } } as never);
+    pointerListeners.get("pointermove")?.({ global: { x: 400, y: 300 } } as never);
     expect(overlay.setHover).toHaveBeenCalled();
-    stageListeners.get("pointerdown")?.({ button: 0, global: { x: 400, y: 300 } } as never);
+    pointerListeners.get("pointerdown")?.({ button: 0, global: { x: 400, y: 300 } } as never);
     expect(primary).toHaveBeenCalled();
     controller.destroy();
   });
@@ -334,4 +345,58 @@ describe("ViewportInputController", () => {
     editing.controller.destroy();
     expect(editing.controller.snapshot().input.editorGesture).toBeNull();
   });
+});
+
+
+describe("committed rotation projection authority", () => {
+  for (const animationsEnabled of [false, true]) for (const direction of [-1, 1] as const) {
+    it(`keeps camera, picking and culling aligned for all bearings (${animationsEnabled ? "animated" : "instant"}, ${direction})`, () => {
+      const { config, controller, world, app, overlay, terrain, advance } = harness();
+      const nextConfig = { ...config, animationsEnabled };
+      controller.update(nextConfig);
+      controller.initializeDefault();
+      controller.focusTileForTest(12.5, 8.5, .75);
+      const initialCamera = controller.snapshot().camera;
+      if (!animationsEnabled) {
+        vi.mocked(nextConfig.onRotationCommit).mockImplementation((committed) => {
+          expect({ x: world.pivot.x, y: world.pivot.y }).toEqual(worldToIso(initialCamera.center.x, initialCamera.center.y, 0, committed));
+          expect(controller.worldPointToScreen(initialCamera.center.x, initialCamera.center.y)).toEqual({ x: app.screen.width / 2, y: app.screen.height / 2 });
+          expect(controller.screenToTile(app.screen.width / 2, app.screen.height / 2)).toEqual({ x: 12, y: 8 });
+        });
+      }
+      let rotation: IsoRotation = 0;
+      for (let turn = 0; turn < 4; turn++) {
+        const culls = terrain.cull.mock.calls.length;
+        const invalidations = overlay.invalidate.mock.calls.length;
+        window.dispatchEvent(keyEvent(direction === 1 ? "e" : "q", direction === 1 ? "KeyE" : "KeyQ"));
+        if (animationsEnabled) {
+          expect(controller.snapshot().rotation.tweening).toBe(true);
+          advance(125);
+          expect(world.rotation).not.toBe(0);
+          advance(125);
+        }
+        rotation = nextRotation(rotation, direction);
+        expect(nextConfig.onRotationCommit).toHaveBeenLastCalledWith(rotation);
+        expect(controller.snapshot().rotation).toMatchObject({ committed: rotation, tweening: false, screenRadians: 0 });
+        expect(controller.snapshot().camera).toEqual(initialCamera);
+        const pivot = worldToIso(initialCamera.center.x, initialCamera.center.y, 0, rotation);
+        expect({ x: world.pivot.x, y: world.pivot.y }).toEqual(pivot);
+        expect(controller.worldPointToScreen(initialCamera.center.x, initialCamera.center.y)).toEqual({ x: app.screen.width / 2, y: app.screen.height / 2 });
+        expect(controller.screenToTile(app.screen.width / 2, app.screen.height / 2)).toEqual({ x: 12, y: 8 });
+        expect(controller.screenToWorldPoint(app.screen.width / 2, app.screen.height / 2)).toEqual(initialCamera.center);
+        expect(terrain.cull.mock.calls.length).toBeGreaterThan(culls);
+        expect(overlay.invalidate.mock.calls.length).toBeGreaterThan(invalidations);
+        expect(terrain.cull).toHaveBeenLastCalledWith(expect.objectContaining({ pivotX: pivot.x, pivotY: pivot.y, scale: initialCamera.zoom, rotation: 0 }));
+        const point = controller.worldPointToScreen(14.5, 10.5);
+        expect(controller.screenToWorldPoint(point.x, point.y)).toEqual({ x: 14.5, y: 10.5 });
+        // React's next config arrives after the immediate commit. It must
+        // neither hide a stale pivot nor move the already-correct camera.
+        controller.update({ ...nextConfig, rotation });
+        expect({ x: world.pivot.x, y: world.pivot.y }).toEqual(pivot);
+        expect(controller.worldPointToScreen(initialCamera.center.x, initialCamera.center.y)).toEqual({ x: app.screen.width / 2, y: app.screen.height / 2 });
+        expect(controller.snapshot().camera).toEqual(initialCamera);
+      }
+      controller.destroy();
+    });
+  }
 });

@@ -14,7 +14,8 @@ import type {
   Terrain,
 } from "../../../game/models/types";
 import type { SeasonalVisualState } from "../../../game/presentation/seasonalVisualState";
-import { buildBunkerVisualRings, classifyBunkerVisualType } from "../../../game/render/bunkerShapes";
+import { bunkerDisplayPoint, cachedBunkerPresentation } from "../../../game/render/bunkerPresentation";
+import { createSandStrokePreviewResolver, type SandStrokePreviewComponent } from "../../../game/render/bunkerStrokePreview";
 import { TILE_H, TILE_W, worldToIso, type IsoRotation } from "../../../game/render/iso";
 import { buildLandscapeComponents } from "../../../game/render/landscapeGeometry";
 import { PerfWindow } from "../../../game/render/perfStats";
@@ -41,6 +42,10 @@ export interface TerrainPreviewRenderDiagnostics {
   selectedTerrain: Terrain | null;
   materials: Terrain[];
   colors: Partial<Record<Terrain, number>>;
+  authoredBunkerRings?: Array<Array<{ x: number; y: number }>>;
+  bunkerContours?: SandStrokePreviewComponent[];
+  chargedCells?: number[];
+  acceptedCells?: number[];
 }
 
 export interface OverlayTickInput {
@@ -123,6 +128,7 @@ export function createOverlaysDiagnosticsSceneSystem(
   let hover: Point | null = null;
   let dirty = true;
   let previewDiagnostics: TerrainPreviewRenderDiagnostics | null = null;
+  const sandPreviewResolver = createSandStrokePreviewResolver();
   const perf = {
     win: new PerfWindow(180),
     enabled: false,
@@ -147,8 +153,12 @@ export function createOverlaysDiagnosticsSceneSystem(
     const next = createContainer();
     next.label = "player-pro-shot-overlay";
     const graphics = createGraphics();
-    const ballElevation = snapshot.surfaceHeightAt(round.ball.x + 0.5, round.ball.y + 0.5);
-    const ball = worldToIso(round.ball.x + 0.5, round.ball.y + 0.5, ballElevation, snapshot.rotation);
+    const bunkers = round.course.bunkerPresentation ?? cachedBunkerPresentation(round.course.tiles as Terrain[], round.course.width, round.course.height);
+    const display = (point: Point) => {
+      const position = bunkerDisplayPoint(point, round.course.width, bunkers);
+      return worldToIso(position.x, position.y, snapshot.surfaceHeightAt(position.x, position.y), snapshot.rotation);
+    };
+    const ball = display(round.ball);
     graphics.circle(ball.x, ball.y - 7, 7);
     graphics.fill({ color: 0xffd25b, alpha: 0.95 });
     graphics.stroke({ width: 2.5, color: 0x253c2b, alpha: 1 });
@@ -170,27 +180,14 @@ export function createOverlaysDiagnosticsSceneSystem(
 
     const trace = round.pendingShot ?? round.shots[round.shots.length - 1];
     if (trace) {
-      const from = worldToIso(trace.from.x + 0.5, trace.from.y + 0.5, snapshot.surfaceHeightAt(trace.from.x + 0.5, trace.from.y + 0.5), snapshot.rotation);
-      const rest = worldToIso(trace.rest.x + 0.5, trace.rest.y + 0.5, snapshot.surfaceHeightAt(trace.rest.x + 0.5, trace.rest.y + 0.5), snapshot.rotation);
+      const from = display(trace.from);
+      const rest = display(trace.rest);
       graphics.moveTo(from.x, from.y - 5);
       if (trace.greenRollout?.path.length) {
-        const landing = worldToIso(
-          trace.greenRollout.landing.x + 0.5,
-          trace.greenRollout.landing.y + 0.5,
-          snapshot.surfaceHeightAt(
-            trace.greenRollout.landing.x + 0.5,
-            trace.greenRollout.landing.y + 0.5,
-          ),
-          snapshot.rotation,
-        );
+        const landing = display(trace.greenRollout.landing);
         graphics.lineTo(landing.x, landing.y - 5);
         for (const point of trace.greenRollout.path.slice(1)) {
-          const projected = worldToIso(
-            point.x + 0.5,
-            point.y + 0.5,
-            snapshot.surfaceHeightAt(point.x + 0.5, point.y + 0.5),
-            snapshot.rotation,
-          );
+          const projected = display(point);
           graphics.lineTo(projected.x, projected.y - 5);
         }
       } else {
@@ -233,6 +230,8 @@ export function createOverlaysDiagnosticsSceneSystem(
       terrainStrokePreview,
       selectedTerrain,
     } = input;
+    if (!terrainStrokePreview || terrainStrokePreview.previewKind !== "stroke"
+      || terrainStrokePreview.acceptedTiles.length === 0 || selectedTerrain !== "sand") sandPreviewResolver.clear();
     const highlight = hoverHighlight;
     highlight.clear();
     if (hover) {
@@ -314,7 +313,7 @@ export function createOverlaysDiagnosticsSceneSystem(
             reducedMotion: input.reducedMotion,
           }).color
           : themedColors[terrain];
-        const previewTiles = terrainStrokePreview.previewKind === "surface-edit"
+        const previewTiles = terrainStrokePreview.previewKind === "surface-edit" || selectedTerrain === "sand"
           ? terrainStrokePreview.tiles
           : terrainStrokePreview.acceptedTiles;
         const previewMaterials = [...new Set(previewTiles.map((tile) => tile.terrain))];
@@ -344,8 +343,26 @@ export function createOverlaysDiagnosticsSceneSystem(
             "crosshatch",
           );
         }
+        if (terrainStrokePreview.previewKind === "stroke" && selectedTerrain === "sand"
+          && terrainStrokePreview.acceptedTiles.length > 0) {
+          const components = sandPreviewResolver.resolve({ course, effectiveTiles, preview: terrainStrokePreview, quality: input.graphicsQuality });
+          if (import.meta.env.MODE === "e2e") {
+            previewDiagnostics.bunkerContours = components;
+            previewDiagnostics.chargedCells = terrainStrokePreview.tiles.map((tile) => tile.y * course.width + tile.x);
+            previewDiagnostics.acceptedCells = terrainStrokePreview.acceptedTiles.map((tile) => tile.y * course.width + tile.x);
+          }
+          const authored = components.find((component) => component.authored);
+          if (authored) previewDiagnostics.authoredBunkerRings = authored.boundary;
+          for (const component of components) for (const ring of component.boundary) {
+            const points = ring.map((point) => worldToIso(point.x, point.y, surfaceHeightAt(point.x, point.y), rotation));
+            if (points.length < 3) continue;
+            highlight.poly(points.flatMap((point) => [point.x, point.y])).fill({ color: terrainStrokePreview.affordable ? previewColor("sand") : 0x8f3528, alpha: .16 });
+            highlight.stroke({ width: 2.4, color: terrainStrokePreview.affordable ? 0xffffff : 0xffd7c7, alpha: .88, join: "round", cap: "round" });
+          }
+        }
         if (
           terrainStrokePreview.previewKind === "stroke"
+          && selectedTerrain !== "sand"
           && input.graphicsQuality !== "low"
           && selectedTerrain
           && terrainStrokePreview.acceptedTiles.length > 0
@@ -377,12 +394,7 @@ export function createOverlaysDiagnosticsSceneSystem(
             return accepted.has(`${x},${y}`);
           }));
           for (const component of previewComponents) {
-            const bunkerType = selectedTerrain === "sand"
-              ? classifyBunkerVisualType(component.cells, localTiles, localWidth, localHeight)
-              : null;
-            const rings = bunkerType
-              ? buildBunkerVisualRings(component.rings, component.topologyKey, component.cells.length, bunkerType)
-              : component.rings;
+            const rings = component.rings;
             for (const ring of rings) {
               const points = ring.map((point) => {
                 const worldX = point.x + minX;

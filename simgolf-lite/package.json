@@ -80,7 +80,7 @@
     "art:pixellab:certify": "node scripts/pixellab-pilot.mjs certify",
     "test:perf": "node scripts/perf-smoke.mjs",
     "test:resource-growth": "node --test scripts/zk682-resource-growth-contract.test.mjs && node scripts/zk682-run-resource-growth.mjs",
-    "test:stability:contract": "node --test scripts/zk682-stability-contract.test.mjs scripts/zk682-certification-contract.test.mjs",
+    "test:stability:contract": "node --test scripts/zk682-stability-contract.test.mjs scripts/zk682-certification-contract.test.mjs scripts/react-component-timing-cleanup.test.mjs",
     "test:stability": "npm run test:stability:contract && node scripts/zk682-run-stability.mjs",
     "test:zk764:perf": "ZK764_ISOLATED_BENCHMARK=1 vitest run src/game/architecture/reviewPerformance.test.ts --maxWorkers=1",
     "test:pwa": "node scripts/pwa-smoke.mjs",

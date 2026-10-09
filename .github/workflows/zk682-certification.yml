@@ -48,6 +48,17 @@ jobs:
           --output artifacts/zk682/raw/core-build.json
           --candidate "$ZK682_EXPECTED_COMMIT"
           -- npm run build
+      - name: Headless performance receipt
+        env:
+          PERF_FIXTURE_READY_TIMEOUT_MS: "300000"
+          PERF_FIXTURE: m27
+          PERF_THEME: parkland
+        run: >-
+          node scripts/zk682-run-command-receipt.mjs
+          --id headless-performance
+          --output artifacts/zk682/raw/headless-performance-command.json
+          --candidate "$ZK682_EXPECTED_COMMIT"
+          -- npm run test:perf
       - name: Unit suite receipt
         run: >-
           node scripts/zk682-run-command-receipt.mjs
@@ -128,17 +139,6 @@ jobs:
           --output artifacts/zk682/raw/asset-unselected-biomes.json
           --candidate "$ZK682_EXPECTED_COMMIT"
           -- npm run test:e2e -- e2e/zk674-biome-zoom-cache.e2e.ts --workers=1 --retries=0
-      - name: Headless performance receipt
-        env:
-          PERF_FIXTURE_READY_TIMEOUT_MS: "300000"
-          PERF_FIXTURE: m27
-          PERF_THEME: parkland
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id headless-performance
-          --output artifacts/zk682/raw/headless-performance-command.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npm run test:perf
       - name: Collect typed Linux build and performance evidence
         run: node scripts/zk682-collect-linux-evidence.mjs
       - name: Collect renderer resource-growth evidence
