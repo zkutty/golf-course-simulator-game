@@ -1,0 +1,32 @@
+{
+  "decision": "SOURCE_GO_QUALIFIED_ZK1306_STATE_CONTINUITY_OBSERVER",
+  "synthetic": false,
+  "sourceAttempt": 1,
+  "sourceCap": 3,
+  "runtimeInvocations": 0,
+  "runtimeAdmitted": false,
+  "canonicalCredit": false,
+  "releaseCleared": false,
+  "rootControls": "Nine new VM controls9PASS/0fail/0skip; syntax3 and exact fixture inverse PASS; root owner closed/reaped/reconciled/zero live or zombie. No actual SDK/browser trace yet.",
+  "sourceFindings": [
+    "Exact two insertion removal reconstructs original611-byte fixture/hashae2f4678; authored acquire/fillStyle/fillRect and final rect override are untouched.",
+    "Listeners/mutation observer install after original c/g acquisition before fills; S0 reads after final draw before original rect override. S1/S2/S3 retain closure-owned c/g and verify unique/current connected same canvas before reads.",
+    "Four bounded snapshots/readbacks and two sequential RAF callbacks; completed trace requires four image reads/stages. No-RAF/timer/replacement/duplicate/accessor/overflow/falsy controls fail or retain qualified incomplete facts.",
+    "No native drawing/dimension setters are replaced; isContextLost is called only DATA function with native appearance, otherwise UNKNOWN. Native appearance remains spoofable. State accessors use only native-appearance prototype getter; own accessor refused.",
+    "Scheduled5000ms finish disables late mutation and attempts listener removal/disconnect/timer cleanup; first falsy primary preserved. Combined context/dimension/pageerror/console bytes capped8192; report16384 and wx publication; root120/180 owns hard termination/closure.",
+    "Host sanitization copies own DATA only, rejects malformed sample shape/nonfinite values/complete partialtrace. It is a bounded diagnostic serializer, not a general proof of every cross-field semantic implication; root actual result must recompute first divergence from stage facts.",
+    "Driver binds sourceAccepted/runtimeAdmitted/current fixture/generatedfixture/binary/SDK/review and persists wx intent before browser import. Complete pin-set completeness/current identity/exclusive cap authorization remain mandatory ROOT admission checks."
+  ],
+  "qualifications": [
+    "Observer readbacks/events perturb fixture; no speed or backend causal credit.",
+    "Dimension records are delivery-time attribute observations/current values, not setter execution chronology or identity of writer. Same-value/reset/nonattribute/undelivered changes may remain UNKNOWN.",
+    "No observed contextloss events/isContextLostfalse does not rule out all state loss. Observed contextlost or state change is evidence, not ownership attribution.",
+    "S0 mismatch falsifies the proposed later-loss timing hypothesis but does not establish initial drawing failure mechanism.",
+    "Pageclock fields are separate from root clocks; firstStateChangeStage compares against S0 known values and is not proof of responsible native code."
+  ],
+  "downstreamEligibility": {
+    "ZK-1307": "Only after accepted actual trace: compare equivalent probe if unresolved stage/platform distinction makes hosted result a falsifiable discriminator; record exact OS/browser-build differences. Otherwise independently reviewed NOT_NEEDED disposition.",
+    "ZK-1308": "Only source-supported owner/environment diagnosis plus accepted1307 comparison or reviewedNOT_NEEDED; transparent samples/mutation coincidence alone cannot authorize speculative repair. Original gate verification separately registered."
+  },
+  "nextAction": "ROOT fresh source/candidate/SDK/default binary/lease checks, fresh runtime registration and exclusive cap1 intent before one trace; sourceGO itself grants no runtime. Prior closed caps and failures preserved."
+}

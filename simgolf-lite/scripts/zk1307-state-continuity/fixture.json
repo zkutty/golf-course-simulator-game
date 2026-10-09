@@ -1,0 +1,5 @@
+{
+  "fixtureHTML": "<!doctype html><meta charset=\"utf-8\"><style>html,body{margin:0;padding:0} .cc-pixi-stage{position:absolute;left:0;top:0} canvas{display:block;width:32px;height:16px}</style><div class=\"cc-pixi-stage\"><canvas width=\"32\" height=\"16\"></canvas></div><script>const c=document.querySelector('canvas'),g=c.getContext('2d');g.fillStyle='#ff0000';g.fillRect(0,0,16,16);g.fillStyle='#0000ff';g.fillRect(16,0,16,16);g.fillStyle='#00ff00';g.fillRect(0,0,4,4);const originalRect=c.getBoundingClientRect.bind(c);c.getBoundingClientRect=()=>{const r=originalRect();return {x:-0,y:r.y,width:r.width,height:r.height};};</script>",
+  "fixtureSHA256": "ae2f4678d7f68d30c0087a75438e4019b22f8756391f689179f51da9b36be93a",
+  "observedFixtureSHA256": "6441d483355d31a082b9fce4c8f2f90ee83606f5861ca7b83864ae45a4b5eea5"
+}

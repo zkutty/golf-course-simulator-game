@@ -1,291 +1,73 @@
 name: ZK-682 exact-SHA certification
-
 on:
   workflow_dispatch:
     inputs:
       candidate_sha:
-        description: Full 40-character commit SHA to certify
+        description: Exact unchanged f0a candidate SHA
         required: true
         type: string
-
+      source_sha:
+        description: Exact reviewed diagnostic source SHA
+        required: true
+        type: string
 permissions:
   contents: read
-
-defaults:
-  run:
-    working-directory: simgolf-lite
-
+concurrency:
+  group: zk1307-${{ inputs.source_sha }}-${{ github.run_id }}
+  cancel-in-progress: false
 jobs:
-  linux-evidence:
+  state-continuity:
+    name: state-continuity
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 10
     env:
-      ZK682_EXPECTED_COMMIT: ${{ inputs.candidate_sha }}
-      VITE_COMMIT_SHA: ${{ inputs.candidate_sha }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      WORKFLOW_PATH: .github/workflows/zk682-certification.yml
     steps:
-      - name: Checkout exact candidate
+      - name: Checkout exact diagnostic source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: source
+          persist-credentials: false
+      - name: Checkout exact unchanged candidate
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.candidate_sha }}
-          fetch-depth: 1
-      - name: Verify exact candidate checkout
-        shell: bash
-        run: |
-          [[ "$ZK682_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$ZK682_EXPECTED_COMMIT"
-          git cat-file -e "${ZK682_EXPECTED_COMMIT}^{commit}"
-      - uses: actions/setup-node@v4
+          path: candidate
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22'
           cache: npm
-          cache-dependency-path: simgolf-lite/package-lock.json
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium firefox webkit
-      - name: Production build receipt
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id core-build
-          --output artifacts/zk682/raw/core-build.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npm run build
-      - name: Headless performance receipt
-        env:
-          PERF_FIXTURE_READY_TIMEOUT_MS: "300000"
-          PERF_FIXTURE: m27
-          PERF_THEME: parkland
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id headless-performance
-          --output artifacts/zk682/raw/headless-performance-command.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npm run test:perf
-      - name: Unit suite receipt
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id core-unit
-          --output artifacts/zk682/raw/core-unit.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npm run test:ci
-      - name: Deterministic soak receipt
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id core-determinism
-          --output artifacts/zk682/raw/core-determinism.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npm run test:soak
-      - name: Reducer fuzz receipt
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id core-reducer
-          --output artifacts/zk682/raw/core-reducer.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npm run test:fuzz
-      - name: Save and migration receipt
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id core-save
-          --output artifacts/zk682/raw/core-save.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npx vitest run
-          src/utils/save.test.ts
-          src/utils/saveStore.test.ts
-          src/game/live/persistence.test.ts
-          src/game/rules/roundSnapshotMigration.test.ts
-          --maxWorkers=1
-          --testTimeout=60000
-      - name: PlatformServices receipt
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id core-platform-services
-          --output artifacts/zk682/raw/core-platform-services.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npx vitest run src/platform/platform.test.ts --maxWorkers=1
-      - name: Supported-browser receipt
-        env:
-          LIBGL_ALWAYS_SOFTWARE: "1"
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id browser-supported
-          --output artifacts/zk682/raw/browser-supported.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- bash -lc
-          'npm run test:release:browsers -- --grep-invert "ZK-813" --project=chrome-stable --project=webkit-safari-proxy --workers=1 &&
-          xvfb-run --auto-servernum npm run test:release:browsers -- --grep-invert "ZK-813" --project=firefox --workers=1 --headed'
-      - name: Golden browser receipt
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id browser-golden
-          --output artifacts/zk682/raw/browser-golden.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npm run test:e2e:golden -- --workers=1 --retries=0
-      - name: Offline PWA receipt and typed evidence
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id browser-pwa
-          --output artifacts/zk682/raw/browser-pwa.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npm run test:pwa:certification -- --expected-commit "$ZK682_EXPECTED_COMMIT"
-      - name: Asset package audit receipt
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id asset-package-audit
-          --output artifacts/zk682/raw/asset-package-audit.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npm run audit:m35-assets
-      - name: Unselected-biome isolation receipt
-        run: >-
-          node scripts/zk682-run-command-receipt.mjs
-          --id asset-unselected-biomes
-          --output artifacts/zk682/raw/asset-unselected-biomes.json
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          -- npm run test:e2e -- e2e/zk674-biome-zoom-cache.e2e.ts --workers=1 --retries=0
-      - name: Collect typed Linux build and performance evidence
-        run: node scripts/zk682-collect-linux-evidence.mjs
-      - name: Collect renderer resource-growth evidence
-        continue-on-error: true
-        run: npm run test:resource-growth -- --expected-commit "$ZK682_EXPECTED_COMMIT"
-      - name: Collect supplemental stability evidence
-        continue-on-error: true
-        run: npm run test:stability -- --expected-commit "$ZK682_EXPECTED_COMMIT"
-      - name: Upload exact-candidate Linux evidence
+          cache-dependency-path: candidate/simgolf-lite/package-lock.json
+      - name: Verify source and candidate roles before setup
+        timeout-minutes: 1
+        run: node source/simgolf-lite/scripts/zk1307-state-continuity/host.mjs "$GITHUB_WORKSPACE/source" "$GITHUB_WORKSPACE/candidate" "$GITHUB_WORKSPACE/zk1307-output" --verify-only
+      - name: Install exact locked candidate dependencies
+        timeout-minutes: 2
+        working-directory: candidate/simgolf-lite
+        run: timeout --signal=TERM --kill-after=10s 110s npm ci
+      - name: Install default pinned Chromium with dependencies
+        timeout-minutes: 3
+        working-directory: candidate/simgolf-lite
+        run: timeout --signal=TERM --kill-after=10s 170s ./node_modules/.bin/playwright install --with-deps chromium
+      - name: Run one owned state-continuity comparison
+        timeout-minutes: 4
+        run: node source/simgolf-lite/scripts/zk1307-state-continuity/host.mjs "$GITHUB_WORKSPACE/source" "$GITHUB_WORKSPACE/candidate" "$GITHUB_WORKSPACE/zk1307-output" --run
+      - name: Upload exact comparison evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zk682-linux-evidence-${{ inputs.candidate_sha }}
-          path: simgolf-lite/artifacts/zk682/raw
+          name: zk1307-state-continuity-${{ inputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
-          retention-days: 90
-
-  native-evidence:
-    name: ${{ matrix.platform }}-${{ matrix.architecture }} native evidence
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    env:
-      ZK682_EXPECTED_COMMIT: ${{ inputs.candidate_sha }}
-      COMMIT_SHA: ${{ inputs.candidate_sha }}
-      ZK682_EXPECTED_PLATFORM: ${{ matrix.platform }}
-      ZK682_EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-14
-            platform: darwin
-            architecture: arm64
-          - os: windows-2022
-            platform: win32
-            architecture: x64
-    steps:
-      - name: Disable Windows checkout newline conversion
-        if: runner.os == 'Windows'
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        run: git config --global core.autocrlf false
-      - name: Checkout exact candidate
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.candidate_sha }}
-          fetch-depth: 1
-      - name: Verify exact candidate checkout
-        shell: bash
-        run: |
-          [[ "$ZK682_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$ZK682_EXPECTED_COMMIT"
-          git cat-file -e "${ZK682_EXPECTED_COMMIT}^{commit}"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: simgolf-lite/package-lock.json
-      - run: npm ci
-      - run: npm run test:desktop
-      - run: npm run build
-      - name: Package unsigned exact-candidate application
-        run: npm run desktop:pack:dir
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - name: Run candidate-bound persistence and recovery certification
-        continue-on-error: true
-        run: npm run desktop:package:persistence
-      - name: Upload exact-candidate native evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: zk682-native-evidence-${{ matrix.platform }}-${{ matrix.architecture }}-${{ inputs.candidate_sha }}
-          path: simgolf-lite/artifacts/zk682/raw/desktop-${{ matrix.platform }}-${{ matrix.architecture }}
-          if-no-files-found: error
-          retention-days: 90
-      - name: Upload approved unsigned package
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coursecraft-${{ matrix.platform }}-${{ matrix.architecture }}-unsigned-${{ inputs.candidate_sha }}
-          path: simgolf-lite/desktop-dist
-          if-no-files-found: error
-          retention-days: 30
-
-  aggregate:
-    needs: [linux-evidence, native-evidence]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      ZK682_EXPECTED_COMMIT: ${{ inputs.candidate_sha }}
-    steps:
-      - name: Checkout exact candidate
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.candidate_sha }}
-          fetch-depth: 1
-      - name: Verify exact candidate checkout
-        shell: bash
-        run: |
-          [[ "$ZK682_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$ZK682_EXPECTED_COMMIT"
-          git cat-file -e "${ZK682_EXPECTED_COMMIT}^{commit}"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: simgolf-lite/package-lock.json
-      - run: npm ci
-      - name: Download exact Linux evidence from this run
-        uses: actions/download-artifact@v4
-        with:
-          name: zk682-linux-evidence-${{ inputs.candidate_sha }}
-          path: simgolf-lite/artifacts/zk682/raw
-      - name: Download exact macOS evidence from this run
-        uses: actions/download-artifact@v4
-        with:
-          name: zk682-native-evidence-darwin-arm64-${{ inputs.candidate_sha }}
-          path: simgolf-lite/artifacts/zk682/raw/desktop-darwin-arm64
-      - name: Download exact Windows evidence from this run
-        uses: actions/download-artifact@v4
-        with:
-          name: zk682-native-evidence-win32-x64-${{ inputs.candidate_sha }}
-          path: simgolf-lite/artifacts/zk682/raw/desktop-win32-x64
-      - name: Build exact-candidate certification packet
-        id: build-packet
-        continue-on-error: true
-        run: >-
-          npm run release:build:zk682 --
-          --candidate "$ZK682_EXPECTED_COMMIT"
-          --evidence-root artifacts/zk682/raw
-      - name: Retain raw and normalized packet on GO, HOLD, or invalid evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: zk682-certification-packet-${{ inputs.candidate_sha }}
+          include-hidden-files: false
+          retention-days: 7
           path: |
-            simgolf-lite/artifacts/zk682/raw
-            simgolf-lite/release/zk682
-          if-no-files-found: error
-          retention-days: 90
-      - name: Require passing machine gates and physical-only blockers
-        if: always()
-        env:
-          ZK682_PACKET_BUILD_OUTCOME: ${{ steps.build-packet.outcome }}
-        run: |
-          test "$ZK682_PACKET_BUILD_OUTCOME" = "success"
-          node scripts/zk682-workflow-verdict.mjs \
-            --report release/zk682/certification-report.json \
-            --expected-commit "$ZK682_EXPECTED_COMMIT"
+            zk1307-output/trace/result.json
+            zk1307-output/source-context.json
+            zk1307-output/owner/owned-command-receipt.json
+            zk1307-output/owner/stdout.log
+            zk1307-output/owner/stderr.log
