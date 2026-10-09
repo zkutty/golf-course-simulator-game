@@ -127,3 +127,52 @@ hash/date/lineage/review mismatches, private-only/rejected declarations and a
 fresh import/audit with a throwing fetch spy and zero requests. Rollback removes
 the two candidate audit files and this appendix; no save or asset migration is
 required.
+
+## Offline candidate byte audit appendix (P3)
+
+`npm run --silent audit:wildlife-candidate -- --atlas atlas.json --provenance
+provenance.json --production candidate.bin --raw raw.bin --reference reference-id
+reference.bin --cleanup 0 intermediate.bin --cleanup 1 candidate.bin` audits
+explicit local files against the existing candidate metadata interfaces. Repeat
+`--reference ID FILE` for every declared `referenceIdsAndHashes` ID and `--cleanup
+INDEX FILE` for every zero-based `cleanupLineage` entry. The four single-file
+flags are required exactly once. Empty reference/lineage arrays require no such
+bindings. Paths are literal local paths relative to the invoking directory, or
+absolute paths; URLs, directories, symlinks and nonregular files are rejected.
+Nothing follows evidence links, searches directories or infers asset locations.
+
+The existing `auditWildlifeCandidate` remains the structural authority. Malformed
+metadata, duplicate/extra/missing reference or cleanup bindings fail without any
+asset bytes being opened. Known malformed/duplicate bindings fail before even
+metadata reads; coverage against declarations requires reading the two explicitly
+named metadata JSON files. Each JSON file is limited to 1 MiB and must be valid
+UTF-8 JSON. Regular asset files are streamed in 64 KiB chunks, with a fixed
+512 MiB per-file operational read ceiling. These bounds do not replace or alter
+wildlife/M35 delivery budgets and make no PNG, pixel, frame or packing assertions.
+
+Actual SHA-256 values are compared with the atlas source and provenance production
+hashes, raw hash, each reference hash by exact ID, and each cleanup hash by ordinal.
+Repeated physical paths are allowed when multiple declarations identify the same
+bytes. Existing empty-lineage rules still require equal raw/production hashes;
+intermediate parent relationships remain absent from the metadata interface.
+
+Stdout is deterministic version-1 JSON: `ok`, `metadataErrors`, `bindingErrors`,
+`files`, `productionEligible: false` and `productionBlockers`. File results are
+ordered production, raw, references by ID, then cleanup by numeric ordinal, and
+include the supplied path, declared/actual hash, byte count and match result.
+Unsuccessful reads use null byte/hash results and stable error codes. No clock,
+review authentication, network lookup, generated candidate or report-file write
+is involved. The authoring wrapper bundles the TypeScript CLI with the existing
+no-public-copy Vite SSR configuration in a temporary directory, removes that
+bundle afterward, and emits no build logs on stdout. Use npm `--silent` when
+consuming machine JSON. Exit 0 means structural/binding/byte checks passed; exit 1
+means an audit failure; exit 2 means invalid CLI usage. `--help` emits JSON and
+exits 0 without reading candidate files.
+
+Even declared permitted redistribution and approved reviews plus matching bytes
+cannot certify actual rights, reviewers, human adoption, pixel suitability or
+production approval. Private-only/rejected declarations retain explicit blockers;
+byte validity can still pass independently of those production blockers. No
+registry, manifest, asset reference, renderer, audio, loading, save version or
+runtime consumer changes are made. Rollback removes the two byte-audit modules,
+their test, the scripts wrapper, the package audit command and only this appendix.

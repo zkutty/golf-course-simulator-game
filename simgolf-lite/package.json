@@ -62,6 +62,7 @@
     "audit:delivery": "node scripts/zk680-delivery-evidence.mjs",
     "test:surface-residency": "node --test scripts/zk680-surface-budget.test.mjs",
     "audit:biome-consumers": "node scripts/biome-consumer-audit.mjs",
+    "audit:wildlife-candidate": "node scripts/wildlife-candidate-byte-audit.mjs",
     "audit:biome-authoring": "vite build --config vite.biome-audit.config.ts --ssr src/game/testing/biomeAuthoringAuditCli.ts --outDir biome-audit-dist --emptyOutDir --minify false && node biome-audit-dist/biomeAuthoringAuditCli.js",
     "audit:terrain:parkland-4x": "node scripts/parkland-4x-asset-audit.mjs",
     "test:terrain:parkland-4x": "node --test scripts/parkland-4x-asset-audit.test.mjs",

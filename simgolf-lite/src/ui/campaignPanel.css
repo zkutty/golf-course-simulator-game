@@ -1,0 +1,40 @@
+.cc-campaign-panel {
+  position: absolute;
+  z-index: 190;
+  top: 52px;
+  right: 12px;
+  width: min(440px, calc(100% - 24px));
+  max-height: calc(100dvh - 70px);
+  padding: 16px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  scroll-padding-block: 12px;
+  font-size: 1rem;
+}
+.cc-campaign-panel *, .cc-campaign-panel *::before, .cc-campaign-panel *::after { box-sizing: border-box; }
+.cc-campaign-panel > header { align-items: flex-start; }
+.cc-campaign-panel > header > div { flex: 1; min-width: 0; }
+.cc-campaign-panel h2 { font-size: 1.25rem; }
+.cc-campaign-panel small { font-size: .75rem; }
+.cc-campaign-panel span { min-width: 0; max-width: 100%; }
+.cc-campaign-panel button {
+  max-width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid #8d806c;
+  border-radius: 7px;
+  background: #fff8df;
+  color: #352715;
+  font: inherit;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.cc-campaign-panel button:focus-visible { outline: 3px solid var(--ui-focus); outline-offset: 2px; }
+.cc-campaign-panel button:disabled { color: #5d665c; background: #e5e8e1; cursor: default; }
+.cc-campaign-panel .cc-campaign-panel__close { display: grid; place-items: center; flex: 0 0 auto; width: 36px; padding: 6px; }
+.cc-campaign-status { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 7px; }
+.cc-campaign-status > svg { margin-top: .18em; }
+@media (max-width: 560px) { .cc-campaign-panel { padding: 12px; } }

@@ -1,15 +1,22 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { GameTabs } from "../gameui";
+import { IconUi } from "../../assets/icons/IconUi";
+import "./GolfopediaModal.css";
 import { buildGolfopediaEntries, type GolfopediaSection } from "./golfopediaData";
 import { BINDING_ACTIONS, BINDING_LABEL_KEYS, displayBinding } from "../../accessibility/keybindings";
 import { loadAppProfile } from "../../game/onboarding/profile";
 import { useFocusTrap } from "../accessibility/useFocusTrap";
 import { T } from "../../i18n/T";
-import { translateCurrent } from "../../i18n/core";
 import { useI18n } from "../../i18n/useI18n";
 import type { EconomicPressure, LandTheme } from "../../game/models/types";
 
 const SECTIONS: GolfopediaSection[] = ["Terrain", "Golfers", "Management", "Controls"];
+const SECTION_KEYS = {
+  Terrain: "golfopedia.section.terrain",
+  Golfers: "golfopedia.section.golfers",
+  Management: "golfopedia.section.management",
+  Controls: "golfopedia.section.controls",
+} as const;
 
 export function GolfopediaModal(props: {
   open: boolean;
@@ -19,6 +26,7 @@ export function GolfopediaModal(props: {
   economicPressure?: EconomicPressure;
 }) {
   const { t } = useI18n();
+  const sectionLabels = SECTIONS.map((item) => t(SECTION_KEYS[item]));
   const tabsId = `${useId()}-golfopedia-tabs`;
   const panelId = `${tabsId}-panel`;
   const entries = useMemo(
@@ -46,61 +54,36 @@ export function GolfopediaModal(props: {
 
   if (!props.open) return null;
   return (
-    <div role="dialog" aria-modal="true" aria-label={translateCurrent("auto.ui.help.golfopediamodal.golfopedia")} style={{ position: "fixed", inset: 0, zIndex: 99980, display: "grid", placeItems: "center", padding: 18, background: "rgba(19,28,20,.68)" }} onClick={props.onClose}>
-      <div ref={trapRef} style={{ width: "min(980px, 100%)", height: "min(720px, 92vh)", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 18, border: "2px solid #3d4a3e", background: "#f7f0dd", boxShadow: "0 28px 80px rgba(0,0,0,.4)" }} onClick={(event) => event.stopPropagation()}>
-        <style>{`
-          [data-golfopedia-tabs] [data-gameui="tab"]:hover:not([aria-selected="true"]) {
-            background: #dfe8d5 !important;
-            border-color: #73866f !important;
-            color: #2d4933 !important;
-          }
-          [data-golfopedia-tabs] [data-gameui="tab"][aria-selected="true"] {
-            border-color: #3d4a3e !important;
-            box-shadow: inset 0 -3px 0 #e6bc64, 0 10px 20px rgba(0,0,0,.14) !important;
-          }
-          [data-golfopedia-tabs] [data-gameui="tab"]:focus-visible,
-          [data-golfopedia-sidebar-entry]:focus-visible {
-            outline: 3px solid #b58533;
-            outline-offset: 2px;
-          }
-          [data-golfopedia-sidebar-entry]:hover:not([aria-current="page"]) {
-            background: #e1ead7 !important;
-            box-shadow: inset 3px 0 0 #8da184;
-          }
-          [data-golfopedia-sidebar-entry][aria-current="page"] {
-            border-left: 4px solid #e6bc64 !important;
-            padding-left: 7px !important;
-            box-shadow: inset 0 -2px 0 rgba(255,255,255,.45);
-          }
-        `}</style>
-        <header style={{ padding: 18, borderBottom: "1px solid rgba(61,74,62,.25)", background: "#e8dcc0" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-            <div><div style={{ fontFamily: "var(--font-heading)", fontWeight: 900, fontSize: 25, color: "#344338" }}><T id="auto.ui.help.golfopediamodal.golfopedia" /></div><div style={{ color: "#6b755f", fontSize: 12 }}><T id="auto.ui.help.golfopediamodal.the.course.designer.s.pocket.reference" /></div></div>
-            <button onClick={props.onClose} aria-label={translateCurrent("auto.ui.help.golfopediamodal.close.golfopedia")} style={{ border: "1px solid #687266", borderRadius: 8, background: "#fffaf0", padding: "8px 11px", cursor: "pointer", fontWeight: 900 }}>✕</button>
+    <div className="cc-golfopedia-overlay" role="dialog" aria-modal="true" aria-label={t("auto.ui.help.golfopediamodal.golfopedia")} onClick={props.onClose}>
+      <div ref={trapRef} className="cc-golfopedia-modal" onClick={(event) => event.stopPropagation()}>
+        <header>
+          <div className="cc-golfopedia-heading">
+            <div><div className="cc-golfopedia-title"><T id="auto.ui.help.golfopediamodal.golfopedia" /></div><div className="cc-golfopedia-subtitle"><T id="auto.ui.help.golfopediamodal.the.course.designer.s.pocket.reference" /></div></div>
+            <button className="cc-golfopedia-close" type="button" onClick={props.onClose} aria-label={t("auto.ui.help.golfopediamodal.close.golfopedia")}><IconUi name="close" /></button>
           </div>
           <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
-            <div data-golfopedia-tabs data-tooltip-skip style={{ maxWidth: "100%", overflowX: "auto", paddingBottom: 2 }}>
-              <GameTabs id={tabsId} panelId={panelId} tabs={SECTIONS} activeTab={section} onTabChange={(tab) => {
-                const nextSection = tab as GolfopediaSection;
+            <div data-golfopedia-tabs data-tooltip-skip>
+              <GameTabs id={tabsId} panelId={panelId} tabs={sectionLabels} activeTab={t(SECTION_KEYS[section])} onTabChange={(tab) => {
+                const nextSection = SECTIONS[sectionLabels.indexOf(tab)];
                 setSection(nextSection);
                 setQuery("");
                 setSelectedId(entries.find((entry) => entry.section === nextSection)?.id ?? entries[0].id);
               }} />
             </div>
-            <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={translateCurrent("auto.ui.help.golfopediamodal.search.terrain.stats.controls")} aria-label={translateCurrent("auto.ui.help.golfopediamodal.search.golfopedia")} style={{ width: "100%", minWidth: 0, boxSizing: "border-box", borderRadius: 999, border: "1px solid rgba(61,74,62,.35)", padding: "11px 15px", background: "#fffdf6" }} />
+            <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("auto.ui.help.golfopediamodal.search.terrain.stats.controls")} aria-label={t("auto.ui.help.golfopediamodal.search.golfopedia")} className="cc-golfopedia-search" />
           </div>
         </header>
-        <div id={panelId} role="tabpanel" aria-labelledby={`${tabsId}-tab-${SECTIONS.indexOf(section)}`} style={{ display: "grid", gridTemplateColumns: "minmax(190px, 30%) 1fr", minHeight: 0, flex: 1 }}>
-          <nav data-tooltip-skip style={{ overflowY: "auto", borderRight: "1px solid rgba(61,74,62,.2)", padding: 10 }}>
+        <div id={panelId} role="tabpanel" aria-labelledby={`${tabsId}-tab-${SECTIONS.indexOf(section)}`} className="cc-golfopedia-panel">
+          <nav data-tooltip-skip>
             {filtered.map((entry) => <button data-golfopedia-sidebar-entry key={entry.id} aria-current={selected.id === entry.id ? "page" : undefined} onClick={() => setSelectedId(entry.id)} style={{ display: "block", width: "100%", textAlign: "left", border: 0, borderRadius: 9, padding: "10px 11px", marginBottom: 4, background: selected.id === entry.id ? "#3d4a3e" : "transparent", color: selected.id === entry.id ? "white" : "#3d4a3e", cursor: "pointer", fontWeight: 800 }}>{entry.title}</button>)}
-            {filtered.length === 0 && <div style={{ padding: 12, color: "#6b7280", fontSize: 13 }}><T id="auto.ui.help.golfopediamodal.no.entries.match.that.search" /></div>}
+            {filtered.length === 0 && <div className="cc-golfopedia-no-results" role="status"><T id="auto.ui.help.golfopediamodal.no.entries.match.that.search" /></div>}
           </nav>
-          <article data-testid="golfopedia-entry" data-entry-id={selected.id} style={{ overflowY: "auto", padding: "clamp(20px, 4vw, 42px)", color: "#354039" }}>
-            <div style={{ textTransform: "uppercase", letterSpacing: ".12em", fontSize: 10, fontWeight: 900, color: "#8a6d3b" }}>{selected.section}</div>
-            <h2 style={{ fontFamily: "var(--font-heading)", fontSize: 30, margin: "6px 0 10px" }}>{selected.title}</h2>
-            <p style={{ fontSize: 16, lineHeight: 1.5, color: "#526056" }}>{selected.summary}</p>
-            {selected.facts && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, margin: "20px 0" }}>{selected.facts.map((fact) => <div key={fact.label} style={{ background: "#fffaf0", border: "1px solid rgba(61,74,62,.18)", borderRadius: 10, padding: 12 }}><div style={{ fontSize: 10, letterSpacing: ".08em", color: "#778077", textTransform: "uppercase" }}>{fact.label}</div><div style={{ fontWeight: 900, marginTop: 3 }}>{fact.value}</div></div>)}</div>}
-            {selected.section === "Controls" && <dl data-testid="current-keybindings" style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "6px 18px", background: "#fffaf0", padding: 14, borderRadius: 10 }}>
+          <article data-testid="golfopedia-entry" data-entry-id={selected.id} tabIndex={0} className="cc-golfopedia-entry">
+            <div style={{ textTransform: "uppercase", letterSpacing: ".12em", fontSize: ".625rem", fontWeight: 900, color: "#8a6d3b" }}>{t(SECTION_KEYS[selected.section])}</div>
+            <h2 style={{ fontFamily: "var(--font-heading)", fontSize: "1.875rem", margin: "6px 0 10px" }}>{selected.title}</h2>
+            <p style={{ fontSize: "1rem", lineHeight: 1.5, color: "#526056" }}>{selected.summary}</p>
+            {selected.facts && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(7.5rem, 100%), 1fr))", gap: 8, margin: "20px 0" }}>{selected.facts.map((fact) => <div key={fact.label} style={{ background: "#fffaf0", border: "1px solid rgba(61,74,62,.18)", borderRadius: 10, padding: 12 }}><div style={{ fontSize: ".625rem", letterSpacing: ".08em", color: "#778077", textTransform: "uppercase" }}>{fact.label}</div><div style={{ fontWeight: 900, marginTop: 3 }}>{fact.value}</div></div>)}</div>}
+            {selected.section === "Controls" && <dl data-testid="current-keybindings" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, auto)", gap: "6px 18px", background: "#fffaf0", padding: 14, borderRadius: 10 }}>
               {BINDING_ACTIONS.map((action) => <div key={action} style={{ display: "contents" }}>
                 <dt>{t(BINDING_LABEL_KEYS[action])}</dt><dd style={{ margin: 0, fontWeight: 900 }}>{displayBinding(bindings[action])}</dd>
               </div>)}

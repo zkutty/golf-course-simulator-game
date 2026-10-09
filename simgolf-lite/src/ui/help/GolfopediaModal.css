@@ -1,0 +1,132 @@
+.cc-golfopedia-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99980;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(19, 28, 20, .68);
+}
+
+.cc-golfopedia-modal {
+  width: min(980px, 100%);
+  height: min(720px, 92dvh);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 2px solid #3d4a3e;
+  background: #f7f0dd;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, .4);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.cc-golfopedia-modal header {
+  padding: 18px;
+  border-bottom: 1px solid rgba(61, 74, 62, .25);
+  background: #e8dcc0;
+}
+
+.cc-golfopedia-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cc-golfopedia-heading > div { min-width: 0; }
+.cc-golfopedia-title { font-family: var(--font-heading); font-weight: 900; font-size: 1.5625rem; color: #344338; }
+.cc-golfopedia-subtitle { font-size: .75rem; color: #6b755f; }
+
+.cc-golfopedia-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid #687266;
+  border-radius: 8px;
+  background: #fffaf0;
+  padding: 8px 11px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.cc-golfopedia-close svg { width: 1.125em; height: 1.125em; }
+.cc-golfopedia-modal [data-golfopedia-tabs] { min-width: 0; padding-bottom: 2px; }
+.cc-golfopedia-modal [data-gameui="tabs"] { flex-wrap: wrap; }
+.cc-golfopedia-modal [data-gameui="tab"] { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.cc-golfopedia-modal [data-gameui="tab"]:hover:not([aria-selected="true"]) {
+  background: #dfe8d5 !important;
+  border-color: #73866f !important;
+  color: #2d4933 !important;
+}
+.cc-golfopedia-modal [data-gameui="tab"][aria-selected="true"] {
+  border-color: #3d4a3e !important;
+  box-shadow: inset 0 -3px 0 #e6bc64, 0 10px 20px rgba(0, 0, 0, .14) !important;
+}
+.cc-golfopedia-modal [data-gameui="tab"]:focus-visible,
+.cc-golfopedia-modal [data-golfopedia-sidebar-entry]:focus-visible {
+  outline: 3px solid #b58533;
+  outline-offset: 2px;
+}
+.cc-golfopedia-modal [data-golfopedia-sidebar-entry] { font-size: .8125rem; }
+.cc-golfopedia-modal [data-golfopedia-sidebar-entry]:hover:not([aria-current="page"]) {
+  background: #e1ead7 !important;
+  box-shadow: inset 3px 0 0 #8da184;
+}
+.cc-golfopedia-modal [data-golfopedia-sidebar-entry][aria-current="page"] {
+  border-left: 4px solid #e6bc64 !important;
+  padding-left: 7px !important;
+  box-shadow: inset 0 -2px 0 rgba(255, 255, 255, .45);
+}
+
+.cc-golfopedia-search {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 1px solid rgba(61, 74, 62, .35);
+  padding: 11px 15px;
+  background: #fffdf6;
+  font-size: .875rem;
+}
+.cc-golfopedia-panel {
+  display: grid;
+  grid-template-columns: minmax(190px, 30%) minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+}
+.cc-golfopedia-panel nav {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  border-right: 1px solid rgba(61, 74, 62, .2);
+  padding: 10px;
+}
+.cc-golfopedia-entry {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(20px, 4vw, 42px);
+  color: #354039;
+}
+.cc-golfopedia-no-results { padding: 12px; color: #6b7280; font-size: .8125rem; }
+.cc-golfopedia-entry dd { overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+  .cc-golfopedia-overlay { padding: 8px; }
+  .cc-golfopedia-modal { height: calc(100dvh - 16px); }
+  .cc-golfopedia-modal header { padding: 10px; }
+  .cc-golfopedia-modal [data-gameui="tabs"] { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); border-radius: 18px !important; }
+  .cc-golfopedia-modal [data-gameui="tab"] { padding: 8px 6px !important; }
+  .cc-golfopedia-panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, .36fr) minmax(0, 1fr); }
+  .cc-golfopedia-panel nav { border-right: 0; border-bottom: 1px solid rgba(61, 74, 62, .2); }
+  .cc-golfopedia-entry { padding: 16px; }
+}
