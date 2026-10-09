@@ -18,19 +18,19 @@ test("M38 architecture evidence and living club remain inspectable and actionabl
   const club = page.getByTestId("living-club-panel");
   await expect(club).toBeVisible();
   await expect(club.getByTestId("story-choice-card")).toBeVisible();
-  await club.getByRole("button", { name: "Regulars" }).click();
+  await club.getByRole("tab", { name: "Regulars" }).click();
   await expect(club).toContainText("Morgan Links");
   await club.getByTestId("favorite-regular").click();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v5") ?? "{}").favoritePersonIds)).toHaveLength(1);
 
-  await club.getByRole("button", { name: "Staff" }).click();
+  await club.getByRole("tab", { name: "Staff" }).click();
   await expect(club.getByText("Proficiency").first()).toBeVisible();
   const cashBefore = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").economy.cash);
   await club.getByRole("button", { name: "Train" }).first().click();
   await expect(club.getByRole("status")).toContainText("Staff plan updated");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").economy.cash)).toBe(cashBefore - 650);
 
-  await club.getByRole("button", { name: "Stories" }).click();
+  await club.getByRole("tab", { name: "Stories" }).click();
   await club.getByTestId("story-choice-card").locator('button[data-testid^="story-choice-"]').first().click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").livingClub.journalEntries)).toBe(1);
   await expect(club).toContainText("Club journal");

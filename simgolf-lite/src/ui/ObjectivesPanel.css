@@ -1,0 +1,54 @@
+.cc-objectives-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .45);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 9999;
+}
+.cc-objectives-panel {
+  width: min(560px, 100%);
+  max-height: min(720px, calc(100dvh - 32px));
+  min-width: 0;
+  min-height: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.cc-objectives-panel > [data-gameui="card"] { display: flex; flex-direction: column; max-height: inherit; }
+.cc-objectives-panel [data-gameui="card-header"] { flex: 0 0 auto; }
+.cc-objectives-panel [data-gameui="card-header"] > div:last-child { min-width: 0; font-size: 1.125rem !important; }
+.cc-objectives-panel > [data-gameui="card"] > div:last-child { display: flex; flex-direction: column; min-height: 0; padding: 0 !important; }
+.cc-objectives-body { min-height: 0; overflow-y: auto; padding: 16px; }
+.cc-objectives-goals { display: grid; gap: 14px; }
+.cc-objective-goal { min-width: 0; padding: 12px; border-radius: 12px; border: 1px solid rgba(0, 0, 0, .08); background: rgba(255, 255, 255, .7); }
+.cc-objective-goal[data-met="true"] { background: rgba(122, 184, 109, .12); }
+.cc-objective-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.cc-objective-title { flex: 1 1 100%; font-weight: 800; font-size: .875rem; }
+.cc-objective-state { display: inline-flex; align-items: center; gap: 4px; color: #526056; font-size: .75rem; }
+.cc-objective-state svg { flex: 0 0 auto; }
+.cc-objective-goal[data-met="true"] > .cc-objective-heading > .cc-objective-state { color: #2f6b33; }
+.cc-objective-deadline { min-width: 0; font-size: .6875rem; font-weight: 700; color: #6b7280; }
+.cc-objective-deadline[data-urgent="true"] { color: #b91c1c; }
+.cc-objective-completed { color: #2f6b33; }
+.cc-objective-description { font-size: .75rem; color: #6b7280; margin-top: 2px; }
+.cc-objective-conditions { display: grid; gap: 8px; margin-top: 8px; }
+.cc-objective-metric-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; font-size: .75rem; margin-bottom: 3px; }
+.cc-objective-metric { flex: 1 1 auto; min-width: 0; }
+.cc-objective-value { min-width: 0; font-weight: 700; }
+.cc-objective-progress { height: 8px; border-radius: 999px; background: rgba(0, 0, 0, .08); overflow: hidden; }
+.cc-objective-progress-fill { height: 100%; border-radius: 999px; transition: width 300ms ease; }
+.cc-objectives-empty { font-size: .8125rem; color: #6b7280; }
+.cc-objectives-footer { flex: 0 0 auto; display: flex; justify-content: flex-end; padding: 14px 16px; }
+.cc-objectives-footer button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 16px; border-radius: 10px; border: 1px solid rgba(0, 0, 0, .18); background: #3d4a3e; color: #fff; font-weight: 700; font-size: .8125rem; cursor: pointer; }
+.cc-objectives-panel svg, .cc-objectives-mini svg { width: 1.125em; height: 1.125em; }
+.cc-objectives-mini { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; border: 1px solid rgba(0, 0, 0, .1); background: rgba(255, 255, 255, .75); font-size: .75rem; cursor: pointer; width: 100%; box-sizing: border-box; text-align: left; overflow-wrap: anywhere; }
+.cc-objectives-mini > svg { flex: 0 0 auto; }
+.cc-objectives-mini-free { flex-wrap: wrap; cursor: default; color: #6b7280; }
+.cc-objectives-mini-free b { letter-spacing: .06em; }
+.cc-objectives-mini-content { flex: 1; min-width: 0; }
+.cc-objectives-mini-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+.cc-objectives-mini-heading b { min-width: 0; }
+.cc-objectives-mini-heading span { color: #6b7280; }
+.cc-objectives-mini-content > .cc-objective-progress { margin-top: 4px; }
+@media (prefers-reduced-motion: reduce) { .cc-objective-progress-fill { transition: none; } }

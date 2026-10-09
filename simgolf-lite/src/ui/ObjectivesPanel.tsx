@@ -1,41 +1,39 @@
-import type { CSSProperties } from "react";
-import { formatCurrency, formatWeekLabel } from "../i18n/format";
-import type { ObjectiveState, GoalProgress, ConditionProgress } from "../game/models/objectives";
-import { GameCard } from "./gameui";
-import { T } from "../i18n/T";
-import { translateCurrent } from "../i18n/core";
+import { formatCurrency, formatNumber, formatWeekLabel } from "../i18n/format";
+import type { Locale } from "../i18n/core";
+import type { ConditionProgress, GoalProgress, ObjectiveState } from "../game/models/objectives";
+import { GameCard } from "./gameui/GameCard";
+import { IconUi } from "../assets/icons/IconUi";
+import { useFocusTrap } from "./accessibility/useFocusTrap";
 import { useI18n } from "../i18n/useI18n";
+import "./ObjectivesPanel.css";
 
-// Objectives UI (ZKU-163): a pinned mini-tracker for the HUD header and the
-// full goals panel with per-condition progress bars.
+const METRIC_LABEL_KEYS = {
+  cash: "objectives.metric.cash",
+  reputation: "objectives.metric.reputation",
+  courseRating: "objectives.metric.courseRating",
+  holesBuilt: "objectives.metric.holesBuilt",
+  publishedHoles: "objectives.metric.publishedHoles",
+  publishedCourses: "objectives.metric.publishedCourses",
+  weeklyProfit: "objectives.metric.weeklyProfit",
+  profitStreak: "objectives.metric.profitStreak",
+  totalRounds: "objectives.metric.totalRounds",
+  condition: "objectives.metric.condition",
+  tournamentPlacement: "objectives.metric.tournamentPlacement",
+} as const satisfies Record<ConditionProgress["metric"], string>;
 
-const METRIC_LABEL: Record<ConditionProgress["metric"], string> = {
-  cash: "Cash",
-  reputation: "Reputation",
-  courseRating: "Course rating",
-  holesBuilt: "Holes built",
-  publishedHoles: "Published holes",
-  publishedCourses: "Published courses",
-  weeklyProfit: "Weekly profit",
-  profitStreak: "Profitable weeks in a row",
-  totalRounds: "Total rounds played",
-  condition: "Course condition",
-  tournamentPlacement: "Tournament placement",
-};
-
-function formatMetricValue(metric: ConditionProgress["metric"], value: number): string {
+function formatMetricValue(metric: ConditionProgress["metric"], value: number, locale: Locale): string {
   switch (metric) {
     case "cash":
     case "weeklyProfit":
-      return formatCurrency(value);
+      return formatCurrency(value, locale);
     case "condition":
-      return `${Math.round(value)}%`;
+      return formatNumber(Math.round(value) / 100, locale, { style: "percent", maximumFractionDigits: 0 });
     case "courseRating":
-      return value.toFixed(1);
+      return formatNumber(value, locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     case "tournamentPlacement":
-      return value >= Number.MAX_SAFE_INTEGER ? "—" : `${Math.round(value)}`;
+      return value >= Number.MAX_SAFE_INTEGER ? "—" : formatNumber(Math.round(value), locale);
     default:
-      return `${Math.round(value)}`;
+      return formatNumber(Math.round(value), locale);
   }
 }
 
@@ -55,56 +53,24 @@ function goalFraction(p: GoalProgress): number {
   return p.conditions.reduce((acc, c) => acc + conditionFraction(c), 0) / p.conditions.length;
 }
 
-function ProgressBar({ fraction, met }: { fraction: number; met: boolean }) {
-  return (
-    <div
-      style={{
-        height: 8,
-        borderRadius: 999,
-        background: "rgba(0,0,0,0.08)",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          width: `${Math.round(fraction * 100)}%`,
-          height: "100%",
-          borderRadius: 999,
-          background: met ? "var(--cc-grass)" : "var(--cc-water)",
-          transition: "width 300ms ease",
-        }}
-      />
-    </div>
-  );
+function ProgressBar({ fraction, met, label, valueText }: { fraction: number; met: boolean; label: string; valueText: string }) {
+  return <div className="cc-objective-progress" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(fraction * 100)} aria-valuetext={valueText}>
+    <div className="cc-objective-progress-fill" style={{ width: `${Math.round(fraction * 100)}%`, background: met ? "var(--cc-grass)" : "var(--cc-water)" }} />
+  </div>;
 }
 
 export function ObjectiveMiniTracker(props: {
   objectives: ObjectiveState | null | undefined;
   onOpen: () => void;
 }) {
+  const { t, locale } = useI18n();
   const { objectives } = props;
-  const baseStyle: CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 10px",
-    borderRadius: 10,
-    border: "1px solid rgba(0,0,0,0.1)",
-    background: "rgba(255,255,255,0.75)",
-    fontSize: 12,
-    cursor: "pointer",
-    width: "100%",
-    textAlign: "left",
-  };
-
   if (!objectives) {
-    return (
-      <div style={{ ...baseStyle, cursor: "default", color: "#6b7280" }} title={translateCurrent("auto.ui.objectivespanel.no.goals.build.freely")}>
-        <span aria-hidden>🌿</span>
-        <b style={{ letterSpacing: "0.06em" }}><T id="auto.ui.objectivespanel.free.play" /></b>
-        <span><T id="auto.ui.objectivespanel.no.goals.build.at.your.own.pace" /></span>
-      </div>
-    );
+    return <div className="cc-objectives-mini cc-objectives-mini-free" title={t("auto.ui.objectivespanel.no.goals.build.freely")}>
+      <IconUi name="land" />
+      <b>{t("auto.ui.objectivespanel.free.play")}</b>
+      <span>{t("auto.ui.objectivespanel.no.goals.build.at.your.own.pace")}</span>
+    </div>;
   }
 
   const done = objectives.progress.filter((p) => p.met).length;
@@ -112,37 +78,19 @@ export function ObjectiveMiniTracker(props: {
   const nextIdx = objectives.progress.findIndex((p) => !p.met);
   const nextGoal = nextIdx >= 0 ? objectives.goals[nextIdx] : null;
   const nextProgress = nextIdx >= 0 ? objectives.progress[nextIdx] : null;
-
-  return (
-    <button style={baseStyle} onClick={props.onOpen} title={translateCurrent("auto.ui.objectivespanel.open.objectives")}>
-      <span aria-hidden>{objectives.outcome === "WON" ? "🏆" : "🎯"}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-          <b
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {objectives.outcome === "WON"
-              ? "All objectives complete!"
-              : nextGoal
-                ? nextGoal.label
-                : "Objectives"}
-          </b>
-          <span style={{ color: "#6b7280", flexShrink: 0 }}>
-            {done}/{total}
-          </span>
-        </div>
-        {nextProgress && (
-          <div style={{ marginTop: 4 }}>
-            <ProgressBar fraction={goalFraction(nextProgress)} met={false} />
-          </div>
-        )}
-      </div>
-    </button>
-  );
+  const label = objectives.outcome === "WON"
+    ? t("objectives.allComplete")
+    : nextGoal
+      ? nextGoal.labelKey ? t(nextGoal.labelKey) : nextGoal.label
+      : t("auto.ui.objectivespanel.objectives");
+  const counts = { done: formatNumber(done, locale), total: formatNumber(total, locale) };
+  return <button className="cc-objectives-mini" type="button" onClick={props.onOpen} title={t("auto.ui.objectivespanel.open.objectives")}>
+    <IconUi name={objectives.outcome === "WON" ? "completed" : "progression"} />
+    <div className="cc-objectives-mini-content">
+      <div className="cc-objectives-mini-heading"><b>{label}</b><span aria-label={t("objectives.completedCount", counts)}>{t("objectives.count", counts)}</span></div>
+      {nextProgress && <ProgressBar fraction={goalFraction(nextProgress)} met={false} label={label} valueText={t("objectives.progressPercent", { percent: formatNumber(Math.round(goalFraction(nextProgress) * 100), locale) })} />}
+    </div>
+  </button>;
 }
 
 export function ObjectivesPanel(props: {
@@ -151,118 +99,49 @@ export function ObjectivesPanel(props: {
   objectives: ObjectiveState | null | undefined;
   week: number;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { open, onClose, objectives, week } = props;
+  const trapRef = useFocusTrap<HTMLDivElement>(open, onClose);
   if (!open) return null;
 
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.45)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-        zIndex: 9999,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{ width: "min(560px, 100%)", maxHeight: "85vh", overflowY: "auto" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <GameCard title={translateCurrent("auto.ui.objectivespanel.objectives")} icon={<span style={{ fontSize: 18 }}>🎯</span>} variant="results">
-          {!objectives && (
-            <div style={{ fontSize: 13, color: "#6b7280" }}>
-              <T id="auto.ui.objectivespanel.free.play.no.goals.enjoy.the.course" /></div>
-          )}
-          {objectives && (
-            <div style={{ display: "grid", gap: 14 }}>
-              {objectives.goals.map((goal, i) => {
-                const p = objectives.progress[i];
-                const weeksLeft = goal.deadlineWeek != null ? goal.deadlineWeek - week + 1 : null;
-                return (
-                  <div
-                    key={goal.id}
-                    style={{
-                      padding: 12,
-                      borderRadius: 12,
-                      border: "1px solid rgba(0,0,0,0.08)",
-                      background: p?.met ? "rgba(122,184,109,0.12)" : "rgba(255,255,255,0.7)",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <div style={{ fontWeight: 800, fontSize: 14 }}>
-                        {p?.met ? "✅" : "⬜"} {goal.labelKey ? t(goal.labelKey) : goal.label}
-                      </div>
-                      {goal.deadlineWeek != null && !p?.met && (
-                        <div
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: weeksLeft != null && weeksLeft <= 3 ? "#b91c1c" : "#6b7280",
-                            flexShrink: 0,
-                          }}
-                        >
-                          <T id="auto.ui.objectivespanel.by" />{formatWeekLabel(goal.deadlineWeek!, "en", "week")}
-                          {weeksLeft != null && weeksLeft >= 0 ? ` (${weeksLeft} left)` : ""}
-                        </div>
-                      )}
-                      {p?.met && p.completedWeek != null && (
-                        <div style={{ fontSize: 11, color: "#2f6b33", flexShrink: 0 }}>
-                          {formatWeekLabel(p.completedWeek!, "en", "week")}
-                        </div>
-                      )}
-                    </div>
-                    {goal.description && (
-                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{goal.descriptionKey ? t(goal.descriptionKey) : goal.description}</div>
-                    )}
-                    <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                      {p?.conditions.map((c, ci) => (
-                        <div key={ci}>
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              fontSize: 12,
-                              marginBottom: 3,
-                            }}
-                          >
-                            <span>{METRIC_LABEL[c.metric]}</span>
-                            <span style={{ fontWeight: 700 }}>
-                              {formatMetricValue(c.metric, c.value)} / {c.comparator === "<=" ? "≤ " : ""}
-                              {formatMetricValue(c.metric, c.target)}
-                            </span>
-                          </div>
-                          <ProgressBar fraction={conditionFraction(c)} met={c.met} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-            <button
-              onClick={onClose}
-              style={{
-                padding: "8px 16px",
-                borderRadius: 10,
-                border: "1px solid rgba(0,0,0,0.18)",
-                background: "#3d4a3e",
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: "pointer",
-              }}
-            >
-              <T id="auto.ui.objectivespanel.close" /></button>
-          </div>
-        </GameCard>
-      </div>
+  return <div className="cc-objectives-overlay" role="dialog" aria-modal="true" aria-label={t("auto.ui.objectivespanel.objectives")} onClick={onClose}>
+    <div ref={trapRef} className="cc-objectives-panel" onClick={(event) => event.stopPropagation()}>
+      <GameCard title={t("auto.ui.objectivespanel.objectives")} icon={<IconUi name="progression" />} variant="results">
+        <div className="cc-objectives-body" tabIndex={0}>
+          {!objectives && <div className="cc-objectives-empty">{t("auto.ui.objectivespanel.free.play.no.goals.enjoy.the.course")}</div>}
+          {objectives && objectives.goals.length === 0 && <div className="cc-objectives-empty">{t("objectives.empty")}</div>}
+          {objectives && <div className="cc-objectives-goals">
+            {objectives.goals.map((goal, i) => {
+              const p = objectives.progress[i];
+              const weeksLeft = goal.deadlineWeek != null ? goal.deadlineWeek - week + 1 : null;
+              const label = goal.labelKey ? t(goal.labelKey) : goal.label;
+              return <div className="cc-objective-goal" data-objective-id={goal.id} data-met={p?.met === true} key={goal.id}>
+                <div className="cc-objective-heading">
+                  <div className="cc-objective-title">{label}</div>
+                  <span className="cc-objective-state"><IconUi name={p?.met ? "completed" : "progression"} />{t(p?.met ? "objectives.met" : "objectives.pending")}</span>
+                  {goal.deadlineWeek != null && !p?.met && <div className="cc-objective-deadline" data-urgent={weeksLeft != null && weeksLeft <= 3}>
+                    {t("objectives.byWeek", { week: formatWeekLabel(goal.deadlineWeek!, locale, "week") })}
+                    {weeksLeft != null && weeksLeft >= 0 && <span> ({t("objectives.weeksLeft", { count: weeksLeft })})</span>}
+                  </div>}
+                  {p?.met && p.completedWeek != null && <div className="cc-objective-deadline cc-objective-completed">{t("objectives.completedWeek", { week: formatWeekLabel(p.completedWeek!, locale, "week") })}</div>}
+                </div>
+                {goal.description && <div className="cc-objective-description">{goal.descriptionKey ? t(goal.descriptionKey) : goal.description}</div>}
+                <div className="cc-objective-conditions">
+                  {p?.conditions.map((c, ci) => {
+                    const metric = t(METRIC_LABEL_KEYS[c.metric]);
+                    const valueText = t("objectives.progressValue", { value: formatMetricValue(c.metric, c.value, locale), comparator: c.comparator === "<=" ? "≤ " : "", target: formatMetricValue(c.metric, c.target, locale) });
+                    return <div key={ci} className="cc-objective-condition" data-metric={c.metric}>
+                      <div className="cc-objective-metric-row"><span className="cc-objective-metric">{metric}</span><span className="cc-objective-value">{valueText}</span><span className="cc-objective-state">{t(c.met ? "objectives.met" : "objectives.pending")}</span></div>
+                      <ProgressBar fraction={conditionFraction(c)} met={c.met} label={t("objectives.conditionProgress", { goal: label, metric })} valueText={valueText} />
+                    </div>;
+                  })}
+                </div>
+              </div>;
+            })}
+          </div>}
+        </div>
+        <div className="cc-objectives-footer"><button type="button" onClick={onClose}><IconUi name="close" />{t("auto.ui.objectivespanel.close")}</button></div>
+      </GameCard>
     </div>
-  );
+  </div>;
 }
