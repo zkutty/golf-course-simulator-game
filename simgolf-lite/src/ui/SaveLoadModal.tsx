@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { formatCurrency, formatDateTime, formatWeekLabel } from "../i18n/format";
 import type { SavePayload } from "../utils/save";
 import {
@@ -14,7 +14,8 @@ import {
 } from "../utils/saveStore";
 import { useFocusTrap } from "./accessibility/useFocusTrap";
 import { T } from "../i18n/T";
-import { translateCurrent } from "../i18n/core";
+import { IconUi } from "../assets/icons/IconUi";
+import "./SaveLoadModal.css";
 import { useI18n } from "../i18n/useI18n";
 
 /**
@@ -31,14 +32,15 @@ export interface SaveLoadModalProps {
   onSaved?: () => void;
 }
 
-const kindLabel: Record<SaveSlotMeta["kind"], string> = {
-  manual: "Manual",
-  auto: "Auto",
-  quick: "Quick",
-};
+const PROFILE_KEYS = { relaxed: "newGame.experience.profile.relaxed.label", classic: "newGame.experience.profile.classic.label", simulation: "newGame.experience.profile.simulation.label" } as const;
+const PRESSURE_KEYS = { friendly: "newGame.pressure.friendly.label", balanced: "newGame.pressure.balanced.label", tight: "newGame.pressure.tight.label" } as const;
+const THEME_KEYS = { parkland: "vision.biome.parkland.title", links: "vision.biome.links.title", desert: "vision.biome.desert.title" } as const;
+const DIFFICULTY_KEYS = { easy: "save.difficulty.easy", normal: "save.difficulty.normal", hard: "save.difficulty.hard" } as const;
+const KIND_KEYS = { manual: "save.kind.manual", auto: "save.kind.auto", quick: "save.kind.quick" } as const;
 
 export function SaveLoadModal(props: SaveLoadModalProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const id = useId();
   const [slots, setSlots] = useState<SaveSlotMeta[]>([]);
   const [newName, setNewName] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -77,7 +79,7 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
 
   const handleSaveNew = async () => {
     if (!props.getPayload) return;
-    const name = newName.trim() || `Save — week ${props.getPayload().world.week}`;
+    const name = newName.trim() || t("save.defaultName", { week: formatWeekLabel(props.getPayload().world.week, locale, "week") });
     await saveToSlot(null, "manual", name, props.getPayload());
     props.onSaved?.();
     setNewName("");
@@ -145,154 +147,62 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
     refresh();
   };
 
-  const buttonStyle: React.CSSProperties = {
-    padding: "5px 10px",
-    borderRadius: 8,
-    border: "1px solid rgba(0,0,0,0.18)",
-    background: "#fff",
-    fontSize: 12,
-    cursor: "pointer",
-  };
-
   return (
-    <div role="dialog" aria-modal="true" aria-label={props.canSave ? "Save and load game" : "Load game"}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.45)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-        zIndex: 99990,
-      }}
-      onClick={props.onClose}
-    >
-      <div ref={trapRef}
-        style={{
-          width: "min(640px, 100%)",
-          maxHeight: "85vh",
-          overflowY: "auto",
-          borderRadius: 18,
-          background: "rgba(255,255,255,0.94)",
-          border: "1px solid rgba(0,0,0,0.12)",
-          boxShadow: "0 22px 55px rgba(0,0,0,0.22)",
-          padding: 24,
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ fontFamily: "var(--font-heading)", fontSize: 24, fontWeight: 800, color: "#3d4a3e", marginBottom: 6 }}>
-          {props.canSave ? "Save / Load" : "Load Game"}
-        </div>
-        {notice && (
-          <div style={{ fontSize: 13, color: "#2f6b33", marginBottom: 10 }}>{notice}</div>
-        )}
+    <div role="dialog" aria-modal="true" aria-label={t(props.canSave ? "save.dialog" : "save.loadDialog")} className="cc-save-load-overlay" data-testid="save-load-screen" onClick={props.onClose}>
+      <div ref={trapRef} className="cc-save-load-panel" onClick={(event) => event.stopPropagation()}>
+        <header className="cc-save-load-header">
+          <IconUi name="records" size={28} />
+          <h2>{t(props.canSave ? "save.title" : "save.loadTitle")}</h2>
+        </header>
+        <div role="status" aria-live="polite" aria-atomic="true" className="cc-save-load-notice">{notice}</div>
 
         {props.canSave && (
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder={translateCurrent("auto.ui.saveloadmodal.new.save.name")}
-              style={{
-                flex: 1,
-                padding: "8px 10px",
-                borderRadius: 8,
-                border: "1px solid rgba(0,0,0,0.2)",
-                fontSize: 13,
-              }}
-            />
-            <button style={{ ...buttonStyle, background: "#3d4a3e", color: "#fff", fontWeight: 600 }} onClick={() => void handleSaveNew()}>
-              <T id="auto.ui.saveloadmodal.save.to.new.slot" /></button>
-          </div>
-        )}
-
-        {slots.length === 0 && (
-          <div style={{ fontSize: 13, color: "#6b7280", margin: "18px 0" }}>
-            <T id="auto.ui.saveloadmodal.no.saves.yet" />{props.canSave ? " — save your course above." : "."}
-          </div>
-        )}
-
-        {slots.map((slot) => (
-          <div
-            key={slot.id}
-            data-testid={`save-slot-${slot.id}`}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(0,0,0,0.1)",
-              background: "#fff",
-              marginBottom: 8,
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {slot.name}
-                <span
-                  style={{
-                    marginLeft: 8,
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: slot.kind === "manual" ? "#3d4a3e" : "#6b7280",
-                    border: "1px solid rgba(0,0,0,0.15)",
-                    borderRadius: 6,
-                    padding: "1px 6px",
-                    verticalAlign: "middle",
-                  }}
-                >
-                  {kindLabel[slot.kind]}
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>
-                {slot.courseName} • {formatWeekLabel(slot.week, "en", "week")} • {formatCurrency(slot.cash)} • {slot.holesOpen}<T id="auto.ui.saveloadmodal.9.holes" />{slot.experienceProfile || slot.economicPressure ? ` • ${slot.experienceProfile ?? "classic"}/${slot.economicPressure ?? "balanced"}` : slot.difficulty ? ` • ${slot.difficulty}` : ""}
-                {slot.theme ? ` • ${slot.theme}` : ""} •{" "}
-                {formatDateTime(slot.savedAt)}
-              </div>
+          <div className="cc-save-load-new">
+            <label htmlFor={`${id}-new-name`}>{t("save.newNameLabel")}</label>
+            <div className="cc-save-load-new-controls">
+              <input id={`${id}-new-name`} value={newName} onChange={(event) => setNewName(event.target.value)} placeholder={t("auto.ui.saveloadmodal.new.save.name")} />
+              <button className="cc-save-load-primary" onClick={() => void handleSaveNew()}><T id="auto.ui.saveloadmodal.save.to.new.slot" /></button>
             </div>
-            <button style={buttonStyle} onClick={() => void handleLoad(slot)}>
-              <T id="auto.ui.saveloadmodal.load" /></button>
-            {props.canSave && (
-              <button style={buttonStyle} onClick={() => void handleOverwrite(slot)}>
-                <T id="auto.ui.saveloadmodal.overwrite" /></button>
-            )}
-            <button style={buttonStyle} onClick={() => void handleRename(slot)}>
-              <T id="auto.ui.saveloadmodal.rename" /></button>
-            <button style={buttonStyle} onClick={() => void handleExport(slot)}>
-              <T id="auto.ui.saveloadmodal.export" /></button>
-            <button
-              style={{
-                ...buttonStyle,
-                borderColor: confirmDeleteId === slot.id ? "#b91c1c" : "rgba(0,0,0,0.18)",
-                color: confirmDeleteId === slot.id ? "#b91c1c" : undefined,
-                fontWeight: confirmDeleteId === slot.id ? 700 : undefined,
-              }}
-              onClick={() => void handleDelete(slot)}
-            >
-              {confirmDeleteId === slot.id ? "Really?" : "Delete"}
-            </button>
           </div>
-        ))}
+        )}
 
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
-          <button style={buttonStyle} onClick={() => fileInputRef.current?.click()}>
-            <T id="auto.ui.saveloadmodal.import.coursecraft.file" /></button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".coursecraft,.json"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleImportFile(f);
-              e.target.value = "";
-            }}
-          />
-          <button style={{ ...buttonStyle, background: "#3d4a3e", color: "#fff", fontWeight: 600 }} onClick={props.onClose}>
-            <T id="auto.ui.saveloadmodal.close" /></button>
+        {slots.length === 0 && <p className="cc-save-load-empty">{t(props.canSave ? "save.empty.canSave" : "save.empty.loadOnly")}</p>}
+
+        <div className="cc-save-load-slots">
+          {slots.map((slot) => (
+            <section key={slot.id} data-testid={`save-slot-${slot.id}`} className="cc-save-load-slot" aria-labelledby={`${id}-${slot.id}-title`}>
+              <div className="cc-save-load-slot-heading">
+                <h3 id={`${id}-${slot.id}-title`}>{slot.name}</h3>
+                <span className="cc-save-load-kind">{t(KIND_KEYS[slot.kind])}</span>
+              </div>
+              <p className="cc-save-load-summary">
+                {slot.courseName} • {formatWeekLabel(slot.week, locale, "week")} • {formatCurrency(slot.cash, locale)} • {t("save.holes", { count: slot.holesOpen })}{slot.experienceProfile || slot.economicPressure ? ` • ${(PROFILE_KEYS[slot.experienceProfile ?? "classic"] ? t(PROFILE_KEYS[slot.experienceProfile ?? "classic"]) : slot.experienceProfile)}/${(PRESSURE_KEYS[slot.economicPressure ?? "balanced"] ? t(PRESSURE_KEYS[slot.economicPressure ?? "balanced"]) : slot.economicPressure)}` : slot.difficulty ? ` • ${DIFFICULTY_KEYS[slot.difficulty] ? t(DIFFICULTY_KEYS[slot.difficulty]) : slot.difficulty}` : ""}
+                {slot.theme ? ` • ${(THEME_KEYS[slot.theme] ? t(THEME_KEYS[slot.theme]) : slot.theme)}` : ""} • {formatDateTime(slot.savedAt, locale)}
+              </p>
+              <div className="cc-save-load-actions">
+                <button aria-describedby={`${id}-${slot.id}-title`} onClick={() => void handleLoad(slot)}><T id="auto.ui.saveloadmodal.load" /></button>
+                {props.canSave && <button aria-describedby={`${id}-${slot.id}-title`} onClick={() => void handleOverwrite(slot)}><T id="auto.ui.saveloadmodal.overwrite" /></button>}
+                <button aria-describedby={`${id}-${slot.id}-title`} onClick={() => void handleRename(slot)}><T id="auto.ui.saveloadmodal.rename" /></button>
+                <button aria-describedby={`${id}-${slot.id}-title`} onClick={() => void handleExport(slot)}><T id="auto.ui.saveloadmodal.export" /></button>
+                <button className="cc-save-load-danger" aria-describedby={`${id}-${slot.id}-title`} onClick={() => void handleDelete(slot)}>{t(confirmDeleteId === slot.id ? "save.deleteConfirm" : "save.delete")}</button>
+              </div>
+              {confirmDeleteId === slot.id && <div className="cc-save-load-delete-confirm">
+                <p role="status">{t("save.deletePrompt", { name: slot.name })}</p>
+                <button aria-describedby={`${id}-${slot.id}-title`} onClick={() => setConfirmDeleteId(null)}>{t("save.deleteCancel")}</button>
+              </div>}
+            </section>
+          ))}
         </div>
+
+        <footer className="cc-save-load-footer">
+          <button onClick={() => fileInputRef.current?.click()}><T id="auto.ui.saveloadmodal.import.coursecraft.file" /></button>
+          <input ref={fileInputRef} type="file" accept=".coursecraft,.json" hidden onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void handleImportFile(file);
+            event.target.value = "";
+          }} />
+          <button className="cc-save-load-primary" onClick={props.onClose}><IconUi name="close" /><T id="auto.ui.saveloadmodal.close" /></button>
+        </footer>
       </div>
     </div>
   );

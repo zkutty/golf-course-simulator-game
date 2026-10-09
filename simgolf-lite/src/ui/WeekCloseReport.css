@@ -1,0 +1,48 @@
+.cc-week-close-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100100;
+  display: grid;
+  place-items: center;
+  padding: min(1.25rem, 3vw);
+  background: rgba(16, 24, 18, .72);
+  box-sizing: border-box;
+}
+
+.cc-week-close-body {
+  box-sizing: border-box;
+  width: min(36rem, 100%);
+  min-width: 0;
+  max-height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: clamp(.75rem, 3vw, 1.375rem);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.cc-week-close-body :is(button, summary) { font: inherit; }
+.cc-week-close-body :is(button, summary, [tabindex]):focus-visible,
+.cc-week-close-body:focus-visible { outline: .1875rem solid var(--ui-focus, #0b67a3); outline-offset: -.1875rem; }
+.cc-week-close-eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: .6875rem; color: #75613e; font-weight: 900; }
+.cc-week-close-body h2 { margin: .25rem 0 1rem; color: #344338; font-size: 1.5rem; }
+.cc-week-close-facts { display: grid; gap: .5625rem; margin-bottom: 1rem; }
+.cc-week-close-fact { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .5rem 1.125rem; align-items: start; }
+.cc-week-close-fact strong { text-align: right; }
+.cc-week-close-footer { border-top: 1px solid rgba(65, 78, 57, .25); padding-top: .875rem; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; }
+.cc-week-close-profit { font-size: 1.25rem; min-width: 0; }
+.cc-week-close-footer button { max-width: 100%; padding: .625rem 1.125rem; border-radius: .625rem; border: 2px solid #315e37; background: #3d6b3d; color: white; font-weight: 900; cursor: pointer; }
+.cc-week-close-management { margin-top: 1.125rem; border-top: 1px solid rgba(65, 78, 57, .25); padding-top: .75rem; }
+.cc-week-close-management summary { cursor: pointer; color: #344338; font-weight: 900; }
+.cc-week-close-management-content { margin-top: .75rem; display: grid; gap: .625rem; font-size: .75rem; min-width: 0; }
+.cc-week-close-management-intro { color: #4c5b4c; }
+.cc-week-close-segments { display: flex; flex-wrap: wrap; gap: .375rem; }
+.cc-week-close-segment { background: #e7efe2; border-radius: 999px; padding: .25rem .5rem; color: #315e37; font-weight: 800; }
+.cc-week-close-no-fit { color: #7a6a51; }
+.cc-week-close-audiences { overflow-x: auto; overscroll-behavior: contain; min-width: 0; }
+.cc-week-close-audiences table { width: 100%; min-width: 26rem; border-collapse: collapse; table-layout: fixed; }
+.cc-week-close-audiences :is(th, td) { padding: .3125rem .5rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.cc-week-close-audiences tbody th { font-weight: 400; }
+.cc-week-close-condition { border-top: 1px solid rgba(65, 78, 57, .16); padding-top: .5rem; }
+.cc-week-close-evidence { display: grid; gap: .25rem; }

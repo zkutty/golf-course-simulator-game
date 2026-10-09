@@ -987,14 +987,16 @@ test("Classic completes three-hole public operations through weekly results and 
   await page.screenshot({ path: path.join(evidenceDir, "03-classic-nine-hole-management-cycle.png"), fullPage: true });
 });
 
-test("week-close report owns pointer and keyboard input across supported viewports", async ({ page }) => {
+test("week-close report owns pointer and keyboard input across supported viewports", async ({ page }, testInfo) => {
   for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
     await page.getByRole("button", { name: "Quick Start" }).click();
+    await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
     const tutorialOffer = page.getByRole("dialog", { name: "First-launch tutorial" });
     if (await tutorialOffer.count()) await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
 
+    await canvas(page);
     const pause = page.getByRole("button", { name: "Open pause menu" });
     await pause.focus();
     await expect(pause).toBeFocused();
@@ -1014,10 +1016,45 @@ test("week-close report owns pointer and keyboard input across supported viewpor
     await expect(report).toBeVisible();
     await expect(page.getByTestId("pause-overlay")).toHaveCount(0);
 
+    const summary = report.locator("summary");
+    const reportBody = report.getByTestId("week-close-body");
+    const appearance = await reportBody.evaluate(element => {
+      const panel = getComputedStyle(element);
+      const app = getComputedStyle(document.querySelector(".cc-app")!);
+      const tokens = ["--biome-surface", "--biome-season-surface", "--biome-edge", "--biome-weather-edge"];
+      return { background: panel.backgroundColor, tokens: tokens.map(token => ({ token, panel: panel.getPropertyValue(token).trim(), app: app.getPropertyValue(token).trim() })) };
+    });
+    expect(appearance.background).not.toBe("rgba(0, 0, 0, 0)");
+    for (const token of appearance.tokens) { expect(token.app, token.token).not.toBe(""); expect(token.panel, token.token).toBe(token.app); }
+    await testInfo.attach(`week-close-appearance-${viewport.width}`, { body: JSON.stringify(appearance), contentType: "application/json" });
     await page.keyboard.press("Tab");
+    await expect(reportBody).toBeFocused();
+    await continueButton.focus();
     await expect(continueButton).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(summary).toBeFocused();
+    await page.keyboard.press("Enter");
+    const audiences = report.getByTestId("week-close-audiences");
+    await page.keyboard.press("Tab");
+    await expect(audiences).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(reportBody).toBeFocused();
+    const bodyScroll = await reportBody.evaluate(element => ({ scrollHeight: element.scrollHeight, clientHeight: element.clientHeight }));
+    if (bodyScroll.scrollHeight > bodyScroll.clientHeight) {
+      await reportBody.evaluate(element => { element.scrollTop = 0; });
+      await page.keyboard.press("PageDown");
+      await expect.poll(() => reportBody.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    }
+    await page.keyboard.press("Shift+Tab");
+    await expect(audiences).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(report).toBeVisible();
+    await expect(page.getByTestId("pause-overlay")).toHaveCount(0);
+    await page.keyboard.press("Shift+Tab");
+    await expect(summary).toBeFocused();
     await page.keyboard.press("Shift+Tab");
     await expect(continueButton).toBeFocused();
+    await testInfo.attach(`week-close-expanded-${viewport.width}`, { body: await page.screenshot({ path: `/private/tmp/zk382-week-close-game-${viewport.width}-green.png` }), contentType: "image/png" });
     await page.keyboard.press("Enter");
     await expect(report).toHaveCount(0);
     await expect(pause).toBeFocused();

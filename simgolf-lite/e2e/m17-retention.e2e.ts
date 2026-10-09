@@ -12,7 +12,7 @@ test("M17 records, achievements, ticker, photo mode, and PWA identity", async ({
 
   await page.getByRole("button", { name: "Trophy Gallery" }).click();
   await expect(page.getByTestId("retention-hub")).toBeVisible();
-  await page.getByRole("button", { name: "Achievements" }).click();
+  await page.getByRole("tab", { name: "Achievements" }).click();
   await expect(page.locator("article[data-earned]")).toHaveCount(27);
   await page.screenshot({ fullPage: true, path: "artifacts/m17-achievements.png" });
   await page.getByRole("button", { name: "Close" }).click();
@@ -21,8 +21,8 @@ test("M17 records, achievements, ticker, photo mode, and PWA identity", async ({
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
   await page.getByRole("button", { name: "Skip tutorial" }).click();
   await openWorkspaceAction(page, "legacy", "workspace-action-records");
-  await expect(page.getByRole("button", { name: "Course History" })).toBeVisible();
-  await page.getByRole("button", { name: "Records", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "Course History" })).toBeVisible();
+  await page.getByRole("tab", { name: "Records", exact: true }).click();
   const recordsShot = await page.screenshot({ fullPage: true, path: "artifacts/m17-records.png" });
   await testInfo.attach("m17-records", { body: recordsShot, contentType: "image/png" });
   await page.getByRole("button", { name: "Close" }).click();
