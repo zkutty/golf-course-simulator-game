@@ -5,6 +5,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { EventEmitter } from "node:events";
+import { createContext, runInContext } from "node:vm";
 import { createPwaPersistenceReport } from "./pwa-save-evidence.mjs";
 import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence-contract.mjs";
 import { ZK682_RESOURCE_GROWTH_THRESHOLDS, createZk682ResourceGrowthReport } from "./zk682-resource-growth-contract.mjs";
@@ -464,4 +466,80 @@ test("renderer completeness supports canonical noninterlaced RGB PNG", () => {
 
 test('renderer completeness admits strict legacy and public CDP methods with unchanged seven-field receipts',()=>{for(const method of ['public-page-screenshot-canvas-viewport-clip-v1','public-cdp-page-captureScreenshot-canvas-viewport-clip-v1']){const evidence={candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT)};evidence.capture.method=method;assert.equal(inspectZk682RendererCompleteness(evidence).passed,true);assert.equal(Object.keys(evidence.capture).length,7);}});
 test('renderer public CDP completeness rejects unknown methods and conjunctive artifact defects',()=>{const make=()=>{const value={candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT)};value.capture.method='public-cdp-page-captureScreenshot-canvas-viewport-clip-v1';return value;};for(const mutate of [e=>{e.capture.method='public-cdp-page-captureScreenshot-canvas-viewport-clip-v2';},e=>{e.capture.method='public-cdp-page-capturescreenshot-canvas-viewport-clip-v1';},e=>{e.capture.method=undefined;},e=>{e.capture.extra='not strict';},e=>{e.png=undefined;},e=>{e.capture.sha256='0'.repeat(64);},e=>{e.capture.clip.width+=1;},e=>{e.capture.after.current=false;},e=>{e.capture.after.dpr=2;},e=>{e.commandReceipt.exitCode=1;e.commandReceipt.passed=false;},e=>{e.commandReceipt.candidateCommit='f'.repeat(40);},e=>{e.resource.samples.pop();},e=>{e.cleanup.samples.pop();}]){const evidence=make();mutate(evidence);assert.equal(inspectZk682RendererCompleteness(evidence).passed,false);}});
-test('renderer consumer validates actual canonical helper publication and strict new receipt',async()=>{const {captureVisibleCanvas}=await import('./zk682-public-canvas-capture.mjs'),evidence={candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT)},root=mkdtempSync(join(tmpdir(),'zk682-cdp-consumer-')),output=join(root,'final.png');let acquisitions=0,conversions=0,dispose=0,elementDispose=0;const handle={evaluate:async()=>evidence.capture.before,dispose:async()=>{elementDispose++;}},raw={evaluate:handle.evaluate,asElement:()=>{conversions++;return handle;},dispose:async()=>{dispose++;}},session={send:async()=>({data:evidence.png.toString('base64')}),detach:async()=>{}},page={locator:()=>({count:async()=>1}),evaluateHandle:async()=>{acquisitions++;return raw;},context:()=>({newCDPSession:async()=>session})};try{evidence.capture=await captureVisibleCanvas(page,output);evidence.png=readFileSync(output);assert.deepEqual({acquisitions,conversions,dispose,elementDispose},{acquisitions:1,conversions:0,dispose:1,elementDispose:0});assert.equal(evidence.capture.method,'public-cdp-page-captureScreenshot-canvas-viewport-clip-v1');assert.equal(inspectZk682RendererCompleteness(evidence).passed,true);evidence.commandReceipt.exitCode=1;evidence.commandReceipt.passed=false;assert.equal(inspectZk682RendererCompleteness(evidence).passed,false);}finally{rmSync(root,{recursive:true,force:true});}});
+test('renderer consumer validates actual canonical helper publication and strict new receipt',async()=>{
+  const {captureVisibleCanvas}=await import('./zk682-public-canvas-capture.mjs'),evidence={candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT)},root=mkdtempSync(join(tmpdir(),'zk682-cdp-consumer-')),output=join(root,'final.png');
+  // Synthetic public-CDP transport; execute the actual serialized callbacks in one realm.
+  const expectedState={...evidence.capture.before},realm=createContext({});
+  runInContext(`
+    class HTMLCanvasElement {
+      constructor(){this.isConnected=true;this.tagName='CANVAS';this.width=2;this.height=1;this.clientWidth=2;this.clientHeight=1;}
+      getBoundingClientRect(){return {x:0,y:0,left:0,top:0,right:2,bottom:1,width:2,height:1};}
+      getClientRects(){return [this.getBoundingClientRect()];}
+    }
+    const canvas=new HTMLCanvasElement();
+    const document={querySelectorAll(selector){if(selector!=='.cc-pixi-stage canvas')throw Error('unexpected selector');return [canvas];},querySelector(selector){if(selector!=='.cc-pixi-stage canvas')throw Error('unexpected selector');return canvas;},documentElement:{clientWidth:1280,clientHeight:720}};
+    canvas.ownerDocument=document;
+    Object.assign(globalThis,{HTMLCanvasElement,document,fixtureCanvas:canvas,innerWidth:1280,innerHeight:720,devicePixelRatio:1,visualViewport:{scale:1},getComputedStyle:()=>({display:'block',visibility:'visible',opacity:'1',contentVisibility:'visible'})});
+    globalThis.window=globalThis;document.defaultView=globalThis;
+  `,realm,{timeout:1000});
+  const rootFrame='consumer-root-frame',uniqueContext='consumer-root-default-unique',objectId='consumer-owned-canvas-envelope',calls=[];
+  let envelope=null,stateDeclaration=null,stateCalls=0,acquisitions=0,sessionCreations=0,releases=0,detaches=0,screenshots=0;
+  const assertOwnedEnvelope=()=>{
+    assert.equal(Object.getPrototypeOf(envelope),null);
+    assert.deepEqual(Reflect.ownKeys(envelope),['node']);
+    const descriptor=Object.getOwnPropertyDescriptor(envelope,'node');
+    assert.ok(Object.hasOwn(descriptor,'value'));assert.equal(descriptor.enumerable,true);assert.equal(descriptor.writable,false);assert.equal(descriptor.configurable,false);
+    assert.equal(descriptor.value,realm.fixtureCanvas);assert.equal(descriptor.value.ownerDocument,realm.document);
+  };
+  class PublicSession extends EventEmitter {
+    async send(method,parameters){
+      assert.equal(detaches,0,'no use of detached owned session');calls.push(method);
+      switch(method){
+        case 'Page.getFrameTree':return {frameTree:{frame:{id:rootFrame}}};
+        case 'Runtime.enable':
+          this.emit('Runtime.executionContextCreated',{context:{id:17,uniqueId:uniqueContext,origin:'https://consumer.fixture.invalid',name:'',auxData:{frameId:rootFrame,isDefault:true,type:'default'}}});
+          return {};
+        case 'Runtime.evaluate':{
+          acquisitions++;assert.equal(acquisitions,1);assert.equal(parameters.uniqueContextId,uniqueContext);
+          assert.deepEqual(Object.keys(parameters).sort(),['awaitPromise','expression','generatePreview','returnByValue','uniqueContextId','userGesture']);
+          assert.equal(parameters.returnByValue,false);assert.equal(parameters.generatePreview,false);assert.equal(parameters.awaitPromise,true);assert.equal(parameters.userGesture,true);assert.equal(typeof parameters.expression,'string');
+          envelope=await runInContext(parameters.expression,realm,{timeout:1000});assertOwnedEnvelope();realm.ownedEnvelope=envelope;
+          return {result:{type:'object',objectId}};
+        }
+        case 'Runtime.callFunctionOn':{
+          assert.equal(parameters.objectId,objectId);assertOwnedEnvelope();assert.equal(realm.ownedEnvelope,envelope);
+          assert.deepEqual(Object.keys(parameters).sort(),['arguments','awaitPromise','functionDeclaration','generatePreview','objectId','returnByValue','userGesture']);
+          assert.deepEqual(parameters.arguments,[]);assert.equal(parameters.returnByValue,true);assert.equal(parameters.generatePreview,false);assert.equal(parameters.awaitPromise,true);assert.equal(parameters.userGesture,true);
+          if(stateDeclaration===null)stateDeclaration=parameters.functionDeclaration;else assert.equal(parameters.functionDeclaration,stateDeclaration,'B and D execute identical state callback on exact receiver');
+          stateCalls++;assert.ok(stateCalls<=2);assert.equal(screenshots,stateCalls-1,'B precedes screenshot and D follows it');
+          const value=structuredClone(await runInContext('('+parameters.functionDeclaration+').call(globalThis.ownedEnvelope)',realm,{timeout:1000}));
+          assert.equal(value.length,15);assert.equal(value[0],'zk682-canvas-state-tags-v1');assert.deepEqual(value.slice(1).map(row=>row[0]),['b','b','b','s',...Array(10).fill('n')]);
+          return {result:{type:'object',subtype:'array',value}};
+        }
+        case 'Page.captureScreenshot':
+          assert.equal(stateCalls,1);assertOwnedEnvelope();screenshots++;assert.equal(screenshots,1);
+          return {data:evidence.png.toString('base64')};
+        case 'Runtime.releaseObject':
+          assert.deepEqual(parameters,{objectId});assertOwnedEnvelope();releases++;assert.equal(releases,1);assert.equal(stateCalls,2);
+          return {};
+        default:assert.fail('unexpected public CDP command '+method);
+      }
+    }
+    async detach(){assert.equal(releases,1,'exact release settles before own detach');detaches++;assert.equal(detaches,1);calls.push('detach');}
+  }
+  const session=new PublicSession(),page={
+    locator:()=>assert.fail('legacy locator transport forbidden'),
+    evaluateHandle:()=>assert.fail('legacy JSHandle transport forbidden'),
+    context:()=>({newCDPSession:async target=>{assert.equal(target,page);sessionCreations++;assert.equal(sessionCreations,1);calls.push('newCDPSession');return session;}}),
+  };
+  try{
+    evidence.capture=await captureVisibleCanvas(page,output);evidence.png=readFileSync(output);
+    assert.deepEqual({acquisitions,stateCalls,sessionCreations,screenshots,releases,detaches},{acquisitions:1,stateCalls:2,sessionCreations:1,screenshots:1,releases:1,detaches:1});
+    assert.deepEqual(calls,['newCDPSession','Page.getFrameTree','Runtime.enable','Runtime.evaluate','Runtime.callFunctionOn','Page.captureScreenshot','Runtime.callFunctionOn','Runtime.releaseObject','detach']);
+    assert.equal(session.eventNames().length,0,'owned context listeners removed after cleanup');assert.deepEqual(evidence.capture.before,expectedState);assert.deepEqual(evidence.capture.after,expectedState);
+    assert.equal(evidence.capture.method,'public-cdp-page-captureScreenshot-canvas-viewport-clip-v1');
+    assert.equal(inspectZk682RendererCompleteness(evidence).passed,true);
+    evidence.commandReceipt.exitCode=1;evidence.commandReceipt.passed=false;
+    assert.equal(inspectZk682RendererCompleteness(evidence).passed,false);
+  }finally{rmSync(root,{recursive:true,force:true});}
+});

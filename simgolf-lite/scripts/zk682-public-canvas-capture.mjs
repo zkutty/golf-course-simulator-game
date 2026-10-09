@@ -40,31 +40,130 @@ export function decodeStrictPng(png,expected){
   for(let y=0;y<height;y++){const filter=raw[source++];assert.ok(filter<=4,'PNG filter');const row=Buffer.alloc(stride);for(let x=0;x<stride;x++){const left=x>=channels?row[x-channels]:0,up=previous[x],corner=x>=channels?previous[x-channels]:0;row[x]=(raw[source++]+(filter===0?0:filter===1?left:filter===2?up:filter===3?Math.floor((left+up)/2):paeth(left,up,corner)))&255;}for(let x=0;x<width;x++){const from=x*channels,to=(y*width+x)*4;pixels[to]=row[from];pixels[to+1]=row[from+1];pixels[to+2]=row[from+2];pixels[to+3]=channels===4?row[from+3]:255;}previous=row;}
   let visible=false,different=false;const first=pixels.readUInt32BE(0);for(let i=0;i<pixels.length;i+=4){visible ||= pixels[i+3]>0;different ||= pixels.readUInt32BE(i)!==first;}assert.ok(visible&&different,'nonuniform visible pixels required');return {width,height,pixels,pixelSHA256:sha256(pixels)};
 }
+// Public Runtime transport owns a private envelope; user callbacks remain distinct A/B/D.
+function acquireCanvasEnvelope(){
+  const matches=document.querySelectorAll('.cc-pixi-stage canvas');
+  if(matches.length!==1)throw new Error('Exactly one current document canvas required');
+  const node=matches[0];
+  if(!(node instanceof HTMLCanvasElement)||node.ownerDocument!==document||!node.isConnected)throw new Error('Current document connected HTMLCanvasElement required');
+  return Object.defineProperty(Object.create(null),'node',{value:node,enumerable:true,writable:false,configurable:false});
+}
+function taggedOwnedCanvas(){
+  const envelope=this;
+  if(!envelope||typeof envelope!=='object'||Object.getPrototypeOf(envelope)!==null)throw new Error('Private null-prototype canvas envelope required');
+  const keys=Reflect.ownKeys(envelope),descriptor=Object.getOwnPropertyDescriptor(envelope,'node');
+  if(keys.length!==1||keys[0]!=='node'||!descriptor||!Object.prototype.hasOwnProperty.call(descriptor,'value')||descriptor.enumerable!==true||descriptor.writable!==false||descriptor.configurable!==false)throw new Error('Private single own immutable canvas DATA property required');
+  const node=descriptor.value;
+  if(!(node instanceof HTMLCanvasElement)||node.ownerDocument!==document)throw new Error('Private current document HTMLCanvasElement required');
+  const matches=document.querySelectorAll('.cc-pixi-stage canvas'),rect=node.getBoundingClientRect(),style=getComputedStyle(node);
+  const state={current:matches.length===1&&matches[0]===node,connected:node.isConnected,visible:style.display!=='none'&&style.visibility!=='hidden'&&style.visibility!=='collapse'&&Number(style.opacity)>0,tag:node.tagName,x:rect.x,y:rect.y,width:rect.width,height:rect.height,viewportWidth:innerWidth,viewportHeight:innerHeight,intrinsicWidth:node.width,intrinsicHeight:node.height,dpr:devicePixelRatio,zoom:visualViewport?.scale??1};
+  const fields=['current','connected','visible','tag','x','y','width','height','viewportWidth','viewportHeight','intrinsicWidth','intrinsicHeight','dpr','zoom'];
+  return ['zk682-canvas-state-tags-v1',...fields.map((key,index)=>{
+    const value=state[key];
+    if(index<3){if(typeof value!=='boolean')throw new Error('Boolean canvas state required');return ['b',value];}
+    if(index===3){if(typeof value!=='string')throw new Error('String canvas tag required');return ['s',value];}
+    if(typeof value!=='number')throw new Error('Numeric canvas state required');
+    return Object.is(value,-0)?['z']:Number.isNaN(value)?['nan']:value===Infinity?['pinf']:value===-Infinity?['ninf']:['n',value];
+  })];
+}
+function ownData(object,key,required=false){
+  assert.ok(object!==null&&typeof object==='object','Public CDP own DATA record required');
+  const descriptor=Object.getOwnPropertyDescriptor(object,key);
+  if(!descriptor){assert.ok(!required,'Public CDP own DATA property required: '+key);return undefined;}
+  assert.ok(Object.prototype.hasOwnProperty.call(descriptor,'value'),'Public CDP accessor refused: '+key);
+  return descriptor.value;
+}
+function denseArray(array,length){
+  assert.ok(Array.isArray(array)&&ownData(array,'length',true)===length,'Exact dense canvas wire array required');
+  const keys=Reflect.ownKeys(array);assert.equal(keys.length,length+1,'Canvas wire extra properties refused');
+  for(let index=0;index<length;index++)ownData(array,String(index),true);
+  assert.ok(keys.includes('length'),'Canvas wire length required');return array;
+}
+function decodeCanvasState(response){
+  const remote=ownData(response,'result',true);assert.equal(ownData(remote,'type',true),'object');const subtype=Object.getOwnPropertyDescriptor(remote,'subtype');if(subtype!==undefined){assert.ok(Object.prototype.hasOwnProperty.call(subtype,'value'),'Public CDP accessor refused: subtype');assert.equal(subtype.value,'array');}
+  assert.equal(ownData(remote,'objectId'),undefined,'By-value canvas state required');assert.equal(ownData(remote,'unserializableValue'),undefined);
+  const wire=denseArray(ownData(remote,'value',true),15);assert.equal(ownData(wire,'0',true),'zk682-canvas-state-tags-v1');
+  const fields=['current','connected','visible','tag','x','y','width','height','viewportWidth','viewportHeight','intrinsicWidth','intrinsicHeight','dpr','zoom'],state={};
+  for(let index=0;index<fields.length;index++){
+    const item=ownData(wire,String(index+1),true);assert.ok(Array.isArray(item),'Canvas scalar tag required');const tag=ownData(item,'0',true);let value;
+    if(index<3||index===3){denseArray(item,2);assert.equal(tag,index<3?'b':'s');value=ownData(item,'1',true);assert.equal(typeof value,index<3?'boolean':'string');}
+    else if(tag==='n'){denseArray(item,2);value=ownData(item,'1',true);assert.ok(typeof value==='number'&&Number.isFinite(value)&&!Object.is(value,-0),'Finite nonnegative-zero numeric wire required');}
+    else {denseArray(item,1);assert.ok(['z','nan','pinf','ninf'].includes(tag),'Unknown canvas numeric tag');value=tag==='z'?-0:tag==='nan'?NaN:tag==='pinf'?Infinity:-Infinity;}
+    state[fields[index]]=value;
+  }
+  return state;
+}
+function evaluationError(details){
+  const exception=ownData(details,'exception');
+  if(exception)return new Error(ownData(exception,'description')||String(ownData(exception,'value')));
+  let message=ownData(details,'text',true);assert.equal(typeof message,'string');const stack=ownData(details,'stackTrace');
+  if(stack)for(const frame of ownData(stack,'callFrames',true))message+='\n    at '+(ownData(frame,'functionName')||'<anonymous>')+' ('+ownData(frame,'url',true)+':'+ownData(frame,'lineNumber',true)+':'+ownData(frame,'columnNumber',true)+')';
+  return new Error(message);
+}
 export async function capturePublicCDPCanvas(page,{canvasClip,timing={now:()=>performance.now(),set:setTimeout,clear:clearTimeout}}){
-  assert.equal(typeof canvasClip,'function','pinned baseline canvasClip required');const started=timing.now(),deadline=started+CAPTURE_MS,timeoutError=new Error('Public CDP capture deadline10000ms exceeded');let expired=false,closed=false,session,handle,rawHandle,failed=false,primary,result;
-  const cleanupTasks=new Map();
-  const cleanup=(object,method)=>{if(!object)return Promise.resolve();if(!cleanupTasks.has(object)){const task=Promise.resolve().then(()=>object[method]());task.catch(()=>{});cleanupTasks.set(object,task);}return cleanupTasks.get(object);};
-  let rejectDeadline;const timeout=new Promise((_,reject)=>{rejectDeadline=reject;});timeout.catch(()=>{});const timer=timing.set(()=>{expired=true;rejectDeadline(timeoutError);},CAPTURE_MS);
-  const guard=()=>{if(expired||timing.now()>=deadline){expired=true;throw timeoutError;}};
-  const within=async promise=>{guard();const value=await Promise.race([Promise.resolve(promise),timeout]);guard();return value;};
-  const owned=async(promise,method)=>{const pending=Promise.resolve(promise);pending.then(object=>{if(expired||closed||timing.now()>=deadline)cleanup(object,method);},()=>{});return within(pending);};
+  assert.equal(typeof canvasClip,'function','pinned baseline canvasClip required');const started=timing.now(),deadline=started+CAPTURE_MS,timeoutError=new Error('Public CDP capture deadline10000ms exceeded');
+  let expired=false,closed=false,session,sessionPending,failed=false,primary,result,selected,rootFrame,invalidated=false,invalidation,stopping=false,detaching=false,foreignClosed=false,cleanupPromise;
+  const pending=new Set(),objectIds=new Set(),contexts=new Map(),listeners=[];
+  const fail=error=>{if(!failed){failed=true;primary=error;}};
+  let rejectDeadline,rejectInvalid,resolveReady;const timeout=new Promise((_,reject)=>{rejectDeadline=reject;});timeout.catch(()=>{});
+  const invalid=new Promise((_,reject)=>{rejectInvalid=reject;});invalid.catch(()=>{});
+  const ready=new Promise(resolve=>{resolveReady=resolve;});
+  const timer=timing.set(()=>{expired=true;rejectDeadline(timeoutError);},CAPTURE_MS);
+  const invalidate=error=>{if(!invalidated){invalidated=true;invalidation=error;rejectInvalid(error);}};
+  const guard=()=>{if(expired||timing.now()>=deadline){expired=true;throw timeoutError;}if(invalidated)throw invalidation;};
+  const within=async promise=>{guard();const value=await Promise.race([Promise.resolve(promise),timeout,invalid]);guard();return value;};
+  const register=response=>{
+    let rejected=false,first;const inspect=action=>{try{action();}catch(error){if(!rejected){rejected=true;first=error;}}};
+    const collect=remote=>{if(remote===undefined)return;const id=ownData(remote,'objectId');if(id!==undefined){assert.ok(typeof id==='string'&&id.length>0,'Exact remote objectId required');objectIds.add(id);}};
+    // Independent inspections own every safely exposed ID before the first malformed field is rejected.
+    inspect(()=>collect(ownData(response,'result')));
+    inspect(()=>{const details=ownData(response,'exceptionDetails');if(details!==undefined)collect(ownData(details,'exception'));});
+    if(rejected)throw first;return response;
+  };
+  const invoke=(method,args)=>{
+    guard();assert.ok(!stopping&&session&&!foreignClosed,'Live owned public session required');
+    let original;try{original=session.send(method,args);}catch(error){original=Promise.reject(error);}
+    const tracked=Promise.resolve(original).then(register);pending.add(tracked);tracked.then(()=>pending.delete(tracked),()=>pending.delete(tracked));return tracked;
+  };
+  const checkEvaluation=response=>{const details=ownData(response,'exceptionDetails');if(details!==undefined)throw evaluationError(details);return response;};
+  const onCreated=event=>{try{
+    const context=ownData(event,'context',true),id=ownData(context,'id',true),unique=ownData(context,'uniqueId',true),aux=ownData(context,'auxData');
+    assert.ok(Number.isInteger(id)&&id>0&&typeof unique==='string'&&unique.length>0,'Observed unique execution context required');
+    if(!aux)return;const isDefault=ownData(aux,'isDefault');if(isDefault!==undefined)assert.equal(typeof isDefault,'boolean','Default-world boolean required');
+    if(!isDefault)return;const frame=ownData(aux,'frameId',true);assert.equal(typeof frame,'string');if(frame!==rootFrame)return;
+    assert.ok(!contexts.has(unique),'Reused execution context refused');contexts.set(unique,{id,unique});
+    assert.equal(contexts.size,1,'Exactly one root main execution context required');
+    if(selected&&selected.unique!==unique)throw new Error('Owned main execution context replaced');resolveReady();
+  }catch(error){invalidate(error);}};
+  const onDestroyed=event=>{try{const unique=ownData(event,'executionContextUniqueId',true),id=ownData(event,'executionContextId',true);assert.ok(typeof unique==='string'&&unique.length>0&&Number.isInteger(id),'Exact destroyed execution context required');const context=contexts.get(unique);if(context){assert.equal(context.id,id,'Destroyed context binding mismatch');contexts.delete(unique);throw new Error('Owned main execution context destroyed');}}catch(error){invalidate(error);}};
+  const onCleared=()=>invalidate(new Error('Owned execution contexts cleared'));
+  // A close during our detach is provisional until detach succeeds; the public event has no origin tag.
+  const onClose=()=>{if(!detaching){foreignClosed=true;invalidate(new Error('Owned public CDP session closed externally'));}};
+  const cleanup=()=>{if(!cleanupPromise){stopping=true;cleanupPromise=(async()=>{
+    if(sessionPending)await Promise.allSettled([sessionPending]);
+    while(pending.size)await Promise.allSettled([...pending]);
+    if(session&&!foreignClosed){
+      for(const objectId of objectIds){if(foreignClosed)break;try{const response=await session.send('Runtime.releaseObject',{objectId});register(response);assert.equal(Reflect.ownKeys(response).length,0,'Release response must be empty');}catch(error){fail(error);}}
+      if(!foreignClosed){detaching=true;try{await session.detach();}catch(error){fail(error);}finally{detaching=false;}}
+    }
+  })().catch(fail).finally(()=>{for(const [name,listener]of listeners)try{session.off(name,listener);}catch(error){fail(error);}});}return cleanupPromise;};
   try{
-    rawHandle=await owned(page.evaluateHandle(() => {
-      const matches=document.querySelectorAll('.cc-pixi-stage canvas');
-      if(matches.length!==1)throw new Error('Exactly one current document canvas required');
-      const node=matches[0];
-      if(!(node instanceof HTMLCanvasElement)||node.ownerDocument!==document||!node.isConnected)throw new Error('Current document connected HTMLCanvasElement required');
-      return Object.defineProperty(Object.create(null),'node',{value:node,enumerable:true,writable:false,configurable:false});
-    }),'dispose');assert.ok(rawHandle,'attached raw canvas handle required');handle=rawHandle;guard();const before=await within(handle.evaluate(readOwnedCanvas)),clip=canvasClip(before);
-    session=await owned(page.context().newCDPSession(page),'detach');const response=await within(session.send('Page.captureScreenshot',{format:'png',clip:{...clip,scale:1},fromSurface:true,captureBeyondViewport:false,optimizeForSpeed:false}));
-    const png=strictBase64(response?.data),decoded=decodeStrictPng(png,clip);guard();const after=await within(handle.evaluate(readOwnedCanvas));canvasClip(after);assert.deepEqual(after,before,'canvas identity/current connection/geometry changed');
+    sessionPending=Promise.resolve(page.context().newCDPSession(page)).then(value=>{session=value;return value;});
+    session=await within(sessionPending);assert.ok(session,'Attached public CDP session required');
+    for(const [name,listener]of [['Runtime.executionContextCreated',onCreated],['Runtime.executionContextDestroyed',onDestroyed],['Runtime.executionContextsCleared',onCleared],['close',onClose]]){session.on(name,listener);listeners.push([name,listener]);}
+    const tree=await within(invoke('Page.getFrameTree',{})),frame=ownData(ownData(tree,'frameTree',true),'frame',true);rootFrame=ownData(frame,'id',true);assert.ok(typeof rootFrame==='string'&&rootFrame.length>0,'Root frame required');assert.equal(Object.getOwnPropertyDescriptor(frame,'parentId'),undefined,'Root frame parentId must be absent');
+    const enabled=await within(invoke('Runtime.enable',{}));assert.equal(Reflect.ownKeys(enabled).length,0,'Runtime.enable response must be empty');if(!contexts.size)await within(ready);guard();assert.equal(contexts.size,1);selected=[...contexts.values()][0];
+    const acquired=checkEvaluation(await within(invoke('Runtime.evaluate',{expression:'('+acquireCanvasEnvelope.toString()+')()',uniqueContextId:selected.unique,returnByValue:false,generatePreview:false,awaitPromise:true,userGesture:true}))),remote=ownData(acquired,'result',true);
+    assert.equal(ownData(remote,'type',true),'object','Attached raw canvas envelope required');assert.equal(ownData(remote,'subtype'),undefined,'Private ordinary canvas envelope required');const envelopeId=ownData(remote,'objectId',true);assert.ok(typeof envelopeId==='string'&&envelopeId.length>0,'Exact owned envelope objectId required');
+    const stateArgs={objectId:envelopeId,functionDeclaration:taggedOwnedCanvas.toString(),arguments:[],returnByValue:true,generatePreview:false,awaitPromise:true,userGesture:true};
+    const before=decodeCanvasState(checkEvaluation(await within(invoke('Runtime.callFunctionOn',stateArgs)))),clip=canvasClip(before);
+    const response=await within(invoke('Page.captureScreenshot',{format:'png',clip:{...clip,scale:1},fromSurface:true,captureBeyondViewport:false,optimizeForSpeed:false}));
+    const png=strictBase64(ownData(response,'data',true)),decoded=decodeStrictPng(png,clip);guard();const after=decodeCanvasState(checkEvaluation(await within(invoke('Runtime.callFunctionOn',stateArgs))));canvasClip(after);assert.deepEqual(after,before,'canvas identity/current connection/geometry changed');
     result={png,receipt:{method:'public-cdp-page-captureScreenshot-canvas-viewport-clip-v1',clip,before,after,bytes:png.length,sha256:sha256(png),pixelSHA256:decoded.pixelSHA256,qualification:'Diagnostic public CDP comparison only; both APIs may share Chromium backend; no canonical receipt enum or causal claim'}};
-  }catch(error){failed=true;primary=error;}
-  // Start both disposals even if one fails or the capture deadline has elapsed.
-  const disposal=[cleanup(session,'detach'),cleanup(rawHandle,'dispose')];
-  try{const outcomes=await within(Promise.allSettled(disposal));for(const outcome of outcomes)if(outcome.status==='rejected'&&!failed){failed=true;primary=outcome.reason;}}catch(error){if(!failed){failed=true;primary=error;}}
+  }catch(error){fail(error);}
+  // Cleanup can finish after a failed deadline, but cannot accept a result or publish bytes.
+  const disposal=cleanup();try{await within(disposal);}catch(error){fail(error);}
   closed=true;timing.clear(timer);if(failed)throw primary;guard();result.receipt.elapsedMs=timing.now()-started;result.receipt.deadlineHostMs=deadline;
-  // No publisher or file API: late/failed results cannot escape this helper.
   return result;
 }
 
