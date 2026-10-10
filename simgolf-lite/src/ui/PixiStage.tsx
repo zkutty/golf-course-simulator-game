@@ -3368,7 +3368,14 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
       landscapeComponents,
       components,
     );
-    const sortedComponents = [...components].sort((a, b) => componentDepth(a) - componentDepth(b));
+    const componentDepths = new Map<LandscapeComponent, number>();
+    const cachedComponentDepth = (component: LandscapeComponent) => {
+      if (componentDepths.has(component)) return componentDepths.get(component)!;
+      const depth = componentDepth(component);
+      componentDepths.set(component, depth);
+      return depth;
+    };
+    const sortedComponents = [...components].sort((a, b) => cachedComponentDepth(a) - cachedComponentDepth(b));
     const composableSemanticFields = composableSources && quality !== "low"
       ? composableRuntime!.resolveParklandSemanticFieldSources(
         quality,
