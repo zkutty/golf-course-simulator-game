@@ -24,6 +24,7 @@ OWNER = 'simgolf-lite/scripts/zk1262-build-capture-audit-owner.py'
 SELF = 'simgolf-lite/scripts/zk1262-held-phase-adjudicator.py'
 OWNER_SHA = '9c60ec41141e53525fc77e9ad3d961cd5e95407863c322256ceb1fab7f54dbc0'
 HELPER = 'simgolf-lite/scripts/zk1262-capture-phase-driver.py'
+HELPER_BYTES = 32810
 HELPER_SHA = '1e26b19b3d35bd1b1ce3dfc829710a45b2616d6a0298cdd00c8207f83cb22e86'
 BINDINGS = {OWNER:{'bytes':32767,'sha256':OWNER_SHA},
     'simgolf-lite/scripts/zk1262-build-capture-audit-owner.test.py':
@@ -128,21 +129,22 @@ def directory(path):
     return devino(info)
 
 
-def read_file(path):
+def read_file(path, cap=CAP):
+    require(type(cap) is int and cap in (CAP,HELPER_BYTES),'source-read-cap')
     path = canonical(path)
     parent = directory(path.parent)
     before = path.lstat()
     require(stat.S_ISREG(before.st_mode) and before.st_nlink==1 and
-            0<before.st_size<=CAP,'regular-single-link-file-cap')
+            0<before.st_size<=cap,'regular-single-link-file-cap')
     fd = os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
     try:
         require(snapshot(os.fstat(fd))==snapshot(before),'opened-file-drift')
         raw = b''
-        while len(raw)<=CAP:
-            part = os.read(fd,CAP+1-len(raw))
+        while len(raw)<=cap:
+            part = os.read(fd,cap+1-len(raw))
             if not part:break
             raw += part
-        require(len(raw)<=CAP and snapshot(os.fstat(fd))==snapshot(before),'file-drift-cap')
+        require(len(raw)<=cap and snapshot(os.fstat(fd))==snapshot(before),'file-drift-cap')
     finally:os.close(fd)
     require(snapshot(path.lstat())==snapshot(before) and directory(path.parent)==parent,
             'path-parent-drift')
@@ -232,8 +234,8 @@ def expected_args(args):
     for relative,pin in BINDINGS.items():
         _,found = read_file(Path(expected['driver_root'])/relative)
         require({k:found[k] for k in ('bytes','sha256')}==pin,'frozen-source-pin:'+relative)
-    _,helper = read_file(Path(expected['driver_root'])/HELPER)
-    require(helper['sha256']==HELPER_SHA,'frozen-helper-pin')
+    _,helper = read_file(Path(expected['driver_root'])/HELPER,HELPER_BYTES)
+    require(helper['bytes']==HELPER_BYTES and helper['sha256']==HELPER_SHA,'frozen-helper-pin')
     _,source = read_file(Path(expected['driver_root'])/SELF)
     _,running = read_file(Path(__file__).absolute())
     require(source==running and source['sha256']==expected['adjudicator_source_sha256'],
