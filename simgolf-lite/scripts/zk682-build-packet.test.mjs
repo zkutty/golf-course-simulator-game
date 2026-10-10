@@ -1,6 +1,8 @@
+import pngjs from "pngjs";
+const { PNG } = pngjs;
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -10,6 +12,17 @@ import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence
 import { createZk682ResourceGrowthReport, ZK682_RESOURCE_GROWTH_THRESHOLDS } from "./zk682-resource-growth-contract.mjs";
 import { buildZk682Report, sha256 } from "./zk682-certification-contract.mjs";
 import { buildZk682Packet, ZK682_PACKET_RECEIPTS, inspectSupplemental } from "./zk682-build-packet.mjs";
+
+
+function rendererCompleteFixture(commit) {
+  const image = new PNG({ width: 2, height: 1 }); image.data.set([255,0,0,255,0,0,255,255]);
+  const png = PNG.sync.write(image);
+  const state = { current: true, connected: true, visible: true, tag: "CANVAS", x: 0, y: 0, width: 2, height: 1, viewportWidth: 1280, viewportHeight: 720, intrinsicWidth: 2, intrinsicHeight: 1, dpr: 1, zoom: 1 };
+  const capture = { method: "public-page-screenshot-canvas-viewport-clip-v1", clip: { x: 0, y: 0, width: 2, height: 1 }, before: state, after: { ...state }, bytes: png.length, sha256: sha256(png), qualification: "Fixture decoded PNG; not actual browser proof" };
+  const cleanup = { measurementProtocol: "exclusive-react-development-component-measures-cleared-before-existing-gc-v1", preserves: "same-name collisions, scheduler and application measures", samples: Array.from({length:7},(_,cycle)=>({cycle,cleanup:{measureEntriesBefore:3,reactComponentEntriesBefore:2,clearedEntries:2,clearedNames:1,preservedCollisionNames:0,measureEntriesAfter:1}})) };
+  const commandReceipt = { schemaVersion:1,kind:"command-receipt",receiptId:"renderer-resource-growth",candidateCommit:commit,capturedAt:NOW,command:["npx","playwright","test","e2e/zk682-resource-growth.e2e.ts","--workers=1","--retries=0"],exitCode:0,durationMs:1,passed:true };
+  return { png, capture, cleanup, commandReceipt };
+}
 
 const NOW = "2026-09-29T12:00:00.000Z";
 const write = (root, path, value) => {
@@ -74,7 +87,11 @@ function fixture() {
     write(root, `${prefix}/persistence.json`, report);
   }
   write(raw, "renderer-resource-growth.json", resourceReport(commit));
-  write(raw, "zk682-resource-growth-final.png", Buffer.from("resource screenshot"));
+  const complete = rendererCompleteFixture(commit);
+  write(raw, "zk682-resource-growth-final.png", complete.png);
+  write(raw, "zk682-react-component-timing-cleanup.json", complete.cleanup);
+  write(raw, "zk682-canvas-capture-receipt.json", complete.capture);
+  write(raw, "renderer-resource-growth-command.json", complete.commandReceipt);
   write(raw, "zk682-stability-final.png", Buffer.from("stability screenshot"));
   for (const gate of ["save-load-resource-stability", "long-session-resource-stability", "editing-overlay-sleep-recovery"]) write(raw, `${gate}.json`, supplemental(gate, commit));
   const assetSource = write(root, "artifacts/zk682/raw/m35-asset-audit.json", { ok: true, initialCritical: { bytes: 7_000_000 }, dist: { bundles: { parkland: { high: { bytes: 5_000_000 } } } } });
@@ -161,4 +178,27 @@ test("schema-v3 packet handoff admits only recomputed evidence", async () => {
     const missing = structuredClone(report); delete missing.samples[0].resources.emoteOwnership;
     await assert.rejects(inspectSupplemental(missing, report.gate, commit, root), /does not match raw samples/);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("renderer aggregate fails closed for incomplete producer artifacts and failed full command", async () => {
+  for (const change of [
+    f => rmSync(join(f.raw,"zk682-resource-growth-final.png")),
+    f => rmSync(join(f.raw,"renderer-resource-growth-command.json")),
+    f => { const path=join(f.raw,"zk682-react-component-timing-cleanup.json");const value=JSON.parse(readFileSync(path));value.samples.reverse();write(f.raw,"zk682-react-component-timing-cleanup.json",value); },
+    f => { const path=join(f.raw,"zk682-canvas-capture-receipt.json");const value=JSON.parse(readFileSync(path));value.after.current=false;write(f.raw,"zk682-canvas-capture-receipt.json",value); },
+    f => write(f.raw,"renderer-resource-growth-command.json",{...rendererCompleteFixture(f.commit).commandReceipt,exitCode:1,passed:false}),
+  ]) { const f=fixture();try {change(f);await assert.rejects(buildZk682Packet({root:f.root,candidateCommit:f.commit,invokeCertification:false}));}finally{rmSync(f.repository,{recursive:true,force:true});} }
+});
+test("resource wrapper persists actual child status; postcapture failure prevents aggregation", async () => {
+  for (const requestedExit of [0,7,"signal"]) {const exitCode=requestedExit==="signal"?1:requestedExit;const f=fixture();try {
+    mkdirSync(join(f.root,"scripts"),{recursive:true});
+    for(const file of ["zk682-run-resource-growth.mjs","zk682-command-receipt.mjs"])writeFileSync(join(f.root,"scripts",file),readFileSync(new URL(file,import.meta.url)));
+    const bin=join(f.root,"bin");mkdirSync(bin);const executable=join(bin,"npx");writeFileSync(executable,"#!/usr/bin/env node\nif(process.env.ZK682_TEST_CHILD_EXIT==='signal')process.kill(process.pid,'SIGTERM');else process.exit(Number(process.env.ZK682_TEST_CHILD_EXIT));\n");chmodSync(executable,0o700);
+    let actual=0;try {execFileSync(process.execPath,[join(f.root,"scripts/zk682-run-resource-growth.mjs"),"--expected-commit",f.commit,"--output",join(f.raw,"renderer-resource-growth.json")],{env:{...process.env,PATH:bin+":"+process.env.PATH,ZK682_TEST_CHILD_EXIT:String(requestedExit)},stdio:"pipe"});}catch(error){actual=error.status;}
+    assert.equal(actual,exitCode);
+    const receipt=JSON.parse(readFileSync(join(f.raw,"renderer-resource-growth-command.json")));assert.equal(receipt.exitCode,exitCode);assert.equal(receipt.passed,exitCode===0);assert.equal(receipt.candidateCommit,f.commit);
+    // All valid numeric, PNG and capture artifacts remain present even for the failed child.
+    if(exitCode)await assert.rejects(buildZk682Packet({root:f.root,candidateCommit:f.commit,invokeCertification:false}),/renderer command did not pass/);
+    else await buildZk682Packet({root:f.root,candidateCommit:f.commit,invokeCertification:false});
+  }finally{rmSync(f.repository,{recursive:true,force:true});}}
 });

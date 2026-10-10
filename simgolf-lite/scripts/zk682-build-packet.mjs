@@ -8,6 +8,8 @@ import { validateZk682DesktopPersistenceSequence } from "./zk682-desktop-persist
 import { evaluateZk682ResourceGrowth, ZK682_RESOURCE_GROWTH_THRESHOLDS } from "./zk682-resource-growth-contract.mjs";
 import { inspectZk682CommandReceipt } from "./zk682-command-receipt.mjs";
 import {
+  inspectZk682RendererCompleteness,
+  ZK682_RENDERER_COMPLETENESS_PROTOCOL,
   ZK682_BUDGETS,
   ZK682_CERTIFICATION_ID,
   ZK682_CRITERIA,
@@ -235,6 +237,15 @@ export async function buildZk682Packet({ root, candidateCommit, evidenceRoot = Z
     return { platform, architecture, report, files, passed };
   });
   const resource = raw("renderer-resource-growth.json");
+  const cleanup = raw("zk682-react-component-timing-cleanup.json");
+  const capture = raw("zk682-canvas-capture-receipt.json");
+  const rendererCommand = raw("renderer-resource-growth-command.json");
+  const rendererPngPath = join(ctx.rawRoot, "zk682-resource-growth-final.png");
+  if (statSync(rendererPngPath).size > 12 * 1024 * 1024) throw new Error("renderer PNG byte bound exceeded");
+  const rendererPng = ctx.bind(rendererPngPath, true);
+  const inspectedRenderer = inspectZk682RendererCompleteness({ candidateCommit, resource: resource.value, cleanup: cleanup.value, capture: capture.value, commandReceipt: rendererCommand.value, png: readFileSync(rendererPngPath) });
+  if (!inspectedRenderer.valid) throw new Error(`renderer producer incomplete: ${inspectedRenderer.errors.join("; ")}`);
+  const rendererCompleteness = { protocol: ZK682_RENDERER_COMPLETENESS_PROTOCOL, cleanup: cleanup.artifact, capture: capture.artifact, command: rendererCommand.artifact, png: rendererPng };
   const resourcePassed = inspectResource(resource.value, candidateCommit);
   const supplementalEntries = await Promise.all([
     ["save-load-resource-stability", "save-load-resource-stability.json"],
@@ -341,8 +352,8 @@ export async function buildZk682Packet({ root, candidateCommit, evidenceRoot = Z
   const saveLoad = supplemental.get("save-load-resource-stability");
   const longSession = supplemental.get("long-session-resource-stability");
   const interaction = supplemental.get("editing-overlay-sleep-recovery");
-  const stabilityArtifacts = [resource.artifact, saveLoad.artifact, longSession.artifact, interaction.artifact];
-  for (const name of ["zk682-resource-growth-final.png", "zk682-stability-final.png"]) {
+  const stabilityArtifacts = [cleanup.artifact, capture.artifact, rendererCommand.artifact, rendererPng, resource.artifact, saveLoad.artifact, longSession.artifact, interaction.artifact];
+  for (const name of ["zk682-stability-final.png"]) {
     const screenshot = join(ctx.rawRoot, name);
     if (existsSync(screenshot)) stabilityArtifacts.push(ctx.bind(screenshot, true));
   }
@@ -359,6 +370,7 @@ export async function buildZk682Packet({ root, candidateCommit, evidenceRoot = Z
     routeChanges: Number(resource.value.samples?.length ?? 0),
     saveLoads: Number(saveLoad.value.observations?.saveLoads ?? 0),
     sessionMinutes: Number(longSession.value.observations?.sessionMinutes ?? 0),
+    rendererCompleteness,
     resourceGrowthEvidence: resource.artifact,
     saveLoadEvidence: saveLoad.artifact,
     longSessionEvidence: longSession.artifact,

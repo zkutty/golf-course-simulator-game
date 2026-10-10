@@ -1,5 +1,6 @@
+import { runZk682CommandReceipt } from "./zk682-command-receipt.mjs";
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -26,15 +27,18 @@ const outputPath = resolve(valueFor("--output")
   ?? process.env.COURSECRAFT_ZK682_RESOURCE_REPORT
   ?? "artifacts/zk682/raw/renderer-resource-growth.json");
 const executable = process.platform === "win32" ? "npx.cmd" : "npx";
-const result = spawnSync(executable, [
-  "playwright",
-  "test",
-  "e2e/zk682-resource-growth.e2e.ts",
-  "--workers=1",
-  "--retries=0",
-], {
+const receipt = runZk682CommandReceipt({
+  receiptId: "renderer-resource-growth", candidateCommit,
+  outputPath: resolve(dirname(outputPath), "renderer-resource-growth-command.json"),
+  command: [
+    executable,
+    "playwright",
+    "test",
+    "e2e/zk682-resource-growth.e2e.ts",
+    "--workers=1",
+    "--retries=0",
+  ],
   cwd: root,
-  stdio: "inherit",
   env: {
     ...process.env,
     ZK682_EXPECTED_COMMIT: candidateCommit,
@@ -42,5 +46,5 @@ const result = spawnSync(executable, [
     COURSECRAFT_ZK682_RESOURCE_REPORT: outputPath,
   },
 });
-if (result.status !== 0) process.exit(result.status ?? 1);
+if (!receipt.passed) process.exit(receipt.exitCode);
 process.stdout.write(`${JSON.stringify({ ok: true, candidateCommit, output: outputPath })}\n`);

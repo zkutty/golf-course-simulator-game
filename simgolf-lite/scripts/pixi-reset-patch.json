@@ -214,6 +214,44 @@
       ],
       "inverseByteExact": true,
       "sourceMaps": "stale sourceMappingURL removed, maps not modified or parsed"
+    },
+    {
+      "relativePath": "lib/rendering/renderers/gl/GlBackBufferSystem.mjs",
+      "originalSha256": "e7569585e7dcbe6bc0ee82af98603e7c4534364db612df0ef4aa00c7425ebbc4",
+      "patchedSha256": "f2894a2e0ba3d688dba36ba1ce07a7777f4922d3c0d23507acce7e1f157f5676",
+      "originalBytes": 4524,
+      "patchedBytes": 4785,
+      "edits": [
+        {
+          "before": "  destroy() {\n    if (this._backBufferTexture) {\n      this._backBufferTexture.destroy();\n      this._backBufferTexture = null;\n    }\n  }",
+          "after": "  destroy() {\n    const texture = this._backBufferTexture;\n    const shader = this._bigTriangleShader;\n    this._backBufferTexture = null;\n    this._bigTriangleShader = null;\n    let failed = false;\n    let firstError;\n    try { texture?.destroy(); } catch (error) { failed = true; firstError = error; }\n    try { shader?.destroy(true); } catch (error) { if (!failed) { failed = true; firstError = error; } }\n    if (failed) throw firstError;\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=GlBackBufferSystem.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "stale sourceMappingURL removed, maps not modified or parsed"
+    },
+    {
+      "relativePath": "lib/rendering/renderers/gl/GlBackBufferSystem.js",
+      "originalSha256": "af95f36de5dcbc342be32596fe78713bf58c6595de1e4dea56b28fb9e0726708",
+      "patchedSha256": "4ec91c37cde244523c291416de7946ff068aa2d0de2f2e9d95ed8f8d25b7a8b3",
+      "originalBytes": 4615,
+      "patchedBytes": 4877,
+      "edits": [
+        {
+          "before": "  destroy() {\n    if (this._backBufferTexture) {\n      this._backBufferTexture.destroy();\n      this._backBufferTexture = null;\n    }\n  }",
+          "after": "  destroy() {\n    const texture = this._backBufferTexture;\n    const shader = this._bigTriangleShader;\n    this._backBufferTexture = null;\n    this._bigTriangleShader = null;\n    let failed = false;\n    let firstError;\n    try { texture?.destroy(); } catch (error) { failed = true; firstError = error; }\n    try { shader?.destroy(true); } catch (error) { if (!failed) { failed = true; firstError = error; } }\n    if (failed) throw firstError;\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=GlBackBufferSystem.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "stale sourceMappingURL removed, maps not modified or parsed"
     }
   ]
 }

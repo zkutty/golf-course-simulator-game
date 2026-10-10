@@ -1,5 +1,7 @@
+import pngjs from "pngjs";
+const { PNG } = pngjs;
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { certifyOfflineIndexedDbSave, PWA_PERSISTENCE_REPORT_SCHEMA_VERSION } from "./pwa-save-evidence.mjs";
 import {
@@ -120,13 +122,14 @@ function safeRelativePath(path) {
     && !path.includes("\0");
 }
 
-function readBoundFile(root, path) {
+function readBoundFile(root, path, maxBytes = Infinity) {
   if (!safeRelativePath(path)) throw new Error(`unsafe evidence path: ${String(path)}`);
   const absolute = resolve(root, path);
   const normalizedRoot = resolve(root);
   if (absolute !== normalizedRoot && !absolute.startsWith(`${normalizedRoot}${sep}`)) {
     throw new Error(`evidence path escapes the package root: ${path}`);
   }
+  if (statSync(absolute).size > maxBytes) throw new Error(`evidence byte bound exceeded: ${path}`);
   return readFileSync(absolute);
 }
 
@@ -544,14 +547,29 @@ function validateGateObservations(gate, manifest, root, errors) {
       && observations.fixtureLoadMs <= observations.fixtureLoadBudgetMs;
     if ((criteria.find((entry) => entry.id === "startup-and-fixture-load")?.status === "pass") !== startupPassed) errors.push("startup-and-fixture-load: declared status disagrees with observed timings and budgets");
   } else if (gate.gateId === "stability") {
-    exactKeys(observations, ["routeChangesStable", "saveLoadsStable", "longSessionStable", "interactionRecoveryPassed", "routeChanges", "saveLoads", "sessionMinutes", "resourceGrowthEvidence", "saveLoadEvidence", "longSessionEvidence", "interactionRecoveryEvidence"], "stability.observations", errors);
+    exactKeys(observations, ["routeChangesStable", "saveLoadsStable", "longSessionStable", "interactionRecoveryPassed", "routeChanges", "saveLoads", "sessionMinutes", "resourceGrowthEvidence", "saveLoadEvidence", "longSessionEvidence", "interactionRecoveryEvidence", "rendererCompleteness"], "stability.observations", errors);
     expectBooleanObservation(observations, "routeChangesStable", "route-change-resource-stability", criteria, errors);
     expectBooleanObservation(observations, "saveLoadsStable", "save-load-resource-stability", criteria, errors);
     expectBooleanObservation(observations, "longSessionStable", "long-session-resource-stability", criteria, errors);
     expectBooleanObservation(observations, "interactionRecoveryPassed", "editing-overlay-sleep-recovery", criteria, errors);
     for (const key of ["routeChanges", "saveLoads", "sessionMinutes"]) if (!Number.isFinite(observations[key]) || observations[key] <= 0) errors.push(`stability: observations.${key} must be positive`);
     const resourceReport = readTypedArtifact(observations.resourceGrowthEvidence, gate, root, "stability.resourceGrowthEvidence", errors);
-    const resourcePassed = resourceReport ? validateResourceGrowthEvidence(resourceReport, manifest, "stability.resourceGrowthEvidence", errors) : false;
+    let completenessPassed = false;
+    const complete = observations.rendererCompleteness;
+    if (exactKeys(complete, ["protocol", "cleanup", "capture", "command", "png"], "stability.rendererCompleteness", errors)) {
+      if (complete.protocol !== ZK682_RENDERER_COMPLETENESS_PROTOCOL) errors.push("renderer completeness protocol mismatch");
+      const cleanup = readTypedArtifact(complete.cleanup, gate, root, "renderer cleanup", errors);
+      const capture = readTypedArtifact(complete.capture, gate, root, "renderer capture", errors);
+      const commandReceipt = readTypedArtifact(complete.command, gate, root, "renderer command", errors);
+      let png;
+      if (exactKeys(complete.png, ["path", "sha256"], "renderer PNG reference", errors) && safeRelativePath(complete.png.path) && validSha(complete.png.sha256) && artifactIsBound(gate, complete.png)) {
+        try { png = readBoundFile(root, complete.png.path, 12 * 1024 * 1024); if (sha256(png) !== complete.png.sha256) throw Error("hash mismatch"); } catch (error) { errors.push(`renderer PNG: ${error.message}`); }
+      } else errors.push("renderer PNG requires safe hash-bound artifact reference");
+      const inspected = inspectZk682RendererCompleteness({ candidateCommit: manifest.candidateCommit, resource: resourceReport, cleanup, capture, commandReceipt, png });
+      errors.push(...inspected.errors); completenessPassed = inspected.passed && complete.protocol === ZK682_RENDERER_COMPLETENESS_PROTOCOL;
+    }
+    const resourceNumericPassed = resourceReport ? validateResourceGrowthEvidence(resourceReport, manifest, "stability.resourceGrowthEvidence", errors) : false;
+    const resourcePassed = resourceNumericPassed && completenessPassed;
     if (observations.routeChangesStable !== resourcePassed) errors.push("route-change-resource-stability: declared status disagrees with typed renderer resource-growth evidence");
     const supplemental = [
       ["saveLoadEvidence", "save-load-resource-stability", "saveLoadsStable", "saveLoads"],
@@ -780,4 +798,77 @@ export function zk682ReportMarkdown(report) {
     `## Criteria\n\n| Criterion | Requirement | Status | Contract |\n| --- | --- | --- | --- |\n${rows.join("\n")}\n\n` +
     `## Blockers\n\n${blockers}\n\n` +
     `## Evidence boundary\n\n${report.limitations.map((item) => `- ${item}`).join("\n")}\n`;
+}
+
+export const ZK682_RENDERER_COMPLETENESS_PROTOCOL = "renderer-producer-complete-v1";
+export function inspectZk682RendererCompleteness({ candidateCommit, resource, cleanup, capture, commandReceipt, png }) {
+  const errors = [], fail = message => errors.push(message);
+  const keys = (value, expected, label) => {
+    if (!value || typeof value !== "object" || Array.isArray(value) || stableJson(Object.keys(value).sort()) !== stableJson([...expected].sort())) { fail(`${label}: exact keys required`); return false; }
+    return true;
+  };
+  const receipt = inspectZk682CommandReceipt(commandReceipt, { candidateCommit, receiptId: "renderer-resource-growth" });
+  if (!Array.isArray(commandReceipt?.command) || !["npx", "npx.cmd"].includes(commandReceipt.command[0]) || stableJson(commandReceipt.command.slice(1)) !== stableJson(["playwright", "test", "e2e/zk682-resource-growth.e2e.ts", "--workers=1", "--retries=0"])) fail("renderer command argv mismatch");
+  if (!receipt.valid || !receipt.passed) fail(`renderer command did not pass: ${receipt.errors.join("; ")}`);
+  if (!resource || resource.source?.commit !== candidateCommit || !Array.isArray(resource.samples) || resource.samples.length !== 7 || resource.samples.some((s, i) => s?.cycle !== i)) fail("renderer resource requires seven ordered cycles 0..6");
+  if (keys(cleanup, ["measurementProtocol", "preserves", "samples"], "cleanup")) {
+    if (cleanup.measurementProtocol !== "exclusive-react-development-component-measures-cleared-before-existing-gc-v1" || cleanup.preserves !== "same-name collisions, scheduler and application measures") fail("cleanup protocol mismatch");
+    if (!Array.isArray(cleanup.samples) || cleanup.samples.length !== 7) fail("cleanup requires seven samples");
+    else cleanup.samples.forEach((sample, cycle) => {
+      if (!keys(sample, ["cycle", "cleanup"], "cleanup sample")) return;
+      if (sample.cycle !== cycle) fail("cleanup cycles must be 0..6 in order");
+      const fields = ["measureEntriesBefore", "reactComponentEntriesBefore", "clearedEntries", "clearedNames", "preservedCollisionNames", "measureEntriesAfter"];
+      if (keys(sample.cleanup, fields, "cleanup counts")) {
+        const c = sample.cleanup;
+        if (fields.some(k => !Number.isSafeInteger(c[k]) || c[k] < 0) || c.reactComponentEntriesBefore > c.measureEntriesBefore || c.clearedEntries > c.reactComponentEntriesBefore || c.clearedNames > c.clearedEntries || c.measureEntriesAfter !== c.measureEntriesBefore - c.clearedEntries) fail("cleanup counts invalid");
+      }
+    });
+  }
+  if (keys(capture, ["method", "clip", "before", "after", "bytes", "sha256", "qualification"], "capture")) {
+    if (!["public-page-screenshot-canvas-viewport-clip-v1", "public-cdp-page-captureScreenshot-canvas-viewport-clip-v1"].includes(capture.method) || typeof capture.qualification !== "string" || !capture.qualification) fail("capture method/qualification invalid");
+    const fields = ["current", "connected", "visible", "tag", "x", "y", "width", "height", "viewportWidth", "viewportHeight", "intrinsicWidth", "intrinsicHeight", "dpr", "zoom"];
+    const before = capture.before, after = capture.after;
+    if (keys(before, fields, "capture before") && keys(after, fields, "capture after")) {
+      if (stableJson(before) !== stableJson(after)) fail("capture pre/post state changed");
+      if (before.current !== true || before.connected !== true || before.visible !== true || before.tag !== "CANVAS" || before.dpr !== 1 || before.zoom !== 1) fail("capture current visible connected DPR1 canvas required");
+      const numeric = fields.filter(k => !["current", "connected", "visible", "tag"].includes(k));
+      if (numeric.some(k => !Number.isFinite(before[k])) || before.width <= 0 || before.height <= 0 || before.intrinsicWidth <= 0 || before.intrinsicHeight <= 0 || before.x < 0 || before.y < 0 || before.x + before.width > before.viewportWidth || before.y + before.height > before.viewportHeight) fail("capture raw geometry invalid");
+      const x = Math.floor(before.x + 0.001), y = Math.floor(before.y + 0.001);
+      const expected = { x, y, width: Math.ceil(before.x + before.width - 0.001) - x, height: Math.ceil(before.y + before.height - 0.001) - y };
+      if (!keys(capture.clip, ["x", "y", "width", "height"], "capture clip") || stableJson(capture.clip) !== stableJson(expected) || Object.values(expected).some(v => !Number.isSafeInteger(v)) || expected.width <= 0 || expected.height <= 0 || x < 0 || y < 0 || x + expected.width > before.viewportWidth || y + expected.height > before.viewportHeight) fail("capture integer clip mismatch");
+    }
+    if (!Buffer.isBuffer(png) || png.length < 24 || png.length > 12 * 1024 * 1024 || capture.bytes !== png.length || capture.sha256 !== sha256(png)) fail("capture PNG bytes/hash mismatch");
+    else {
+      try {
+        if (png.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a" || png.subarray(12, 16).toString() !== "IHDR") throw Error("PNG signature/header");
+        if (png.length < 33 || png.readUInt32BE(8) !== 13 || png[24] !== 8 || ![2, 6].includes(png[25]) || png[26] !== 0 || png[27] !== 0 || png[28] !== 0) throw Error("Unsupported PNG encoding: require 8-bit RGB/RGBA, compression/filter0 and noninterlaced IHDR before decode");
+        let offset = 8, seenIdat = false, seenIend = false;
+        while (offset < png.length) {
+          if (offset + 12 > png.length) throw Error("PNG chunk extent invalid");
+          const length = png.readUInt32BE(offset), type = png.subarray(offset + 4, offset + 8).toString("ascii");
+          const end = offset + 12 + length;
+          if (end > png.length) throw Error("PNG chunk extent invalid");
+          if (type === "IHDR" && offset !== 8) throw Error("PNG duplicate IHDR invalid");
+          if (type === "IDAT") seenIdat = true;
+          if (type === "IEND") {
+            if (length !== 0 || end !== png.length) throw Error("PNG IEND must be terminal without trailing data");
+            seenIend = true;
+          }
+          offset = end;
+        }
+        if (!seenIdat || !seenIend) throw Error("PNG IDAT and terminal IEND required");
+        const width = png.readUInt32BE(16), height = png.readUInt32BE(20);
+        if (width !== capture.clip?.width || height !== capture.clip?.height || width * height > 16 * 1024 * 1024) throw Error("PNG dimensions");
+        const decoded = PNG.sync.read(png, { checkCRC: true });
+        if (decoded.width !== width || decoded.height !== height) throw Error("PNG decode dimensions");
+        const first = decoded.data.readUInt32BE(0); let differing = false, visible = false;
+        for (let offset = 0; offset < decoded.data.length; offset += 4) {
+          if (decoded.data.readUInt32BE(offset) !== first) differing = true;
+          if (decoded.data[offset + 3] > 0) visible = true;
+        }
+        if (!differing || !visible) throw Error("PNG must contain nonuniform visible pixels; scene coherence still requires manual QA");
+      } catch (error) { fail(`renderer PNG invalid: ${error.message}`); }
+    }
+  }
+  return { valid: errors.length === 0, passed: errors.length === 0, errors };
 }

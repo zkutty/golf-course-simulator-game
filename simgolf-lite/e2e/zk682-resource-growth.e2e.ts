@@ -1,9 +1,11 @@
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { captureVisibleCanvas } from "../scripts/zk682-public-canvas-capture.mjs";
 import { clearReactComponentTimings } from "../scripts/react-component-timing-cleanup.mjs";
 import {
   ZK682_RESOURCE_GROWTH_THRESHOLDS,
+  ZK682_MATCHED_WARMUP_PROTOCOL,
   createZk682ResourceGrowthReport,
 } from "../scripts/zk682-resource-growth-contract.mjs";
 
@@ -11,6 +13,9 @@ type Theme = "parkland" | "links" | "desert";
 type Quality = "low" | "medium" | "high";
 
 test.use({
+  trace: "off",
+  video: "off",
+  screenshot: "off",
   launchOptions: { args: ["--enable-precise-memory-info"] },
 });
 
@@ -116,9 +121,10 @@ type TimingCleanupReceipt = { cycle: number; cleanup: ReturnType<typeof clearRea
 
 async function collectPostGcCheckpoint(page: Page, cdp: CDPSession, cycle: number, exercised: { theme: Theme; quality: Quality } | null, timingCleanup: TimingCleanupReceipt[]) {
   if (timingCleanup.length >= 7) throw new Error("Timing cleanup receipt bound exceeded");
+  // Separate CDP requests are not atomic; sample promptly after requested GC.
+  await page.waitForTimeout(150);
   timingCleanup.push({ cycle, cleanup: await page.evaluate(clearReactComponentTimings) });
   await cdp.send("HeapProfiler.collectGarbage");
-  await page.waitForTimeout(150);
   const heap = await cdp.send("Runtime.getHeapUsage");
   const browser = await page.evaluate(() => {
     const resources = window.__coursecraftPixiTest?.resourceSnapshot();
@@ -156,6 +162,11 @@ async function collectPostGcCheckpoint(page: Page, cdp: CDPSession, cycle: numbe
       theme: browser.state.course?.theme,
       quality: browser.state.graphics?.quality,
       rotation: browser.state.camera?.rotation,
+      width: browser.state.course?.width,
+      height: browser.state.course?.height,
+      holesOpen: browser.state.course?.holesOpen,
+      holeSlots: browser.state.course?.holeSetups?.length,
+      speed: browser.state.simulation?.speed,
     },
     heap: {
       runtimeUsedBytes: heap.usedSize,
@@ -193,12 +204,41 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
   await waitForRenderer(page, "parkland", "high");
   await pauseSimulation(page);
 
+  // Warm the same large Quick Start course used by every measured remount.
+  // Its e2e seed is source-bound; dimensions and paused state are observed here.
+  await routeThroughTitle(page);
+  const warmupFixture = await page.evaluate(() => {
+    const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
+    return {
+      width: state.course?.width,
+      height: state.course?.height,
+      holesOpen: state.course?.holesOpen,
+      holeSlots: state.course?.holeSetups?.length,
+      quality: state.graphics?.quality,
+      speed: state.simulation?.speed,
+      screen: state.screen,
+    };
+  });
+  expect(warmupFixture).toEqual({ width: 220, height: 140, holesOpen: 0, holeSlots: 9, quality: "high", speed: "paused", screen: "game" });
+
   // Fully warm the finite 3-biome × 3-quality atlas residency before taking
   // a baseline. Intentional cache population is not a post-warmup leak.
   const themes: Theme[] = ["parkland", "links", "desert"];
   const qualities: Quality[] = ["low", "medium", "high"];
   for (const theme of themes) {
-    for (const quality of qualities) await setRendererFixture(page, theme, quality);
+    // Warm-only theme assignment: activate once, then exercise all qualities.
+    await page.evaluate(({ requestedTheme }) => {
+      window.__coursecraftTest!.setRendererThemeFixture(requestedTheme);
+    }, { requestedTheme: theme });
+    await waitForRenderer(page, theme, await page.evaluate(() => (
+      window.__coursecraftPixiTest!.rendererAtlasState().requested.quality
+    )));
+    for (const quality of qualities) {
+      await page.evaluate(({ requestedQuality }) => {
+        window.__coursecraftTest!.setGraphicsQualityFixture(requestedQuality);
+      }, { requestedQuality: quality });
+      await waitForRenderer(page, theme, quality);
+    }
   }
   await rotateFullCircle(page);
   await routeThroughTitle(page);
@@ -233,7 +273,6 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
   );
   await mkdir(dirname(outputPath), { recursive: true });
   const finalCapturePath = resolve(dirname(outputPath), "zk682-resource-growth-final.png");
-  await page.locator(".cc-pixi-stage canvas").screenshot({ path: finalCapturePath });
   const rendererState = await page.evaluate(() => (
     window.__coursecraftPixiTest!.rendererAtlasState() as unknown as {
       pathMaterialCrossSection: { commit: string };
@@ -248,16 +287,23 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
       name: browserName,
       version: page.context().browser()?.version() ?? "unknown",
       cdpHeap: true,
+      heapMeasurementProtocol: { id: "settle-cleanup-gc-query-v1", settlementMs: 150 },
     },
     thresholds: ZK682_RESOURCE_GROWTH_THRESHOLDS,
     warmup: {
       baseBundles: warmupAtlas.baseBundles,
       transitions: themes.length * qualities.length,
-      routeTeardowns: 1,
+      themeLoads: themes.length,
+      routeTeardowns: 2,
+      rotations: 1,
+      protocol: ZK682_MATCHED_WARMUP_PROTOCOL,
+      states: themes.flatMap((theme) => qualities.map((quality) => ({ theme, quality }))),
+      fixture: warmupFixture,
+      seed: { value: 424242, qualification: "source-bound-e2e-quick-start" },
     },
     samples,
   });
-  await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
   expect(timingCleanup).toHaveLength(7);
   const timingCleanupPath = resolve(dirname(outputPath), "zk682-react-component-timing-cleanup.json");
   const timingCleanupJson = `${JSON.stringify({
@@ -266,7 +312,10 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
     samples: timingCleanup,
   }, null, 2)}\n`;
   if (Buffer.byteLength(timingCleanupJson, "utf8") > 8192) throw new Error("Timing cleanup artifact byte cap exceeded");
-  await writeFile(timingCleanupPath, timingCleanupJson, "utf8");
+  await writeFile(timingCleanupPath, timingCleanupJson, { encoding: "utf8", flag: "wx" });
+  // Preserve quantitative artifacts before the required final image capture.
+  const captureReceipt = await captureVisibleCanvas(page, finalCapturePath);
+  await writeFile(resolve(dirname(outputPath), "zk682-canvas-capture-receipt.json"), `${JSON.stringify(captureReceipt, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
   await testInfo.attach("zk682-react-component-timing-cleanup", { path: timingCleanupPath, contentType: "application/json" });
   await testInfo.attach("zk682-resource-growth-report", { path: outputPath, contentType: "application/json" });
   await testInfo.attach("zk682-resource-growth-final", { path: finalCapturePath, contentType: "image/png" });

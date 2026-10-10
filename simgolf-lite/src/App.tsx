@@ -246,6 +246,7 @@ import type { PlayerChallengeContractDraft } from "./game/playerPro/challengePla
 import { decodeControlledRoundSnapshotV2, type ControlledRoundSnapshotV2 } from "./game/rules/roundSnapshot";
 import type { SharedShotOutcome } from "./game/rules/contracts";
 import { buildArchitectureReview, defaultArchitectureFilters, withGreenStrategyHeatmap, type ArchitectureReviewData } from "./game/architecture/review";
+import { ArchitectureReviewDemandOwner } from "./game/architecture/architectureReviewDemand";
 import type { GreenStrategyHeatmap } from "./game/architecture/greenStrategyHeatmap";
 import { compareM48DesignTest, refreshM48DesignTestSession } from "./game/architecture/comparison";
 import { strategicGeometryVersion } from "./game/architecture/strategic";
@@ -467,6 +468,7 @@ export default function App() {
       courseTextReportOwner.clear();
     };
   }, [gameSession, courseTextReportOwner]);
+  const [architectureReviewDemand] = useState(() => new ArchitectureReviewDemandOwner(buildArchitectureReview));
   const gameState = useGameSessionSelector(gameSession, (state) => state);
 
   useEffect(() => {
@@ -886,19 +888,45 @@ export default function App() {
   const architectureReport = useMemo(() => showCourseManager ? analyzeArchitecture(activeOperatingCourse) : null, [activeOperatingCourse, showCourseManager]);
   const [showArchitectureReview, setShowArchitectureReview] = useState(false);
   const [architectureFilters, setArchitectureFilters] = useState(() => defaultArchitectureFilters(course));
+  const getArchitectureReviewBase = useMemo(
+    () => architectureReviewDemand.capture(course, world, architectureFilters, flow.base),
+    [architectureReviewDemand, architectureFilters, course, flow.base, world],
+  );
   const architectureReviewBase = useMemo(
-    () => buildArchitectureReview(course, world, architectureFilters),
-    [architectureFilters, course, world],
+    () => showArchitectureReview || architectureFilters.kind.startsWith("green-") || architectureFilters.kind === "reference"
+      ? getArchitectureReviewBase() : null,
+    [architectureFilters.kind, getArchitectureReviewBase, showArchitectureReview],
   );
   const [architectureGreenStrategy, setArchitectureGreenStrategy] = useState<GreenStrategyHeatmap | null>(null);
   const [architectureReferenceReview, setArchitectureReferenceReview] = useState<{ base: ArchitectureReviewData; review: ArchitectureReviewData } | null>(null);
   const architectureReview = useMemo(
-    () => withGreenStrategyHeatmap(architectureReferenceReview?.base === architectureReviewBase ? architectureReferenceReview.review : architectureReviewBase, architectureGreenStrategy),
+    () => architectureReviewBase
+      ? withGreenStrategyHeatmap(architectureReferenceReview?.base === architectureReviewBase ? architectureReferenceReview.review : architectureReviewBase, architectureGreenStrategy)
+      : null,
     [architectureGreenStrategy, architectureReferenceReview, architectureReviewBase],
   );
+  const getArchitectureReview = useCallback(() => {
+    if (architectureReview) return architectureReview;
+    const base = getArchitectureReviewBase();
+    return withGreenStrategyHeatmap(architectureReferenceReview?.base === base ? architectureReferenceReview.review : base, architectureGreenStrategy);
+  }, [architectureGreenStrategy, architectureReferenceReview, architectureReview, getArchitectureReviewBase]);
+  useEffect(() => {
+    const unregister = gameSession.registerTeardown(architectureReviewDemand.retire);
+    const unsubscribe = gameSession.subscribe(() => {
+      const current = gameSession.getState();
+      architectureReviewDemand.invalidateState(current.course, current.world);
+    });
+    const current = gameSession.getState();
+    if (current.course === course && current.world === world) getArchitectureReviewBase.resume(architectureReviewBase ?? undefined);
+    return () => {
+      unsubscribe();
+      unregister();
+      architectureReviewDemand.clear();
+    };
+  }, [architectureReviewBase, architectureReviewDemand, course, gameSession, getArchitectureReviewBase, world]);
   useEffect(() => {
     let canceled = false;
-    if (!architectureFilters.kind.startsWith("green-")) {
+    if (!architectureFilters.kind.startsWith("green-") || !architectureReviewBase) {
       setArchitectureGreenStrategy(null);
       return () => { canceled = true; };
     }
@@ -910,15 +938,15 @@ export default function App() {
         evidence: architectureReviewBase.evidence,
         currentGeometryVersion: architectureReviewBase.currentGeometryVersion,
       });
-      if (!canceled) setArchitectureGreenStrategy(result);
+      if (!canceled && architectureReviewDemand.isCurrent(course, world, architectureFilters, architectureReviewBase)) setArchitectureGreenStrategy(result);
     }).catch(() => {
       if (!canceled) setArchitectureGreenStrategy(null);
     });
     return () => { canceled = true; };
-  }, [architectureFilters, architectureReviewBase.currentGeometryVersion, architectureReviewBase.evidence, course]);
+  }, [architectureFilters, architectureReviewBase, architectureReviewBase?.currentGeometryVersion, architectureReviewBase?.evidence, architectureReviewDemand, course, world]);
   useEffect(() => {
     let canceled = false;
-    if (architectureFilters.kind !== "reference") {
+    if (architectureFilters.kind !== "reference" || !architectureReviewBase) {
       setArchitectureReferenceReview(null);
       return () => { canceled = true; };
     }
@@ -929,12 +957,12 @@ export default function App() {
       const pinRotation = architectureFilters.pinRotation === "all" ? "A" : architectureFilters.pinRotation;
       const plans = module.architectureReferenceReview(selected, teeSet, pinRotation);
       const review = module.withArchitectureReferencePlans(architectureReviewBase, plans, selected);
-      if (!canceled) setArchitectureReferenceReview({ base: architectureReviewBase, review });
+      if (!canceled && architectureReviewDemand.isCurrent(course, world, architectureFilters, architectureReviewBase)) setArchitectureReferenceReview({ base: architectureReviewBase, review });
     }).catch(() => {
       if (!canceled) setArchitectureReferenceReview(null);
     });
     return () => { canceled = true; };
-  }, [architectureFilters, architectureReviewBase, course]);
+  }, [architectureFilters, architectureReviewBase, architectureReviewDemand, course, world]);
   useEffect(() => {
     if (normalizeCourseLayouts(course).layouts!.some((layout) => layout.id === architectureFilters.courseId)) return;
     setArchitectureFilters(defaultArchitectureFilters(course));
@@ -2996,7 +3024,9 @@ export default function App() {
     });
     const liveStateById = live.getReadonlyShotTelemetryLookup();
     const textReport = textReportTransaction.finishCarePart();
-    const renderText = () => JSON.stringify({
+    const renderText = () => {
+      const architectureReview = getArchitectureReview();
+      return JSON.stringify({
       coordinateSystem: "tile coordinates; origin top-left, +x right, +y down",
       screen,
       screenBase: flow.base,
@@ -3439,13 +3469,14 @@ export default function App() {
         };
       }),
     });
+    };
     window.render_game_to_text = renderText;
     window.advanceTime = live.advanceTime;
     return () => {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [courseTextReportOwner, gameSession, gameState, activeHoleAuthorityCourse.activePinRotation, activeHoleAuthorityCourse.holes, activeHoleIndex, activeHoleScore?.par, activeLayout.id, activeOperatingCourse, activePlayerRound, activeShotRoute, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, openingMarker, openingPlaybackUi.following, openingPlaybackUi.running, openingPlaybackUi.speed, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
+  }, [courseTextReportOwner, gameSession, gameState, activeHoleAuthorityCourse.activePinRotation, activeHoleAuthorityCourse.holes, activeHoleIndex, activeHoleScore?.par, activeLayout.id, activeOperatingCourse, activePlayerRound, activeShotRoute, activeTutorial, architectureReport, getArchitectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, openingMarker, openingPlaybackUi.following, openingPlaybackUi.running, openingPlaybackUi.speed, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -6128,7 +6159,7 @@ export default function App() {
                 surveyMode={showLandOffice}
                 selectedParcelId={selectedParcelId}
                 architectureWarnings={architectureReport?.warnings}
-                architectureOverlay={showArchitectureReview ? architectureReview.overlay : null}
+                architectureOverlay={showArchitectureReview ? getArchitectureReview().overlay : null}
                 paceBottlenecks={live.status.pace.bottlenecks}
                 animationsEnabled={effectiveAnimations && resolvedGraphicsQuality !== "low"}
                 graphicsQuality={resolvedGraphicsQuality}
@@ -6346,7 +6377,7 @@ export default function App() {
             {showCourseManager && !activeTutorial && <Suspense fallback={<div aria-live="polite" style={{ padding: 16 }}>{t("courseSetup.loadingInspector")}</div>}><CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onOpenArchitectureReview={() => { setShowArchitectureReview(true); setShowCourseManager(false); }} onClose={() => setShowCourseManager(false)} /></Suspense>}
             {showArchitectureReview && !activeTutorial && <ArchitectureReviewPanel
               course={course}
-              review={architectureReview}
+              review={getArchitectureReview()}
               onFilters={setArchitectureFilters}
               onJump={(point, holeId) => {
                 if (holeId) {

@@ -22,6 +22,34 @@ export const ZK682_RESOURCE_GROWTH_THRESHOLDS = Object.freeze({
   }),
 });
 
+export const ZK682_MATCHED_WARMUP_PROTOCOL = "matched-large-course-atlas-v3";
+
+function validateMatchedWarmup(warmup, samples) {
+  // Reports without a protocol remain legacy reports; never reinterpret them.
+  if (!Object.hasOwn(warmup, "protocol")) return;
+  assert.ok(warmup.protocol === ZK682_MATCHED_WARMUP_PROTOCOL || warmup.protocol === "matched-large-course-atlas-v2", "unsupported warmup protocol");
+  if (warmup.protocol === ZK682_MATCHED_WARMUP_PROTOCOL) {
+    assert.equal(warmup.themeLoads, 3, "decomposed warmup requires three theme loads");
+  }
+  assert.equal(warmup.transitions, 9, "matched warmup requires nine atlas states");
+  assert.equal(warmup.routeTeardowns, 2, "matched warmup requires two title routes");
+  assert.equal(warmup.rotations, 1, "matched warmup requires one full rotation");
+  const themes = ["parkland", "links", "desert"];
+  const qualities = ["low", "medium", "high"];
+  assert.deepEqual(warmup.states, themes.flatMap((theme) => qualities.map((quality) => ({ theme, quality }))), "matched warmup configuration mismatch");
+  assert.deepEqual(warmup.baseBundles, ["desert:high", "desert:low", "desert:medium", "links:high", "links:low", "links:medium", "parkland:high", "parkland:low", "parkland:medium"], "matched warmup atlas evidence mismatch");
+  const fixture = { width: 220, height: 140, holesOpen: 0, holeSlots: 9, quality: "high", speed: "paused", screen: "game" };
+  assert.deepEqual(warmup.fixture, fixture, "matched warmup observed fixture mismatch");
+  assert.deepEqual(warmup.seed, { value: 424242, qualification: "source-bound-e2e-quick-start" }, "matched warmup seed qualification mismatch");
+  assert.ok(Array.isArray(samples) && samples.length === 7, "matched warmup requires baseline plus six measured checkpoints");
+  for (const [cycle, sample] of samples.entries()) {
+    assert.equal(sample?.cycle, cycle, "matched checkpoint cycles must be exactly zero through six");
+    const state = sample?.state;
+    assert.ok(state && Object.entries(fixture).every(([key, value]) => state[key] === value), "measured checkpoint differs from matched warmup fixture");
+    assert.equal(state.theme, "parkland", "measured checkpoint must restore parkland");
+  }
+}
+
 const RESOURCE_METRICS = [
   "displayObjects",
   "attachedTextures",
@@ -156,6 +184,7 @@ export function createZk682ResourceGrowthReport(input) {
   assert.ok(input.command.length > 0, "report command is required");
   assert.equal(typeof input?.browser?.version, "string", "browser version is required");
   assert.ok(Array.isArray(input?.warmup?.baseBundles), "warmup bundle evidence is required");
+  validateMatchedWarmup(input.warmup, input.samples);
   const result = evaluateZk682ResourceGrowth(input.samples, input.thresholds);
   return {
     schemaVersion: ZK682_RESOURCE_GROWTH_SCHEMA_VERSION,

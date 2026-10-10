@@ -1,16 +1,31 @@
+import pngjs from "pngjs";
+const { PNG } = pngjs;
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { EventEmitter } from "node:events";
+import { createContext, runInContext } from "node:vm";
 import { createPwaPersistenceReport } from "./pwa-save-evidence.mjs";
 import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence-contract.mjs";
 import { ZK682_RESOURCE_GROWTH_THRESHOLDS, createZk682ResourceGrowthReport } from "./zk682-resource-growth-contract.mjs";
 import { ZK682_STABILITY_THRESHOLDS, createZk682StabilityReport, createZk682ConservationStabilityReport } from "./zk682-stability-contract.mjs";
-import { ZK682_CERTIFICATION_ID, ZK682_CRITERIA, ZK682_GATE_CONTRACTS, ZK682_SCHEMA_VERSION, buildZk682Report, sha256, validateZk682EvidenceManifest } from "./zk682-certification-contract.mjs";
+import { ZK682_CERTIFICATION_ID, ZK682_CRITERIA, ZK682_GATE_CONTRACTS, ZK682_SCHEMA_VERSION, buildZk682Report, sha256, inspectZk682RendererCompleteness, ZK682_RENDERER_COMPLETENESS_PROTOCOL, validateZk682EvidenceManifest } from "./zk682-certification-contract.mjs";
 
 const COMMIT = "1".repeat(40);
 const LOCK = Buffer.from("lockfile fixture\n");
+
+function rendererCompleteFixture(commit) {
+  const image = new PNG({ width: 2, height: 1 }); image.data.set([255,0,0,255,0,0,255,255]);
+  const png = PNG.sync.write(image);
+  const state = { current: true, connected: true, visible: true, tag: "CANVAS", x: 0, y: 0, width: 2, height: 1, viewportWidth: 1280, viewportHeight: 720, intrinsicWidth: 2, intrinsicHeight: 1, dpr: 1, zoom: 1 };
+  const capture = { method: "public-page-screenshot-canvas-viewport-clip-v1", clip: { x: 0, y: 0, width: 2, height: 1 }, before: state, after: { ...state }, bytes: png.length, sha256: sha256(png), qualification: "Fixture decoded PNG; not actual browser proof" };
+  const cleanup = { measurementProtocol: "exclusive-react-development-component-measures-cleared-before-existing-gc-v1", preserves: "same-name collisions, scheduler and application measures", samples: Array.from({length:7},(_,cycle)=>({cycle,cleanup:{measureEntriesBefore:3,reactComponentEntriesBefore:2,clearedEntries:2,clearedNames:1,preservedCollisionNames:0,measureEntriesAfter:1}})) };
+  const commandReceipt = { schemaVersion:1,kind:"command-receipt",receiptId:"renderer-resource-growth",candidateCommit:commit,capturedAt:NOW,command:["npx","playwright","test","e2e/zk682-resource-growth.e2e.ts","--workers=1","--retries=0"],exitCode:0,durationMs:1,passed:true };
+  return { png, capture, cleanup, commandReceipt };
+}
+
 const NOW = "2026-09-29T12:00:00.000Z";
 function write(root, path, value) {
   const absolute = join(root, path);
@@ -122,8 +137,14 @@ function fixture({ physical = false, lowEndP95 = 32, adjustment = false } = {}) 
       const saveLoad = write(root, "raw/save-load.json", saveLoadReport);
       const longSession = write(root, "raw/long-session.json", longSessionReport);
       const interaction = write(root, "raw/interaction.json", interactionReport);
-      artifacts = [resource, saveLoad, longSession, interaction];
-      observations = { routeChangesStable: true, saveLoadsStable: true, longSessionStable: true, interactionRecoveryPassed: true, routeChanges: 6, saveLoads: saveLoadReport.observations.saveLoads, sessionMinutes: longSessionReport.observations.sessionMinutes, resourceGrowthEvidence: resource, saveLoadEvidence: saveLoad, longSessionEvidence: longSession, interactionRecoveryEvidence: interaction };
+      const complete = rendererCompleteFixture(COMMIT);
+      const cleanup = write(root,"raw/renderer-cleanup.json",complete.cleanup);
+      const capture = write(root,"raw/renderer-capture.json",complete.capture);
+      const command = write(root,"raw/renderer-command.json",complete.commandReceipt);
+      const png = write(root,"raw/renderer-final.png",complete.png);
+      const rendererCompleteness = { protocol:ZK682_RENDERER_COMPLETENESS_PROTOCOL,cleanup,capture,command,png };
+      artifacts = [resource, saveLoad, longSession, interaction, cleanup, capture, command, png];
+      observations = { routeChangesStable: true, saveLoadsStable: true, longSessionStable: true, interactionRecoveryPassed: true, routeChanges: 6, saveLoads: saveLoadReport.observations.saveLoads, sessionMinutes: longSessionReport.observations.sessionMinutes, rendererCompleteness, resourceGrowthEvidence: resource, saveLoadEvidence: saveLoad, longSessionEvidence: longSession, interactionRecoveryEvidence: interaction };
     } else {
       artifacts = [write(root, `raw/${gateId}.txt`, `${gateId}\n`)];
       observations = genericObservations(gateId, lowEndP95);
@@ -390,4 +411,135 @@ test("schema-v3 conservation evidence is consumed and recomputed without changin
     });
     assert(validateZk682EvidenceManifest(value.manifest, value.options).errors.some((e) => e.includes("legacy raw result")));
   } finally { cleanup(value); }
+});
+
+test("renderer completeness validates independent typed artifacts and bounded PNG decode", () => {
+  const valid = { candidateCommit: COMMIT, resource: resourceReport(), ...rendererCompleteFixture(COMMIT) };
+  assert.equal(inspectZk682RendererCompleteness(valid).passed,true);
+  for(const mutate of [
+    x=>{x.commandReceipt.exitCode=1;x.commandReceipt.passed=false;},
+    x=>{x.commandReceipt.candidateCommit="2".repeat(40);},
+    x=>{x.commandReceipt.command=["fixture"];},
+    x=>{x.cleanup.samples.pop();},x=>{x.cleanup.samples[0]=null;},x=>{x.cleanup=null;},x=>{x.cleanup.samples[0].cleanup=null;},x=>{x.commandReceipt=null;},x=>{x.cleanup.samples[0].cycle=1;},
+    x=>{x.cleanup.samples[0].cleanup.measureEntriesAfter=9;},
+    x=>{x.capture.before.x=-0.0005;},x=>{x.capture.after.connected=false;},
+    x=>{x.capture.clip.width=3;},x=>{x.capture.sha256="0".repeat(64);},
+    x=>{x.png=Buffer.from("not PNG");},
+    x=>{const image=new PNG({width:2,height:1});image.data.fill(255);x.png=PNG.sync.write(image);x.capture.bytes=x.png.length;x.capture.sha256=sha256(x.png);},
+    x=>{const image=new PNG({width:2,height:1});image.data.set([255,0,0,0,0,0,255,0]);x.png=PNG.sync.write(image);x.capture.bytes=x.png.length;x.capture.sha256=sha256(x.png);},
+    x=>{x.png=x.png.subarray(0,x.png.length-8);x.capture.bytes=x.png.length;x.capture.sha256=sha256(x.png);},
+    x=>{x.png=Buffer.alloc(12*1024*1024+1);x.capture.bytes=x.png.length;x.capture.sha256=sha256(x.png);},
+    x=>{x.png.writeUInt32BE(0xffffffff,16);x.capture.sha256=sha256(x.png);},
+    x=>{x.capture.extra=true;},x=>{x.commandReceipt.exitCode=null;},
+  ]) { const changed=structuredClone(valid);changed.png=Buffer.from(changed.png);mutate(changed);assert.equal(inspectZk682RendererCompleteness(changed).passed,false); }
+});
+
+test("renderer PNG unsupported encodings reject before pngjs decode", () => {
+  const decode = PNG.sync.read; let calls = 0;
+  try {
+    PNG.sync.read = () => { calls++; throw Error("decode must not run"); };
+    for (const [offset, value] of [[24,16],[25,3],[26,1],[27,1],[28,1]]) {
+      const evidence = { candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT) };
+      evidence.png[offset]=value; evidence.capture.sha256=sha256(evidence.png);
+      const checked=inspectZk682RendererCompleteness(evidence);
+      assert.equal(checked.passed,false);assert.ok(checked.errors.some(error=>error.includes("Unsupported PNG encoding")));
+    }
+    for (const transform of [
+      png => Buffer.concat([png.subarray(0,33),png.subarray(8,33),png.subarray(33)]),
+      png => Buffer.concat([png,Buffer.from([0])]),
+      png => png.subarray(0,png.length-12),
+    ]) {
+      const evidence={candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT)};
+      evidence.png=transform(evidence.png);evidence.capture.bytes=evidence.png.length;evidence.capture.sha256=sha256(evidence.png);
+      const checked=inspectZk682RendererCompleteness(evidence);assert.equal(checked.passed,false);assert.ok(checked.errors.some(error=>/duplicate IHDR|terminal|IEND/.test(error)));
+    }
+    assert.equal(calls,0);
+  } finally { PNG.sync.read=decode; }
+});
+
+test("renderer completeness supports canonical noninterlaced RGB PNG", () => {
+  const evidence={candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT)};
+  const image=new PNG({width:2,height:1});image.data.set([255,0,0,255,0,0,255,255]);
+  evidence.png=PNG.sync.write(image,{colorType:2});evidence.capture.bytes=evidence.png.length;evidence.capture.sha256=sha256(evidence.png);
+  assert.equal(evidence.png[25],2);assert.equal(inspectZk682RendererCompleteness(evidence).passed,true);
+});
+
+test('renderer completeness admits strict legacy and public CDP methods with unchanged seven-field receipts',()=>{for(const method of ['public-page-screenshot-canvas-viewport-clip-v1','public-cdp-page-captureScreenshot-canvas-viewport-clip-v1']){const evidence={candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT)};evidence.capture.method=method;assert.equal(inspectZk682RendererCompleteness(evidence).passed,true);assert.equal(Object.keys(evidence.capture).length,7);}});
+test('renderer public CDP completeness rejects unknown methods and conjunctive artifact defects',()=>{const make=()=>{const value={candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT)};value.capture.method='public-cdp-page-captureScreenshot-canvas-viewport-clip-v1';return value;};for(const mutate of [e=>{e.capture.method='public-cdp-page-captureScreenshot-canvas-viewport-clip-v2';},e=>{e.capture.method='public-cdp-page-capturescreenshot-canvas-viewport-clip-v1';},e=>{e.capture.method=undefined;},e=>{e.capture.extra='not strict';},e=>{e.png=undefined;},e=>{e.capture.sha256='0'.repeat(64);},e=>{e.capture.clip.width+=1;},e=>{e.capture.after.current=false;},e=>{e.capture.after.dpr=2;},e=>{e.commandReceipt.exitCode=1;e.commandReceipt.passed=false;},e=>{e.commandReceipt.candidateCommit='f'.repeat(40);},e=>{e.resource.samples.pop();},e=>{e.cleanup.samples.pop();}]){const evidence=make();mutate(evidence);assert.equal(inspectZk682RendererCompleteness(evidence).passed,false);}});
+test('renderer consumer validates actual canonical helper publication and strict new receipt',async()=>{
+  const {captureVisibleCanvas}=await import('./zk682-public-canvas-capture.mjs'),evidence={candidateCommit:COMMIT,resource:resourceReport(),...rendererCompleteFixture(COMMIT)},root=mkdtempSync(join(tmpdir(),'zk682-cdp-consumer-')),output=join(root,'final.png');
+  // Synthetic public-CDP transport; execute the actual serialized callbacks in one realm.
+  const expectedState={...evidence.capture.before},realm=createContext({});
+  runInContext(`
+    class HTMLCanvasElement {
+      constructor(){this.isConnected=true;this.tagName='CANVAS';this.width=2;this.height=1;this.clientWidth=2;this.clientHeight=1;}
+      getBoundingClientRect(){return {x:0,y:0,left:0,top:0,right:2,bottom:1,width:2,height:1};}
+      getClientRects(){return [this.getBoundingClientRect()];}
+    }
+    const canvas=new HTMLCanvasElement();
+    const document={querySelectorAll(selector){if(selector!=='.cc-pixi-stage canvas')throw Error('unexpected selector');return [canvas];},querySelector(selector){if(selector!=='.cc-pixi-stage canvas')throw Error('unexpected selector');return canvas;},documentElement:{clientWidth:1280,clientHeight:720}};
+    canvas.ownerDocument=document;
+    Object.assign(globalThis,{HTMLCanvasElement,document,fixtureCanvas:canvas,innerWidth:1280,innerHeight:720,devicePixelRatio:1,visualViewport:{scale:1},getComputedStyle:()=>({display:'block',visibility:'visible',opacity:'1',contentVisibility:'visible'})});
+    globalThis.window=globalThis;document.defaultView=globalThis;
+  `,realm,{timeout:1000});
+  const rootFrame='consumer-root-frame',uniqueContext='consumer-root-default-unique',objectId='consumer-owned-canvas-envelope',calls=[];
+  let envelope=null,stateDeclaration=null,stateCalls=0,acquisitions=0,sessionCreations=0,releases=0,detaches=0,screenshots=0;
+  const assertOwnedEnvelope=()=>{
+    assert.equal(Object.getPrototypeOf(envelope),null);
+    assert.deepEqual(Reflect.ownKeys(envelope),['node']);
+    const descriptor=Object.getOwnPropertyDescriptor(envelope,'node');
+    assert.ok(Object.hasOwn(descriptor,'value'));assert.equal(descriptor.enumerable,true);assert.equal(descriptor.writable,false);assert.equal(descriptor.configurable,false);
+    assert.equal(descriptor.value,realm.fixtureCanvas);assert.equal(descriptor.value.ownerDocument,realm.document);
+  };
+  class PublicSession extends EventEmitter {
+    async send(method,parameters){
+      assert.equal(detaches,0,'no use of detached owned session');calls.push(method);
+      switch(method){
+        case 'Page.getFrameTree':return {frameTree:{frame:{id:rootFrame}}};
+        case 'Runtime.enable':
+          this.emit('Runtime.executionContextCreated',{context:{id:17,uniqueId:uniqueContext,origin:'https://consumer.fixture.invalid',name:'',auxData:{frameId:rootFrame,isDefault:true,type:'default'}}});
+          return {};
+        case 'Runtime.evaluate':{
+          acquisitions++;assert.equal(acquisitions,1);assert.equal(parameters.uniqueContextId,uniqueContext);
+          assert.deepEqual(Object.keys(parameters).sort(),['awaitPromise','expression','generatePreview','returnByValue','uniqueContextId','userGesture']);
+          assert.equal(parameters.returnByValue,false);assert.equal(parameters.generatePreview,false);assert.equal(parameters.awaitPromise,true);assert.equal(parameters.userGesture,true);assert.equal(typeof parameters.expression,'string');
+          envelope=await runInContext(parameters.expression,realm,{timeout:1000});assertOwnedEnvelope();realm.ownedEnvelope=envelope;
+          return {result:{type:'object',objectId}};
+        }
+        case 'Runtime.callFunctionOn':{
+          assert.equal(parameters.objectId,objectId);assertOwnedEnvelope();assert.equal(realm.ownedEnvelope,envelope);
+          assert.deepEqual(Object.keys(parameters).sort(),['arguments','awaitPromise','functionDeclaration','generatePreview','objectId','returnByValue','userGesture']);
+          assert.deepEqual(parameters.arguments,[]);assert.equal(parameters.returnByValue,true);assert.equal(parameters.generatePreview,false);assert.equal(parameters.awaitPromise,true);assert.equal(parameters.userGesture,true);
+          if(stateDeclaration===null)stateDeclaration=parameters.functionDeclaration;else assert.equal(parameters.functionDeclaration,stateDeclaration,'B and D execute identical state callback on exact receiver');
+          stateCalls++;assert.ok(stateCalls<=2);assert.equal(screenshots,stateCalls-1,'B precedes screenshot and D follows it');
+          const value=structuredClone(await runInContext('('+parameters.functionDeclaration+').call(globalThis.ownedEnvelope)',realm,{timeout:1000}));
+          assert.equal(value.length,15);assert.equal(value[0],'zk682-canvas-state-tags-v1');assert.deepEqual(value.slice(1).map(row=>row[0]),['b','b','b','s',...Array(10).fill('n')]);
+          return {result:{type:'object',subtype:'array',value}};
+        }
+        case 'Page.captureScreenshot':
+          assert.equal(stateCalls,1);assertOwnedEnvelope();screenshots++;assert.equal(screenshots,1);
+          return {data:evidence.png.toString('base64')};
+        case 'Runtime.releaseObject':
+          assert.deepEqual(parameters,{objectId});assertOwnedEnvelope();releases++;assert.equal(releases,1);assert.equal(stateCalls,2);
+          return {};
+        default:assert.fail('unexpected public CDP command '+method);
+      }
+    }
+    async detach(){assert.equal(releases,1,'exact release settles before own detach');detaches++;assert.equal(detaches,1);calls.push('detach');}
+  }
+  const session=new PublicSession(),page={
+    locator:()=>assert.fail('legacy locator transport forbidden'),
+    evaluateHandle:()=>assert.fail('legacy JSHandle transport forbidden'),
+    context:()=>({newCDPSession:async target=>{assert.equal(target,page);sessionCreations++;assert.equal(sessionCreations,1);calls.push('newCDPSession');return session;}}),
+  };
+  try{
+    evidence.capture=await captureVisibleCanvas(page,output);evidence.png=readFileSync(output);
+    assert.deepEqual({acquisitions,stateCalls,sessionCreations,screenshots,releases,detaches},{acquisitions:1,stateCalls:2,sessionCreations:1,screenshots:1,releases:1,detaches:1});
+    assert.deepEqual(calls,['newCDPSession','Page.getFrameTree','Runtime.enable','Runtime.evaluate','Runtime.callFunctionOn','Page.captureScreenshot','Runtime.callFunctionOn','Runtime.releaseObject','detach']);
+    assert.equal(session.eventNames().length,0,'owned context listeners removed after cleanup');assert.deepEqual(evidence.capture.before,expectedState);assert.deepEqual(evidence.capture.after,expectedState);
+    assert.equal(evidence.capture.method,'public-cdp-page-captureScreenshot-canvas-viewport-clip-v1');
+    assert.equal(inspectZk682RendererCompleteness(evidence).passed,true);
+    evidence.commandReceipt.exitCode=1;evidence.commandReceipt.passed=false;
+    assert.equal(inspectZk682RendererCompleteness(evidence).passed,false);
+  }finally{rmSync(root,{recursive:true,force:true});}
 });
