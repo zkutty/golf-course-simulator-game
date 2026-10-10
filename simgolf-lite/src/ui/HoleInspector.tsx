@@ -5,6 +5,8 @@ import { computeHoleTerrainStats, type TerrainComposition } from "../game/eval/t
 import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
 import type { ReactNode } from "react";
+import type { MessageKey } from "../i18n/catalog";
+import "./HoleInspector.css";
 import { getParSetting, getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS, validateHoleCourseSetup } from "../game/models/courseSetup";
 import { analyzePinFairness } from "../game/greens/pinFairness";
 
@@ -32,23 +34,23 @@ interface HoleInspectorProps {
 
 function MarkerRow(props: { id: string; label: string; placed: boolean; onPlace: () => void; onRemove: () => void }) {
   const action = translateCurrent(props.placed ? "courseSetup.move" : "courseSetup.place");
-  return <div style={{ display: "grid", gridTemplateColumns: "minmax(112px,1fr) auto", gap: 8, alignItems: "center" }}>
+  return <div className="cc-hole-marker-row">
     <span style={{ minWidth: 0 }}>
-      <strong style={{ display: "block", fontSize: 11 }}>{props.label}</strong>
-      <small style={{ display: "block", marginTop: 1, color: props.placed ? "#3f6d35" : "#746b5c" }}>
+      <strong style={{ display: "block", fontSize: "0.6875rem" }}>{props.label}</strong>
+      <small style={{ display: "block", marginTop: 1, color: props.placed ? "#305429" : "#62594b" }}>
         {translateCurrent(props.placed ? "courseSetup.placed" : "courseSetup.notPlaced")}
       </small>
     </span>
-    <span style={{ display: "flex", gap: 4 }}>
+    <span className="cc-hole-marker-actions">
       <button
         data-testid={`place-${props.id}`}
         aria-label={translateCurrent("courseSetup.markerActionAria", { action, marker: props.label })}
         onClick={props.onPlace}
-        style={{ minWidth: 52, fontSize: 10 }}
+        style={{ minWidth: 52, fontSize: "0.625rem" }}
       >
         {action}
       </button>
-      {props.placed && <button aria-label={translateCurrent("courseSetup.remove", { marker: props.label })} onClick={props.onRemove} style={{ fontSize: 10 }}>×</button>}
+      {props.placed && <button aria-label={translateCurrent("courseSetup.remove", { marker: props.label })} onClick={props.onRemove} style={{ fontSize: "0.625rem" }}>×</button>}
     </span>
   </div>;
 }
@@ -112,6 +114,8 @@ export function HoleInspector({
   return (
     <div
       className="cc-tycoon-panel cc-hole-inspector"
+      role="region"
+      aria-label={`${translateCurrent("auto.ui.holeinspector.hole")}${holeIndex + 1}`}
       style={{
         display: "flex",
         flexDirection: "column",
@@ -121,19 +125,19 @@ export function HoleInspector({
         borderRadius: 8,
         overflowY: "auto",
         fontFamily: "var(--cc-font-body)",
-        fontSize: 13,
+        fontSize: "0.8125rem",
         color: "#333",
       }}
     >
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: "#1a1a1a" }}><T id="auto.ui.holeinspector.hole" />{holeIndex + 1}</h2>
+        <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 600, color: "#1a1a1a" }}><T id="auto.ui.holeinspector.hole" />{holeIndex + 1}</h2>
         {onFitHole && (
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             <button
               onClick={() => onFitHole("fit")}
               style={{
                 padding: "6px 10px",
-                fontSize: 11,
+                fontSize: "0.6875rem",
                 borderRadius: 4,
                 border: "1px solid #ddd",
                 background: "#fff",
@@ -147,7 +151,7 @@ export function HoleInspector({
               onClick={() => onFitHole("tee")}
               style={{
                 padding: "6px 10px",
-                fontSize: 11,
+                fontSize: "0.6875rem",
                 borderRadius: 4,
                 border: "1px solid #ddd",
                 background: "#fff",
@@ -160,7 +164,7 @@ export function HoleInspector({
               onClick={() => onFitHole("landing")}
               style={{
                 padding: "6px 10px",
-                fontSize: 11,
+                fontSize: "0.6875rem",
                 borderRadius: 4,
                 border: "1px solid #ddd",
                 background: "#fff",
@@ -173,7 +177,7 @@ export function HoleInspector({
               onClick={() => onFitHole("green")}
               style={{
                 padding: "6px 10px",
-                fontSize: 11,
+                fontSize: "0.6875rem",
                 borderRadius: 4,
                 border: "1px solid #ddd",
                 background: "#fff",
@@ -187,7 +191,7 @@ export function HoleInspector({
                 onClick={onFlyover}
                 style={{
                   padding: "6px 10px",
-                  fontSize: 11,
+                  fontSize: "0.6875rem",
                   borderRadius: 4,
                   border: "1px solid #ddd",
                   background: "#fff",
@@ -205,20 +209,25 @@ export function HoleInspector({
       {thumbnail}
 
       <section aria-label={translateCurrent("courseSetup.region")} style={{ margin: "12px 0", padding: 10, background: "rgba(255,255,255,.72)", border: "1px solid #c9b999", borderRadius: 7 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <div className="cc-hole-setup-header">
           <strong>{translateCurrent("courseSetup.title")}</strong>
-          <label style={{ fontSize: 11 }}>{translateCurrent("courseSetup.dailyPin")}{" "}<select aria-label={translateCurrent("courseSetup.activePin")} value={course.activePinRotation ?? "A"} onChange={(event) => onSetActivePinRotation?.(event.target.value as PinRotation)}>{PIN_ROTATIONS.map((rotation) => <option key={rotation}>{rotation}</option>)}</select></label>
+          <label style={{ fontSize: "0.6875rem" }}>{translateCurrent("courseSetup.dailyPin")}{" "}<select aria-label={translateCurrent("courseSetup.activePin")} value={course.activePinRotation ?? "A"} onChange={(event) => onSetActivePinRotation?.(event.target.value as PinRotation)}>{PIN_ROTATIONS.map((rotation) => <option key={rotation}>{rotation}</option>)}</select></label>
         </div>
         <div style={{ display: "grid", gap: 5 }}>
           {TEE_SETS.map((teeSet) => {
             const point = getTeeBox(hole, teeSet);
             const selected = teeSet === selectedTeeSet;
-            return <div key={`${teeSet}-${point?.x ?? "x"}-${point?.y ?? "y"}`} data-testid={`tee-row-${teeSet}`} style={{ padding: 6, borderRadius: 6, border: selected ? "2px solid #7b5429" : "1px solid #d7c8aa", background: selected ? "#fff7e6" : "rgba(255,255,255,.55)" }} onClick={() => onSelectTeeSet?.(teeSet)}>
-              <MarkerRow id={`${teeSet}-tee`} label={`${teeSet[0].toUpperCase() + teeSet.slice(1)} ${translateCurrent("courseSetup.tee")}`} placed={!!point} onPlace={() => onBeginTeePlacement?.(teeSet)} onRemove={() => onRemoveTeeBox?.(teeSet)} />
-              {selected && <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, fontSize: 11 }}>
+            const teeLabel = translateCurrent(`playerPro.play.tee.${teeSet}`);
+            return <div key={`${teeSet}-${point?.x ?? "x"}-${point?.y ?? "y"}`} data-testid={`tee-row-${teeSet}`} className="cc-hole-tee-row" style={{ padding: 6, borderRadius: 6, border: selected ? "2px solid #7b5429" : "1px solid #d7c8aa", background: selected ? "#fff7e6" : "rgba(255,255,255,.55)" }} onClick={() => onSelectTeeSet?.(teeSet)}>
+              <button type="button" className="cc-hole-select-tee" aria-label={translateCurrent("holeInspector.selectTee", { tee: teeLabel })} aria-pressed={selected} onClick={(event) => { event.stopPropagation(); onSelectTeeSet?.(teeSet); }}>
+                {teeLabel} {translateCurrent("courseSetup.tee")}
+                {selected && <span className="cc-hole-selected-tee">✓ {translateCurrent("holeInspector.selectedTee")}</span>}
+              </button>
+              <MarkerRow id={`${teeSet}-tee`} label={`${teeLabel} ${translateCurrent("courseSetup.tee")}`} placed={!!point} onPlace={() => onBeginTeePlacement?.(teeSet)} onRemove={() => onRemoveTeeBox?.(teeSet)} />
+              {selected && <div className="cc-hole-tee-summary">
                 <span>{point ? translateCurrent("courseSetup.routeSummary", { yards: Math.round(effectiveDistanceYards), status: translateCurrent(isPlayable ? "courseSetup.playable" : "courseSetup.routeBlocked") }) : translateCurrent("courseSetup.notErected")}</span>
                 <span style={{ marginLeft: "auto" }}>{translateCurrent("courseSetup.par")}</span>
-                <select data-testid={`tee-par-${teeSet}`} aria-label={translateCurrent("courseSetup.teeParAria", { tee: teeSet })} value={getParSetting(hole, teeSet).mode === "AUTO" ? "AUTO" : String((getParSetting(hole, teeSet) as Extract<ParSetting, { mode: "MANUAL" }>).par)} onChange={(event) => {
+                <select data-testid={`tee-par-${teeSet}`} aria-label={translateCurrent("courseSetup.teeParAria", { tee: teeLabel })} value={getParSetting(hole, teeSet).mode === "AUTO" ? "AUTO" : String((getParSetting(hole, teeSet) as Extract<ParSetting, { mode: "MANUAL" }>).par)} onChange={(event) => {
                   const value = event.target.value;
                   onSetTeePar?.(teeSet, value === "AUTO" ? { mode: "AUTO" } : { mode: "MANUAL", par: Number(value) as 3 | 4 | 5 });
                 }}>
@@ -233,12 +242,12 @@ export function HoleInspector({
             const fairness = point ? analyzePinFairness(course, hole, point, pinRotation) : null;
             return <div key={`${pinRotation}-${point?.x ?? "x"}-${point?.y ?? "y"}`} data-testid={`pin-fairness-${pinRotation}`} style={{ padding: 6, border: "1px solid #d7c8aa", borderRadius: 6, background: "rgba(255,255,255,.55)" }}>
               <MarkerRow id={`pin-${pinRotation}`} label={translateCurrent("courseSetup.pin", { rotation: pinRotation })} placed={!!point} onPlace={() => onBeginPinPlacement?.(pinRotation)} onRemove={() => onRemovePinPosition?.(pinRotation)} />
-              {fairness && <div style={{ marginTop: 5, fontSize: 10, color: fairness.legal ? "#4c574c" : "#8b2e1b" }}>
+              {fairness && <div style={{ marginTop: 5, fontSize: "0.625rem", color: fairness.legal ? "#3e4b3e" : "#8b2e1b" }}>
                 <strong>{fairness.legal ? translateCurrent("courseSetup.tournamentReady", { percent: Math.round(fairness.tournamentReadiness * 100) }) : translateCurrent("courseSetup.invalidCup")}</strong>
                 {fairness.legal && <div>{translateCurrent("courseSetup.pinDifficulty", { difficulty: Math.round(fairness.difficulty * 100), edge: fairness.edgeClearanceTiles.toFixed(1) })}</div>}
-                {fairness.legal && <div data-testid={`pin-cohorts-${pinRotation}`} style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4, marginTop: 4 }}>
-                  {(["scratch", "bogey", "casual"] as const).map((cohort) => <span key={cohort} title={translateCurrent("courseSetup.pinCohortTitle", { cohort, putts: fairness.cohorts[cohort].expectedPutts.toFixed(2), pace: `${fairness.cohorts[cohort].paceMinutesDelta >= 0 ? "+" : ""}${fairness.cohorts[cohort].paceMinutesDelta.toFixed(2)}`, satisfaction: fairness.cohorts[cohort].satisfactionDelta.toFixed(1), complaint: Math.round(fairness.cohorts[cohort].complaintRisk * 100) })}>
-                    <b style={{ display: "block", textTransform: "capitalize" }}>{cohort}</b>{translateCurrent("courseSetup.pinCohortCompact", { putts: fairness.cohorts[cohort].expectedPutts.toFixed(2), satisfaction: fairness.cohorts[cohort].satisfactionDelta.toFixed(1) })}
+                {fairness.legal && <div data-testid={`pin-cohorts-${pinRotation}`} className="cc-hole-pin-cohorts">
+                  {(["scratch", "bogey", "casual"] as const).map((cohort) => <span key={cohort} title={translateCurrent("courseSetup.pinCohortTitle", { cohort: translateCurrent(cohort === "casual" ? "architecture.green.cohort.casual" : `holeInspector.cohort.${cohort}`), putts: fairness.cohorts[cohort].expectedPutts.toFixed(2), pace: `${fairness.cohorts[cohort].paceMinutesDelta >= 0 ? "+" : ""}${fairness.cohorts[cohort].paceMinutesDelta.toFixed(2)}`, satisfaction: fairness.cohorts[cohort].satisfactionDelta.toFixed(1), complaint: Math.round(fairness.cohorts[cohort].complaintRisk * 100) })}>
+                    <b style={{ display: "block", textTransform: "capitalize" }}>{translateCurrent(cohort === "casual" ? "architecture.green.cohort.casual" : `holeInspector.cohort.${cohort}`)}</b>{translateCurrent("courseSetup.pinCohortCompact", { putts: fairness.cohorts[cohort].expectedPutts.toFixed(2), satisfaction: fairness.cohorts[cohort].satisfactionDelta.toFixed(1) })}
                   </span>)}
                 </div>}
                 {[...fairness.blockingReasons, ...fairness.warnings.map((warning) => warning.message)].map((message) => <div key={message} role="alert" style={{ marginTop: 3, color: "#8b2e1b" }}>{message}</div>)}
@@ -246,18 +255,19 @@ export function HoleInspector({
             </div>;
           })}
         </div>
-        {setupIssues.length > 0 && <ul style={{ margin: "8px 0 0", paddingLeft: 18, color: "#8b2e1b", fontSize: 11 }}>{setupIssues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>}
-        <small style={{ display: "block", marginTop: 7, opacity: .68 }}>{translateCurrent("courseSetup.help")}</small>
+        {setupIssues.length > 0 && <ul style={{ margin: "8px 0 0", paddingLeft: 18, color: "#8b2e1b", fontSize: "0.6875rem" }}>{setupIssues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>}
+        <small style={{ display: "block", marginTop: 7, color: "#5b5347" }}>{translateCurrent("courseSetup.help")}</small>
       </section>
 
       {/* Hole Index / Stroke Index */}
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}><T id="auto.ui.holeinspector.hole.index.stroke.index" /></div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 13 }}><T id="auto.ui.holeinspector.hole" />{holeIndex + 1}</span>
+        <div style={{ fontSize: "0.6875rem", color: "#5b5347", marginBottom: 4 }}><T id="auto.ui.holeinspector.hole.index.stroke.index" /></div>
+        <div className="cc-hole-stroke-index">
+          <span style={{ fontSize: "0.8125rem" }}><T id="auto.ui.holeinspector.hole" />{holeIndex + 1}</span>
           {onSetHoleIndex && (
             <input
               type="number"
+              aria-label={translateCurrent("auto.ui.holeinspector.hole.index.stroke.index")}
               min={1}
               max={18}
               value={hole.holeIndex ?? holeIndex + 1}
@@ -271,13 +281,13 @@ export function HoleInspector({
               style={{
                 width: 60,
                 padding: "4px 6px",
-                fontSize: 12,
+                fontSize: "0.75rem",
                 border: "1px solid #ddd",
                 borderRadius: 4,
               }}
             />
           )}
-          <span style={{ fontSize: 11, color: "#888" }}>
+          <span style={{ fontSize: "0.6875rem", color: "#62594b" }}>
             <T id="auto.ui.holeinspector.defaults.to.array.position" /></span>
         </div>
       </div>
@@ -292,50 +302,50 @@ export function HoleInspector({
           border: "1px solid rgba(0, 0, 0, 0.1)",
         }}
       >
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-          <div data-tooltip="The recommended par calculated from effective playing distance.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.auto.par" /></div>
-            <div style={{ fontSize: 18, fontWeight: 600 }}>{autoPar}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginBottom: 8 }}>
+          <div data-tooltip={translateCurrent("holeInspector.tooltip.autoPar")}>
+            <div style={{ fontSize: "0.6875rem", color: "#5b5347", marginBottom: 2 }}><T id="auto.ui.holeinspector.auto.par" /></div>
+            <div style={{ fontSize: "1.125rem", fontWeight: 600 }}>{autoPar}</div>
           </div>
-          <div data-tooltip="Playing length after route shape and elevation adjustments; this drives automatic par.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.effective.distance" /></div>
-            <div style={{ fontSize: 18, fontWeight: 600 }}>{effectiveDistanceYards.toFixed(0)} <T id="auto.ui.holeinspector.yds" /></div>
-          </div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-          <div data-tooltip="Direct tee-to-green distance without route or elevation adjustments.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.straight.distance" /></div>
-            <div style={{ fontSize: 14, fontWeight: 500 }}>{straightDistYards.toFixed(0)} <T id="auto.ui.holeinspector.yds" /></div>
-          </div>
-          <div data-tooltip="Net height change from tee to green; elevation data is not yet available in this summary.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.elevation.change" /></div>
-            <div style={{ fontSize: 14, fontWeight: 500, color: "#888" }}>—</div>
+          <div data-tooltip={translateCurrent("holeInspector.tooltip.effectiveDistance")}>
+            <div style={{ fontSize: "0.6875rem", color: "#5b5347", marginBottom: 2 }}><T id="auto.ui.holeinspector.effective.distance" /></div>
+            <div style={{ fontSize: "1.125rem", fontWeight: 600 }}>{effectiveDistanceYards.toFixed(0)} <T id="auto.ui.holeinspector.yds" /></div>
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <div data-tooltip="Estimated shots a scratch golfer needs to reach the green.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.scratch.shots" /></div>
-            <div style={{ fontSize: 14, fontWeight: 500 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginBottom: 8 }}>
+          <div data-tooltip={translateCurrent("holeInspector.tooltip.straightDistance")}>
+            <div style={{ fontSize: "0.6875rem", color: "#5b5347", marginBottom: 2 }}><T id="auto.ui.holeinspector.straight.distance" /></div>
+            <div style={{ fontSize: "0.875rem", fontWeight: 500 }}>{straightDistYards.toFixed(0)} <T id="auto.ui.holeinspector.yds" /></div>
+          </div>
+          <div data-tooltip={translateCurrent("holeInspector.tooltip.elevation")}>
+            <div style={{ fontSize: "0.6875rem", color: "#5b5347", marginBottom: 2 }}><T id="auto.ui.holeinspector.elevation.change" /></div>
+            <div style={{ fontSize: "0.875rem", fontWeight: 500, color: "#62594b" }}>—</div>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+          <div data-tooltip={translateCurrent("holeInspector.tooltip.scratchShots")}>
+            <div style={{ fontSize: "0.6875rem", color: "#5b5347", marginBottom: 2 }}><T id="auto.ui.holeinspector.scratch.shots" /></div>
+            <div style={{ fontSize: "0.875rem", fontWeight: 500 }}>
               {scratchShotsToGreen === Infinity ? "—" : scratchShotsToGreen.toFixed(1)}
             </div>
           </div>
-          <div data-tooltip="Estimated shots a bogey golfer needs to reach the green.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.bogey.shots" /></div>
-            <div style={{ fontSize: 14, fontWeight: 500 }}>
+          <div data-tooltip={translateCurrent("holeInspector.tooltip.bogeyShots")}>
+            <div style={{ fontSize: "0.6875rem", color: "#5b5347", marginBottom: 2 }}><T id="auto.ui.holeinspector.bogey.shots" /></div>
+            <div style={{ fontSize: "0.875rem", fontWeight: 500 }}>
               {bogeyShotsToGreen === Infinity ? "—" : bogeyShotsToGreen.toFixed(1)}
             </div>
           </div>
         </div>
         {autoPar === 5 && (
           <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(0,0,0,0.1)" }}>
-            <div style={{ fontSize: 12, color: reachableInTwo ? "#2d7a2d" : "#888" }}>
-              {reachableInTwo ? "✓ Reachable in two" : "Not reachable in two"}
+            <div style={{ fontSize: "0.75rem", color: reachableInTwo ? "#245f24" : "#62594b" }}>
+              {reachableInTwo ? "✓ " : ""}{translateCurrent(reachableInTwo ? "holeInspector.reachableInTwo" : "holeInspector.notReachableInTwo")}
             </div>
           </div>
         )}
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(0,0,0,0.1)" }}>
-          <div style={{ fontSize: 12, fontWeight: 500, color: isPlayable ? "#2d7a2d" : "#c33" }}>
-            {isPlayable ? "✓ Playable" : "✗ Not Playable"}
+          <div style={{ fontSize: "0.75rem", fontWeight: 500, color: isPlayable ? "#245f24" : "#962626" }}>
+            {isPlayable ? "✓ " : "✗ "}{translateCurrent(isPlayable ? "courseSetup.playable" : "holeInspector.notPlayable")}
           </div>
         </div>
       </div>
@@ -350,21 +360,21 @@ export function HoleInspector({
           border: "1px solid rgba(0, 0, 0, 0.1)",
         }}
       >
-        <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 600 }}><T id="auto.ui.holeinspector.terrain.composition" /></h3>
+        <h3 style={{ margin: "0 0 12px 0", fontSize: "0.875rem", fontWeight: 600 }}><T id="auto.ui.holeinspector.terrain.composition" /></h3>
         
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 6 }}><T id="auto.ui.holeinspector.total.hole.area" /></div>
+          <div style={{ fontSize: "0.6875rem", fontWeight: 500, color: "#5b5347", marginBottom: 6 }}><T id="auto.ui.holeinspector.total.hole.area" /></div>
           <TerrainPercentages composition={terrainStats.total} />
         </div>
         
         <div>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 6 }}><T id="auto.ui.holeinspector.corridor.area" /></div>
+          <div style={{ fontSize: "0.6875rem", fontWeight: 500, color: "#5b5347", marginBottom: 6 }}><T id="auto.ui.holeinspector.corridor.area" /></div>
           <TerrainPercentages composition={terrainStats.corridor} />
         </div>
       </div>
 
       {actionableFairwayIssue && <div data-tutorial-target="fix-overlay" style={{ marginBottom: 16 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, userSelect: "none" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "0.8125rem", userSelect: "none" }}>
           <input data-testid="fix-overlay-toggle" type="checkbox" checked={showFixOverlay} onChange={(e) => setShowFixOverlay(e.target.checked)} style={{ cursor: "pointer" }} />
           <span><T id="auto.ui.holeinspector.show.fix.overlay" /></span>
         </label>
@@ -377,8 +387,8 @@ export function HoleInspector({
             padding: 12,
             backgroundColor: "rgba(45, 122, 45, 0.1)",
             borderRadius: 6,
-            color: "#2d7a2d",
-            fontSize: 13,
+            color: "#245f24",
+            fontSize: "0.8125rem",
             textAlign: "center",
           }}
         >
@@ -390,15 +400,15 @@ export function HoleInspector({
           <h3
             style={{
               margin: "0 0 8px 0",
-              fontSize: 14,
+              fontSize: "0.875rem",
               fontWeight: 600,
-              color: "#c33",
+              color: "#962626",
               display: "flex",
               alignItems: "center",
               gap: 6,
             }}
           >
-            <span style={{ fontSize: 16 }}>●</span> <T id="auto.ui.holeinspector.critical.issues" /></h3>
+            <span style={{ fontSize: "1.0rem" }}>●</span> <T id="auto.ui.holeinspector.critical.issues" /></h3>
           {groupedIssues.bad.map((issue, idx) => (
             <IssueCard key={idx} issue={issue} onAction={handleIssueAction} />
           ))}
@@ -410,15 +420,15 @@ export function HoleInspector({
           <h3
             style={{
               margin: "0 0 8px 0",
-              fontSize: 14,
+              fontSize: "0.875rem",
               fontWeight: 600,
-              color: "#d67d00",
+              color: "#8a4b00",
               display: "flex",
               alignItems: "center",
               gap: 6,
             }}
           >
-            <span style={{ fontSize: 16 }}>●</span> <T id="auto.ui.holeinspector.warnings" /></h3>
+            <span style={{ fontSize: "1.0rem" }}>●</span> <T id="auto.ui.holeinspector.warnings" /></h3>
           {groupedIssues.warn.map((issue, idx) => (
             <IssueCard key={idx} issue={issue} onAction={handleIssueAction} />
           ))}
@@ -430,15 +440,15 @@ export function HoleInspector({
           <h3
             style={{
               margin: "0 0 8px 0",
-              fontSize: 14,
+              fontSize: "0.875rem",
               fontWeight: 600,
-              color: "#2b7bbb",
+              color: "#235f91",
               display: "flex",
               alignItems: "center",
               gap: 6,
             }}
           >
-            <span style={{ fontSize: 16 }}>●</span> <T id="auto.ui.holeinspector.notes" /></h3>
+            <span style={{ fontSize: "1.0rem" }}>●</span> <T id="auto.ui.holeinspector.notes" /></h3>
           {groupedIssues.info.map((issue, idx) => (
             <IssueCard key={idx} issue={issue} onAction={handleIssueAction} />
           ))}
@@ -449,21 +459,21 @@ export function HoleInspector({
 }
 
 function TerrainPercentages({ composition }: { composition: TerrainComposition }) {
-  const terrainTypes: Array<{ key: keyof TerrainComposition; label: string }> = [
-    { key: "fairway", label: "Fairway" },
-    { key: "rough", label: "Rough" },
-    { key: "deep_rough", label: "Deep Rough" },
-    { key: "sand", label: "Sand" },
-    { key: "waste_area", label: "Waste Area" },
-    { key: "water", label: "Water" },
-    { key: "wetland", label: "Wetland" },
-    { key: "green", label: "Green" },
-    { key: "tee", label: "Tee" },
-    { key: "path", label: "Path" },
+  const terrainTypes: Array<{ key: keyof TerrainComposition; label: MessageKey }> = [
+    { key: "fairway", label: "designDock.terrain.fairway" },
+    { key: "rough", label: "designDock.terrain.rough" },
+    { key: "deep_rough", label: "designDock.terrain.deepRough" },
+    { key: "sand", label: "designDock.terrain.sand" },
+    { key: "waste_area", label: "designDock.terrain.wasteArea" },
+    { key: "water", label: "designDock.terrain.water" },
+    { key: "wetland", label: "designDock.terrain.wetland" },
+    { key: "green", label: "designDock.terrain.green" },
+    { key: "tee", label: "designDock.terrain.tee" },
+    { key: "path", label: "designDock.terrain.path" },
   ];
 
   if (composition.total === 0) {
-    return <div style={{ fontSize: 12, color: "#888" }}><T id="auto.ui.holeinspector.no.area" /></div>;
+    return <div style={{ fontSize: "0.75rem", color: "#62594b" }}><T id="auto.ui.holeinspector.no.area" /></div>;
   }
 
   return (
@@ -473,9 +483,9 @@ function TerrainPercentages({ composition }: { composition: TerrainComposition }
         .map((t) => {
           const pct = (composition[t.key] / composition.total) * 100;
           return (
-            <div key={t.key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-              <div style={{ width: 80, textAlign: "left" }}>{t.label}:</div>
-              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+            <div key={t.key} className="cc-hole-terrain-row">
+              <div className="cc-hole-terrain-label">{translateCurrent(t.label)}:</div>
+              <div className="cc-hole-terrain-meter">
                 <div
                   style={{
                     flex: 1,
@@ -489,12 +499,12 @@ function TerrainPercentages({ composition }: { composition: TerrainComposition }
                     style={{
                       width: `${pct}%`,
                       height: "100%",
-                      backgroundColor: pct > 50 ? "#5dbb6a" : pct > 25 ? "#4fa64f" : "#888",
+                      backgroundColor: pct > 50 ? "#5dbb6a" : pct > 25 ? "#4fa64f" : "#62594b",
                       transition: "width 0.2s",
                     }}
                   />
                 </div>
-                <div style={{ width: 45, textAlign: "right", fontWeight: 500 }}>
+                <div className="cc-hole-terrain-value">
                   {pct.toFixed(1)}%
                 </div>
               </div>
@@ -502,9 +512,9 @@ function TerrainPercentages({ composition }: { composition: TerrainComposition }
           );
         })}
       {composition.other > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-          <div style={{ width: 80, textAlign: "left" }}><T id="auto.ui.holeinspector.other" /></div>
-          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+        <div className="cc-hole-terrain-row">
+          <div className="cc-hole-terrain-label"><T id="auto.ui.holeinspector.other" /></div>
+          <div className="cc-hole-terrain-meter">
             <div
               style={{
                 flex: 1,
@@ -522,7 +532,7 @@ function TerrainPercentages({ composition }: { composition: TerrainComposition }
                 }}
               />
             </div>
-            <div style={{ width: 45, textAlign: "right", fontWeight: 500 }}>
+            <div className="cc-hole-terrain-value">
               {((composition.other / composition.total) * 100).toFixed(1)}%
             </div>
           </div>
@@ -575,12 +585,12 @@ function IssueCard({ issue, onAction }: IssueCardProps) {
         border: `1px solid ${borderColor}`,
       }}
     >
-      <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 13 }}>{issue.title}</div>
-      <div style={{ fontSize: 12, color: "#555", marginBottom: 8, lineHeight: 1.4 }}>{issue.detail}</div>
+      <div style={{ fontWeight: 600, marginBottom: 4, fontSize: "0.8125rem" }}>{issue.title}</div>
+      <div style={{ fontSize: "0.75rem", color: "#555", marginBottom: 8, lineHeight: 1.4 }}>{issue.detail}</div>
       
       {/* Enhanced metadata display for FAIRWAY_CONTINUITY */}
       {isFairwayIssue && issue.metadata && (
-        <div style={{ marginBottom: 8, fontSize: 11, color: "#666" }}>
+        <div style={{ marginBottom: 8, fontSize: "0.6875rem", color: "#5b5347" }}>
           {issue.metadata.currentValue != null && issue.metadata.targetValue != null && (
             <div style={{ marginBottom: 4 }}>
               <T id="auto.ui.holeinspector.current" />{(issue.metadata.currentValue * 100).toFixed(1)}<T id="auto.ui.holeinspector.target" />{(issue.metadata.targetValue * 100).toFixed(0)}%
@@ -596,7 +606,7 @@ function IssueCard({ issue, onAction }: IssueCardProps) {
 
       {issue.suggestedFixes.length > 0 && (
         <div>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 4 }}><T id="auto.ui.holeinspector.suggested.fixes" /></div>
+          <div style={{ fontSize: "0.6875rem", fontWeight: 500, color: "#5b5347", marginBottom: 4 }}><T id="auto.ui.holeinspector.suggested.fixes" /></div>
           {isFairwayIssue && onAction ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {issue.suggestedFixes.map((fix, idx) => (
@@ -605,7 +615,7 @@ function IssueCard({ issue, onAction }: IssueCardProps) {
                   onClick={() => onAction(fix, issue.code)}
                   style={{
                     padding: "6px 10px",
-                    fontSize: 11,
+                    fontSize: "0.6875rem",
                     borderRadius: 4,
                     border: "1px solid #ddd",
                     background: "#fff",
@@ -619,7 +629,7 @@ function IssueCard({ issue, onAction }: IssueCardProps) {
               ))}
             </div>
           ) : (
-            <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12, color: "#555", lineHeight: 1.5 }}>
+            <ul style={{ margin: 0, paddingLeft: 20, fontSize: "0.75rem", color: "#555", lineHeight: 1.5 }}>
               {issue.suggestedFixes.map((fix, idx) => (
                 <li key={idx}>{fix}</li>
               ))}

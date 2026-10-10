@@ -1,0 +1,99 @@
+.cc-hole-inspector {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+}
+
+.cc-hole-inspector *,
+.cc-hole-inspector *::before,
+.cc-hole-inspector *::after {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.cc-hole-inspector > * {
+  flex-shrink: 0;
+}
+
+.cc-hole-inspector :is(button, input, select) {
+  max-width: 100%;
+  font-family: inherit;
+  font-size: .75rem;
+  line-height: 1.4;
+  color: #332c23;
+  background-color: #fff8df;
+}
+
+.cc-hole-inspector button {
+  padding: .375rem .5rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.cc-hole-inspector select {
+  padding: .25rem;
+}
+
+.cc-hole-inspector :is(button, input, select):focus-visible {
+  outline: 3px solid #1e4c70;
+  outline-offset: 2px;
+}
+
+.cc-hole-marker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .5rem;
+  align-items: center;
+}
+
+.cc-hole-marker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .375rem;
+}
+
+.cc-hole-setup-header,
+.cc-hole-stroke-index,
+.cc-hole-tee-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+
+.cc-hole-setup-header { margin-bottom: .5rem; }
+.cc-hole-tee-summary { margin-top: .375rem; font-size: .6875rem; }
+.cc-hole-tee-summary > span:first-child { flex: 1 1 100%; }
+.cc-hole-select-tee { width: 100%; text-align: left; margin-bottom: .5rem; }
+.cc-hole-selected-tee { display: block; font-weight: 700; }
+.cc-hole-inspector .cc-hole-select-tee[aria-pressed="true"] { background: #e7eedc; color: #263a24; }
+
+.cc-hole-pin-cohorts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 6rem), 1fr));
+  gap: .375rem;
+  margin-top: .25rem;
+}
+
+.cc-hole-terrain-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: .5rem;
+  font-size: .75rem;
+}
+
+.cc-hole-terrain-label { text-align: left; }
+.cc-hole-terrain-meter { display: flex; align-items: center; gap: .375rem; }
+.cc-hole-terrain-value { flex: 0 0 auto; text-align: right; font-weight: 500; }
+
+@media (max-width: 380px) {
+  .cc-hole-marker-row { grid-template-columns: minmax(0, 1fr); }
+  .cc-hole-marker-actions { justify-content: flex-start; }
+}

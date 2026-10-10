@@ -61,7 +61,9 @@ test("M23 tee sets, pin rotations, ratings, editor, and daily operations", async
   await expect(page.getByTestId("setup-placement-prompt").getByRole("alert")).toContainText("must sit on existing green terrain");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").editor?.setupPlacement)).toEqual({ kind: "pin", key: "C" });
   await page.screenshot({ path: "artifacts/zk-447-map-placement.png", fullPage: true });
-  await clickCourseTile(page, { x: 42, y: 20 });
+  // The reference green is elevation 3; projecting at the default elevation 1
+  // lands on a tile corner after elevation-aware picking and rounding.
+  await clickCourseTile(page, { x: 42, y: 20 }, 3);
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").course?.holeSetups?.[0]?.pinPositions?.C)).toEqual({ x: 42, y: 20 });
   await expect(page.getByTestId("setup-placement-prompt")).toHaveCount(0);
 
