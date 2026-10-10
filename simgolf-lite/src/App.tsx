@@ -1,3 +1,4 @@
+import { startupBegin, startupEnd, startupSpan } from "./utils/startupAttribution.mjs";
 import { CourseTextReportOwner } from "./app/courseTextReport";
 import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState, useCallback, type CSSProperties } from "react";
 import { formatCurrency } from "./i18n/format";
@@ -1848,6 +1849,7 @@ export default function App() {
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
     if (!isPerfFixture && !isM19Fixture && !isMacroLandformFixture && !isZk677TieredGreenFixture && !isZk1202Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isM53Fixture && !isZk689Fixture && !isZk775ArrivalFixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
+    const startupFixtureSpan = startupBegin(1);
     const m25SeedParam = fixtureParams.get("m25Seed");
     const parsedM25Seed = m25SeedParam == null ? Number.NaN : Number(m25SeedParam);
     const m25Seed = Number.isInteger(parsedM25Seed) ? parsedM25Seed | 0 : 250025;
@@ -1870,7 +1872,7 @@ export default function App() {
       : isM38Fixture
       ? createPlayerProReferenceCourse()
       : isM27Fixture
-      ? createM27ReleaseReferenceCourse(fixtureTheme)
+      ? startupSpan(2, () => createM27ReleaseReferenceCourse(fixtureTheme), startupFixtureSpan)
       : isM53Fixture
       ? createBiomeAuthoringReferenceCourse(fixtureTheme)
       : isM52Fixture
@@ -1913,7 +1915,7 @@ export default function App() {
     // newly created games. Otherwise the first management-only update adds
     // layout IDs, looks like a physical hole edit, and needlessly replans every
     // live golfer in the renderer stress scenes.
-    fixtureCourse = normalizeCourseLayouts(fixtureCourse);
+    fixtureCourse = startupSpan(3, () => normalizeCourseLayouts(fixtureCourse), startupFixtureSpan);
     const m52Bookmark = isM52Fixture
       ? biomeCameraBookmarks(fixtureCourse).find((bookmark) =>
         bookmark.view === m52View && bookmark.rotation === m52Rotation) ?? null
@@ -1922,6 +1924,7 @@ export default function App() {
         bookmark.view === "overview" && bookmark.rotation === m53Fixture.rotation) ?? null
       : null;
     setM52ReferenceCamera(m52Bookmark);
+    const startupWorldSpan = startupBegin(4, startupFixtureSpan);
     let fixtureWorld: World = {
       ...gameSession.getState().world,
       week: 1,
@@ -1955,6 +1958,7 @@ export default function App() {
       } : {}),
       ...(isPropertyFixture ? { enterprise: emptyPropertyEnterprise() } : {}),
     };
+    startupEnd(startupWorldSpan);
     if (m53Fixture) {
       const dayOfWeek = m53Fixture.absoluteDay % 7;
       const seasonal = createSeasonalState({
@@ -2081,7 +2085,7 @@ export default function App() {
       setPlayerShotAim(null);
       setFollowSelected(false);
     }
-    dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+    startupSpan(5, () => dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld }), startupFixtureSpan);
     if (isM23Fixture) {
       setActiveHoleIndex(0);
       setHoleEditMode("hole");
@@ -2109,12 +2113,12 @@ export default function App() {
         selectedGolferId: null,
       }));
     } else if (isPerfFixture || isM27Fixture) {
-      live.restoreSnapshot(snapshotLiveSimulation({
-        state: createRenderPerfLiveState(fixtureCourse, fixtureWorld),
+      startupSpan(7, (startupRestoreSpan) => live.restoreSnapshot(snapshotLiveSimulation({
+        state: startupSpan(6, () => createRenderPerfLiveState(fixtureCourse, fixtureWorld), startupRestoreSpan),
         pendingCash: 0,
         speed: isPerfMeasurement ? "paused" : "4x",
         selectedGolferId: null,
-      }));
+      })), startupFixtureSpan);
     } else if (isM38Fixture || isM30Fixture || isM47Fixture || isZk689Fixture) {
       live.restoreSnapshot(snapshotLiveSimulation({
         state: createLiveState(fixtureCourse, fixtureWorld, isM38Fixture ? 5 : 0),
@@ -2165,6 +2169,7 @@ export default function App() {
     setPendingLoadingContext(null);
     flowDispatch({ type: "ENTER_GAME" });
     live.setSpeed((isPerfFixture || isM27Fixture) && !isPerfMeasurement ? "4x" : "paused");
+    startupEnd(startupFixtureSpan);
   }, [dispatch, gameSession, live, t]);
 
   const resumeSpeedRef = useRef<SpeedName>(appProfile.gameplay.defaultGameSpeed);

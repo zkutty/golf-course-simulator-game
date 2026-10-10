@@ -19,6 +19,7 @@
 //        default 33, enforced only with PERF_ASSERT_FRAME=1),
 //        PERF_MEASURE_S (default 20), PERF_HEADED=1 (visible GPU-backed run),
 //        PERF_HARDWARE_CLASS / PERF_POWER_STATE / PERF_RUN_LABEL (evidence labels)
+import { publishStartupAttribution } from "./startup-attribution-delivery.mjs";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -91,6 +92,10 @@ page.on("console", (message) => {
   if (message.type() === "error") console.error(`[perf-smoke] console error: ${message.text()}`);
 });
 await page.addInitScript(() => {
+  const params = new URLSearchParams(location.search);
+  if (params.get("m27Fixture") === "1" && params.get("perfMeasure") === "1") {
+    window.__ccStartupAttributionBootstrap = { version: 1, start: performance.now(), timeOrigin: performance.timeOrigin };
+  }
   localStorage.setItem("coursecraft_perfhud", "on");
   localStorage.setItem("coursecraft_ambience", "on");
 });
@@ -123,7 +128,9 @@ try {
 }
 await page.waitForFunction(() => {
   const target = document.querySelector(".cc-pixi-stage canvas");
-  return target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
+  const ready = target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
+  if (ready) window.__ccStartupAttribution?.markReady();
+  return ready;
 }, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
 const box = await canvas.boundingBox();
 const fixtureLoadMs = performance.now() - fixtureStartedAt;
@@ -173,6 +180,20 @@ const browserEvidence = await page.evaluate(() => {
     context,
   };
 });
+let startupJournalRaw = null;
+let startupDiagnosticFailure = null;
+let startupDiagnosticFailurePresent = false;
+if (PERF_FIXTURE === "m27Fixture") {
+  try {
+    startupJournalRaw = await page.evaluate(() => {
+      const journal = window.__ccStartupAttribution?.snapshot();
+      if (!journal) throw new Error("startup attribution collector missing");
+      const raw = JSON.stringify(journal);
+      if (new TextEncoder().encode(raw).length > 65536) throw new Error("startup attribution journal cap");
+      return raw;
+    });
+  } catch (error) { startupDiagnosticFailure = error; startupDiagnosticFailurePresent = true; }
+}
 await browser.close();
 vite.kill();
 
@@ -240,6 +261,22 @@ mkdirSync(typeof OUTPUT_PATH === "string"
   ? dirname(OUTPUT_PATH)
   : new URL(".", OUTPUT_PATH), { recursive: true });
 writeFileSync(OUTPUT_PATH, `${JSON.stringify(evidence, null, 2)}\n`);
+if (PERF_FIXTURE === "m27Fixture") {
+  try {
+    if (startupDiagnosticFailurePresent) throw startupDiagnosticFailure;
+    const published = publishStartupAttribution({ raw: startupJournalRaw, outputPath: OUTPUT_PATH,
+      declaredRoot: process.env.PERF_STARTUP_ATTRIBUTION_ROOT,
+      original: { coldStartupMs, fixtureLoadMs, rendererWorkMs: perf.workMs, gateValidation } });
+    if (!published.diagnosticEligible) throw new Error("startup attribution coverage/clock incomplete");
+    console.log(`[perf-smoke] startup attribution published: ${JSON.stringify(published)}`);
+  } catch (error) {
+    if (!startupDiagnosticFailurePresent) { startupDiagnosticFailure = error; startupDiagnosticFailurePresent = true; }
+    let startupFailureText = "<unprintable>";
+    try { startupFailureText = String(startupDiagnosticFailure).slice(0, 512); } catch { /* Keep the original cause. */ }
+    console.error(`[perf-smoke] startup attribution FAIL: ${startupFailureText}`);
+  }
+  if (startupDiagnosticFailurePresent && !failed) process.exit(2);
+}
 if (failed) process.exit(1);
 console.log(
   `[perf-smoke] PASS: tick work ${perf.workMs.toFixed(2)}ms ≤ ${WORK_BUDGET_MS}ms` +

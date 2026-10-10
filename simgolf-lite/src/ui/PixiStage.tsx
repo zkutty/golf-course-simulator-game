@@ -1,3 +1,4 @@
+import { startupAttempt, startupBegin, startupEnd, startupCancel, startupSpan } from "../utils/startupAttribution.mjs";
 import { failedEmoteOwnership } from "./renderer/scenes/emoteOwnershipSnapshot";
 import { countManagedTextureSources } from "./renderer/countManagedTextureSources";
 import { ownSceneMeshGeometry } from "./renderer/ownedSceneMeshGeometry";
@@ -1148,14 +1149,14 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
     if (!derivePlan) return;
     setCourseSceneCompositionEntry([course, worldSeed, derivePlan({ course, seed: worldSeed })]);
   }, [appReady, course, courseSceneComposition, worldSeed]);
-  const effectiveTiles = useMemo(() => effectiveSurfaceTilesForRenderer(
+  const effectiveTiles = useMemo(() => startupSpan(12, () => effectiveSurfaceTilesForRenderer(
     course.tiles,
     course.width,
     course.height,
     course.surfaceCare,
     course.surfaceIntent,
     course.estate,
-  ), [
+  )), [
     course.estate,
     course.height,
     course.surfaceCare,
@@ -1186,7 +1187,7 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
     ?? null
   ), [course.surfaceIntent, selectedSurfaceFeatureId, surfaceEditDraft]);
 
-  const visualHeightfield = useMemo(() => visualHeightfieldForRenderer(
+  const visualHeightfield = useMemo(() => startupSpan(13, () => visualHeightfieldForRenderer(
     course.tiles,
     course.elevations,
     course.width,
@@ -1194,7 +1195,7 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
     course.buildings,
     course.property?.assets,
     course.theme,
-  ), [
+  )), [
     course.buildings,
     course.elevations,
     course.height,
@@ -1206,12 +1207,12 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
   const landscapeComponentCacheRef = useRef(createLandscapeComponentCache());
   const landscapeComponents = useMemo(() => {
     const options = landscapeOptionsForQuality(props.graphicsQuality);
-    const snapshot = landscapeComponentCacheRef.current.update(
+    const snapshot = startupSpan(14, () => landscapeComponentCacheRef.current.update(
       effectiveTiles,
       course.width,
       course.height,
       options,
-    );
+    ));
     return snapshot.components;
   }, [
     course.height,
@@ -2067,15 +2068,17 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
     const mount = nativeMountRef.current;
     if (!mount) return;
     const { owner, generation } = mount.lease;
+    const startupRendererAttempt = startupAttempt(generation);
     setRendererError(false);
 
     const init = async () => {
       // StrictMode can retire its first setup before any native entry is acquired.
       await Promise.resolve();
-      if (cancelled || nativeMountRef.current !== mount) return;
+      if (cancelled || nativeMountRef.current !== mount) { startupCancel(startupRendererAttempt); return; }
       const width = Math.max(container.clientWidth || 800, 100);
       const height = Math.max(container.clientHeight || 600, 100);
 
+      const startupInitSpan = startupBegin(8, null, startupRendererAttempt);
       const initialized = await initializeRendererModules({
         loadModules: () => Promise.all([
           import("./renderer/scenes/deferredWorldScenes"),
@@ -2089,18 +2092,21 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
         isCurrent: () => !cancelled && owner.isCurrent(generation),
       });
       // The helper returns across a microtask boundary; recheck before atlas/scene work.
-      if (!initialized || cancelled || !owner.isCurrent(generation)) return;
+      if (!initialized || cancelled || !owner.isCurrent(generation)) { startupEnd(startupInitSpan, 3); startupCancel(startupRendererAttempt); return; }
+      startupEnd(startupInitSpan);
       const {
         application: app,
         modules: [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule],
       } = initialized;
 
+      const startupAtlasSpan = startupBegin(9, null, startupRendererAttempt);
       const activation = await loadAtlases(
         initialRendererConfigRef.current.theme,
         initialRendererConfigRef.current.graphicsQuality,
         initialRendererConfigRef.current.season,
       );
-      if (cancelled || !owner.isCurrent(generation)) return;
+      if (cancelled || !owner.isCurrent(generation)) { startupEnd(startupAtlasSpan, 3); startupCancel(startupRendererAttempt); return; }
+      startupEnd(startupAtlasSpan);
       deferredWorldScenesRef.current = deferredWorldScenes;
       viewportInputControllerModuleRef.current = viewportInputControllerModule;
       sceneCameraDeriversRef.current = [
@@ -2111,16 +2117,17 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
       setCourseSceneCompositionEntry([
         initialCompositionInput[0],
         initialCompositionInput[1],
-        compositionModule.deriveCourseSceneComposition({
+        startupSpan(10, () => compositionModule.deriveCourseSceneComposition({
           course: initialCompositionInput[0],
           seed: initialCompositionInput[1],
-        }),
+        }), null, startupRendererAttempt),
       ]);
 
       app.canvas.style.display = "block";
       app.canvas.style.position = "absolute";
       app.canvas.style.top = "0";
       app.canvas.style.left = "0";
+      const startupLayerSpan = startupBegin(11, null, startupRendererAttempt);
       container.appendChild(app.canvas);
 
       // Native-owned white diamond; fresh terrain scenes borrow its residency.
@@ -2168,11 +2175,13 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
       }
       owner.markReady(generation);
       setAppReady(true);
+      startupEnd(startupLayerSpan);
       devLog(`initialized ${width}x${height}`);
     };
 
     void init().catch((error: unknown) => {
-      if (cancelled || nativeMountRef.current !== mount) return;
+      if (cancelled || nativeMountRef.current !== mount) { startupCancel(startupRendererAttempt); return; }
+      startupCancel(startupRendererAttempt, 2);
       owner.fail(generation);
       console.error("[PixiStage] Course renderer initialization failed", error);
       setRendererError(true);
@@ -2180,6 +2189,7 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
 
     return guardNativeRendererCleanup(nativeMountRef.current?.lease, () => {
       cancelled = true;
+      startupCancel(startupRendererAttempt);
       supersedePendingAtlasLoad();
       setAppReady(false);
       // Attempt every independent disposer before severing all captured scene refs.
@@ -3111,6 +3121,8 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
     const layer = rendererLayers?.smoothSurfaces;
     if (!layer || !rendererLayers || !terrainScene) return;
     terrainScene.setRenderer("connected", () => {
+    const startupConnectedSpan = startupBegin(15);
+    try {
     layer.removeChildren().forEach(destroySceneSubtree);
     terrainScene.surfaceWaterSprites = [];
     const quality = props.graphicsQuality;
@@ -4048,9 +4060,14 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
     sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
     stampAtlasGeneration(layer, atlasRevision);
     recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
+    startupEnd(startupConnectedSpan);
     return () => {
       for (const texture of generatedMacroTextures) terrainScene.releaseGeneratedTexture(texture);
     };
+    } catch (startupConnectedError) {
+      startupEnd(startupConnectedSpan, 2);
+      throw startupConnectedError;
+    }
     });
   }, [
     appReady,
