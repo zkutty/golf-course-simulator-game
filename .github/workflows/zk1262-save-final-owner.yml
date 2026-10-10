@@ -1,5 +1,8 @@
 name: ZK1262 SAVE final owner
 on:
+  push:
+    branches:
+      - codex/save-final-owner-b7fe
   workflow_dispatch:
     inputs:
       candidate_sha:
@@ -17,6 +20,15 @@ on:
 permissions:
   contents: read
 jobs:
+  bootstrap-registration:
+    if: ${{ github.repository == 'zkutty/golf-course-simulator-game' && github.event_name == 'push' && github.ref == 'refs/heads/codex/save-final-owner-b7fe' && github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Echo actual bootstrap workflow identity
+        shell: bash
+        run: |
+          printf '%s\n' "event=$GITHUB_EVENT_NAME" "ref=$GITHUB_REF" "source_sha=$GITHUB_SHA" "workflow_ref=$GITHUB_WORKFLOW_REF" "run_id=$GITHUB_RUN_ID" "run_attempt=$GITHUB_RUN_ATTEMPT"
   save-final-owner:
     if: github.repository == 'zkutty/golf-course-simulator-game' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/save-final-owner-b7fe' && github.run_attempt == 1
     runs-on: ubuntu-latest
