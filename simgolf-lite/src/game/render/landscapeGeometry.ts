@@ -358,12 +358,10 @@ function buildLandscapeComponentSkeletons(
   for (let seed = 0; seed < tiles.length; seed++) {
     if (visited[seed]) continue;
     const terrain = tiles[seed];
-    const cells: number[] = [];
     const queue = [seed];
     visited[seed] = 1;
     for (let cursor = 0; cursor < queue.length; cursor++) {
       const index = queue[cursor];
-      cells.push(index);
       const x = index % width;
       const y = Math.floor(index / width);
       for (const { dx, dy } of CARDINALS) {
@@ -376,6 +374,7 @@ function buildLandscapeComponentSkeletons(
         queue.push(neighbor);
       }
     }
+    const cells = queue;
     cells.sort((a, b) => a - b);
     let minX = width;
     let minY = height;
