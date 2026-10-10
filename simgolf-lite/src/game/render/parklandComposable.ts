@@ -413,7 +413,7 @@ export function buildParklandComposableMeshGeometry<T>(
     const point = project(entry, x, y);
     const index = positions.length / 2;
     positions.push(point.x, point.y);
-    uvs.push(...parklandComposableUv(x, y));
+    uvs.push(x / PARKLAND_COMPOSABLE_WORLD_PERIOD_TILES, y / PARKLAND_COMPOSABLE_WORLD_PERIOD_TILES);
     vertexIndexes?.set(key, index);
     return index;
   };
