@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, realpathSync, symlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, realpathSync, symlinkSync, linkSync, renameSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -104,7 +104,7 @@ const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const diagnostic = rawWorkflow.slice(rawWorkflow.indexOf("\n  original-app-heap:\n"));
 const pythonBodies = [...diagnostic.matchAll(/          python3 - <<'PY'\n([\s\S]*?)          PY\n/g)]
   .map((match) => match[1].split("\n").filter((line) => line.length).map((line) => line.slice(10)).join("\n") + "\n");
-assert.equal(pythonBodies.length, 3);
+assert.equal(pythonBodies.length, 4);
 assert.equal(pythonBodies[0], pythonBodies[1], "before and after run the same source predicate");
 const sourceGuard = pythonBodies[0], inventoryGuard = pythonBodies[2];
 function fixture(fn) {
@@ -116,7 +116,7 @@ function fixture(fn) {
       const p = join(target, name); mkdirSync(dirname(p), { recursive: true });
       writeFileSync(p, readFileSync(join(repoRoot, name)));
     }
-    const shim = `#!/usr/bin/env python3\nimport os,sys\na=sys.argv[1:]\nassert a[0]=='-C'\nif a[2:]==['rev-parse','HEAD']:\n print(os.environ.get('FAKE_DRIVER_HEAD','${DRIVER}') if a[1]==os.environ['HEAP_DRIVER_ROOT'] else os.environ.get('FAKE_TARGET_HEAD','${TARGET}'))\nelif a[2] == 'diff':\n sys.exit(int(os.environ.get('FAKE_DIFF_EXIT','0')))\nelse:\n raise RuntimeError('unexpected git argv')\n`;
+    const shim = `#!/usr/bin/env python3\nimport os,sys\na=sys.argv[1:]\nassert a[0]=='-C'\nif a[2:]==['rev-parse','HEAD']:\n print(os.environ.get('FAKE_DRIVER_HEAD','${DRIVER}') if a[1]==os.environ['HEAP_DRIVER_ROOT'] else os.environ.get('FAKE_TARGET_HEAD','${TARGET}'))\nelif a[2] == 'diff':\n if '--name-status' in a:\n  import json\n  rows=json.loads(os.environ.get('FAKE_STAGED_ROWS' if '--cached' in a else 'FAKE_UNSTAGED_ROWS','[]'))\n  sys.stdout.buffer.write(b''.join(status.encode('ascii')+b'\\0'+name.encode('utf-8')+b'\\0' for status,name in rows))\n  sys.exit(int(os.environ.get('FAKE_STATUS_EXIT','0')))\n sys.exit(int(os.environ.get('FAKE_CACHED_EXIT' if '--cached' in a else 'FAKE_DIFF_EXIT','0')))\nelse:\n raise RuntimeError('unexpected git argv')\n`;
     writeFileSync(join(bin, "git"), shim, { mode: 0o700 });
     const env = { ...process.env, PATH: bin + ":" + process.env.PATH,
       HEAP_DRIVER_ROOT: driver, HEAP_TARGET_ROOT: target, HEAP_DRIVER_SHA: DRIVER,
@@ -241,4 +241,240 @@ test("heap driver uploads bounded raw only after inventory without certification
   assert.ok(diagnostic.includes("name: zk1262-original-app-heap-${{ inputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}"));
   assert.doesNotMatch(diagnostic, /test-results|playwright-report|release:build|workflow-verdict|desktop:|fullcandidate|closureVerified.*True/);
   assert.ok(diagnostic.includes('"processClosure": "UNKNOWN; no universal native/descendant closure proved"'));
+});
+
+function statusResult(raw, phase = "before") {
+  return JSON.parse(readFileSync(join(raw, `heap-source-status-${phase}.json`), "utf8"));
+}
+function rejectStatus(status, outcome) {
+  assert.equal(status.sourceQualified, false);
+  assert.equal(status.outcome, outcome);
+  assert.notEqual(status.firstFailure, null);
+}
+
+test("heap driver neutral status publishes complete clean evidence before and after", () => {
+  fixture(({ run, raw }) => {
+    requirePass(run(sourceGuard));
+    const before = statusResult(raw);
+    assert.equal(before.outcome, "PASS"); assert.equal(before.sourceQualified, true);
+    assert.equal(before.historyComplete, true); assert.equal(before.metadataOverflow, false);
+    assert.equal(before.rolesAndHeadsPassed, true); assert.equal(before.pinsPassed, true);
+    assert.equal(before.targetHead, TARGET); assert.equal(before.driverHead, DRIVER);
+    assert.equal(before.sourceSha, DRIVER); assert.equal(before.candidateSha, TARGET);
+    assert.deepEqual(before.changedPaths, []); assert.equal(before.firstFailure, null);
+    requirePass(run(sourceGuard, { HEAP_PIN_PHASE: "after" }));
+    assert.equal(statusResult(raw, "after").outcome, "PASS");
+  });
+});
+
+test("heap driver neutral status preserves first tracked failure with worktree and staged hashes", () => {
+  for (const staged of [false, true]) fixture(({ run, raw, target }) => {
+    const name = targetPaths[0], bytes = Buffer.from("{}\n");
+    writeFileSync(join(target, name), bytes);
+    const overrides = staged
+      ? { FAKE_CACHED_EXIT: "1", FAKE_STAGED_ROWS: JSON.stringify([["M", name]]) }
+      : { FAKE_DIFF_EXIT: "1", FAKE_UNSTAGED_ROWS: JSON.stringify([["M", name]]) };
+    requireFail(run(sourceGuard, overrides), /CalledProcessError/);
+    const status = statusResult(raw);
+    rejectStatus(status, "FAIL"); assert.equal(status.historyComplete, true);
+    assert.equal(status.firstFailure.type, "CalledProcessError");
+    assert.equal(status.rolesAndHeadsPassed, true);
+    assert.equal(status.changedPaths.length, 1);
+    const row = status.changedPaths[0];
+    assert.equal(row.path, name); assert.equal(row.hashOutcome, "COMPLETE");
+    assert.deepEqual(row.file, { bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") });
+    assert.deepEqual(row.changes, [{ view: staged ? "indexVsHead" : "worktreeVsIndex", status: "M" }]);
+    assert.throws(() => readFileSync(join(raw, "heap-source-before.json")), /ENOENT/);
+  });
+  fixture(({ run, raw, target }) => {
+    requirePass(run(sourceGuard));
+    const before = readFileSync(join(raw, "heap-source-before.json"));
+    const name = targetPaths[0]; writeFileSync(join(target, name), "{}");
+    requireFail(run(sourceGuard, { HEAP_PIN_PHASE: "after", FAKE_DIFF_EXIT: "1",
+      FAKE_UNSTAGED_ROWS: JSON.stringify([["M", name]]) }), /CalledProcessError/);
+    rejectStatus(statusResult(raw, "after"), "FAIL");
+    assert.throws(() => readFileSync(join(raw, "heap-source-after.json")), /ENOENT/);
+    assert.deepEqual(readFileSync(join(raw, "heap-source-before.json")), before);
+  });
+  fixture(({ run, raw, target }) => {
+    const name = "foreign-tracked.txt"; writeFileSync(join(target, name), "foreign");
+    requireFail(run(sourceGuard, { FAKE_DIFF_EXIT: "1", FAKE_UNSTAGED_ROWS: JSON.stringify([["M", name]]),
+      FAKE_STAGED_ROWS: JSON.stringify([["M", name]]) }), /CalledProcessError/);
+    const status = statusResult(raw);
+    rejectStatus(status, "FAIL"); assert.equal(status.changedPaths.length, 1);
+    assert.equal(status.changedPaths[0].changes.length, 2);
+    assert.equal(status.changedPaths[0].file.sha256, createHash("sha256").update("foreign").digest("hex"));
+  });
+});
+
+test("heap driver neutral status retains role head and pin rejection evidence", () => {
+  for (const [overrides, message] of [[{ HEAP_DRIVER_SHA: TARGET }, /roles invalid/],
+    [{ FAKE_TARGET_HEAD: DRIVER }, /target checkout drift/], [{ VITE_COMMIT_SHA: DRIVER }, /child target binding invalid/]])
+    fixture(({ run, raw }) => {
+      requireFail(run(sourceGuard, overrides), message);
+      const status = statusResult(raw); rejectStatus(status, "FAIL");
+      assert.equal(status.rolesAndHeadsPassed, false); assert.equal(status.pinsPassed, false);
+      assert.equal(status.historyComplete, true);
+    });
+  fixture(({ run, raw, target }) => {
+    writeFileSync(join(target, targetPaths[0]), "{}");
+    requireFail(run(sourceGuard), /target source pin drift/);
+    const status = statusResult(raw); rejectStatus(status, "FAIL");
+    assert.equal(status.rolesAndHeadsPassed, true); assert.equal(status.pinsPassed, false);
+  });
+});
+
+test("heap driver neutral status refuses unsafe aliases links missing and oversized changed files", () => {
+  for (const mode of ["escape", "symlink", "hardlink", "missing", "oversized"]) fixture(({ run, raw, target, temp }) => {
+    let name = "unsafe.txt"; const foreign = join(temp, "foreign");
+    writeFileSync(foreign, "x");
+    if (mode === "escape") name = "../foreign";
+    if (mode === "symlink") symlinkSync(foreign, join(target, name));
+    if (mode === "hardlink") linkSync(foreign, join(target, name));
+    if (mode === "oversized") writeFileSync(join(target, name), Buffer.alloc(65537));
+    requireFail(run(sourceGuard, { FAKE_DIFF_EXIT: "1", FAKE_UNSTAGED_ROWS: JSON.stringify([["M", name]]) }), /CalledProcessError/);
+    const status = statusResult(raw);
+    rejectStatus(status, "HOLD"); assert.equal(status.historyComplete, false);
+    assert.notEqual(status.statusFailure, null); assert.equal(status.firstFailure.type, "CalledProcessError");
+    assert.ok(status.changedPaths.every(row => row.hashOutcome !== "COMPLETE"));
+  });
+});
+
+test("heap driver neutral status refuses path count output and serialized metadata overflow", () => {
+  fixture(({ run, raw }) => {
+    const rows = Array.from({ length: 129 }, (_, n) => ["M", `p${n}`]);
+    requireFail(run(sourceGuard, { FAKE_DIFF_EXIT: "1", FAKE_UNSTAGED_ROWS: JSON.stringify(rows) }), /CalledProcessError/);
+    const status = statusResult(raw); rejectStatus(status, "HOLD");
+    assert.equal(status.historyComplete, false); assert.equal(status.collectedChangedPaths, 128);
+    assert.match(status.statusFailure.message, /changed path cap/);
+  });
+  fixture(({ run, raw }) => {
+    const rows = Array.from({ length: 40 }, (_, n) => ["M", String(n).padStart(4, "0") + "x".repeat(1000)]);
+    requireFail(run(sourceGuard, { FAKE_DIFF_EXIT: "1", FAKE_UNSTAGED_ROWS: JSON.stringify(rows) }), /CalledProcessError/);
+    const status = statusResult(raw); rejectStatus(status, "HOLD");
+    assert.equal(status.historyComplete, false); assert.match(status.statusFailure.message, /status output cap/);
+  });
+  fixture(({ run, raw, target }) => {
+    const rows = [];
+    for (let n = 0; n < 128; n++) {
+      const name = String(n).padStart(4, "0") + "x".repeat(120);
+      writeFileSync(join(target, name), "x"); rows.push(["M", name]);
+    }
+    requireFail(run(sourceGuard, { FAKE_DIFF_EXIT: "1", FAKE_UNSTAGED_ROWS: JSON.stringify(rows) }), /CalledProcessError/);
+    const status = statusResult(raw); rejectStatus(status, "HOLD");
+    assert.equal(status.historyComplete, false); assert.equal(status.metadataOverflow, true);
+    assert.equal(status.omittedChangedPaths, 128); assert.deepEqual(status.changedPaths, []);
+    assert.ok(readFileSync(join(raw, "heap-source-status-before.json")).length <= 32768);
+    assert.equal(status.firstFailure.type, "CalledProcessError");
+  });
+});
+
+test("heap driver neutral status fails closed on status query error and publication collision", () => {
+  fixture(({ run, raw }) => {
+    requireFail(run(sourceGuard, { FAKE_STATUS_EXIT: "2" }), /status git failure/);
+    const status = statusResult(raw); rejectStatus(status, "HOLD");
+    assert.equal(status.historyComplete, false);
+  });
+  fixture(({ run, raw }) => {
+    mkdirSync(raw, { recursive: true });
+    const path = join(raw, "heap-source-status-before.json"); writeFileSync(path, "sentinel");
+    requireFail(run(sourceGuard, { FAKE_DIFF_EXIT: "1" }), /CalledProcessError/);
+    assert.equal(readFileSync(path, "utf8"), "sentinel");
+    assert.throws(() => readFileSync(join(raw, "heap-source-before.json")), /ENOENT/);
+  });
+});
+
+const beforeFailureInventory = pythonBodies[3];
+function failureFixture(fn) {
+  fixture((context) => {
+    const rejected = context.run(sourceGuard, { FAKE_DIFF_EXIT: "1", FAKE_UNSTAGED_ROWS: JSON.stringify([["M", targetPaths[0]]]) });
+    requireFail(rejected, /CalledProcessError/);
+    const roleEnv = { HEAP_BEFORE_SOURCE_OUTCOME: "failure", HEAP_RESOURCE_OUTCOME: "skipped",
+      HEAP_STABILITY_OUTCOME: "skipped", HEAP_POST_SOURCE_OUTCOME: "skipped",
+      HEAP_REPOSITORY: "zkutty/golf-course-simulator-game", HEAP_SOURCE_REF: "refs/heads/driver",
+      HEAP_WORKFLOW_REF: "zkutty/golf-course-simulator-game/.github/workflows/zk682-certification.yml@refs/heads/driver" };
+    fn({ ...context, rejected, roleEnv, statusPath: join(context.raw, "heap-source-status-before.json"),
+      publish: (overrides = {}, code = beforeFailureInventory) => context.run(code, { ...roleEnv, ...overrides }) });
+  });
+}
+function validateFailureDelivery(text) {
+  const branch = text.slice(text.indexOf("      - name: Bound before-source failure diagnostic only"));
+  assert.match(branch, /id: before_failure_inventory/);
+  assert.ok(branch.includes("if: ${{ always() && steps.source_before.outcome == 'failure' }}"));
+  assert.ok(branch.includes("if: ${{ always() && steps.before_failure_inventory.outcome == 'success' }}"));
+  assert.ok(branch.includes("path: heap-target/simgolf-lite/artifacts/zk682/raw"));
+  assert.ok(text.includes("if: ${{ always() && steps.source_before.outcome == 'success' }}"));
+  assert.ok(text.includes("if: ${{ always() && steps.raw_inventory.outcome == 'success' }}"));
+}
+
+test("heap driver before-failure publication validates actual inventory and durable routing", () => {
+  validateFailureDelivery(diagnostic);
+  const originalSource2 = diagnostic.slice(0, diagnostic.indexOf("      - name: Bound before-source failure diagnostic only"));
+  assert.throws(() => validateFailureDelivery(originalSource2));
+  failureFixture(({ publish, raw, statusPath, rejected }) => {
+    const bytes = readFileSync(statusPath); requirePass(publish());
+    const inventory = JSON.parse(readFileSync(join(raw, "heap-before-source-failure-inventory.json")));
+    assert.equal(rejected.status !== 0, true); assert.deepEqual(readFileSync(statusPath), bytes);
+    assert.equal(inventory.outcome, "BEFORE_SOURCE_FAILURE_DIAGNOSTIC_ONLY");
+    for (const key of ["sourceQualified", "numericalQualified", "certificationEligible"]) assert.equal(inventory[key], false);
+    assert.equal(inventory.sourceSha, DRIVER); assert.equal(inventory.candidateSha, TARGET);
+    assert.equal(inventory.runId, 12345); assert.equal(inventory.runAttempt, 1);
+    assert.equal(inventory.browserInvocation, "NOT_STARTED_BY_WORKFLOW_ORDER");
+    assert.match(inventory.processClosure, /^UNKNOWN/); assert.equal(inventory.fileCountIncludingInventory, 2);
+    assert.deepEqual(inventory.entries, [{ path: "heap-source-status-before.json", bytes: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex") }]);
+    assert.throws(() => readFileSync(join(raw, "heap-source-before.json")), /ENOENT/);
+  });
+  failureFixture(({ publish, statusPath }) => {
+    const status = JSON.parse(readFileSync(statusPath));
+    status.outcome = "HOLD"; status.historyComplete = false;
+    status.statusFailure = { type: "RuntimeError", message: "status deadline", messageTruncated: false };
+    writeFileSync(statusPath, JSON.stringify(status)); requirePass(publish());
+  });
+});
+
+test("heap driver before-failure publication rejects malformed status roles flags and hashes", () => {
+  for (const change of [
+    { schemaVersion: 2 }, { phase: "after" }, { sourceSha: TARGET }, { candidateSha: DRIVER },
+    { runId: 12346 }, { runAttempt: 2 }, { sourceQualified: true }, { outcome: "PASS" },
+    { rolesAndHeadsPassed: false }, { targetHead: DRIVER }, { firstFailure: null },
+    { historyComplete: "true" }, { extra: true }, { collectedChangedPaths: 2 }
+  ]) failureFixture(({ publish, raw, statusPath }) => {
+    const status = JSON.parse(readFileSync(statusPath)); Object.assign(status, change);
+    writeFileSync(statusPath, JSON.stringify(status)); requireFail(publish());
+    assert.throws(() => readFileSync(join(raw, "heap-before-source-failure-inventory.json")), /ENOENT/);
+  });
+  failureFixture(({ publish, statusPath }) => {
+    const status = JSON.parse(readFileSync(statusPath)); status.changedPaths[0].file.sha256 = "bad";
+    writeFileSync(statusPath, JSON.stringify(status)); requireFail(publish(), /hash invalid/);
+  });
+  for (const overrides of [{ FAKE_TARGET_HEAD: DRIVER }, { FAKE_DRIVER_HEAD: TARGET }, { HEAP_DRIVER_SHA: TARGET },
+    { GITHUB_RUN_ATTEMPT: "2" }, { HEAP_BEFORE_SOURCE_OUTCOME: "success" }, { HEAP_RESOURCE_OUTCOME: "success" },
+    { HEAP_SOURCE_REF: "refs/tags/driver" }, { HEAP_WORKFLOW_REF: "other/workflow@refs/heads/driver" }])
+    failureFixture(({ publish }) => requireFail(publish(overrides)));
+});
+
+test("heap driver before-failure publication rejects absent unsafe extra and racing files", () => {
+  for (const mode of ["missing", "malformed", "duplicate", "oversized", "extra", "intent", "success", "symlink", "hardlink", "parentAlias"])
+    failureFixture(({ publish, raw, statusPath, temp }) => {
+      if (mode === "missing") rmSync(statusPath);
+      if (mode === "malformed") writeFileSync(statusPath, "{");
+      if (mode === "duplicate") writeFileSync(statusPath, readFileSync(statusPath, "utf8").replace('"phase":"before"', '"phase":"before","phase":"before"'));
+      if (mode === "oversized") writeFileSync(statusPath, Buffer.alloc(32769));
+      if (mode === "extra") writeFileSync(join(raw, "extra.bin"), "");
+      if (mode === "intent") writeFileSync(join(raw, "heap-hosted-intent.json"), "{}");
+      if (mode === "success") writeFileSync(join(raw, "report.json"), '{"passed":true}');
+      if (mode === "symlink") { const moved = join(temp, "status"); renameSync(statusPath, moved); symlinkSync(moved, statusPath); }
+      if (mode === "hardlink") linkSync(statusPath, join(temp, "status"));
+      if (mode === "parentAlias") { const moved = join(temp, "raw"); renameSync(raw, moved); symlinkSync(moved, raw); }
+      requireFail(publish());
+      assert.throws(() => readFileSync(join(raw, "heap-before-source-failure-inventory.json")), /ENOENT/);
+    });
+  failureFixture(({ publish, raw }) => {
+    assert.equal(beforeFailureInventory.split("    after = os.fstat(fd)").length - 1, 1);
+    const raced = beforeFailureInventory.replace("    after = os.fstat(fd)",
+      "    after = os.fstat(fd)\n    os.utime(p, ns=(before.st_atime_ns, before.st_mtime_ns + 1))");
+    requireFail(publish({}, raced), /changed while hashing/);
+    assert.throws(() => readFileSync(join(raw, "heap-before-source-failure-inventory.json")), /ENOENT/);
+  });
 });
