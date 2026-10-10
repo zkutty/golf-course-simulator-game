@@ -8,6 +8,15 @@ on:
         required: true
         type: string
 
+      verification_mode:
+        description: Original app heap diagnostic or unchanged full certification
+        required: false
+        default: full
+        type: choice
+        options:
+          - full
+          - original-app-heap-5c236
+
 permissions:
   contents: read
 
@@ -17,6 +26,7 @@ defaults:
 
 jobs:
   linux-evidence:
+    if: ${{ inputs.verification_mode != 'original-app-heap-5c236' }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -157,6 +167,7 @@ jobs:
           retention-days: 90
 
   native-evidence:
+    if: ${{ inputs.verification_mode != 'original-app-heap-5c236' }}
     name: ${{ matrix.platform }}-${{ matrix.architecture }} native evidence
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -225,6 +236,7 @@ jobs:
           retention-days: 30
 
   aggregate:
+    if: ${{ inputs.verification_mode != 'original-app-heap-5c236' }}
     needs: [linux-evidence, native-evidence]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -289,3 +301,658 @@ jobs:
           node scripts/zk682-workflow-verdict.mjs \
             --report release/zk682/certification-report.json \
             --expected-commit "$ZK682_EXPECTED_COMMIT"
+
+  original-app-heap:
+    if: ${{ inputs.verification_mode == 'original-app-heap-5c236' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      HEAP_DRIVER_SHA: ${{ github.sha }}
+      HEAP_DRIVER_ROOT: ${{ github.workspace }}/heap-driver
+      HEAP_TARGET_ROOT: ${{ github.workspace }}/heap-target
+      ZK682_EXPECTED_COMMIT: ${{ inputs.candidate_sha }}
+      VITE_COMMIT_SHA: ${{ inputs.candidate_sha }}
+    steps:
+      - name: Checkout immutable diagnostic driver
+        timeout-minutes: 5
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: heap-driver
+          fetch-depth: 1
+      - name: Checkout unchanged exact target
+        timeout-minutes: 5
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          path: heap-target
+          fetch-depth: 1
+      - name: Verify roles and source pins; create exclusive intent
+        id: source_before
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        timeout-minutes: 5
+        env:
+          HEAP_PIN_PHASE: before
+        run: |
+          export GITHUB_SHA="$ZK682_EXPECTED_COMMIT"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, select, stat, subprocess, time
+          TARGET = "5c236f38655ed9e74d24530f402e08601dbe9387"
+          PINS = {'simgolf-lite/package.json': {'bytes': 11208, 'sha256': '6bdbf6af0dca94b79d3025f73b4558ed555b243e03c2ef0ef8c6f42530cdf951'}, 'simgolf-lite/playwright.config.ts': {'bytes': 697, 'sha256': '35d7a3e1c5bf4c00508ff1cfd2510a2bc1306c3243eacac924a9b0940327a948'}, 'simgolf-lite/e2e/zk682-resource-growth.e2e.ts': {'bytes': 15221, 'sha256': 'cd238c429bb3c4745b903124442409ad1309e5f6a368ddbf81cd376c2f907142'}, 'simgolf-lite/e2e/zk682-stability.e2e.ts': {'bytes': 17333, 'sha256': 'c45b0cf36a725fbe4da0de4877cdac016e29c334f63f1a3b674edfb20bdd2a45'}, 'simgolf-lite/scripts/zk682-run-resource-growth.mjs': {'bytes': 2105, 'sha256': '49206a32a5d47386e4695098cf53b06812d1f352745752dd7fd2be7ecedf48a2'}, 'simgolf-lite/scripts/zk682-run-stability.mjs': {'bytes': 1790, 'sha256': '43587e0f25cba83c3fe0f16884a91e291cf7bce7e813bd5c9a9805e038393647'}}
+          def require(value, message):
+              if not value: raise RuntimeError(message)
+          def directory(name):
+              p = pathlib.Path(os.environ[name])
+              require(p.is_absolute() and str(p.resolve()) == str(p), "checkout alias refused")
+              require(stat.S_ISDIR(p.lstat().st_mode), "checkout directory required")
+              return p
+          def git(p, *args):
+              return subprocess.check_output(["git", "-C", str(p), *args], text=True, timeout=10).strip()
+          def regular_pin(p):
+              require(str(p.resolve()) == str(p), "source alias refused")
+              before = p.lstat()
+              require(stat.S_ISREG(before.st_mode), "regular source required")
+              fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)
+              try:
+                  opened = os.fstat(fd)
+                  require((opened.st_dev, opened.st_ino, opened.st_size) == (before.st_dev, before.st_ino, before.st_size), "source identity drift")
+                  b = b""
+                  while True:
+                      chunk = os.read(fd, 65536)
+                      if not chunk: break
+                      b += chunk
+                      require(len(b) <= 65536, "source size cap")
+                  after = os.fstat(fd)
+              finally: os.close(fd)
+              current = p.lstat()
+              identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+              require(identity(before) == identity(after) == identity(current), "source changed while hashing")
+              return {"bytes": len(b), "sha256": hashlib.sha256(b).hexdigest()}
+          driver, target = directory("HEAP_DRIVER_ROOT"), directory("HEAP_TARGET_ROOT")
+          expected_driver = os.environ["HEAP_DRIVER_SHA"]
+          phase = os.environ.get("HEAP_PIN_PHASE", "before")
+          require(phase in ("before", "after"), "source phase invalid")
+          run_id, attempt = os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"]
+          require(run_id.isascii() and run_id.isdigit() and 0 < int(run_id) <= 9007199254740991 and attempt == "1", "run identity/cap invalid")
+          raw = target / "simgolf-lite/artifacts/zk682/raw"
+          for parent in (raw, *raw.parents):
+              if parent.exists() or parent.is_symlink():
+                  require(str(parent.resolve()) == str(parent) and stat.S_ISDIR(parent.lstat().st_mode), "raw parent alias refused")
+              if parent == target: break
+          raw.mkdir(parents=True, exist_ok=True)
+          require(str(raw.resolve()) == str(raw) and stat.S_ISDIR(raw.lstat().st_mode), "raw root alias refused")
+          # The trusted output root is established before fallible source guards.
+          first_error, actual, driver_head, target_head, roles_passed = None, None, "UNKNOWN", "UNKNOWN", False
+          try:
+              require(len(expected_driver) == 40 and all(c in "0123456789abcdef" for c in expected_driver), "driver SHA invalid")
+              require(expected_driver != TARGET and os.environ["ZK682_EXPECTED_COMMIT"] == TARGET, "source/target roles invalid")
+              require(os.environ["GITHUB_SHA"] == TARGET and os.environ["VITE_COMMIT_SHA"] == TARGET, "child target binding invalid")
+              driver_head = git(driver, "rev-parse", "HEAD")
+              require(driver != target and driver_head == expected_driver, "driver checkout drift")
+              target_head = git(target, "rev-parse", "HEAD")
+              require(target_head == TARGET, "target checkout drift")
+              roles_passed = True
+              subprocess.check_call(["git", "-C", str(target), "diff", "--quiet", "HEAD", "--"], timeout=10)
+              subprocess.check_call(["git", "-C", str(target), "diff", "--cached", "--quiet", "HEAD", "--"], timeout=10)
+              actual = {name: regular_pin(target / name) for name in PINS}
+              require(actual == PINS, "target source pin drift")
+          except Exception as error:
+              first_error = error
+          def error_record(error):
+              message = str(error)
+              return {"type": type(error).__name__, "message": message[:512], "messageTruncated": len(message) > 512}
+          def status_output(*args):
+              p = subprocess.Popen(["git", "-C", str(target), "diff", "--name-status", "--no-renames", "-z", *args],
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+              data, deadline = bytearray(), time.monotonic() + 10
+              try:
+                  while True:
+                      remaining = deadline - time.monotonic()
+                      require(remaining > 0 and select.select([p.stdout], [], [], remaining)[0], "status deadline")
+                      chunk = os.read(p.stdout.fileno(), min(4096, 32769 - len(data)))
+                      if not chunk: break
+                      data.extend(chunk)
+                      require(len(data) <= 32768, "status output cap")
+                  require(p.wait(timeout=max(0, deadline - time.monotonic())) == 0, "status git failure")
+                  return bytes(data)
+              finally:
+                  p.stdout.close()
+                  if p.poll() is None: p.kill(); p.wait(timeout=10)
+          def changed_pin(name):
+              p = target / name
+              require(str(p.resolve()) == str(p), "changed source alias refused")
+              before = p.lstat()
+              require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1, "changed regular single-link source required")
+              require(before.st_size <= 65536, "changed source size cap")
+              fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)
+              identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns, s.st_nlink)
+              digest, size = hashlib.sha256(), 0
+              try:
+                  require(identity(os.fstat(fd)) == identity(before), "changed source identity drift")
+                  while True:
+                      chunk = os.read(fd, 65536)
+                      if not chunk: break
+                      size += len(chunk)
+                      require(size <= 65536, "changed source size cap")
+                      digest.update(chunk)
+                  after = os.fstat(fd)
+              finally: os.close(fd)
+              require(str(p.resolve()) == str(p) and identity(before) == identity(after) == identity(p.lstat()), "changed source changed while hashing")
+              return {"bytes": size, "sha256": digest.hexdigest()}
+          changed, status_error, seen_views = {}, None, set()
+          try:
+              for view, args in (("worktreeVsIndex", ("--",)), ("indexVsHead", ("--cached", "HEAD", "--"))):
+                  data = status_output(*args)
+                  require(not data or data.endswith(b"\0"), "status termination UNKNOWN")
+                  fields = data.split(b"\0")[:-1] if data else []
+                  require(len(fields) % 2 == 0, "status pairing UNKNOWN")
+                  for offset in range(0, len(fields), 2):
+                      status = fields[offset].decode("ascii")
+                      name = fields[offset + 1].decode("utf-8")
+                      require(status in ("A", "D", "M", "T", "U", "X", "B"), "status code UNKNOWN")
+                      parts = name.split("/")
+                      require(name and len(fields[offset + 1]) <= 1024 and all(part not in ("", ".", "..") for part in parts)
+                              and not name.startswith("/"), "status path UNKNOWN")
+                      require((view, name) not in seen_views, "duplicate status UNKNOWN")
+                      seen_views.add((view, name))
+                      if name not in changed:
+                          require(len(changed) < 128, "changed path cap")
+                          changed[name] = {"path": name, "changes": [], "hashOutcome": "UNKNOWN"}
+                      changed[name]["changes"].append({"view": view, "status": status})
+              for name, row in changed.items():
+                  try:
+                      row["file"] = changed_pin(name); row["hashOutcome"] = "COMPLETE"
+                  except Exception as error:
+                      row["hashError"] = error_record(error)
+                      if status_error is None: status_error = error
+          except Exception as error:
+              status_error = error
+          if first_error is None and status_error is not None: first_error = status_error
+          if first_error is None and changed: first_error = RuntimeError("tracked status drift")
+          qualified = first_error is None and status_error is None and not changed
+          source_sha = expected_driver if len(expected_driver) == 40 and all(c in "0123456789abcdef" for c in expected_driver) else "UNKNOWN"
+          status_report = {"schemaVersion": 1, "purpose": "neutral-source-status", "sourceSha": source_sha, "candidateSha": TARGET,
+                           "runId": int(run_id), "runAttempt": 1, "phase": phase, "sourceQualified": qualified,
+                           "outcome": "PASS" if qualified else ("HOLD" if status_error is not None else "FAIL"),
+                           "rolesAndHeadsPassed": roles_passed,
+                           "driverHead": driver_head if len(driver_head) == 40 and all(c in "0123456789abcdef" for c in driver_head) else "UNKNOWN",
+                           "targetHead": target_head if len(target_head) == 40 and all(c in "0123456789abcdef" for c in target_head) else "UNKNOWN",
+                           "pinsPassed": actual == PINS, "firstFailure": error_record(first_error) if first_error is not None else None,
+                           "statusFailure": error_record(status_error) if status_error is not None else None,
+                           "historyComplete": status_error is None, "metadataOverflow": False,
+                           "changedPaths": list(changed.values()), "collectedChangedPaths": len(changed), "omittedChangedPaths": 0}
+          status_data = (json.dumps(status_report, separators=(",", ":")) + "\n").encode()
+          if len(status_data) > 32768:
+              cap_error = RuntimeError("source status metadata cap")
+              if first_error is None: first_error = cap_error
+              qualified = False
+              status_report.update(outcome="HOLD", sourceQualified=False, historyComplete=False, metadataOverflow=True,
+                                   changedPaths=[], omittedChangedPaths=len(changed), statusFailure=error_record(cap_error),
+                                   firstFailure=error_record(first_error))
+              status_data = (json.dumps(status_report, separators=(",", ":")) + "\n").encode()
+          require(len(status_data) <= 32768, "source status fallback cap")
+          context = {"schemaVersion": 1, "purpose": "original-app-heap-verification", "sourceSha": expected_driver, "candidateSha": TARGET,
+                     "runId": int(run_id), "runAttempt": 1, "workflowPath": ".github/workflows/zk682-certification.yml", "phase": phase,
+                     "sourcePins": actual, "linuxEffectiveTestMs": 1800000, "linuxGlobalTimeout": None,
+                     "workerSeconds": 1920, "killGraceSeconds": 60, "hardEnvelopeSeconds": 1980,
+                     "originalLocalBudgetsUnchanged": [595, 600, 660], "captureMsUnchanged": 10000,
+                     "processClosure": "UNKNOWN; GNU timeout process-group policy is not PID reconciliation"}
+          def wx(name, obj):
+              data = (json.dumps(obj, indent=2) + "\n").encode()
+              require(len(data) <= 65536, "context cap")
+              with open(raw / name, "xb") as f: f.write(data); f.flush(); os.fsync(f.fileno())
+          try:
+              with open(raw / ("heap-source-status-" + phase + ".json"), "xb") as f:
+                  f.write(status_data); f.flush(); os.fsync(f.fileno())
+              if first_error is None:
+                  if phase == "before":
+                      wx("heap-hosted-intent.json", {"purpose": context["purpose"], "sourceSha": expected_driver, "candidateSha": TARGET,
+                         "runId": int(run_id), "runAttempt": 1, "invocationCap": 1, "qualification": "Exclusive workflow intent; ROOT admission and conflict checks are separate prerequisites"})
+                  wx("heap-source-" + phase + ".json", context)
+          except Exception as publication_error:
+              if first_error is not None: raise first_error from publication_error
+              raise
+          if first_error is not None: raise first_error
+          PY
+      - uses: actions/setup-node@v4
+        timeout-minutes: 10
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: heap-target/simgolf-lite/package-lock.json
+      - name: Install exact locked target dependencies
+        working-directory: heap-target/simgolf-lite
+        timeout-minutes: 10
+        run: |
+          export GITHUB_SHA="$ZK682_EXPECTED_COMMIT"
+          npm ci
+      - name: Install original Chromium browser
+        working-directory: heap-target/simgolf-lite
+        timeout-minutes: 10
+        run: |
+          export GITHUB_SHA="$ZK682_EXPECTED_COMMIT"
+          npx playwright install --with-deps chromium
+      - name: Build exact target
+        working-directory: heap-target/simgolf-lite
+        timeout-minutes: 10
+        run: |
+          export GITHUB_SHA="$ZK682_EXPECTED_COMMIT"
+          npm run build
+      - name: Original resource-growth command
+        id: resource
+        continue-on-error: true
+        working-directory: heap-target/simgolf-lite
+        timeout-minutes: 33
+        shell: bash
+        run: |
+          export GITHUB_SHA="$ZK682_EXPECTED_COMMIT"
+          timeout --signal=TERM --kill-after=60s 1920s npm run test:resource-growth -- --expected-commit "$ZK682_EXPECTED_COMMIT"
+      - name: Entire original supplemental stability command
+        id: stability
+        continue-on-error: true
+        working-directory: heap-target/simgolf-lite
+        timeout-minutes: 33
+        shell: bash
+        run: |
+          export GITHUB_SHA="$ZK682_EXPECTED_COMMIT"
+          timeout --signal=TERM --kill-after=60s 1920s npm run test:stability -- --expected-commit "$ZK682_EXPECTED_COMMIT"
+      - name: Verify target source after producers
+        id: source_after
+        if: ${{ always() && steps.source_before.outcome == 'success' }}
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        timeout-minutes: 5
+        env:
+          HEAP_PIN_PHASE: after
+        run: |
+          export GITHUB_SHA="$ZK682_EXPECTED_COMMIT"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, select, stat, subprocess, time
+          TARGET = "5c236f38655ed9e74d24530f402e08601dbe9387"
+          PINS = {'simgolf-lite/package.json': {'bytes': 11208, 'sha256': '6bdbf6af0dca94b79d3025f73b4558ed555b243e03c2ef0ef8c6f42530cdf951'}, 'simgolf-lite/playwright.config.ts': {'bytes': 697, 'sha256': '35d7a3e1c5bf4c00508ff1cfd2510a2bc1306c3243eacac924a9b0940327a948'}, 'simgolf-lite/e2e/zk682-resource-growth.e2e.ts': {'bytes': 15221, 'sha256': 'cd238c429bb3c4745b903124442409ad1309e5f6a368ddbf81cd376c2f907142'}, 'simgolf-lite/e2e/zk682-stability.e2e.ts': {'bytes': 17333, 'sha256': 'c45b0cf36a725fbe4da0de4877cdac016e29c334f63f1a3b674edfb20bdd2a45'}, 'simgolf-lite/scripts/zk682-run-resource-growth.mjs': {'bytes': 2105, 'sha256': '49206a32a5d47386e4695098cf53b06812d1f352745752dd7fd2be7ecedf48a2'}, 'simgolf-lite/scripts/zk682-run-stability.mjs': {'bytes': 1790, 'sha256': '43587e0f25cba83c3fe0f16884a91e291cf7bce7e813bd5c9a9805e038393647'}}
+          def require(value, message):
+              if not value: raise RuntimeError(message)
+          def directory(name):
+              p = pathlib.Path(os.environ[name])
+              require(p.is_absolute() and str(p.resolve()) == str(p), "checkout alias refused")
+              require(stat.S_ISDIR(p.lstat().st_mode), "checkout directory required")
+              return p
+          def git(p, *args):
+              return subprocess.check_output(["git", "-C", str(p), *args], text=True, timeout=10).strip()
+          def regular_pin(p):
+              require(str(p.resolve()) == str(p), "source alias refused")
+              before = p.lstat()
+              require(stat.S_ISREG(before.st_mode), "regular source required")
+              fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)
+              try:
+                  opened = os.fstat(fd)
+                  require((opened.st_dev, opened.st_ino, opened.st_size) == (before.st_dev, before.st_ino, before.st_size), "source identity drift")
+                  b = b""
+                  while True:
+                      chunk = os.read(fd, 65536)
+                      if not chunk: break
+                      b += chunk
+                      require(len(b) <= 65536, "source size cap")
+                  after = os.fstat(fd)
+              finally: os.close(fd)
+              current = p.lstat()
+              identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+              require(identity(before) == identity(after) == identity(current), "source changed while hashing")
+              return {"bytes": len(b), "sha256": hashlib.sha256(b).hexdigest()}
+          driver, target = directory("HEAP_DRIVER_ROOT"), directory("HEAP_TARGET_ROOT")
+          expected_driver = os.environ["HEAP_DRIVER_SHA"]
+          phase = os.environ.get("HEAP_PIN_PHASE", "before")
+          require(phase in ("before", "after"), "source phase invalid")
+          run_id, attempt = os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"]
+          require(run_id.isascii() and run_id.isdigit() and 0 < int(run_id) <= 9007199254740991 and attempt == "1", "run identity/cap invalid")
+          raw = target / "simgolf-lite/artifacts/zk682/raw"
+          for parent in (raw, *raw.parents):
+              if parent.exists() or parent.is_symlink():
+                  require(str(parent.resolve()) == str(parent) and stat.S_ISDIR(parent.lstat().st_mode), "raw parent alias refused")
+              if parent == target: break
+          raw.mkdir(parents=True, exist_ok=True)
+          require(str(raw.resolve()) == str(raw) and stat.S_ISDIR(raw.lstat().st_mode), "raw root alias refused")
+          # The trusted output root is established before fallible source guards.
+          first_error, actual, driver_head, target_head, roles_passed = None, None, "UNKNOWN", "UNKNOWN", False
+          try:
+              require(len(expected_driver) == 40 and all(c in "0123456789abcdef" for c in expected_driver), "driver SHA invalid")
+              require(expected_driver != TARGET and os.environ["ZK682_EXPECTED_COMMIT"] == TARGET, "source/target roles invalid")
+              require(os.environ["GITHUB_SHA"] == TARGET and os.environ["VITE_COMMIT_SHA"] == TARGET, "child target binding invalid")
+              driver_head = git(driver, "rev-parse", "HEAD")
+              require(driver != target and driver_head == expected_driver, "driver checkout drift")
+              target_head = git(target, "rev-parse", "HEAD")
+              require(target_head == TARGET, "target checkout drift")
+              roles_passed = True
+              subprocess.check_call(["git", "-C", str(target), "diff", "--quiet", "HEAD", "--"], timeout=10)
+              subprocess.check_call(["git", "-C", str(target), "diff", "--cached", "--quiet", "HEAD", "--"], timeout=10)
+              actual = {name: regular_pin(target / name) for name in PINS}
+              require(actual == PINS, "target source pin drift")
+          except Exception as error:
+              first_error = error
+          def error_record(error):
+              message = str(error)
+              return {"type": type(error).__name__, "message": message[:512], "messageTruncated": len(message) > 512}
+          def status_output(*args):
+              p = subprocess.Popen(["git", "-C", str(target), "diff", "--name-status", "--no-renames", "-z", *args],
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+              data, deadline = bytearray(), time.monotonic() + 10
+              try:
+                  while True:
+                      remaining = deadline - time.monotonic()
+                      require(remaining > 0 and select.select([p.stdout], [], [], remaining)[0], "status deadline")
+                      chunk = os.read(p.stdout.fileno(), min(4096, 32769 - len(data)))
+                      if not chunk: break
+                      data.extend(chunk)
+                      require(len(data) <= 32768, "status output cap")
+                  require(p.wait(timeout=max(0, deadline - time.monotonic())) == 0, "status git failure")
+                  return bytes(data)
+              finally:
+                  p.stdout.close()
+                  if p.poll() is None: p.kill(); p.wait(timeout=10)
+          def changed_pin(name):
+              p = target / name
+              require(str(p.resolve()) == str(p), "changed source alias refused")
+              before = p.lstat()
+              require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1, "changed regular single-link source required")
+              require(before.st_size <= 65536, "changed source size cap")
+              fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)
+              identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns, s.st_nlink)
+              digest, size = hashlib.sha256(), 0
+              try:
+                  require(identity(os.fstat(fd)) == identity(before), "changed source identity drift")
+                  while True:
+                      chunk = os.read(fd, 65536)
+                      if not chunk: break
+                      size += len(chunk)
+                      require(size <= 65536, "changed source size cap")
+                      digest.update(chunk)
+                  after = os.fstat(fd)
+              finally: os.close(fd)
+              require(str(p.resolve()) == str(p) and identity(before) == identity(after) == identity(p.lstat()), "changed source changed while hashing")
+              return {"bytes": size, "sha256": digest.hexdigest()}
+          changed, status_error, seen_views = {}, None, set()
+          try:
+              for view, args in (("worktreeVsIndex", ("--",)), ("indexVsHead", ("--cached", "HEAD", "--"))):
+                  data = status_output(*args)
+                  require(not data or data.endswith(b"\0"), "status termination UNKNOWN")
+                  fields = data.split(b"\0")[:-1] if data else []
+                  require(len(fields) % 2 == 0, "status pairing UNKNOWN")
+                  for offset in range(0, len(fields), 2):
+                      status = fields[offset].decode("ascii")
+                      name = fields[offset + 1].decode("utf-8")
+                      require(status in ("A", "D", "M", "T", "U", "X", "B"), "status code UNKNOWN")
+                      parts = name.split("/")
+                      require(name and len(fields[offset + 1]) <= 1024 and all(part not in ("", ".", "..") for part in parts)
+                              and not name.startswith("/"), "status path UNKNOWN")
+                      require((view, name) not in seen_views, "duplicate status UNKNOWN")
+                      seen_views.add((view, name))
+                      if name not in changed:
+                          require(len(changed) < 128, "changed path cap")
+                          changed[name] = {"path": name, "changes": [], "hashOutcome": "UNKNOWN"}
+                      changed[name]["changes"].append({"view": view, "status": status})
+              for name, row in changed.items():
+                  try:
+                      row["file"] = changed_pin(name); row["hashOutcome"] = "COMPLETE"
+                  except Exception as error:
+                      row["hashError"] = error_record(error)
+                      if status_error is None: status_error = error
+          except Exception as error:
+              status_error = error
+          if first_error is None and status_error is not None: first_error = status_error
+          if first_error is None and changed: first_error = RuntimeError("tracked status drift")
+          qualified = first_error is None and status_error is None and not changed
+          source_sha = expected_driver if len(expected_driver) == 40 and all(c in "0123456789abcdef" for c in expected_driver) else "UNKNOWN"
+          status_report = {"schemaVersion": 1, "purpose": "neutral-source-status", "sourceSha": source_sha, "candidateSha": TARGET,
+                           "runId": int(run_id), "runAttempt": 1, "phase": phase, "sourceQualified": qualified,
+                           "outcome": "PASS" if qualified else ("HOLD" if status_error is not None else "FAIL"),
+                           "rolesAndHeadsPassed": roles_passed,
+                           "driverHead": driver_head if len(driver_head) == 40 and all(c in "0123456789abcdef" for c in driver_head) else "UNKNOWN",
+                           "targetHead": target_head if len(target_head) == 40 and all(c in "0123456789abcdef" for c in target_head) else "UNKNOWN",
+                           "pinsPassed": actual == PINS, "firstFailure": error_record(first_error) if first_error is not None else None,
+                           "statusFailure": error_record(status_error) if status_error is not None else None,
+                           "historyComplete": status_error is None, "metadataOverflow": False,
+                           "changedPaths": list(changed.values()), "collectedChangedPaths": len(changed), "omittedChangedPaths": 0}
+          status_data = (json.dumps(status_report, separators=(",", ":")) + "\n").encode()
+          if len(status_data) > 32768:
+              cap_error = RuntimeError("source status metadata cap")
+              if first_error is None: first_error = cap_error
+              qualified = False
+              status_report.update(outcome="HOLD", sourceQualified=False, historyComplete=False, metadataOverflow=True,
+                                   changedPaths=[], omittedChangedPaths=len(changed), statusFailure=error_record(cap_error),
+                                   firstFailure=error_record(first_error))
+              status_data = (json.dumps(status_report, separators=(",", ":")) + "\n").encode()
+          require(len(status_data) <= 32768, "source status fallback cap")
+          context = {"schemaVersion": 1, "purpose": "original-app-heap-verification", "sourceSha": expected_driver, "candidateSha": TARGET,
+                     "runId": int(run_id), "runAttempt": 1, "workflowPath": ".github/workflows/zk682-certification.yml", "phase": phase,
+                     "sourcePins": actual, "linuxEffectiveTestMs": 1800000, "linuxGlobalTimeout": None,
+                     "workerSeconds": 1920, "killGraceSeconds": 60, "hardEnvelopeSeconds": 1980,
+                     "originalLocalBudgetsUnchanged": [595, 600, 660], "captureMsUnchanged": 10000,
+                     "processClosure": "UNKNOWN; GNU timeout process-group policy is not PID reconciliation"}
+          def wx(name, obj):
+              data = (json.dumps(obj, indent=2) + "\n").encode()
+              require(len(data) <= 65536, "context cap")
+              with open(raw / name, "xb") as f: f.write(data); f.flush(); os.fsync(f.fileno())
+          try:
+              with open(raw / ("heap-source-status-" + phase + ".json"), "xb") as f:
+                  f.write(status_data); f.flush(); os.fsync(f.fileno())
+              if first_error is None:
+                  if phase == "before":
+                      wx("heap-hosted-intent.json", {"purpose": context["purpose"], "sourceSha": expected_driver, "candidateSha": TARGET,
+                         "runId": int(run_id), "runAttempt": 1, "invocationCap": 1, "qualification": "Exclusive workflow intent; ROOT admission and conflict checks are separate prerequisites"})
+                  wx("heap-source-" + phase + ".json", context)
+          except Exception as publication_error:
+              if first_error is not None: raise first_error from publication_error
+              raise
+          if first_error is not None: raise first_error
+          PY
+      - name: Bound raw inventory before upload
+        id: raw_inventory
+        if: ${{ always() && steps.source_before.outcome == 'success' }}
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        timeout-minutes: 5
+        env:
+          HEAP_RESOURCE_OUTCOME: ${{ steps.resource.outcome }}
+          HEAP_STABILITY_OUTCOME: ${{ steps.stability.outcome }}
+          HEAP_POST_SOURCE_OUTCOME: ${{ steps.source_after.outcome }}
+        run: |
+          export GITHUB_SHA="$ZK682_EXPECTED_COMMIT"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, stat
+          raw = pathlib.Path(os.environ["HEAP_TARGET_ROOT"]) / "simgolf-lite/artifacts/zk682/raw"
+          def require(value, message):
+              if not value: raise RuntimeError(message)
+          require(raw.is_absolute() and str(raw.resolve()) == str(raw) and stat.S_ISDIR(raw.lstat().st_mode), "raw directory alias refused")
+          output = raw / "heap-raw-inventory.json"
+          require(not output.exists() and not output.is_symlink(), "inventory output already exists")
+          root_before = raw.lstat()
+          files = []
+          for p in raw.rglob("*"):
+              s = p.lstat()
+              require(not stat.S_ISLNK(s.st_mode), "raw symlink refused")
+              require(stat.S_ISDIR(s.st_mode) or stat.S_ISREG(s.st_mode), "raw special file refused")
+              if stat.S_ISDIR(s.st_mode): continue
+              require(len(files) < 127, "raw file count exceeds 128 including inventory")
+              require(p.suffix.lower() != ".json" or s.st_size <= 1048576, "individual JSON cap exceeded")
+              files.append((p, s))
+          require(sum(s.st_size for _, s in files) <= 1073676288, "raw aggregate cap including 64KiB inventory reserve exceeded")
+          rows = []
+          identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+          for p, before in sorted(files):
+              fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)
+              try:
+                  require(identity(os.fstat(fd)) == identity(before), "raw identity drift")
+                  digest, size = hashlib.sha256(), 0
+                  while True:
+                      b = os.read(fd, 1048576)
+                      if not b: break
+                      size += len(b); require(size <= before.st_size, "raw size drift"); digest.update(b)
+                  after = os.fstat(fd)
+              finally: os.close(fd)
+              require(identity(before) == identity(after) == identity(p.lstat()) and size == before.st_size, "raw changed while hashing")
+              rows.append({"path": p.relative_to(raw).as_posix(), "bytes": size, "sha256": digest.hexdigest()})
+          require(identity(root_before) == identity(raw.lstat()), "raw membership changed while hashing")
+          result = {"schemaVersion": 1, "sourceSha": os.environ["HEAP_DRIVER_SHA"], "candidateSha": os.environ["ZK682_EXPECTED_COMMIT"],
+                    "runId": int(os.environ["GITHUB_RUN_ID"]), "runAttempt": 1, "entries": rows, "fileCountIncludingInventory": len(rows) + 1,
+                    "rawBytesExcludingInventory": sum(r["bytes"] for r in rows), "rawCapBytes": 1073741824, "jsonCapBytes": 1048576,
+                    "resourceOutcome": os.environ.get("HEAP_RESOURCE_OUTCOME") or "UNKNOWN",
+                    "stabilityOutcome": os.environ.get("HEAP_STABILITY_OUTCOME") or "UNKNOWN",
+                    "postSourceOutcome": os.environ.get("HEAP_POST_SOURCE_OUTCOME") or "UNKNOWN",
+                    "processClosure": "UNKNOWN; no universal native/descendant closure proved", "certificationEligible": False}
+          data = (json.dumps(result, indent=2) + "\n").encode()
+          require(len(data) <= 65536 and sum(r["bytes"] for r in rows) + len(data) <= 1073741824, "inventory output cap")
+          with open(output, "xb") as f: f.write(data); f.flush(); os.fsync(f.fileno())
+          PY
+      - name: Upload raw original app heap evidence only
+        if: ${{ always() && steps.raw_inventory.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 5
+        with:
+          name: zk1262-original-app-heap-${{ inputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: heap-target/simgolf-lite/artifacts/zk682/raw
+          if-no-files-found: error
+          retention-days: 90
+      - name: Bound before-source failure diagnostic only
+        id: before_failure_inventory
+        if: ${{ always() && steps.source_before.outcome == 'failure' }}
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        timeout-minutes: 5
+        env:
+          HEAP_BEFORE_SOURCE_OUTCOME: ${{ steps.source_before.outcome }}
+          HEAP_RESOURCE_OUTCOME: ${{ steps.resource.outcome }}
+          HEAP_STABILITY_OUTCOME: ${{ steps.stability.outcome }}
+          HEAP_POST_SOURCE_OUTCOME: ${{ steps.source_after.outcome }}
+          HEAP_WORKFLOW_REF: ${{ github.workflow_ref }}
+          HEAP_SOURCE_REF: ${{ github.ref }}
+          HEAP_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, stat, subprocess
+          TARGET = "5c236f38655ed9e74d24530f402e08601dbe9387"
+          WORKFLOW = ".github/workflows/zk682-certification.yml"
+          STATUS = "heap-source-status-before.json"
+          def require(value, message):
+              if not value: raise RuntimeError(message)
+          def directory(name):
+              p = pathlib.Path(os.environ[name])
+              require(p.is_absolute() and str(p.resolve()) == str(p) and stat.S_ISDIR(p.lstat().st_mode), "diagnostic checkout alias refused")
+              return p
+          def sha(value):
+              return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+          def error_record(value):
+              return isinstance(value, dict) and set(value) == {"type", "message", "messageTruncated"} and isinstance(value["type"], str) and 0 < len(value["type"]) <= 128 and isinstance(value["message"], str) and len(value["message"]) <= 512 and type(value["messageTruncated"]) is bool
+          def integer(value, low, high):
+              return type(value) is int and low <= value <= high
+          driver, target = directory("HEAP_DRIVER_ROOT"), directory("HEAP_TARGET_ROOT")
+          source = os.environ["HEAP_DRIVER_SHA"]
+          require(len(source) == 40 and all(c in "0123456789abcdef" for c in source) and source != TARGET, "diagnostic source role invalid")
+          require(os.environ["ZK682_EXPECTED_COMMIT"] == TARGET and driver != target, "diagnostic candidate role invalid")
+          for path, expected in ((driver, source), (target, TARGET)):
+              require(subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True, timeout=10).strip() == expected, "diagnostic checkout HEAD drift")
+          run_id, attempt = os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"]
+          require(run_id.isascii() and run_id.isdigit() and 0 < int(run_id) <= 9007199254740991 and attempt == "1", "diagnostic run role invalid")
+          repo, ref, workflow_ref = os.environ["HEAP_REPOSITORY"], os.environ["HEAP_SOURCE_REF"], os.environ["HEAP_WORKFLOW_REF"]
+          require(repo and len(repo) <= 256 and len(ref) <= 256 and ref.startswith("refs/heads/") and len(ref) > 11
+                  and workflow_ref == repo + "/" + WORKFLOW + "@" + ref, "diagnostic workflow/source branch invalid")
+          require(os.environ["HEAP_BEFORE_SOURCE_OUTCOME"] == "failure", "diagnostic before outcome invalid")
+          require(all(os.environ[name] == "skipped" for name in ("HEAP_RESOURCE_OUTCOME", "HEAP_STABILITY_OUTCOME", "HEAP_POST_SOURCE_OUTCOME")), "diagnostic producers not skipped")
+          raw = target / "simgolf-lite/artifacts/zk682/raw"
+          for parent in (raw, *raw.parents):
+              require(str(parent.resolve()) == str(parent) and stat.S_ISDIR(parent.lstat().st_mode), "diagnostic raw parent alias refused")
+              if parent == target: break
+          root_before = raw.lstat()
+          members = []
+          for member in raw.iterdir():
+              require(len(members) < 1 and member.name == STATUS, "diagnostic extra raw file refused")
+              members.append(member)
+          require(len(members) == 1, "diagnostic status missing")
+          p = members[0]
+          before = p.lstat()
+          require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size <= 32768, "diagnostic status regular/size cap")
+          identity = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns, s.st_nlink)
+          fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)
+          try:
+              require(identity(os.fstat(fd)) == identity(before), "diagnostic status identity drift")
+              data = bytearray()
+              while True:
+                  chunk = os.read(fd, min(4096, 32769 - len(data)))
+                  if not chunk: break
+                  data.extend(chunk); require(len(data) <= 32768, "diagnostic status bytes cap")
+              after = os.fstat(fd)
+          finally: os.close(fd)
+          require(identity(before) == identity(after) == identity(p.lstat()) and len(data) == before.st_size, "diagnostic status changed while hashing")
+          require(identity(root_before) == identity(raw.lstat()), "diagnostic raw membership drift")
+          def unique_object(pairs):
+              result = {}
+              for key, value in pairs:
+                  require(key not in result, "diagnostic duplicate JSON key")
+                  result[key] = value
+              return result
+          def reject_constant(value):
+              raise RuntimeError("diagnostic nonfinite JSON")
+          status = json.loads(data, object_pairs_hook=unique_object, parse_constant=reject_constant)
+          keys = {"schemaVersion", "purpose", "sourceSha", "candidateSha", "runId", "runAttempt", "phase", "sourceQualified", "outcome",
+                  "rolesAndHeadsPassed", "driverHead", "targetHead", "pinsPassed", "firstFailure", "statusFailure", "historyComplete",
+                  "metadataOverflow", "changedPaths", "collectedChangedPaths", "omittedChangedPaths"}
+          require(isinstance(status, dict) and set(status) == keys, "diagnostic status schema")
+          require(type(status["schemaVersion"]) is int and status["schemaVersion"] == 1 and status["purpose"] == "neutral-source-status" and status["phase"] == "before", "diagnostic status phase/schema")
+          require(status["sourceSha"] == source and status["candidateSha"] == TARGET and type(status["runId"]) is int
+                  and status["runId"] == int(run_id) and type(status["runAttempt"]) is int and status["runAttempt"] == 1, "diagnostic status role mismatch")
+          require(status["rolesAndHeadsPassed"] is True and status["driverHead"] == source and status["targetHead"] == TARGET, "diagnostic status checkout roles")
+          require(status["sourceQualified"] is False and status["outcome"] in ("FAIL", "HOLD") and error_record(status["firstFailure"]), "diagnostic failure status required")
+          require(all(type(status[name]) is bool for name in ("pinsPassed", "historyComplete", "metadataOverflow")), "diagnostic status flags")
+          require(status["statusFailure"] is None or error_record(status["statusFailure"]), "diagnostic status failure schema")
+          require((status["outcome"] == "FAIL" and status["statusFailure"] is None and status["historyComplete"] and not status["metadataOverflow"])
+                  or (status["outcome"] == "HOLD" and status["statusFailure"] is not None and not status["historyComplete"]), "diagnostic failure flags inconsistent")
+          rows = status["changedPaths"]
+          require(isinstance(rows, list) and len(rows) <= 128 and integer(status["collectedChangedPaths"], 0, 128)
+                  and integer(status["omittedChangedPaths"], 0, 128), "diagnostic status path count")
+          require(len(rows) + status["omittedChangedPaths"] == status["collectedChangedPaths"], "diagnostic status count reconciliation")
+          require((not status["metadataOverflow"] and status["omittedChangedPaths"] == 0)
+                  or (status["metadataOverflow"] and not rows), "diagnostic status omission flags")
+          seen = set()
+          for row in rows:
+              require(isinstance(row, dict) and {"path", "changes", "hashOutcome"} <= set(row) <= {"path", "changes", "hashOutcome", "file", "hashError"}, "diagnostic changed row schema")
+              name = row["path"]
+              require(isinstance(name, str) and name and len(name.encode("utf-8")) <= 1024 and not name.startswith("/")
+                      and all(part not in ("", ".", "..") for part in name.split("/")) and name not in seen, "diagnostic changed path invalid")
+              seen.add(name)
+              require(isinstance(row["changes"], list) and 1 <= len(row["changes"]) <= 2, "diagnostic changed status list")
+              views = set()
+              for change in row["changes"]:
+                  require(isinstance(change, dict) and set(change) == {"view", "status"} and change["view"] in ("worktreeVsIndex", "indexVsHead")
+                          and change["view"] not in views and change["status"] in ("A", "D", "M", "T", "U", "X", "B"), "diagnostic changed status invalid")
+                  views.add(change["view"])
+              if row["hashOutcome"] == "COMPLETE":
+                  file = row.get("file")
+                  require(isinstance(file, dict) and set(file) == {"bytes", "sha256"} and integer(file["bytes"], 0, 65536) and sha(file["sha256"])
+                          and "hashError" not in row, "diagnostic changed hash invalid")
+              else:
+                  require(row["hashOutcome"] == "UNKNOWN" and "file" not in row and (row.get("hashError") is None or error_record(row["hashError"])), "diagnostic UNKNOWN hash invalid")
+          require(status["outcome"] != "FAIL" or all(row["hashOutcome"] == "COMPLETE" for row in rows), "diagnostic complete history hash UNKNOWN")
+          entry = {"path": STATUS, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+          result = {"schemaVersion": 1, "purpose": "before-source-failure-diagnostic-only", "outcome": "BEFORE_SOURCE_FAILURE_DIAGNOSTIC_ONLY",
+                    "sourceSha": source, "candidateSha": TARGET, "runId": int(run_id), "runAttempt": 1,
+                    "workflowPath": WORKFLOW, "workflowRef": workflow_ref, "sourceRef": ref, "driverHead": source, "targetHead": TARGET,
+                    "entries": [entry], "fileCountIncludingInventory": 2, "rawBytesExcludingInventory": len(data),
+                    "rawCapBytes": 1073741824, "jsonCapBytes": 1048576, "sourceStatusCapBytes": 32768,
+                    "beforeSourceOutcome": "failure", "resourceOutcome": "skipped", "stabilityOutcome": "skipped", "postSourceOutcome": "skipped",
+                    "statusOutcome": status["outcome"], "sourceQualified": False, "numericalQualified": False, "certificationEligible": False,
+                    "browserInvocation": "NOT_STARTED_BY_WORKFLOW_ORDER", "processClosure": "UNKNOWN; no universal native/descendant closure proved"}
+          output_data = (json.dumps(result, separators=(",", ":")) + "\n").encode()
+          require(len(output_data) <= 32768 and len(data) + len(output_data) <= 1073741824, "diagnostic inventory cap")
+          require(identity(before) == identity(p.lstat()) and identity(root_before) == identity(raw.lstat()), "diagnostic prepublication drift")
+          with open(raw / "heap-before-source-failure-inventory.json", "xb") as f:
+              f.write(output_data); f.flush(); os.fsync(f.fileno())
+          PY
+      - name: Upload before-source failure diagnostic only
+        if: ${{ always() && steps.before_failure_inventory.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 5
+        with:
+          name: zk1262-original-app-heap-before-failure-${{ inputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: heap-target/simgolf-lite/artifacts/zk682/raw
+          if-no-files-found: error
+          retention-days: 90
