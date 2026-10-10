@@ -12,6 +12,7 @@
 .cc-bug-report-dialog {
   width: min(860px, 100%);
   max-height: min(900px, calc(100vh - 36px));
+  min-width: 0;
   overflow: auto;
   box-sizing: border-box;
   border: 3px ridge #caa663;
@@ -20,6 +21,8 @@
   color: #26342b;
   box-shadow: 0 24px 70px rgba(0, 0, 0, .4), inset 0 0 0 2px #fff8e8;
   padding: 20px;
+  font-size: 1rem;
+  scroll-padding-block: 12px;
 }
 
 .cc-bug-report-header,
@@ -31,24 +34,31 @@
   gap: 12px;
 }
 
+.cc-bug-report-header > div {
+  min-width: 0;
+}
+
 .cc-bug-report-header h1 {
   margin: 2px 0 0;
-  font: 700 clamp(22px, 3vw, 30px)/1.15 var(--font-display);
+  font: 700 1.75rem/1.15 var(--font-display);
 }
 
 .cc-bug-report-kicker {
   color: #6d5734;
-  font-size: 11px;
+  font-size: .6875rem;
   font-weight: 900;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
 
 .cc-bug-report-header button {
-  width: 38px;
-  height: 38px;
+  display: grid;
+  flex: 0 0 2.375rem;
+  width: 2.375rem;
+  height: 2.375rem;
+  place-items: center;
   border-radius: 50%;
-  font-size: 25px;
+  padding: 0;
 }
 
 .cc-bug-report-dialog form {
@@ -58,8 +68,9 @@
 
 .cc-bug-report-dialog label {
   display: grid;
+  min-width: 0;
   gap: 5px;
-  font-size: 13px;
+  font-size: .8125rem;
   font-weight: 850;
 }
 
@@ -67,23 +78,32 @@
 .cc-bug-report-dialog textarea,
 .cc-bug-report-dialog select {
   width: 100%;
-  min-height: 38px;
+  min-width: 0;
+  min-height: 2.375rem;
   box-sizing: border-box;
   border: 1px solid #8f8068;
   border-radius: 7px;
   background: #fffdf7;
   color: #26342b;
   padding: 8px 10px;
-  font: 600 14px/1.4 var(--font-body);
+  font: 600 .875rem/1.4 var(--font-body);
 }
 
 .cc-bug-report-dialog textarea {
   resize: vertical;
 }
 
+.cc-bug-report-selection-copy {
+  color: #26342b;
+  font-size: .875rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .cc-bug-report-two-column {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -97,23 +117,34 @@
 
 .cc-bug-report-dialog fieldset {
   display: grid;
+  min-width: 0;
   gap: 8px;
   border: 1px solid #aa9877;
   border-radius: 9px;
   padding: 10px 12px 12px;
 }
 
+.cc-bug-report-dialog legend {
+  max-width: 100%;
+  padding-inline: 3px;
+}
+
 .cc-bug-report-dialog .cc-bug-report-check {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .cc-bug-report-check input {
-  width: 18px;
-  min-height: 18px;
+  flex: 0 0 1.125rem;
+  width: 1.125rem;
+  min-height: 1.125rem;
+  margin: 0;
 }
 
 .cc-bug-report-preview {
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid #b7a88d;
   border-radius: 8px;
   background: rgba(255, 255, 255, .48);
@@ -123,6 +154,7 @@
 .cc-bug-report-preview summary {
   cursor: pointer;
   font-weight: 850;
+  overflow-wrap: anywhere;
 }
 
 .cc-bug-report-preview pre {
@@ -130,17 +162,21 @@
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 11px;
+  font-size: .6875rem;
 }
 
 .cc-bug-report-screenshot {
   display: flex;
+  min-width: 0;
   align-items: flex-start;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
 .cc-bug-report-screenshot img {
-  width: min(360px, 70vw);
+  display: block;
+  width: min(360px, 100%);
+  max-width: 100%;
   max-height: 220px;
   border: 1px solid #6d5c42;
   object-fit: contain;
@@ -166,28 +202,41 @@
 }
 
 .cc-bug-report-actions {
+  flex-wrap: wrap;
   border-top: 1px solid #b8a98d;
   padding-top: 12px;
 }
 
 .cc-bug-report-actions > span {
-  color: #6f675b;
-  font-size: 11px;
+  color: #5c5143;
+  font-size: .6875rem;
 }
 
 .cc-bug-report-dialog button {
-  min-height: 36px;
+  min-width: 0;
+  min-height: 2.25rem;
   border: 1px solid #65543c;
   border-radius: 7px;
   background: #3b6044;
   color: #fffaf0;
   padding: 7px 11px;
-  font: 800 13px/1.2 var(--font-body);
+  font: 800 .8125rem/1.2 var(--font-body);
+  overflow-wrap: anywhere;
 }
 
 .cc-bug-report-dialog button:disabled {
   cursor: not-allowed;
   opacity: .55;
+}
+
+.cc-bug-report-dialog :is(button, input, textarea, select, summary, a):focus-visible {
+  outline: 3px solid #173322 !important;
+  outline-offset: 2px;
+  box-shadow: none !important;
+}
+
+.cc-bug-report-dialog :is(button, input, textarea, select, summary, a) {
+  scroll-margin-block: 12px;
 }
 
 @media (max-width: 680px) {
@@ -203,7 +252,7 @@
   }
 
   .cc-bug-report-two-column {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .cc-bug-report-actions {

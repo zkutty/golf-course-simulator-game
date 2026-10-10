@@ -24,6 +24,7 @@ import {
   latestBugSource,
 } from '../bug-reporting/diagnostics'
 import { captureApplicationScreenshot } from '../bug-reporting/screenshot'
+import { IconUi } from '../assets/icons/IconUi'
 import { useI18n } from '../i18n/useI18n'
 import type { Translator } from '../i18n/context'
 
@@ -240,7 +241,7 @@ export function BugReportDialog({
             onClick={onClose}
             type="button"
           >
-            ×
+            <IconUi name="close" size={18} />
           </button>
         </header>
 
@@ -317,6 +318,13 @@ export function BugReportDialog({
                   <option value="high">{t('bugReporter.severity.high')}</option>
                   <option value="critical">{t('bugReporter.severity.critical')}</option>
                 </select>
+                <span
+                  aria-hidden="true"
+                  className="cc-bug-report-selection-copy"
+                  data-testid="bug-report-severity-copy"
+                >
+                  {t(`bugReporter.severity.${severity}` as const)}
+                </span>
               </label>
             </div>
 

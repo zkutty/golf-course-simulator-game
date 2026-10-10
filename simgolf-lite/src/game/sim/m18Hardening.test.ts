@@ -110,6 +110,68 @@ describe("M18 core hardening", () => {
     expect(afterThemeChange.misses - beforeThemeChange.misses).toBeGreaterThan(0);
   });
 
+  it("invalidates cached elevation-dependent solves for immutable elevation edits", () => {
+    const course = separatedTwoHoleCourse();
+    const originalInput = structuredClone(course);
+    const original = scoreCourseHoles(course);
+    const tee = course.holes[0].tee!;
+    const elevations = course.elevations.slice();
+    elevations[tee.y * course.width + tee.x] = 2;
+    const edited = { ...course, elevations };
+    const updated = scoreCourseHoles(edited);
+
+    // Both searches inspect this elevation, including rejected candidates.
+    expect(__getHoleScoreCacheStatsForTests()).toEqual({ hits: 0, misses: 4 });
+    expect(updated.holes[0]).not.toEqual(original.holes[0]);
+    expect(updated.holes[1]).not.toBe(original.holes[1]);
+    expect(course).toEqual(originalInput);
+    const cold = scoreCourseHoles({
+      ...edited,
+      holes: structuredClone(edited.holes),
+      tiles: edited.tiles.slice(),
+      elevations: elevations.slice(),
+    });
+    expect(updated).toEqual(cold);
+    expect(__getHoleScoreCacheStatsForTests()).toEqual({ hits: 0, misses: 6 });
+  });
+
+  it("tracks leading-zero elevation reads through an accessor receiver", () => {
+    const course = separatedTwoHoleCourse();
+    course.tiles.fill("fairway");
+    course.holes = [{ tee: { x: 5, y: 15 }, green: { x: 25, y: 15 }, parMode: "AUTO" }];
+    const elevations = course.elevations;
+    const tee = course.holes[0].tee!;
+    const receivers: string[] = [];
+    Object.defineProperty(elevations, "01", { value: 0, configurable: true });
+    Object.defineProperty(elevations, String(tee.y * course.width + tee.x), {
+      configurable: true,
+      get() {
+        receivers.push(this === elevations ? "target" : "receiver");
+        return Reflect.get(this, "01");
+      },
+    });
+    const original = scoreCourseHoles(course);
+    expect(original.holes[0]).toMatchObject({ isComplete: true, isValid: true, par: 3 });
+    expect(receivers).toContain("target");
+    expect(receivers).toContain("receiver");
+    receivers.forEach((receiver, index) => {
+      if (receiver === "receiver") expect(receivers[index - 1]).toBe("target");
+    });
+    expect(__getHoleScoreCacheStatsForTests()).toEqual({ hits: 0, misses: 1 });
+
+    // The noncanonical property reads cell 1 for dependency tracking, even
+    // though its own value and the played elevation remain zero.
+    const editedElevations = elevations.slice();
+    for (const key of Reflect.ownKeys(elevations)) {
+      Object.defineProperty(editedElevations, key, Object.getOwnPropertyDescriptor(elevations, key)!);
+    }
+    editedElevations[1] = 2;
+    const updated = scoreCourseHoles({ ...course, elevations: editedElevations });
+    expect(updated).toEqual(original);
+    expect(__getHoleScoreCacheStatsForTests()).toEqual({ hits: 0, misses: 2 });
+    expect(elevations[1]).toBe(0);
+  });
+
   it.runIf(process.env.M18_BENCH === "1")(
     "measurably reduces scoring work for a paint stroke on a full nine-hole course",
     () => {

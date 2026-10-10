@@ -368,8 +368,19 @@ let holeScoreCacheHits = 0;
 let holeScoreCacheMisses = 0;
 
 function numericIndex(property: string | symbol): number | null {
-  if (typeof property !== "string" || !/^\d+$/.test(property)) return null;
-  return Number(property);
+  if (typeof property !== "string" || property.length === 0) return null;
+  // Short decimal indices are exact integers. Avoid regexp and Number work
+  // on the hot array-read path; retain the original conversion for long keys.
+  if (property.length <= 9) {
+    let index = 0;
+    for (let i = 0; i < property.length; i++) {
+      const digit = property.charCodeAt(i) - 48;
+      if (digit < 0 || digit > 9) return null;
+      index = index * 10 + digit;
+    }
+    return index;
+  }
+  return /^\d+$/.test(property) ? Number(property) : null;
 }
 
 function trackArrayReads<T>(values: T[], dependencies: Map<number, T>): T[] {
