@@ -24,8 +24,8 @@ OWNER = 'simgolf-lite/scripts/zk1262-build-capture-audit-owner.py'
 SELF = 'simgolf-lite/scripts/zk1262-held-phase-adjudicator.py'
 OWNER_SHA = '9c60ec41141e53525fc77e9ad3d961cd5e95407863c322256ceb1fab7f54dbc0'
 HELPER = 'simgolf-lite/scripts/zk1262-capture-phase-driver.py'
-HELPER_BYTES = 32810
-HELPER_SHA = '1e26b19b3d35bd1b1ce3dfc829710a45b2616d6a0298cdd00c8207f83cb22e86'
+HELPER_BYTES = 32931
+HELPER_SHA = '88112d63c6322a667aca0a791f4d48e583492b47bf80056b8206627a91176249'
 BINDINGS = {OWNER:{'bytes':32767,'sha256':OWNER_SHA},
     'simgolf-lite/scripts/zk1262-build-capture-audit-owner.test.py':
         {'bytes':29020,'sha256':'8d8fb18e7c875cd6e88bd08344816f3fbb283d5040d17ca329c0eecadbc176ef'},

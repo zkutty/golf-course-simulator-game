@@ -40,7 +40,7 @@ jobs:
     env:
       CAPTURE_REPOSITORY_ID: ${{ github.repository_id }}
       CAPTURE_FIXED_POLICY_SHA256: 1d3082188bd8aff2153dbc20df43b3c10cae3f409f312eed5699439e742289e8
-      CAPTURE_ADJUDICATOR_SHA256: 6d8332a1da5b23ad77da548fdd1cccba0bff739d4fb3da0325e36e8b91992d76
+      CAPTURE_ADJUDICATOR_SHA256: d3631ed01f8d8e830eff1cd99a886074c36b2fd2bd05439d77e75e7cd151b07c
       CAPTURE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       CAPTURE_SOURCE_SHA: ${{ inputs.source_sha }}
       CAPTURE_DRIVER_ROOT: ${{ github.workspace }}/capture-driver

@@ -256,7 +256,7 @@ def sdk_binding(target):
     require(bundle['bytes']==3352341 and bundle['sha256']=='6be5c2ea035554e9b184b1dbc7aa5e7f1fb428dd1b5c202022858dcfae9bee27','version-bound SDK source')
     require(registry_pin['bytes']==1939 and registry_pin['sha256']=='ee39bc924bc3d1bd895626c2910f1292d109bbfeeb5abd113acb45e1951cc942','version-bound registry')
     require(not any(os.environ.get(k) for k in ('PWDEBUG','SELENIUM_REMOTE_URL')),'unsupported debug/remote selector environment')
-    public_result=subprocess.run(['node','--input-type=module','-e',"const {chromium}=await import(process.argv[1]);console.log(JSON.stringify({path:chromium.executablePath()}));",info['testEntry']],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15)
+    public_result=subprocess.run(['node','--input-type=module','-e',"import {createRequire} from 'node:module';const req=createRequire(import.meta.url);const {chromium}=req(process.argv[1]);console.log(JSON.stringify({path:chromium.executablePath()}));",info['testEntry']],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15)
     require(public_result.returncode==0 and len(public_result.stdout)<=65536 and len(public_result.stderr)<=65536,'public executablePath metadata')
     public_info=strict_json(public_result.stdout)
     require(stream_pin(Path(info['bundle']))==bundle and stream_pin(Path(info['registry']))==registry_pin,'SDK selection source drift')
@@ -399,6 +399,7 @@ def finalize(driver,target,root,env):
 
 
 def main():
+    __import__('sys').dont_write_bytecode=True
     p=argparse.ArgumentParser();p.add_argument('action',choices=['init','prepare','ready','finalize','verdict']);a=p.parse_args()
     driver=Path(os.environ['CAPTURE_DRIVER_ROOT']);target=Path(os.environ['CAPTURE_TARGET_ROOT']);root=Path(os.environ['CAPTURE_ARTIFACT_ROOT'])
     if a.action=='init':init(driver,target,root,os.environ)
