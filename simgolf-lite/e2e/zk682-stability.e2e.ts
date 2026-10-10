@@ -20,9 +20,10 @@ type Measured = {
 const timingCleanupSamples: ReturnType<typeof clearReactComponentTimings>[] = [];
 
 async function measure(page: Page, cdp: CDPSession): Promise<Measured> {
+  // Separate CDP requests are not atomic; sample promptly after requested GC.
+  await page.waitForTimeout(120);
   timingCleanupSamples.push(await page.evaluate(clearReactComponentTimings));
   await cdp.send("HeapProfiler.collectGarbage");
-  await page.waitForTimeout(120);
   const heap = await cdp.send("Runtime.getHeapUsage");
   const renderer = await page.evaluate(() => ({
     resources: window.__coursecraftPixiTest?.resourceSnapshot() ?? null,
@@ -169,7 +170,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     candidateCommit: expectedCommit!,
     capturedAt: new Date().toISOString(),
     command: "npm run test:stability",
-    browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true },
+    browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true, heapMeasurementProtocol: { id: "settle-cleanup-gc-query-v1", settlementMs: 120 } },
     thresholds: ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"],
     samples: saveLoadSamples,
   });
@@ -193,7 +194,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     candidateCommit: expectedCommit!,
     capturedAt: new Date().toISOString(),
     command: "npm run test:stability",
-    browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true },
+    browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true, heapMeasurementProtocol: { id: "settle-cleanup-gc-query-v1", settlementMs: 120 } },
     thresholds: ZK682_STABILITY_THRESHOLDS["long-session-resource-stability"],
     samples: longSessionSamples,
   });
@@ -249,7 +250,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     candidateCommit: expectedCommit!,
     capturedAt: new Date().toISOString(),
     command: "npm run test:stability",
-    browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true },
+    browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true, heapMeasurementProtocol: { id: "settle-cleanup-gc-query-v1", settlementMs: 120 } },
     thresholds: ZK682_STABILITY_THRESHOLDS["editing-overlay-sleep-recovery"],
     samples: interactionSamples,
   });

@@ -121,9 +121,10 @@ type TimingCleanupReceipt = { cycle: number; cleanup: ReturnType<typeof clearRea
 
 async function collectPostGcCheckpoint(page: Page, cdp: CDPSession, cycle: number, exercised: { theme: Theme; quality: Quality } | null, timingCleanup: TimingCleanupReceipt[]) {
   if (timingCleanup.length >= 7) throw new Error("Timing cleanup receipt bound exceeded");
+  // Separate CDP requests are not atomic; sample promptly after requested GC.
+  await page.waitForTimeout(150);
   timingCleanup.push({ cycle, cleanup: await page.evaluate(clearReactComponentTimings) });
   await cdp.send("HeapProfiler.collectGarbage");
-  await page.waitForTimeout(150);
   const heap = await cdp.send("Runtime.getHeapUsage");
   const browser = await page.evaluate(() => {
     const resources = window.__coursecraftPixiTest?.resourceSnapshot();
@@ -286,6 +287,7 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
       name: browserName,
       version: page.context().browser()?.version() ?? "unknown",
       cdpHeap: true,
+      heapMeasurementProtocol: { id: "settle-cleanup-gc-query-v1", settlementMs: 150 },
     },
     thresholds: ZK682_RESOURCE_GROWTH_THRESHOLDS,
     warmup: {
