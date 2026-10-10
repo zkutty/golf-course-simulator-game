@@ -324,7 +324,7 @@ test("ZK-682 bounds real Pixi resource growth after warmup and repeated teardown
     observer.terminal(false, error);
     throw error;
   } finally {
-    try { observer.freezeAndWriteWx(resolve(dirname(finalCapturePath), "zk682-capture-phase-ledger.json")); } catch {}
+    try { observer.freezeAndWriteWx(resolve(dirname(finalCapturePath), "zk682-capture-phase-ledger.json")); } catch { /* Preserve the original capture failure if ledger publication fails. */ }
   }
   // ZK1262_CAPTURE_WRAPPER_END
   await writeFile(resolve(dirname(outputPath), "zk682-canvas-capture-receipt.json"), `${JSON.stringify(captureReceipt, null, 2)}\n`, { encoding: "utf8", flag: "wx" });

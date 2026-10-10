@@ -40,17 +40,18 @@ jobs:
     env:
       CAPTURE_REPOSITORY_ID: ${{ github.repository_id }}
       CAPTURE_FIXED_POLICY_SHA256: 1d3082188bd8aff2153dbc20df43b3c10cae3f409f312eed5699439e742289e8
-      CAPTURE_ADJUDICATOR_SHA256: 8c7d58b322e41bf121e24c72405261fd6a6d90fea388c70734192870f6a0840b
+      CAPTURE_ADJUDICATOR_SHA256: 11941c6a51f326aae7d5c13c2807235571c8a8d13ebb274eca1e28e67c5584a6
       CAPTURE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       CAPTURE_SOURCE_SHA: ${{ inputs.source_sha }}
       CAPTURE_DRIVER_ROOT: ${{ github.workspace }}/capture-driver
       CAPTURE_TARGET_ROOT: ${{ github.workspace }}/capture-target
-      CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout immutable diagnostic driver
         id: checkout_driver
         uses: actions/checkout@v4
         timeout-minutes: 2
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
         with:
           ref: ${{ github.sha }}
           path: capture-driver
@@ -59,6 +60,8 @@ jobs:
         id: checkout_target
         uses: actions/checkout@v4
         timeout-minutes: 2
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
         with:
           ref: b7fe6c8be45ef6dbf4793cbd3714f2bc34d91025
           path: capture-target
@@ -67,12 +70,16 @@ jobs:
         id: setup_node
         uses: actions/setup-node@v4
         timeout-minutes: 2
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
         with:
           node-version: 22
       - name: Verify roles and source before setup; exclusive intent
         id: initial
         shell: bash
         timeout-minutes: 1
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
           python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-capture-phase-driver.py" init
@@ -80,18 +87,24 @@ jobs:
         id: install
         shell: bash
         timeout-minutes: 10
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
         working-directory: capture-target/simgolf-lite
         run: npm ci
       - name: Install original default Chromium
         id: browser_install
         shell: bash
         timeout-minutes: 5
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
         working-directory: capture-target/simgolf-lite
         run: npx playwright install --with-deps chromium
       - name: Held audit owner; original build, capture preparation and original producer
         id: held_owner
         shell: bash
         timeout-minutes: 48
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
         working-directory: capture-target/simgolf-lite
         run: |
           set -euo pipefail
@@ -113,6 +126,7 @@ jobs:
         shell: bash
         timeout-minutes: 2
         env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
           OUTCOME_CHECKOUT_DRIVER: ${{ steps.checkout_driver.outcome }}
           OUTCOME_CHECKOUT_TARGET: ${{ steps.checkout_target.outcome }}
           OUTCOME_SETUP_NODE: ${{ steps.setup_node.outcome }}
@@ -160,6 +174,8 @@ jobs:
         if: ${{ always() && steps.publication.outputs.inventory_ready == 'true' && steps.publication.outputs.inventory_driver == github.sha && steps.publication.outputs.inventory_run == github.run_id && steps.publication.outputs.inventory_attempt == '1' && steps.publication.outputs.inventory_sha256 != '' && steps.publication.outputs.inventory_bytes != '' && steps.publication.outputs.inventory_dev != '' && steps.publication.outputs.inventory_ino != '' }}
         uses: actions/upload-artifact@v4
         timeout-minutes: 2
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
         with:
           name: zk1262-capture-phase-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -203,6 +219,8 @@ jobs:
         if: always()
         shell: bash
         timeout-minutes: 1
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -uo pipefail
           set +e
@@ -226,6 +244,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         timeout-minutes: 2
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
         with:
           name: zk1316-external-phase-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
