@@ -2164,12 +2164,24 @@ export default function App() {
       quickSaveAnnouncementPublishTimeoutRef.current = null;
       if (quickSaveAnnouncementSequenceRef.current !== sequence) return;
       setQuickSaveAnnouncement({ sequence, message: t("save.quickComplete") });
-      quickSaveAnnouncementClearTimeoutRef.current = window.setTimeout(() => {
-        quickSaveAnnouncementClearTimeoutRef.current = null;
-        if (quickSaveAnnouncementSequenceRef.current === sequence) setQuickSaveAnnouncement(null);
-      }, QUICK_SAVE_ANNOUNCEMENT_DURATION_MS);
     }, 0);
   }, [t]);
+
+  useEffect(() => {
+    if (!quickSaveAnnouncement) return;
+    const sequence = quickSaveAnnouncement.sequence;
+    const timeout = window.setTimeout(() => {
+      quickSaveAnnouncementClearTimeoutRef.current = null;
+      if (quickSaveAnnouncementSequenceRef.current === sequence) setQuickSaveAnnouncement(null);
+    }, QUICK_SAVE_ANNOUNCEMENT_DURATION_MS);
+    quickSaveAnnouncementClearTimeoutRef.current = timeout;
+    return () => {
+      window.clearTimeout(timeout);
+      if (quickSaveAnnouncementClearTimeoutRef.current === timeout) {
+        quickSaveAnnouncementClearTimeoutRef.current = null;
+      }
+    };
+  }, [quickSaveAnnouncement]);
 
   useEffect(() => () => {
     if (quickSaveAnnouncementPublishTimeoutRef.current !== null) {
@@ -3565,6 +3577,7 @@ export default function App() {
           },
         });
       },
+      weekCloseState: () => ({ speed: live.speed, week: gameSession.getState().world.week }),
       state: () => {
         const current = gameSession.getState();
         const liveSnapshot = live.getSnapshot();

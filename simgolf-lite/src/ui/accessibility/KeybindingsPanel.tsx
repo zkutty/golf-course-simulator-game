@@ -48,7 +48,7 @@ export function KeybindingsPanel(props: { bindings: Keybindings; onChange: (bind
     <div role="presentation" onClick={(event) => event.stopPropagation()} style={{ position: "fixed", inset: 0, zIndex: 100020, background: "rgba(15,24,18,.72)", display: "grid", placeItems: "center", padding: 16 }}>
       <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby="keybindings-title" data-testid="keybindings-panel" style={{ width: "min(620px,100%)", maxHeight: "88vh", overflow: "auto", borderRadius: 18, border: "2px solid #8d806c", background: "#f7f0df", padding: 20 }}>
         <h2 id="keybindings-title" style={{ marginTop: 0 }}><T id="auto.ui.accessibility.keybindingspanel.keyboard.controls" /></h2>
-        <p style={{ color: "#687266" }}><T id="auto.ui.accessibility.keybindingspanel.choose.an.action.then.press.the.replacement.key.or.cho" /></p>
+        <p style={{ color: "#58675c" }}><T id="auto.ui.accessibility.keybindingspanel.choose.an.action.then.press.the.replacement.key.or.cho" /></p>
         <div style={{ display: "grid", gap: 6 }}>
           {BINDING_ACTIONS.map((action) => (
             <div key={action} style={{ display: "grid", gridTemplateColumns: "1fr minmax(130px,auto)", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: "1px solid rgba(61,74,62,.14)" }}>

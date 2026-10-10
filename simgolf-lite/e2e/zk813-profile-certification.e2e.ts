@@ -42,7 +42,12 @@ async function enterGame(page: Page) {
   await page.getByRole("button", { name: "Quick Start" }).click();
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
   const tutorial = page.getByRole("dialog", { name: "First-launch tutorial" });
-  if (await tutorial.count()) await tutorial.getByRole("button", { name: "Skip tutorial" }).click();
+  if (await tutorial.count()) {
+    const deadline = Date.now() + 15_000;
+    await tutorial.getByRole("button", { name: "Skip tutorial" }).press("Enter", { timeout: deadline - Date.now() });
+    await expect(tutorial).toBeHidden({ timeout: Math.max(1, deadline - Date.now()) });
+    expect(Date.now(), "tutorial dismissal retains its original 15 second budget").toBeLessThanOrEqual(deadline);
+  }
 }
 
 async function saveAndReload(page: Page, name: string) {

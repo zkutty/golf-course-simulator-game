@@ -205,6 +205,7 @@ interface Window {
     setZk330GroundingPause(): void;
     setZk330CaptureState(rotation: 0 | 1 | 2 | 3, quality: "high" | "medium" | "low"): void;
     zk330GroundingEvidence(): { validBridgeCrossing: boolean; blockedWaterBank: boolean };
+    weekCloseState(): { speed: "paused" | "1x" | "2x" | "4x"; week: number };
     state(): {
       screen: string;
       screenBase: "title" | "setup-wizard" | "loading" | "in-game";

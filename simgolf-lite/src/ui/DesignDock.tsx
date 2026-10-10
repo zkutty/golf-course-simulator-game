@@ -127,7 +127,7 @@ function drawTexture(
   texture: Texture,
   visualKind: DesignCatalogItem["visualKind"],
 ): boolean {
-  const context = canvas.getContext("2d");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
   const resource = texture.source.resource as CanvasImageSource | undefined;
   if (!context || !resource) return false;
   const frame = texture.frame;

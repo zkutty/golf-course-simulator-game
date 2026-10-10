@@ -11,7 +11,7 @@
       "sources": [
         {
           "path": "e2e/zk813-profile-certification.e2e.ts",
-          "sha256": "c6f145db9a75749857b9959bb4bfa01da70152141884d70bb3b669d5887bec42"
+          "sha256": "2f64b988490f584d3389425ef7a3c1dc3a3de621f343190b7f6972e182dfcd3e"
         }
       ],
       "expected": {
@@ -47,7 +47,7 @@
       "sources": [
         {
           "path": "e2e/zk813-profile-certification.e2e.ts",
-          "sha256": "c6f145db9a75749857b9959bb4bfa01da70152141884d70bb3b669d5887bec42"
+          "sha256": "2f64b988490f584d3389425ef7a3c1dc3a3de621f343190b7f6972e182dfcd3e"
         }
       ],
       "expected": {

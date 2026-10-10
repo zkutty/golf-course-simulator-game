@@ -33,13 +33,13 @@ test("Sunday closes one authoritative week, pauses, and resumes explicitly", asy
   await expect(report).toBeVisible({ timeout: 15_000 });
   await expect(report.getByText("Week 3 complete")).toBeVisible();
   await expect(report).toHaveAttribute("data-resume-speed", "4x");
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("paused");
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().week)).toBe(4);
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.weekCloseState().speed)).toBe("paused");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.weekCloseState().week)).toBe(4);
   await page.screenshot({ path: "/tmp/coursecraft-m31-week-close.png", fullPage: true });
 
   await page.getByTestId("week-close-continue").click();
   await expect(report).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("4x");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.weekCloseState().speed)).toBe("4x");
 });
 
 test("screen flow, hard pause, dirty guard, and save acknowledgement", async ({ page }) => {
