@@ -1,0 +1,256 @@
+name: ZK-1262 exact-b7fe capture phase diagnostic
+
+on:
+  push:
+    branches:
+      - codex/capture-phase-b7fe
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact original App candidate b7fe SHA
+        required: true
+        type: string
+        default: b7fe6c8be45ef6dbf4793cbd3714f2bc34d91025
+      source_sha:
+        description: Full immutable driver SHA, equal to this workflow GITHUB_SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zk1262-capture-phase-${{ github.sha }}-${{ inputs.candidate_sha }}
+  cancel-in-progress: false
+
+jobs:
+  bootstrap-registration:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/codex/capture-phase-b7fe' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Echo actual bootstrap workflow identity
+        shell: bash
+        run: |
+          printf '%s\n' "event=$GITHUB_EVENT_NAME" "ref=$GITHUB_REF" "source_sha=$GITHUB_SHA" "workflow_ref=$GITHUB_WORKFLOW_REF" "run_id=$GITHUB_RUN_ID" "run_attempt=$GITHUB_RUN_ATTEMPT"
+  capture-phase:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      CAPTURE_REPOSITORY_ID: ${{ github.repository_id }}
+      CAPTURE_FIXED_POLICY_SHA256: 1d3082188bd8aff2153dbc20df43b3c10cae3f409f312eed5699439e742289e8
+      CAPTURE_ADJUDICATOR_SHA256: 11941c6a51f326aae7d5c13c2807235571c8a8d13ebb274eca1e28e67c5584a6
+      CAPTURE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      CAPTURE_SOURCE_SHA: ${{ inputs.source_sha }}
+      CAPTURE_DRIVER_ROOT: ${{ github.workspace }}/capture-driver
+      CAPTURE_TARGET_ROOT: ${{ github.workspace }}/capture-target
+    steps:
+      - name: Checkout immutable diagnostic driver
+        id: checkout_driver
+        uses: actions/checkout@v4
+        timeout-minutes: 2
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
+        with:
+          ref: ${{ github.sha }}
+          path: capture-driver
+          fetch-depth: 1
+      - name: Checkout unchanged exact App candidate
+        id: checkout_target
+        uses: actions/checkout@v4
+        timeout-minutes: 2
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
+        with:
+          ref: b7fe6c8be45ef6dbf4793cbd3714f2bc34d91025
+          path: capture-target
+          fetch-depth: 1
+      - name: Bind Node22
+        id: setup_node
+        uses: actions/setup-node@v4
+        timeout-minutes: 2
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
+        with:
+          node-version: 22
+      - name: Verify roles and source before setup; exclusive intent
+        id: initial
+        shell: bash
+        timeout-minutes: 1
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-capture-phase-driver.py" init
+      - name: Original locked dependency install
+        id: install
+        shell: bash
+        timeout-minutes: 10
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
+        working-directory: capture-target/simgolf-lite
+        run: npm ci
+      - name: Install original default Chromium
+        id: browser_install
+        shell: bash
+        timeout-minutes: 5
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
+        working-directory: capture-target/simgolf-lite
+        run: npx playwright install --with-deps chromium
+      - name: Held audit owner; original build, capture preparation and original producer
+        id: held_owner
+        shell: bash
+        timeout-minutes: 48
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
+        working-directory: capture-target/simgolf-lite
+        run: |
+          set -euo pipefail
+          python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-held-phase-adjudicator.py" seal \
+            --repository-id "$CAPTURE_REPOSITORY_ID" --workflow-path .github/workflows/zk1262-capture-phase.yml \
+            --driver-sha "$GITHUB_SHA" --candidate-sha "$CAPTURE_CANDIDATE_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --policy-sha256 "$CAPTURE_FIXED_POLICY_SHA256" \
+            --owner-source-sha256 9c60ec41141e53525fc77e9ad3d961cd5e95407863c322256ceb1fab7f54dbc0 \
+            --adjudicator-source-sha256 "$CAPTURE_ADJUDICATOR_SHA256" \
+            --driver-root "$CAPTURE_DRIVER_ROOT" --target-root "$CAPTURE_TARGET_ROOT" \
+            --artifact-root "$CAPTURE_ARTIFACT_ROOT" \
+            --output "$CAPTURE_ARTIFACT_ROOT-external/held-phase-prelaunch-boundary.json" \
+            -- timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run
+          timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run
+      - name: Always neutral post-source status and bounded role inventory
+        id: publication
+        if: always()
+        shell: bash
+        timeout-minutes: 2
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
+          OUTCOME_CHECKOUT_DRIVER: ${{ steps.checkout_driver.outcome }}
+          OUTCOME_CHECKOUT_TARGET: ${{ steps.checkout_target.outcome }}
+          OUTCOME_SETUP_NODE: ${{ steps.setup_node.outcome }}
+          OUTCOME_INITIAL: ${{ steps.initial.outcome }}
+          OUTCOME_INSTALL: ${{ steps.install.outcome }}
+          OUTCOME_BROWSER_INSTALL: ${{ steps.browser_install.outcome }}
+          OUTCOME_HELD_OWNER: ${{ steps.held_owner.outcome }}
+        run: |
+          set -euo pipefail
+          helper="$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-capture-phase-driver.py"
+          set +e
+          helper_code=1
+          if test -f "$helper"; then
+            python3 "$helper" finalize
+            helper_code=$?
+          else
+            python3 - <<'PY'
+          import hashlib,json,os,stat
+          from pathlib import Path
+          root=Path(os.environ['CAPTURE_ARTIFACT_ROOT'])
+          root.mkdir()
+          if not root.is_absolute() or str(root.resolve())!=str(root) or not stat.S_ISDIR(root.lstat().st_mode):raise RuntimeError('neutral root alias')
+          context={'schemaVersion':1,'kind':'capture-phase-before-driver-failure','driver_sha':os.environ['GITHUB_SHA'],'candidate_sha':os.environ.get('CAPTURE_CANDIDATE_SHA'),'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'diagnosticReady':False,'capturePASS':False,'numericalPASS':False,'releaseCleared':False,'failure':'DRIVER_CHECKOUT_OR_HELPER_UNAVAILABLE','processClosure':'UNKNOWN'}
+          data=(json.dumps(context,separators=(',',':'))+'\n').encode()
+          with (root/'source-context.json').open('xb') as f:f.write(data)
+          inventory={'schemaVersion':1,'kind':'capture-phase-role-inventory','entries':[{'role':'source-context.json','path':'source-context.json','bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}],'missingRequiredDiagnosticRoles':['renderer-resource-growth-command.json','zk682-capture-phase-ledger.json'],'diagnosticReady':False,'capturePASS':False,'numericalPASS':False,'releaseCleared':False,'wholeRunFailed':True}
+          with (root/'inventory.json').open('xb') as f:f.write((json.dumps(inventory,separators=(',',':'))+'\n').encode())
+          PY
+          fi
+          python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-held-phase-adjudicator.py" adjudicate \
+            --repository-id "$CAPTURE_REPOSITORY_ID" --workflow-path .github/workflows/zk1262-capture-phase.yml \
+            --driver-sha "$GITHUB_SHA" --candidate-sha "$CAPTURE_CANDIDATE_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --policy-sha256 "$CAPTURE_FIXED_POLICY_SHA256" \
+            --owner-source-sha256 9c60ec41141e53525fc77e9ad3d961cd5e95407863c322256ceb1fab7f54dbc0 \
+            --adjudicator-source-sha256 "$CAPTURE_ADJUDICATOR_SHA256" \
+            --driver-root "$CAPTURE_DRIVER_ROOT" --target-root "$CAPTURE_TARGET_ROOT" \
+            --artifact-root "$CAPTURE_ARTIFACT_ROOT" \
+            --output "$CAPTURE_ARTIFACT_ROOT-external/external-phase-adjudication.json" \
+            -- timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run
+          gate_code=$?
+          if test "$helper_code" -ne 0; then exit "$helper_code"; fi
+          exit "$gate_code"
+      - name: Upload only strict known existing diagnostic roles
+        if: ${{ always() && steps.publication.outputs.inventory_ready == 'true' && steps.publication.outputs.inventory_driver == github.sha && steps.publication.outputs.inventory_run == github.run_id && steps.publication.outputs.inventory_attempt == '1' && steps.publication.outputs.inventory_sha256 != '' && steps.publication.outputs.inventory_bytes != '' && steps.publication.outputs.inventory_dev != '' && steps.publication.outputs.inventory_ino != '' }}
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 2
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
+        with:
+          name: zk1262-capture-phase-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/source-context.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/phase-intent.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/source-before.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/source-preproducer.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/source-after.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/projection-proof.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/projection-before-producer.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/sdk-binding.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/setup-status.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/producer-status.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/producer-exit.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/renderer-resource-growth.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/renderer-resource-growth-command.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/zk682-react-component-timing-cleanup.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/zk682-capture-phase-ledger.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/zk682-canvas-capture-receipt.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/zk682-resource-growth-final.png
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/producer.stdout.log
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/producer.stderr.log
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/discovery.log
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/inventory.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/held-owner-phases.jsonl
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/held-owner-validation.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/build.stdout.log
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}/build.stderr.log
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/baseline-audit.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/before.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/generated-audit.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/generated.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/normalized.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/normalization-failure.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/before-failure.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/final.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/final-failure.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Preserve strict whole-run failure disposition
+        if: always()
+        shell: bash
+        timeout-minutes: 1
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -uo pipefail
+          set +e
+          python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-held-phase-adjudicator.py" adjudicate \
+            --repository-id "$CAPTURE_REPOSITORY_ID" --workflow-path .github/workflows/zk1262-capture-phase.yml \
+            --driver-sha "$GITHUB_SHA" --candidate-sha "$CAPTURE_CANDIDATE_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --policy-sha256 "$CAPTURE_FIXED_POLICY_SHA256" \
+            --owner-source-sha256 9c60ec41141e53525fc77e9ad3d961cd5e95407863c322256ceb1fab7f54dbc0 \
+            --adjudicator-source-sha256 "$CAPTURE_ADJUDICATOR_SHA256" \
+            --driver-root "$CAPTURE_DRIVER_ROOT" --target-root "$CAPTURE_TARGET_ROOT" \
+            --artifact-root "$CAPTURE_ARTIFACT_ROOT" \
+            --output "$CAPTURE_ARTIFACT_ROOT-external/external-phase-adjudication-final.json" \
+            -- timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run
+          gate_code=$?
+          python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-capture-phase-driver.py" verdict
+          old_code=$?
+          if test "$old_code" -ne 0; then exit "$old_code"; fi
+          exit "$gate_code"
+      - name: Upload distinct external phase authority and both verdict roles
+        if: always()
+        uses: actions/upload-artifact@v4
+        timeout-minutes: 2
+        env:
+          CAPTURE_ARTIFACT_ROOT: ${{ runner.temp }}/zk1262-capture-${{ github.run_id }}-${{ github.run_attempt }}
+        with:
+          name: zk1316-external-phase-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-external/held-phase-prelaunch-boundary.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-external/external-phase-adjudication.json
+            ${{ env.CAPTURE_ARTIFACT_ROOT }}-external/external-phase-adjudication-final.json
+          if-no-files-found: error
+          retention-days: 30
