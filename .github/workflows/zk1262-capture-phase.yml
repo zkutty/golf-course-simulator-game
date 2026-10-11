@@ -40,7 +40,7 @@ jobs:
     env:
       CAPTURE_REPOSITORY_ID: ${{ github.repository_id }}
       CAPTURE_FIXED_POLICY_SHA256: 1d3082188bd8aff2153dbc20df43b3c10cae3f409f312eed5699439e742289e8
-      CAPTURE_ADJUDICATOR_SHA256: c9e42b6bfea17450b148cf33999a6a2b157ebc5460b96ac612d855bcb8b0274c
+      CAPTURE_ADJUDICATOR_SHA256: 48d4e2b778bf2b3c75287a75b76335e770c3d229d93d8d7d7c4c898d12eba4d9
       CAPTURE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       CAPTURE_SOURCE_SHA: ${{ inputs.source_sha }}
       CAPTURE_DRIVER_ROOT: ${{ github.workspace }}/capture-driver
@@ -113,7 +113,7 @@ jobs:
             --driver-sha "$GITHUB_SHA" --candidate-sha "$CAPTURE_CANDIDATE_SHA" \
             --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --policy-sha256 "$CAPTURE_FIXED_POLICY_SHA256" \
-            --owner-source-sha256 63a9a41fb68c91dd6bc4a105b37d8e0277b0fe1a178d2567cceb1c2c341f2e94 \
+            --owner-source-sha256 3e49c90f3d16dfe4f00a0babc9a1d679fdc7f888887b57104060bdd7b643b4e0 \
             --adjudicator-source-sha256 "$CAPTURE_ADJUDICATOR_SHA256" \
             --driver-root "$CAPTURE_DRIVER_ROOT" --target-root "$CAPTURE_TARGET_ROOT" \
             --artifact-root "$CAPTURE_ARTIFACT_ROOT" \
@@ -161,7 +161,7 @@ jobs:
             --driver-sha "$GITHUB_SHA" --candidate-sha "$CAPTURE_CANDIDATE_SHA" \
             --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --policy-sha256 "$CAPTURE_FIXED_POLICY_SHA256" \
-            --owner-source-sha256 63a9a41fb68c91dd6bc4a105b37d8e0277b0fe1a178d2567cceb1c2c341f2e94 \
+            --owner-source-sha256 3e49c90f3d16dfe4f00a0babc9a1d679fdc7f888887b57104060bdd7b643b4e0 \
             --adjudicator-source-sha256 "$CAPTURE_ADJUDICATOR_SHA256" \
             --driver-root "$CAPTURE_DRIVER_ROOT" --target-root "$CAPTURE_TARGET_ROOT" \
             --artifact-root "$CAPTURE_ARTIFACT_ROOT" \
@@ -230,7 +230,7 @@ jobs:
             --driver-sha "$GITHUB_SHA" --candidate-sha "$CAPTURE_CANDIDATE_SHA" \
             --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --policy-sha256 "$CAPTURE_FIXED_POLICY_SHA256" \
-            --owner-source-sha256 63a9a41fb68c91dd6bc4a105b37d8e0277b0fe1a178d2567cceb1c2c341f2e94 \
+            --owner-source-sha256 3e49c90f3d16dfe4f00a0babc9a1d679fdc7f888887b57104060bdd7b643b4e0 \
             --adjudicator-source-sha256 "$CAPTURE_ADJUDICATOR_SHA256" \
             --driver-root "$CAPTURE_DRIVER_ROOT" --target-root "$CAPTURE_TARGET_ROOT" \
             --artifact-root "$CAPTURE_ARTIFACT_ROOT" \

@@ -22,10 +22,10 @@ POLICY = {'parentTERM':2820,'parentKILL':2880,'build':600,
 WORKFLOW = '.github/workflows/zk1262-capture-phase.yml'
 OWNER = 'simgolf-lite/scripts/zk1262-build-capture-audit-owner.py'
 SELF = 'simgolf-lite/scripts/zk1262-held-phase-adjudicator.py'
-OWNER_SHA = '63a9a41fb68c91dd6bc4a105b37d8e0277b0fe1a178d2567cceb1c2c341f2e94'
+OWNER_SHA = '3e49c90f3d16dfe4f00a0babc9a1d679fdc7f888887b57104060bdd7b643b4e0'
 HELPER = 'simgolf-lite/scripts/zk1262-capture-phase-driver.py'
 HELPER_BYTES = 46553
-OWNER_BYTES = 34426
+OWNER_BYTES = 36121
 HELPER_SHA = '25e5a8123a7ebaa8a78f126e4a24fa10f2a424fc658dc64b437684d73bc8a1eb'
 BINDINGS = {OWNER:{'bytes':OWNER_BYTES,'sha256':OWNER_SHA},
     'simgolf-lite/scripts/zk1262-build-capture-audit-owner.test.py':
@@ -34,7 +34,8 @@ BINDINGS = {OWNER:{'bytes':OWNER_BYTES,'sha256':OWNER_SHA},
         {'bytes':17794,'sha256':'75ffda7ac5d4849ce160c117c475edd7bdf86a211ce889b908b901b252eea8d0'},
     'simgolf-lite/scripts/zk1262-build-audit-normalization.test.py':
         {'bytes':13545,'sha256':'f5f1f98606855971a4e17eb5f3897134a6f6dee36c1a11214feaa6a686f50e6d'},
-    'simgolf-lite/scripts/zk1325-html-report-owner.py':{'bytes': 19058, 'sha256': '5e5cd4c9074db38d41e864fca597b20bcb7d87f8f53ff85b7f9bf00b81ff76fb'}}
+    'simgolf-lite/scripts/zk1325-html-report-owner.py':{'bytes': 19058, 'sha256': '5e5cd4c9074db38d41e864fca597b20bcb7d87f8f53ff85b7f9bf00b81ff76fb'},
+    'simgolf-lite/scripts/zk1332-capture-child-outcome.py':{'bytes': 5569, 'sha256': '07ae9459bc789f3cd45452dc3a143a206603f086b9253f930abf0f70d4e7b17c'}}
 CLOCK = 'clock_gettime(CLOCK_MONOTONIC)'
 BOUNDARY = 'held-phase-prelaunch-boundary.json'
 JOURNAL = 'held-owner-phases.jsonl'
