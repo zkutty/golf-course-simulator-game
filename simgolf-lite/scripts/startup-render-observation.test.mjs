@@ -19,7 +19,8 @@ const defaults = {
 const options = {};
 for (let i = 2; i < process.argv.length; i++) {
   const key = process.argv[i];
-  if (key === "--counterfactual-old") options.old = true;
+  if (key === "--groups") { assert.ok(process.argv[i + 1]); options.groups = process.argv[++i].split(","); }
+  else if (key === "--counterfactual-old") options.old = true;
   else {
     assert.ok(key.startsWith("--") && key.slice(2) in defaults, "unknown target option");
     assert.ok(process.argv[i + 1], "target path required"); options[key.slice(2)] = process.argv[++i];
@@ -29,7 +30,7 @@ const source = Object.fromEntries(Object.entries(defaults).map(([key, relative])
   [key, readFileSync(options[key] ?? fileURLToPath(new URL(relative, import.meta.url)), "utf8")]));
 const hash = s => createHash("sha256").update(s).digest("hex");
 const expected = {
-  perf: "9a0086ef355de629ba6c32faf2e3c1c3a560ba0ae34067cbe39314ca1d36cd0c",
+  perf: "6ae1dc23fdf635e55aec4841fb1bc83b17cfd246ea9ccecc6fb730677afc25f7",
   owner: "b13730d2af8a162a46432356f3d4148fbc5af2342ab3291d402542207779d38c",
   session: "374a1b70ab4a1084129817301e5860011ea4ac1223d68f892ea778f528d2c138",
   core: "e1c76958a21408f4c550965acc9b6f5efe3a94a73c5024f055cbab926d66458b",
@@ -58,11 +59,19 @@ const tailStart = unique(source.pixi, "      owner.markReady(generation);");
 const tailEndAnchor = "      devLog(`initialized ${width}x${height}`);";
 const tailEnd = unique(source.pixi, tailEndAnchor);
 const postLayer = source.pixi.slice(tailStart, tailEnd + tailEndAnchor.length);
-const evidenceBlock = block(source.perf, "const { startupRenderObservation, ...browserEvidence } = await page.evaluate(", "\nlet startupJournalRaw");
+const evidenceBlock = block(source.perf, "let { startupRenderObservation, ...browserEvidence } = await page.evaluate(", "\nlet startupJournalRaw");
 const ownerJS = stripTypeScriptTypes(source.owner).replace(/^export /gm, "");
 const sessionJS = stripTypeScriptTypes(source.session).replace(/^export /gm, "");
 const coreJS = source.core.slice(0, unique(source.core, "\nlet recorder = null;")).replace(/^export /gm, "");
 const gateJS = source.gate.replace(/^export /gm, "");
+const decodedCache = new WeakMap(), wireForDecoded = new WeakMap();
+const codecContext = createContext({ TextEncoder });
+execute(source.helper.replace(/^export /gm, ""), codecContext);
+function semanticView(wire) {
+  if (wire === null || wire === undefined) return wire;
+  if (!decodedCache.has(wire)) { const view = codecContext.decodeStartupRenderObservation(wire); decodedCache.set(wire, view); wireForDecoded.set(view, wire); }
+  return decodedCache.get(wire);
+}
 const quiet = { log() {}, error() {} };
 async function environment(overrides = {}) {
   const state = { now: 1, duration: 5, normalWork: 0, calls: 0, updateCalls: 0, returned: {},
@@ -159,12 +168,14 @@ async function environment(overrides = {}) {
     state, sandbox, ctx, session, lease, config,
     acquire: () => lease.owner.acquire(lease.generation),
     activate(app, current = lease) { sandbox.postLayer(current.owner, current.generation, app); },
-    collector: () => sandbox.window.__ccStartupRenderObservation,
+    collector: () => { const port = sandbox.window.__ccStartupRenderObservation;
+      return port && { ...port, snapshot() { return semanticView(port.snapshot()); } }; },
     fire(time) {
       const first = state.rafs.entries().next().value; assert.ok(first, "actual plugin scheduled RAF");
       state.rafs.delete(first[0]); state.now = time; return first[1](time);
     },
-    async publish() { return execute("(async()=>{" + evidenceBlock + "\nreturn {startupRenderObservation,browserEvidence};})()", ctx); },
+    async publish() { const result = await execute("(async()=>{" + evidenceBlock + "\nreturn {startupRenderObservation,browserEvidence};})()", ctx);
+      result.startupRenderObservation = semanticView(result.startupRenderObservation); return result; },
   };
 }
 async function active(overrides = {}) {
@@ -177,7 +188,7 @@ function unknown(snap) {
   for (const row of [...snap.draws, ...(snap.tickRows ?? [])]) {
     assert.equal(row.generation, null); assert.equal(row.attempt, null); assert.equal(row.cohortQualified, false);
   }
-  assert.ok(Buffer.byteLength(JSON.stringify(snap)) <= 8192);
+  assert.ok(Buffer.byteLength(JSON.stringify(wireForDecoded.get(snap) ?? snap)) <= 8192, "canonical wire alone is capped");
 }
 function held(snap) { assert.equal(snap.status,"HOLD"); assert.equal(snap.eligible,false); unknown(snap); }
 function complete(snap) {
@@ -196,7 +207,7 @@ if (options.old) {
   assert.ok(result.startupRenderObservation.tickRows?.length > 0, "OLD_COLLECTOR_MISSING_TICK_OBSERVATION");
 }
 const groups = [];
-async function group(name, fn) { await fn(); groups.push(name); console.log("PASS " + name); }
+async function group(name, fn) { if (options.groups && !options.groups.includes(name)) return; await fn(); groups.push(name); console.log("PASS " + name); }
 
 await group("installed-dynamic-RAF-native-placement-and-two-timing-cases", async () => {
   for (const normalWork of [995,0]) {
@@ -219,7 +230,7 @@ await group("installed-dynamic-RAF-native-placement-and-two-timing-cases", async
     assert.equal(env.state.evaluateCount,1); assert.equal(env.state.disconnects,1);
     assert.deepEqual(plain(result.browserEvidence),{ userAgent:"pure-control",
       viewport:{width:1440,height:900,devicePixelRatio:1},visibilityState:"visible",renderer:null,vendor:null,context:null });
-    assert.equal(env.collector().snapshot(),snap);
+    assert.deepEqual(plain(env.collector().snapshot()), plain(snap), "decoded views preserve the cached wire values");
     assert.ok(Object.isFrozen(snap.tickRows)&&Object.isFrozen(snap.tickRows[0]));
     env.fire(2000); assert.equal(env.state.calls,2); assert.equal(snap.tickRows.length,1);
     assert.equal(env.state.disconnects,1);
@@ -456,7 +467,7 @@ await group("actual-original-gate9000-red-single-existing-publication", async ()
     coldStartupMs:100,fixtureLoadMs:9000,STARTUP_BUDGET_MS:5000,FIXTURE_LOAD_BUDGET_MS:6000,
     WORK_BUDGET_MS:8,BUDGET_MS:33,ASSERT_FRAME:false,perf:{workMs:1,p95Ms:100},
     PERF_THEME:"control",PERF_FIXTURE:"m27Fixture",MEASURE_S:20,WARMUP_S:8,HEADED:false,
-    startupWaitStages:{},startupRenderObservation:snapshot,browserEvidence:{},OUTPUT_PATH:"ram-only.json",
+    startupWaitStages:{},startupRenderObservation:wireForDecoded.get(snapshot),browserEvidence:{},OUTPUT_PATH:"ram-only.json",
     dirname:()=>".",mkdirSync(){},writeFileSync(path,raw){writes.push({path,raw});},
     process:{env:{},exit(code){throw {exitCode:code};}},
   });
@@ -465,9 +476,11 @@ await group("actual-original-gate9000-red-single-existing-publication", async ()
   execute(publishBlock,env.ctx);assert.equal(writes.length,1);
   const published=JSON.parse(writes[0].raw);assert.equal(published.fixtureLoadMs,9000);
   assert.equal(published.effective.budgets.fixtureLoadMilliseconds,6000);assert.equal(published.gateValidation.passed,false);
-  assert.equal(published.startupRenderObservation.tickRows[0].duration,5000);
+  assert.equal(published.startupRenderObservation.wireVersion,1);
+  assert.ok(Array.isArray(published.startupRenderObservation.tickRows[0]));
+  assert.equal(semanticView(published.startupRenderObservation).tickRows[0].duration,5000);
   let exited=false;try{execute(exitBlock,env.ctx);}catch(error){exited=true;assert.equal(error.exitCode,1);}
   assert.ok(exited);
 });
-assert.equal(groups.length,7);
+assert.equal(groups.length,options.groups ? options.groups.length : 7);
 console.log("ROOT_PURE_TICKER_CONTROLS_PASS groups="+groups.length+"; no actual browser/runtime authority");

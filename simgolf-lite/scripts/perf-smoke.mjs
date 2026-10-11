@@ -21,7 +21,7 @@
 //        PERF_HARDWARE_CLASS / PERF_POWER_STATE / PERF_RUN_LABEL (evidence labels)
 import { publishStartupAttribution } from "./startup-attribution-delivery.mjs";
 import { createStartupWaitStages } from "./startup-wait-stages.mjs";
-import { bootstrapStartupRenderObservation } from "../src/utils/startupRenderObservation.mjs";
+import { bootstrapStartupRenderObservation, readStartupRenderObservation } from "../src/utils/startupRenderObservation.mjs";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -220,7 +220,7 @@ while (Date.now() - t0 < MEASURE_S * 1000) {
   await sleep(400);
 }
 const perf = await page.evaluate(() => window.__ccPerf ?? null);
-const { startupRenderObservation, ...browserEvidence } = await page.evaluate(() => {
+let { startupRenderObservation, ...browserEvidence } = await page.evaluate(() => {
   const canvas = [...document.querySelectorAll("canvas")]
     .sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
   let renderer = null;
@@ -259,6 +259,7 @@ const { startupRenderObservation, ...browserEvidence } = await page.evaluate(() 
     context,
   };
 });
+if (startupRenderObservation !== null) startupRenderObservation = readStartupRenderObservation(startupRenderObservation);
 let startupJournalRaw = null;
 let startupDiagnosticFailure = null;
 let startupDiagnosticFailurePresent = false;

@@ -12,7 +12,8 @@ const defaults = {
 const options = {};
 for (let i = 2; i < process.argv.length; i++) {
   const flag = process.argv[i];
-  if (flag === "--counterfactual-old") options.counterfactualOld = true;
+  if (flag === "--groups") { assert.ok(process.argv[i + 1]); options.groups = process.argv[++i].split(","); }
+  else if (flag === "--counterfactual-old") options.counterfactualOld = true;
   else {
     assert.ok(["--helper", "--perf", "--gate", "--old-perf"].includes(flag), "unknown source option");
     assert.ok(process.argv[i + 1], "source path required");
@@ -41,7 +42,14 @@ const innerClose = "    };\n    let dimensionsReturned";
 const innerStart = unique(candidateBody, innerOpen) + innerOpen.length;
 const innerEnd = candidateBody.indexOf(innerClose, innerStart); assert.ok(innerEnd > innerStart);
 const originalBody = candidateBody.slice(innerStart, innerEnd);
-const restored = source.perf.replace(candidateBody, originalBody);
+let transportRestored = source.perf;
+assert.equal(transportRestored.split("});\nif (startupRenderObservation !== null) startupRenderObservation = readStartupRenderObservation(startupRenderObservation);\nlet startupJournalRaw = null;").length - 1, 1);
+transportRestored = transportRestored.replace("});\nif (startupRenderObservation !== null) startupRenderObservation = readStartupRenderObservation(startupRenderObservation);\nlet startupJournalRaw = null;", "});\nlet startupJournalRaw = null;");
+assert.equal(transportRestored.split("let { startupRenderObservation, ...browserEvidence } = await page.evaluate(").length - 1, 1);
+transportRestored = transportRestored.replace("let { startupRenderObservation, ...browserEvidence } = await page.evaluate(", "const { startupRenderObservation, ...browserEvidence } = await page.evaluate(");
+assert.equal(transportRestored.split("import { bootstrapStartupRenderObservation, readStartupRenderObservation }").length - 1, 1);
+transportRestored = transportRestored.replace("import { bootstrapStartupRenderObservation, readStartupRenderObservation }", "import { bootstrapStartupRenderObservation }");
+const restored = transportRestored.replace(candidateBody, originalBody);
 assert.equal(sha(restored), originalPerfPin, "whole perf body inverse including all five waits/gates/endpoints");
 let oldPerf = restored;
 if (options["old-perf"]) {
@@ -58,6 +66,15 @@ const init = source.perf.slice(initStart, initEnd);
 assert.equal(init, "await page.addInitScript(bootstrapStartupRenderObservation);");
 const execute = (code, context) => new Script(code).runInContext(context);
 const plain = value => JSON.parse(JSON.stringify(value));
+const decodedCache = new WeakMap(), wireForDecoded = new WeakMap();
+const codecContext = createContext({ TextEncoder });
+execute(source.helper.replace(/^export /gm, ""), codecContext);
+function semanticView(wire) {
+  if (wire === null || wire === undefined) return wire;
+  if (!decodedCache.has(wire)) { const view = codecContext.decodeStartupRenderObservation(wire); decodedCache.set(wire, view); wireForDecoded.set(view, wire); }
+  return decodedCache.get(wire);
+}
+
 async function environment(body, changes = {}) {
   const state = { now: 1, clockCalls: 0, queryCalls: 0, marks: 0, initCalls: 0,
     targetKind: "object", width: 2, clientWidth: 3, height: 4, clientHeight: 5,
@@ -131,7 +148,7 @@ async function environment(body, changes = {}) {
       window.__ccStartupRenderObservation.activate(rendererPort, tickerPort);
       tickerPort._tick();
     `, ctx);
-  }, snapshot() { return execute("window.__ccStartupRenderObservation.snapshot()", ctx); } };
+  }, snapshot() { return semanticView(execute("window.__ccStartupRenderObservation.snapshot()", ctx)); } };
 }
 function sameResult(a, b) { assert.equal(a.threw, b.threw); assert.strictEqual(a.value, b.value); }
 function predicate(snapshot) {
@@ -140,11 +157,11 @@ function predicate(snapshot) {
   assert.equal(d.status, "HOLD"); assert.equal(d.eligible, false);
   assert.equal(d.documentIdentity, "UNKNOWN"); assert.equal(d.candidateQualified, false); assert.equal(d.trusted, false);
   assert.ok(d.rows.length <= 16);
-  assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) <= 8192, "real aggregate byte cap");
+  assert.ok(Buffer.byteLength(JSON.stringify(wireForDecoded.get(snapshot) ?? snapshot)) <= 8192, "real aggregate canonical wire byte cap");
   return d;
 }
 const reports = [];
-async function group(name, run) { await run(); reports.push(name); console.log(JSON.stringify({ group: name, state: "PASS" })); }
+async function group(name, run) { if (options.groups && !options.groups.includes(name)) return; await run(); reports.push(name); console.log(JSON.stringify({ group: name, state: "PASS" })); }
 if (options.counterfactualOld) {
   assert.ok(options["old-perf"], "counterfactual requires explicit frozen old perf");
   const e = await environment(callbackBody(oldPerf));
@@ -263,7 +280,7 @@ if (options.counterfactualOld) {
     }
     const e = await environment(candidateBody, { snapshotInBody: true });
     const result = e.invoke(); assert.equal(result.threw, false); assert.equal(result.value, true);
-    const frozen = e.state.insideSnapshot, d = predicate(frozen);
+    const frozen = semanticView(e.state.insideSnapshot), d = predicate(frozen);
     assert.equal(d.failure, "PENDING"); assert.equal(d.pending, 1); assert.equal(d.rows[0].outcome, "pending");
     e.state.snapshotInBody = false;
     assert.equal(e.invoke().value, true);
@@ -331,5 +348,5 @@ if (options.counterfactualOld) {
     console.log(JSON.stringify({ authority: "STATIC_SOURCE_CONTROLS_ONLY", sameDocument: false,
       causalCredit: false, numericalImprovementOracle: false, runtimeGrant: 0 }));
   });
-  assert.equal(reports.length, 7);
+  assert.equal(reports.length, options.groups ? options.groups.length : 7);
 }
