@@ -39,7 +39,7 @@ SPEC = 'e2e/zk1262-save-final-owner-diagnostic.e2e.ts'
 RUNNER = 'scripts/zk1262-run-save-final-owner-diagnostic.mjs'
 CHILD = ['npx','playwright','test',SPEC,'--workers=1','--retries=0']
 KNOWN_SOURCE = {
- 'simgolf-lite/'+SPEC:{'bytes':18463,'sha256':'5a78fd068355f9631de5cf85df886ae4ee3e6ae9251422c7e3bfe8876b1e0216'},
+ 'simgolf-lite/'+SPEC:{'bytes':25295,'sha256':'2f23c8da302ea300409f4761c86e02a89d70caf199b73e563785a63abe56df45'},
  'simgolf-lite/'+RUNNER:{'bytes':1809,'sha256':'2cb3dee0d204cbce1cc7ef1356323662ad0fcb83940292d7c726a744288d0095'},
  'simgolf-lite/scripts/zk1262-save-owner-diagnostic/save-owner-collector.mjs':{'bytes':17547,'sha256':'917c4dcc17cce4714dc20008fdd845d9948df1eecd2ffd53ada5f14bc998bf54'},
  'simgolf-lite/scripts/zk1262-save-owner-diagnostic/save-owner-collector.d.mts':{'bytes':932,'sha256':'68ac78feee2b9bc48b2ece2f9f9f78c89e2ad47f46a8bf8f28afde61a9ca45c6'}}

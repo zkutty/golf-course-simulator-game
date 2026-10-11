@@ -176,7 +176,76 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     samples: saveLoadSamples,
   });
   await writeZk682ConservationStabilityReport(resolve(outputDirectory, "save-load-resource-stability.json"), saveLoadReport);
+  // ZK1345_PRECOLLECTOR_BEGIN
+  async function publishTimingPrecollector(directory: string, sourceCommit: string, candidateCommit: string, samples: ReturnType<typeof clearReactComponentTimings>[]) {
+    const fs = await import("node:fs/promises");
+    const { constants } = await import("node:fs");
+    const { createHash } = await import("node:crypto");
+    const keys = ["measureEntriesBefore", "reactComponentEntriesBefore", "clearedEntries", "clearedNames", "preservedCollisionNames", "measureEntriesAfter"];
+    let present = false; let primary: unknown; const secondary: unknown[] = [];
+    let parentHandle: Awaited<ReturnType<typeof fs.open>> | undefined;
+    let rootHandle: Awaited<ReturnType<typeof fs.open>> | undefined;
+    let fileHandle: Awaited<ReturnType<typeof fs.open>> | undefined;
+    const record = (error: unknown) => { if (!present) { present = true; primary = error; } else secondary.push(error); };
+    try {
+      if (!/^[0-9a-f]{40}$/.test(sourceCommit) || !/^[0-9a-f]{40}$/.test(candidateCommit) || sourceCommit === candidateCommit || !Array.isArray(samples) || samples.length !== 13) throw new Error("ZK1345_IDENTITY_OR_COUNT");
+      const copied = samples.map((sample) => {
+        if (!sample || typeof sample !== "object" || Object.getPrototypeOf(sample) !== Object.prototype || Reflect.ownKeys(sample).length !== keys.length) throw new Error("ZK1345_SAMPLE_SCHEMA");
+        const result: Record<string, number> = {};
+        for (const key of keys) {
+          const field = Object.getOwnPropertyDescriptor(sample, key);
+          if (!field || !("value" in field) || typeof field.value !== "number" || !Number.isSafeInteger(field.value) || field.value < 0 || field.value > 1_000_000_000) throw new Error("ZK1345_SCALAR_TYPE_CAP");
+          result[key] = field.value;
+        }
+        return result;
+      });
+      const raw = Buffer.from(JSON.stringify({ schema: 1, kind: "SAVE_PRECOLLECTOR_TIMING_SCALARS_V1", candidateCommit, sourceCommit, sampleCount: 13, measurementProtocol: "settle-cleanup-gc-query-v1", filter: "detail.devtools.track === Components ⚛; all entries of each name must match", samples: copied, metadataTransportOnly: true, numericPASS: false, graphAccepted: false, releaseCleared: false, nativeClosure: "UNKNOWN" }) + "\n", "utf8");
+      if (raw.length > 32768 || resolve(directory) !== directory || await fs.realpath(directory) !== directory) throw new Error("ZK1345_CAP_OR_CANONICAL");
+      const parent = resolve(directory, ".."); const root = directory + "-timing-precollector";
+      if (await fs.realpath(parent) !== parent) throw new Error("ZK1345_PARENT_ALIAS");
+      parentHandle = await fs.open(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+      const parentIdentity = await parentHandle.stat(); const originalRoot = await fs.lstat(directory);
+      if (!originalRoot.isDirectory() || originalRoot.uid !== process.getuid!() || (originalRoot.mode & 0o077) !== 0) throw new Error("ZK1345_ORIGINAL_ROOT");
+      await fs.mkdir(root, { mode: 0o700 });
+      rootHandle = await fs.open(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+      const rootIdentity = await rootHandle.stat();
+      const same = (a: { dev: number; ino: number }, b: { dev: number; ino: number }) => a.dev === b.dev && a.ino === b.ino;
+      const guard = async () => {
+        if (await fs.realpath(parent) !== parent || await fs.realpath(directory) !== directory || await fs.realpath(root) !== root || !same(await parentHandle!.stat(), parentIdentity) || !same(await fs.lstat(parent), parentIdentity) || !same(await fs.lstat(directory), originalRoot) || !same(await rootHandle!.stat(), rootIdentity) || !same(await fs.lstat(root), rootIdentity) || (await fs.lstat(root)).uid !== process.getuid!() || ((await fs.lstat(root)).mode & 0o077) !== 0) throw new Error("ZK1345_ROOT_DRIFT");
+      };
+      await guard();
+      if ((await fs.readdir(root)).length !== 0) throw new Error("ZK1345_FOREIGN_ROLE");
+      const path = resolve(root, "zk1262-save-timing-precollector.json");
+      fileHandle = await fs.open(path, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+      await fileHandle.writeFile(raw); await fileHandle.sync();
+      const first = await fileHandle.stat();
+      if (!first.isFile() || first.nlink !== 1 || first.size !== raw.length || (first.mode & 0o077) !== 0 || first.uid !== process.getuid!()) throw new Error("ZK1345_FILE_SHAPE");
+      const back = Buffer.alloc(raw.length + 1); let offset = 0;
+      while (offset < back.length) { const result = await fileHandle.read(back, offset, back.length - offset, offset); if (result.bytesRead === 0) break; offset += result.bytesRead; }
+      const last = await fileHandle.stat(); const located = await fs.lstat(path);
+      if (offset !== raw.length || !back.subarray(0, offset).equals(raw) || !same(first, last) || !same(last, located) || first.size !== last.size || first.mtimeMs !== last.mtimeMs || first.ctimeMs !== last.ctimeMs || located.nlink !== 1 || !located.isFile()) throw new Error("ZK1345_FILE_DRIFT");
+      await guard(); if ((await fs.readdir(root)).join("\n") !== "zk1262-save-timing-precollector.json") throw new Error("ZK1345_ROLE_DRIFT");
+      await rootHandle.sync(); await parentHandle.sync(); await guard();
+      if (createHash("sha256").update(back.subarray(0, offset)).digest("hex") !== createHash("sha256").update(raw).digest("hex")) throw new Error("ZK1345_HASH");
+    } catch (error) { record(error); }
+    finally {
+      for (const handle of [fileHandle, rootHandle, parentHandle]) { if (handle) { try { await handle.close(); } catch (error) { record(error); } } }
+    }
+    return { eligible: !present, errorPresent: present, error: primary, secondary, metadataTransportOnly: true, numericPASS: false };
+  }
+  const timingPrecollector = await publishTimingPrecollector(outputDirectory, process.env.ZK1345_SOURCE_COMMIT ?? "", expectedCommit!, timingCleanupSamples).catch((error: unknown) => ({ eligible: false, errorPresent: true, error, secondary: [], metadataTransportOnly: true, numericPASS: false }));
+  // ZK1345_PRECOLLECTOR_END
+  // ZK1345_COLLECTOR_WRAP_BEGIN
+  try {
   await captureSaveFinalOwnerGraph(cdp, { outputDirectory, candidateCommit: expectedCommit!, sampleCount: saveLoadSamples.length, saveReportErrors: saveLoadReport.errors });
+  } catch (error) {
+    if (timingPrecollector.errorPresent) {
+      try { console.log(JSON.stringify({ diagnostic: "zk1345-precollector-secondary", sourceCommit: process.env.ZK1345_SOURCE_COMMIT, candidateCommit: expectedCommit, publicationFault: true, publicationSecondaryCount: timingPrecollector.secondary.length, collectorCausePreserved: true, metadataTransportOnly: true, numericPASS: false })); } catch { /* original collector cause remains primary */ }
+    }
+    throw error;
+  }
+  if (timingPrecollector.errorPresent) throw timingPrecollector.error;
+  // ZK1345_COLLECTOR_WRAP_END
 
   // Run the actual mutable live simulation for at least two in-game hours.
   await page.keyboard.press("Digit3");

@@ -18,7 +18,7 @@ import sys
 import time
 
 NORMALIZER_SHA = '75ffda7ac5d4849ce160c117c475edd7bdf86a211ce889b908b901b252eea8d0'
-DERIVATIVE_SHA = '5a78fd068355f9631de5cf85df886ae4ee3e6ae9251422c7e3bfe8876b1e0216'
+DERIVATIVE_SHA = '2f23c8da302ea300409f4761c86e02a89d70caf199b73e563785a63abe56df45'
 ORIGINAL_SHA = 'c45b0cf36a725fbe4da0de4877cdac016e29c334f63f1a3b674edfb20bdd2a45'
 COLLECTOR_SHA = '917c4dcc17cce4714dc20008fdd845d9948df1eecd2ffd53ada5f14bc998bf54'
 DECLARATION_SHA = '68ac78feee2b9bc48b2ece2f9f9f78c89e2ad47f46a8bf8f28afde61a9ca45c6'
@@ -113,7 +113,10 @@ def projected_bytes(p,donors):
         p.require(p.digest(raw)==pin,'projection source donor')
     p.require(derivative.count(IMPORT)==1 and derivative.count(CALL)==1,'one import/await')
     p.require(derivative.count(TIMING_DELIVERY)==1,'one accepted timing delivery span')
-    inverse=derivative.replace(IMPORT,b'',1).replace(CALL,b'',1).replace(TIMING_DELIVERY,TIMING_ORIGINAL,1)
+    clean=derivative
+    for start,end,replacement in ((b'  // ZK1345_PRECOLLECTOR_BEGIN\n',b'  // ZK1345_PRECOLLECTOR_END\n',b''),(b'  // ZK1345_COLLECTOR_WRAP_BEGIN\n',b'  // ZK1345_COLLECTOR_WRAP_END\n',CALL)):
+        p.require(clean.count(start)==clean.count(end)==1,'one timing span');left,tail=clean.split(start,1);middle,right=tail.split(end,1);clean=left+replacement+right
+    inverse=clean.replace(IMPORT,b'',1).replace(CALL,b'',1).replace(TIMING_DELIVERY,TIMING_ORIGINAL,1)
     p.require(inverse==original,'complete producer inverse')
     after=derivative.split(CALL,1)[1]
     p.require(after.index(b'await page.keyboard.press("Digit3")')<after.index(b'longSessionSamples'),'SAVE capture before original later order')
@@ -335,7 +338,7 @@ def run(p,ctx,normalizer,report_api=None):
             if name in ('NORMALIZE','FINISH'):normal_elapsed+=row['exit']-entry
     def skipped(name):journal['phases'].append({'phase':name,'entry':None,'exit':None,'allocation':p.ALLOC[name],
                  'ceiling':None,'outcome':'SKIPPED','result':None})
-    env=dict(os.environ);env.update(ZK682_EXPECTED_COMMIT=p.CANDIDATE,VITE_COMMIT_SHA=p.CANDIDATE,
+    env=dict(os.environ);env.update(ZK1345_SOURCE_COMMIT=ctx['identity']['driver'],ZK682_EXPECTED_COMMIT=p.CANDIDATE,VITE_COMMIT_SHA=p.CANDIDATE,
       COURSECRAFT_ZK682_STABILITY_DIR=str(root),ZK1262_OWNER_CAPTURE_ADMISSION='ROOT_REGISTERED_ONCE_B7_SOURCE1',
       ZK1262_OWNER_LINK_PUBLICATION_RECEIPT_SHA256='46b63243a78085ead78720766f1c5031ba0b75acb8bec82865f73d17916544f9')
     report_hook = None
