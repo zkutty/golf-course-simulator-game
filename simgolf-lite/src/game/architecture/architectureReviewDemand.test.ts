@@ -128,6 +128,55 @@ function green(kind: ArchitectureReviewFilters["kind"]): GreenStrategyHeatmap {
   } as unknown as GreenStrategyHeatmap;
 }
 
+// Remove only the nine registered startup attribution spans before the
+// existing architecture inverse; its historical whole-App hash stays strict.
+const startupAppInverseEdits: readonly (readonly [string, string])[] = [
+  [
+    "import { CourseTextReportOwner } from \"./app/courseTextReport\";",
+    "import { startupBegin, startupEnd, startupSpan } from \"./utils/startupAttribution.mjs\";\nimport { CourseTextReportOwner } from \"./app/courseTextReport\";"
+  ],
+  [
+    "    perfFixtureLoadedRef.current = true;\n    const m25SeedParam",
+    "    perfFixtureLoadedRef.current = true;\n    const startupFixtureSpan = startupBegin(1);\n    const m25SeedParam"
+  ],
+  [
+    "? createM27ReleaseReferenceCourse(fixtureTheme)",
+    "? startupSpan(2, () => createM27ReleaseReferenceCourse(fixtureTheme), startupFixtureSpan)"
+  ],
+  [
+    "fixtureCourse = normalizeCourseLayouts(fixtureCourse);",
+    "fixtureCourse = startupSpan(3, () => normalizeCourseLayouts(fixtureCourse), startupFixtureSpan);"
+  ],
+  [
+    "    setM52ReferenceCamera(m52Bookmark);\n    let fixtureWorld: World = {\n      ...gameSession.getState().world,",
+    "    setM52ReferenceCamera(m52Bookmark);\n    const startupWorldSpan = startupBegin(4, startupFixtureSpan);\n    let fixtureWorld: World = {\n      ...gameSession.getState().world,"
+  ],
+  [
+    "      ...(isPropertyFixture ? { enterprise: emptyPropertyEnterprise() } : {}),\n    };\n    if (m53Fixture) {",
+    "      ...(isPropertyFixture ? { enterprise: emptyPropertyEnterprise() } : {}),\n    };\n    startupEnd(startupWorldSpan);\n    if (m53Fixture) {"
+  ],
+  [
+    "      setFollowSelected(false);\n    }\n    dispatch({ type: \"LOAD_GAME\", course: fixtureCourse, world: fixtureWorld });\n    if (isM23Fixture) {",
+    "      setFollowSelected(false);\n    }\n    startupSpan(5, () => dispatch({ type: \"LOAD_GAME\", course: fixtureCourse, world: fixtureWorld }), startupFixtureSpan);\n    if (isM23Fixture) {"
+  ],
+  [
+    "    } else if (isPerfFixture || isM27Fixture) {\n      live.restoreSnapshot(snapshotLiveSimulation({\n        state: createRenderPerfLiveState(fixtureCourse, fixtureWorld),\n        pendingCash: 0,\n        speed: isPerfMeasurement ? \"paused\" : \"4x\",\n        selectedGolferId: null,\n      }));",
+    "    } else if (isPerfFixture || isM27Fixture) {\n      startupSpan(7, (startupRestoreSpan) => live.restoreSnapshot(snapshotLiveSimulation({\n        state: startupSpan(6, () => createRenderPerfLiveState(fixtureCourse, fixtureWorld), startupRestoreSpan),\n        pendingCash: 0,\n        speed: isPerfMeasurement ? \"paused\" : \"4x\",\n        selectedGolferId: null,\n      })), startupFixtureSpan);"
+  ],
+  [
+    "    live.setSpeed((isPerfFixture || isM27Fixture) && !isPerfMeasurement ? \"4x\" : \"paused\");\n  }, [dispatch, gameSession, live, t]);",
+    "    live.setSpeed((isPerfFixture || isM27Fixture) && !isPerfMeasurement ? \"4x\" : \"paused\");\n    startupEnd(startupFixtureSpan);\n  }, [dispatch, gameSession, live, t]);"
+  ]
+];
+function undoStartupAppAttribution(source: string): string {
+  let inverse = source;
+  for (const [before, after] of [...startupAppInverseEdits].reverse()) {
+    if (inverse.split(after).length !== 2) throw new Error("startup inverse anchor must occur exactly once");
+    inverse = inverse.replace(after, before);
+  }
+  return inverse;
+}
+
 describe("architecture review demand owner and actual App integration", () => {
   it("StrictMode retained memo and passive replay keep one current default text build", () => {
     let builds = 0;
@@ -439,7 +488,7 @@ describe("architecture review demand owner and actual App integration", () => {
     expect(textEffect).toContain("architectureReport, getArchitectureReview, appProfile");
     expect(app).toContain("architectureReviewBase?.currentGeometryVersion, architectureReviewBase?.evidence");
     expect(app).not.toContain("architectureReviewBase.currentGeometryVersion, architectureReviewBase.evidence, course]");
-    let inverse = app;
+    let inverse = undoStartupAppAttribution(app);
     for (const [before, after] of [...appInverseEdits].reverse()) {
       expect(inverse.split(after)).toHaveLength(2);
       inverse = inverse.replace(after, before);

@@ -19,6 +19,9 @@
 //        default 33, enforced only with PERF_ASSERT_FRAME=1),
 //        PERF_MEASURE_S (default 20), PERF_HEADED=1 (visible GPU-backed run),
 //        PERF_HARDWARE_CLASS / PERF_POWER_STATE / PERF_RUN_LABEL (evidence labels)
+import { publishStartupAttribution } from "./startup-attribution-delivery.mjs";
+import { createStartupWaitStages } from "./startup-wait-stages.mjs";
+import { bootstrapStartupRenderObservation, readStartupRenderObservation } from "../src/utils/startupRenderObservation.mjs";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -90,21 +93,40 @@ page.on("pageerror", (error) => console.error(`[perf-smoke] page error: ${error.
 page.on("console", (message) => {
   if (message.type() === "error") console.error(`[perf-smoke] console error: ${message.text()}`);
 });
-await page.addInitScript(() => {
-  localStorage.setItem("coursecraft_perfhud", "on");
-  localStorage.setItem("coursecraft_ambience", "on");
-});
+await page.addInitScript(bootstrapStartupRenderObservation);
 const coldStartedAt = performance.now();
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 await page.getByRole("button", { name: "Quick Start" }).waitFor({ state: "visible", timeout: 30_000 });
 const coldStartupMs = performance.now() - coldStartedAt;
+const startupWaitRecorder = createStartupWaitStages({
+  now: () => performance.now(),
+  fixtureURL: `http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`,
+  sourceUnit: "ZK-1331_SOURCE1", invocation: 1,
+});
 const fixtureStartedAt = performance.now();
-await page.goto(`http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+const startupGotoStage = startupWaitRecorder.begin(1);
+let startupGotoSucceeded = false;
+try {
+  await page.goto(`http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  startupGotoSucceeded = true;
+} finally {
+  startupWaitRecorder.end(startupGotoStage, startupGotoSucceeded ? "success" : "rejected");
+}
 console.log("[perf-smoke] document loaded; waiting for the visible course canvas …");
-await sleep(500);
+const startupSleepStage = startupWaitRecorder.begin(2);
+let startupSleepSucceeded = false;
+try {
+  await sleep(500);
+  startupSleepSucceeded = true;
+} finally {
+  startupWaitRecorder.end(startupSleepStage, startupSleepSucceeded ? "success" : "rejected");
+}
 const canvas = page.locator(".cc-pixi-stage canvas");
+const startupVisibleStage = startupWaitRecorder.begin(3);
+let startupVisibleSucceeded = false;
 try {
   await canvas.waitFor({ state: "visible", timeout: FIXTURE_READY_TIMEOUT_MS });
+  startupVisibleSucceeded = true;
 } catch (error) {
   const status = await page.evaluate(() => {
     const text = window.render_game_to_text?.();
@@ -120,13 +142,63 @@ try {
   });
   console.error(`[perf-smoke] fixture readiness timeout: ${JSON.stringify(status)}`);
   throw error;
+} finally {
+  startupWaitRecorder.end(startupVisibleStage, startupVisibleSucceeded ? "success" : "rejected");
 }
-await page.waitForFunction(() => {
-  const target = document.querySelector(".cc-pixi-stage canvas");
-  return target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
-}, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
-const box = await canvas.boundingBox();
-const fixtureLoadMs = performance.now() - fixtureStartedAt;
+const startupSizeStage = startupWaitRecorder.begin(4);
+let startupSizeSucceeded = false;
+try {
+  await page.waitForFunction(() => {
+    // Optional diagnostics bracket this already-invoked body; they never replay it.
+    let dimensionsObserver = null, dimensionsEnd = null, dimensionsTicket = null;
+    try {
+      const port = Object.getOwnPropertyDescriptor(window, "__ccStartupRenderObservation");
+      const value = port && "value" in port ? port.value : null;
+      const begin = value && Object.getOwnPropertyDescriptor(value, "beginDimensions");
+      const finish = value && Object.getOwnPropertyDescriptor(value, "endDimensions");
+      if (begin && "value" in begin && typeof begin.value === "function"
+        && finish && "value" in finish && typeof finish.value === "function") {
+        dimensionsObserver = value;
+        dimensionsEnd = finish.value;
+        dimensionsTicket = Reflect.apply(begin.value, value, []);
+      }
+    } catch { /* An optional clock/observer fault cannot decide readiness. */ }
+    const evaluateDimensions = () => {
+    const target = document.querySelector(".cc-pixi-stage canvas");
+    const ready = target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
+    if (ready) window.__ccStartupAttribution?.markReady();
+    return ready;
+    };
+    let dimensionsReturned = false, dimensionsResult;
+    try {
+      dimensionsResult = evaluateDimensions();
+      dimensionsReturned = true;
+      return dimensionsResult;
+    } finally {
+      try {
+        if (dimensionsEnd) Reflect.apply(dimensionsEnd, dimensionsObserver,
+          [dimensionsTicket, dimensionsReturned, dimensionsReturned ? !!dimensionsResult : null]);
+      } catch { /* Preserve the original return or first thrown value, including falsy values. */ }
+    }
+  }, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
+  startupSizeSucceeded = true;
+} finally {
+  startupWaitRecorder.end(startupSizeStage, startupSizeSucceeded ? "success" : "rejected");
+}
+const startupBoxStage = startupWaitRecorder.begin(5);
+let startupBoxSucceeded = false;
+let box;
+try {
+  box = await canvas.boundingBox();
+  startupBoxSucceeded = true;
+} finally {
+  if (!startupBoxSucceeded) startupWaitRecorder.end(startupBoxStage, "rejected");
+}
+// Sample at the existing endpoint after boundingBox, before diagnostic finalization.
+const fixtureEndedAt = performance.now();
+const fixtureLoadMs = fixtureEndedAt - fixtureStartedAt;
+startupWaitRecorder.end(startupBoxStage, "success", fixtureEndedAt);
+const startupWaitStages = startupWaitRecorder.finish(fixtureStartedAt, fixtureEndedAt, fixtureLoadMs);
 console.log(`[perf-smoke] game state ready in ${fixtureLoadMs.toFixed(0)}ms`);
 await sleep(1200);
 if (!box) throw new Error("performance fixture did not create a renderer canvas");
@@ -148,7 +220,7 @@ while (Date.now() - t0 < MEASURE_S * 1000) {
   await sleep(400);
 }
 const perf = await page.evaluate(() => window.__ccPerf ?? null);
-const browserEvidence = await page.evaluate(() => {
+let { startupRenderObservation, ...browserEvidence } = await page.evaluate(() => {
   const canvas = [...document.querySelectorAll("canvas")]
     .sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
   let renderer = null;
@@ -164,7 +236,21 @@ const browserEvidence = await page.evaluate(() => {
     // Evidence stays explicitly unknown rather than failing an otherwise valid
     // physical run on browsers that withhold debug renderer information.
   }
+  let startupRenderObservation = null;
+  try {
+    startupRenderObservation = window.__ccStartupRenderObservation?.snapshot() ?? null;
+    if (!startupRenderObservation && window.__ccStartupAttributionBootstrap) {
+      startupRenderObservation = { version: 1, sourceUnit: "ZK-1335_SOURCE1", status: "HOLD", eligible: false,
+        failure: "MISSING", draws: [], longTasks: [], trusted: false, numericPass: false,
+        releaseCleared: false, candidateQualified: false, browserDocumentIdentity: false };
+    }
+  } catch {
+    startupRenderObservation = { version: 1, sourceUnit: "ZK-1335_SOURCE1", status: "HOLD", eligible: false,
+      failure: "SNAPSHOT_ACCESS", draws: [], longTasks: [], trusted: false, numericPass: false,
+      releaseCleared: false, candidateQualified: false, browserDocumentIdentity: false };
+  }
   return {
+    startupRenderObservation,
     userAgent: navigator.userAgent,
     viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
     visibilityState: document.visibilityState,
@@ -173,6 +259,21 @@ const browserEvidence = await page.evaluate(() => {
     context,
   };
 });
+if (startupRenderObservation !== null) startupRenderObservation = readStartupRenderObservation(startupRenderObservation);
+let startupJournalRaw = null;
+let startupDiagnosticFailure = null;
+let startupDiagnosticFailurePresent = false;
+if (PERF_FIXTURE === "m27Fixture") {
+  try {
+    startupJournalRaw = await page.evaluate(() => {
+      const journal = window.__ccStartupAttribution?.snapshot();
+      if (!journal) throw new Error("startup attribution collector missing");
+      const raw = JSON.stringify(journal);
+      if (new TextEncoder().encode(raw).length > 65536) throw new Error("startup attribution journal cap");
+      return raw;
+    });
+  } catch (error) { startupDiagnosticFailure = error; startupDiagnosticFailurePresent = true; }
+}
 await browser.close();
 vite.kill();
 
@@ -213,6 +314,8 @@ const evidence = {
   fixture: PERF_FIXTURE,
   coldStartupMs: Math.round(coldStartupMs),
   fixtureLoadMs: Math.round(fixtureLoadMs),
+  startupWaitStages,
+  startupRenderObservation,
   renderer: perf,
   effective: {
     theme: PERF_THEME,
@@ -240,6 +343,22 @@ mkdirSync(typeof OUTPUT_PATH === "string"
   ? dirname(OUTPUT_PATH)
   : new URL(".", OUTPUT_PATH), { recursive: true });
 writeFileSync(OUTPUT_PATH, `${JSON.stringify(evidence, null, 2)}\n`);
+if (PERF_FIXTURE === "m27Fixture") {
+  try {
+    if (startupDiagnosticFailurePresent) throw startupDiagnosticFailure;
+    const published = publishStartupAttribution({ raw: startupJournalRaw, outputPath: OUTPUT_PATH,
+      declaredRoot: process.env.PERF_STARTUP_ATTRIBUTION_ROOT,
+      original: { coldStartupMs, fixtureLoadMs, rendererWorkMs: perf.workMs, gateValidation } });
+    if (!published.diagnosticEligible) throw new Error("startup attribution coverage/clock incomplete");
+    console.log(`[perf-smoke] startup attribution published: ${JSON.stringify(published)}`);
+  } catch (error) {
+    if (!startupDiagnosticFailurePresent) { startupDiagnosticFailure = error; startupDiagnosticFailurePresent = true; }
+    let startupFailureText = "<unprintable>";
+    try { startupFailureText = String(startupDiagnosticFailure).slice(0, 512); } catch { /* Keep the original cause. */ }
+    console.error(`[perf-smoke] startup attribution FAIL: ${startupFailureText}`);
+  }
+  if (startupDiagnosticFailurePresent && !failed) process.exit(2);
+}
 if (failed) process.exit(1);
 console.log(
   `[perf-smoke] PASS: tick work ${perf.workMs.toFixed(2)}ms ≤ ${WORK_BUDGET_MS}ms` +
