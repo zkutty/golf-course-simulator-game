@@ -313,18 +313,42 @@ def code_load(raw, path, expected, name):
         sys.modules.pop(name,None);raise
     return module
 
+def git_blob_oid(raw):
+    # Git object identity only; trusted SHA256 remains independently mandatory.
+    need(type(raw) is bytes and len(raw)<=SOURCE_CAP,'bounded raw Git blob')
+    header=b'blob '+str(len(raw)).encode('ascii')+b'\0'
+    return hashlib.sha1(header+raw).hexdigest()
+
 def source_inspect(d, inspector):
+    # Validate the entire current diagnostic source set before any Git subprocess.
+    need(type(d) is dict and hex_string(d.get('sourceSHA'),40)
+      and d['sourceSHA']!=CANDIDATE,'immutable source revision')
+    sources=d.get('sourcePins')
+    need(type(sources) is dict and all(type(rel) is str for rel in sources),'source row types')
+    for rel,expected in sources.items():
+        relative(rel)
+        need(':' not in rel and all(32<ord(ch)<127 for ch in rel)
+          and all(not part.startswith('-') for part in rel.split('/')),'literal Git source path')
+        pin(expected,SOURCE_CAP)
+    expected_paths=set(('.github/workflows/zk1262-save-final-owner.yml', 'scripts/zk1262-build-audit-normalization.py', 'scripts/zk1262-save-context.py', 'scripts/zk1262-save-final-driver.py', 'scripts/zk1262-save-owner-donors/zk682-run-stability.mjs', 'scripts/zk1262-save-owner-donors/zk682-stability.e2e.ts', 'scripts/zk1262-save-phase-adapter.py', 'scripts/zk1262-save-typed-adapter.py', 'simgolf-lite/e2e/zk1262-save-final-owner-diagnostic.e2e.ts', 'simgolf-lite/scripts/zk1262-run-save-final-owner-diagnostic.mjs', 'simgolf-lite/scripts/zk1262-save-owner-diagnostic/save-owner-collector.d.mts', 'simgolf-lite/scripts/zk1262-save-owner-diagnostic/save-owner-collector.mjs', 'simgolf-lite/scripts/zk1325-html-report-owner.py', 'simgolf-lite/scripts/zk682-stability-contract.mjs'))
+    need(set(sources)==expected_paths,'exact current fourteen source paths')
     for key in ('driverRoot','targetRoot'): canonical(d[key],True)
     need(d['driverRoot']!=d['targetRoot'],'separate source/target')
     for root,expected in ((d['driverRoot'],d['sourceSHA']),(d['targetRoot'],CANDIDATE)):
         actual=inspector.run(['git','--no-optional-locks','-C',root,'rev-parse','--verify','HEAD'])
         need(actual==expected.encode()+b'\n','actual Git HEAD')
+    storage=inspector.run(['git','--no-optional-locks','-C',d['driverRoot'],
+      'rev-parse','--show-object-format=storage'])
+    need(storage==b'sha1\n','registered Git storage format sha1')
     codes={}
-    for rel,expected in d['sourcePins'].items():
+    for rel,expected in sources.items():
         raw,actual=inspector.read(Path(d['driverRoot'])/rel)
         need(same({k:actual[k] for k in ('bytes','sha256')},expected),'actual source pin: '+rel)
-        committed=inspector.run(['git','--no-optional-locks','-C',d['driverRoot'],'show',d['sourceSHA']+':'+rel])
-        need(raw==committed,'actual committed source: '+rel)
+        oid=inspector.run(['git','--no-optional-locks','-C',d['driverRoot'],
+          'rev-parse','--verify','--end-of-options',d['sourceSHA']+':'+rel])
+        need(type(oid) is bytes and re.fullmatch(b'[0-9a-f]{40}\n',oid) is not None,
+          'exact committed blob OID response')
+        need(oid==git_blob_oid(raw).encode('ascii')+b'\n','actual committed source: '+rel)
         if rel in (CONTEXT,COMPONENTS['phase'],COMPONENTS['driver']): codes[rel]=raw
     self_path=Path(__file__).resolve()
     need(self_path==Path(d['driverRoot'])/CONTEXT,'own context module path')
