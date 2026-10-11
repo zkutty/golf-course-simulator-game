@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { IconUi } from "../assets/icons";
 import "./PlayerProPanel.css";
+import "./PlayerShotHud.css";
 import type { Course, PinRotation, TeeSet, World } from "../game/models/types";
 import {
   PLAYER_PRO_SKILLS,

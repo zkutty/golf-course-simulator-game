@@ -1,0 +1,32 @@
+[data-testid="player-shot-hud"],
+[data-testid="player-shot-hud"] * {
+  box-sizing: border-box;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+[data-testid="player-shot-hud"] h2 { font-size: 1.125rem !important; }
+[data-testid="player-shot-hud"] :is(button, select, input) { font: inherit; }
+[data-testid="player-shot-hud"] input[type="range"] { margin: 0; }
+[data-testid="player-shot-hud"] :is(button, summary) { white-space: normal; }
+[data-testid="player-shot-hud"] :is(
+  [data-testid="player-shot-caddie-guidance"],
+  [data-testid="player-shot-lie-effects"],
+  [data-testid="player-shot-auto-putt-preview"],
+  [data-testid="player-shot-rules-preview"],
+  [data-testid="player-shot-ruling"],
+  [data-testid="player-round-scorecard"],
+  legend
+) { font-size: .75rem !important; }
+[data-testid="player-shot-hud"] [data-testid="player-round-scorecard"] [role="row"] {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr)) !important;
+}
+[data-testid="player-shot-hud"] button:focus-visible { opacity: 1 !important; }
+[data-testid="player-shot-hud"] {
+  scroll-padding-block: 6px;
+}
+@media (max-width: 768px) {
+  [data-testid="player-shot-hud"] {
+    bottom: 12px !important;
+    max-height: calc(100% - 24px) !important;
+  }
+}
