@@ -40,6 +40,22 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Pixi renderer ownership regression
+        run: npx playwright test e2e/pixi-peer-ownership.e2e.ts --workers=1 --retries=0 --output=pixi-peer-ownership-test-results
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: pixi-peer-ownership-report
+
+      - name: Upload Pixi renderer ownership report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixi-peer-ownership-e2e-report
+          path: |
+            simgolf-lite/pixi-peer-ownership-report
+            simgolf-lite/pixi-peer-ownership-test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: M65 machine certification
         run: npm run test:cert:m65
 

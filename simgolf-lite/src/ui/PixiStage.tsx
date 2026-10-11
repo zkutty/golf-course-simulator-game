@@ -1943,7 +1943,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       });
 
       if (cancelled) {
-        app.destroy(true, { children: true, texture: true });
+        app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
         return;
       }
       const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule] = await Promise.all([
@@ -1954,7 +1954,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         import("./renderer/viewportInputController"),
       ]);
       if (cancelled) {
-        app.destroy(true, { children: true, texture: true });
+        app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
         return;
       }
 
@@ -1964,7 +1964,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         initialRendererConfigRef.current.season,
       );
       if (cancelled) {
-        app.destroy(true, { children: true, texture: true });
+        app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
         return;
       }
       deferredWorldScenesRef.current = deferredWorldScenes;
@@ -2045,7 +2045,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (cancelled) {
         terrainWaterSceneRef.current?.destroy();
         terrainWaterSceneRef.current = null;
-        try { app.destroy(true, { children: true, texture: false, textureSource: false }); } catch { /* partial initialization */ }
+        try { app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); } catch { /* partial initialization */ }
         return;
       }
       console.error("[PixiStage] Course renderer initialization failed", error);
@@ -2055,7 +2055,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       setRendererError(true);
       terrainWaterSceneRef.current?.destroy();
       terrainWaterSceneRef.current = null;
-      try { app.destroy(true, { children: true, texture: false, textureSource: false }); } catch { /* partially initialized */ }
+      try { app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); } catch { /* partially initialized */ }
     });
 
     return () => {
@@ -2087,7 +2087,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         // Scene systems release generated textures explicitly. Atlas textures
         // are borrowed residency resources and must never be recursively
         // destroyed by the Pixi application.
-        appRef.current.destroy(true, { children: true, texture: false, textureSource: false });
+        appRef.current.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false });
         appRef.current = null;
       }
     };
