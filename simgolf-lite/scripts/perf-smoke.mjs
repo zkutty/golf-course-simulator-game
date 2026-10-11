@@ -20,6 +20,7 @@
 //        PERF_MEASURE_S (default 20), PERF_HEADED=1 (visible GPU-backed run),
 //        PERF_HARDWARE_CLASS / PERF_POWER_STATE / PERF_RUN_LABEL (evidence labels)
 import { publishStartupAttribution } from "./startup-attribution-delivery.mjs";
+import { createStartupWaitStages } from "./startup-wait-stages.mjs";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -103,13 +104,35 @@ const coldStartedAt = performance.now();
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 await page.getByRole("button", { name: "Quick Start" }).waitFor({ state: "visible", timeout: 30_000 });
 const coldStartupMs = performance.now() - coldStartedAt;
+const startupWaitRecorder = createStartupWaitStages({
+  now: () => performance.now(),
+  fixtureURL: `http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`,
+  sourceUnit: "ZK-1331_SOURCE1", invocation: 1,
+});
 const fixtureStartedAt = performance.now();
-await page.goto(`http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+const startupGotoStage = startupWaitRecorder.begin(1);
+let startupGotoSucceeded = false;
+try {
+  await page.goto(`http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  startupGotoSucceeded = true;
+} finally {
+  startupWaitRecorder.end(startupGotoStage, startupGotoSucceeded ? "success" : "rejected");
+}
 console.log("[perf-smoke] document loaded; waiting for the visible course canvas …");
-await sleep(500);
+const startupSleepStage = startupWaitRecorder.begin(2);
+let startupSleepSucceeded = false;
+try {
+  await sleep(500);
+  startupSleepSucceeded = true;
+} finally {
+  startupWaitRecorder.end(startupSleepStage, startupSleepSucceeded ? "success" : "rejected");
+}
 const canvas = page.locator(".cc-pixi-stage canvas");
+const startupVisibleStage = startupWaitRecorder.begin(3);
+let startupVisibleSucceeded = false;
 try {
   await canvas.waitFor({ state: "visible", timeout: FIXTURE_READY_TIMEOUT_MS });
+  startupVisibleSucceeded = true;
 } catch (error) {
   const status = await page.evaluate(() => {
     const text = window.render_game_to_text?.();
@@ -125,15 +148,36 @@ try {
   });
   console.error(`[perf-smoke] fixture readiness timeout: ${JSON.stringify(status)}`);
   throw error;
+} finally {
+  startupWaitRecorder.end(startupVisibleStage, startupVisibleSucceeded ? "success" : "rejected");
 }
-await page.waitForFunction(() => {
-  const target = document.querySelector(".cc-pixi-stage canvas");
-  const ready = target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
-  if (ready) window.__ccStartupAttribution?.markReady();
-  return ready;
-}, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
-const box = await canvas.boundingBox();
-const fixtureLoadMs = performance.now() - fixtureStartedAt;
+const startupSizeStage = startupWaitRecorder.begin(4);
+let startupSizeSucceeded = false;
+try {
+  await page.waitForFunction(() => {
+    const target = document.querySelector(".cc-pixi-stage canvas");
+    const ready = target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
+    if (ready) window.__ccStartupAttribution?.markReady();
+    return ready;
+  }, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
+  startupSizeSucceeded = true;
+} finally {
+  startupWaitRecorder.end(startupSizeStage, startupSizeSucceeded ? "success" : "rejected");
+}
+const startupBoxStage = startupWaitRecorder.begin(5);
+let startupBoxSucceeded = false;
+let box;
+try {
+  box = await canvas.boundingBox();
+  startupBoxSucceeded = true;
+} finally {
+  if (!startupBoxSucceeded) startupWaitRecorder.end(startupBoxStage, "rejected");
+}
+// Sample at the existing endpoint after boundingBox, before diagnostic finalization.
+const fixtureEndedAt = performance.now();
+const fixtureLoadMs = fixtureEndedAt - fixtureStartedAt;
+startupWaitRecorder.end(startupBoxStage, "success", fixtureEndedAt);
+const startupWaitStages = startupWaitRecorder.finish(fixtureStartedAt, fixtureEndedAt, fixtureLoadMs);
 console.log(`[perf-smoke] game state ready in ${fixtureLoadMs.toFixed(0)}ms`);
 await sleep(1200);
 if (!box) throw new Error("performance fixture did not create a renderer canvas");
@@ -234,6 +278,7 @@ const evidence = {
   fixture: PERF_FIXTURE,
   coldStartupMs: Math.round(coldStartupMs),
   fixtureLoadMs: Math.round(fixtureLoadMs),
+  startupWaitStages,
   renderer: perf,
   effective: {
     theme: PERF_THEME,
