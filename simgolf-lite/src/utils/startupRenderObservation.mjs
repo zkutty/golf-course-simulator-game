@@ -12,6 +12,10 @@ export function bootstrapStartupRenderObservation() {
     if (window.__ccStartupRenderObservation?.version === 1) return;
     const limit = 16;
     const renderers = new WeakMap();
+    const tickers = new WeakMap();
+    const tickerRAFs = new WeakMap();
+    const tickRows = [];
+    let tickerSerial = 0, installedTickers = 0, preActivationTickCalls = 0;
     const draws = [];
     const longTasks = [];
     let serial = 0, installed = 0, activations = 0, captureStart = null;
@@ -58,7 +62,7 @@ export function bootstrapStartupRenderObservation() {
         observerState = "SUPPORTED";
       } else fail("LONGTASK_UNSUPPORTED");
     } catch { observerState = "FAULT"; fail("LONGTASK_OBSERVER"); }
-    const install = (renderer) => {
+    const installRenderer = (renderer) => {
       try {
         if (frozen) return;
         if (renderer === null || (typeof renderer !== "object" && typeof renderer !== "function")) {
@@ -126,7 +130,7 @@ export function bootstrapStartupRenderObservation() {
         installed++;
       } catch { fail("INSTALL"); }
     };
-    const activate = (renderer) => {
+    const activateRenderer = (renderer) => {
       try {
         if (frozen) return;
         const item = renderers.get(renderer);
@@ -141,6 +145,108 @@ export function bootstrapStartupRenderObservation() {
         if (captureStart === null) captureStart = at;
       } catch { late = true; fail("ACTIVATION"); }
     };
+    const installTicker = (renderer, ticker) => {
+      try {
+        if (frozen) return;
+        const rendererItem = renderers.get(renderer);
+        if (!rendererItem) { fail("TICKER_BINDING"); return; }
+        if (ticker === null || (typeof ticker !== "object" && typeof ticker !== "function")) {
+          fail("TICKER_MISSING"); return;
+        }
+        const raf = Object.getOwnPropertyDescriptor(ticker, "_tick");
+        if (!raf || !("value" in raf) || typeof raf.value !== "function") {
+          fail("TICKER_DISPATCH"); return;
+        }
+        const existing = tickers.get(ticker);
+        if (existing) {
+          if (tickerRAFs.get(raf.value) !== existing.serial) fail("TICKER_DISPATCH_CHANGED");
+          const own = Object.getOwnPropertyDescriptor(ticker, "update");
+          if (!own || own.value !== existing.wrapper) fail("TICKER_WRAPPER_CHANGED");
+          if (existing.rendererSerial !== rendererItem.serial
+            || rendererItem.tickerSerial !== existing.serial) fail("TICKER_BINDING");
+          return;
+        }
+        if (rendererItem.tickerSerial !== undefined) { fail("TICKER_CHANGED"); return; }
+        let cursor = ticker, descriptor = null;
+        for (let depth = 0; cursor && depth < 8; depth++) {
+          descriptor = Object.getOwnPropertyDescriptor(cursor, "update");
+          if (descriptor) break;
+          cursor = Object.getPrototypeOf(cursor);
+        }
+        if (!descriptor || !("value" in descriptor) || typeof descriptor.value !== "function") {
+          fail("TICKER_METHOD"); return;
+        }
+        const own = Object.getOwnPropertyDescriptor(ticker, "update");
+        if ((own && !own.configurable && !own.writable) || (!own && !Object.isExtensible(ticker))) {
+          fail("TICKER_DESCRIPTOR"); return;
+        }
+        if (tickerSerial >= limit) { fail("TICKER_IDENTITY_CAP"); return; }
+        const original = descriptor.value;
+        const item = { serial: ++tickerSerial, rendererSerial: rendererItem.serial,
+          installedAt: clock(), active: false, wrapper: null };
+        // Only the callable and scalar item are retained, never the ticker or application.
+        const wrapper = function (...args) {
+          let row = null;
+          try {
+            if (!frozen && item.active) {
+              if (tickRows.length >= limit) overflow();
+              else {
+                const start = clock();
+                row = { id: tickRows.length + 1, tickerSerial: item.serial, generation: null,
+                  attempt: null, cohortQualified: false, start, end: null, duration: null, outcome: "pending" };
+                tickRows.push(row);
+              }
+            } else if (!frozen) preActivationTickCalls = Math.min(preActivationTickCalls + 1, limit + 1);
+          } catch { fail("TICK_BEGIN"); }
+          let returned = false;
+          try {
+            const result = Reflect.apply(original, this, args);
+            returned = true;
+            return result;
+          } finally {
+            try {
+              if (row) {
+                row.outcome = returned ? "returned" : "threw";
+                row.end = clock();
+                if (row.start !== null && row.end !== null && row.end >= row.start) row.duration = row.end - row.start;
+                else fail("CLOCK");
+              }
+            } catch { fail("TICK_END"); }
+          }
+        };
+        item.wrapper = wrapper;
+        Object.defineProperty(ticker, "update", {
+          value: wrapper, writable: own ? own.writable : true,
+          configurable: own ? own.configurable : true, enumerable: own ? own.enumerable : descriptor.enumerable,
+        });
+        tickers.set(ticker, item);
+        tickerRAFs.set(raf.value, item.serial);
+        rendererItem.tickerSerial = item.serial;
+        installedTickers++;
+      } catch { fail("TICKER_INSTALL"); }
+    };
+    const activateTicker = (renderer, ticker) => {
+      try {
+        if (frozen) return;
+        const rendererItem = renderers.get(renderer);
+        const item = tickers.get(ticker);
+        if (!rendererItem || !item) { late = true; fail("TICKER_ACTIVATION_WITHOUT_INSTALL"); return; }
+        if (rendererItem.tickerSerial !== item.serial || item.rendererSerial !== rendererItem.serial) {
+          late = true; fail("TICKER_BINDING"); return;
+        }
+        const own = Object.getOwnPropertyDescriptor(ticker, "update");
+        if (!own || own.value !== item.wrapper) { late = true; fail("TICKER_WRAPPER_CHANGED"); return; }
+        const raf = Object.getOwnPropertyDescriptor(ticker, "_tick");
+        if (!raf || !("value" in raf) || tickerRAFs.get(raf.value) !== item.serial) {
+          late = true; fail("TICKER_DISPATCH_CHANGED"); return;
+        }
+        const at = clock();
+        if (at === null || item.installedAt === null || at < item.installedAt) { late = true; fail("TICKER_PLACEMENT"); }
+        item.active = true;
+      } catch { late = true; fail("TICKER_ACTIVATION"); }
+    };
+    const install = (renderer, ticker) => { installRenderer(renderer); installTicker(renderer, ticker); };
+    const activate = (renderer, ticker) => { activateRenderer(renderer); activateTicker(renderer, ticker); };
     const snapshot = () => {
       if (cached) return cached;
       try {
@@ -152,31 +258,35 @@ export function bootstrapStartupRenderObservation() {
         frozen = true;
         if (captureStart === null || !installed || !draws.length
           || draws.some((row) => row.outcome === "pending" || row.duration === null)) fail("INCOMPLETE");
+        if (!installedTickers || !tickRows.length
+          || tickRows.some((row) => row.outcome === "pending" || row.duration === null)) fail("TICKER_INCOMPLETE");
         const output = {
-          version: 1, sourceUnit: "ZK-1335_SOURCE1", domain: "browser.performance.now",
+          version: 1, sourceUnit: "ZK-1338_SOURCE1", domain: "browser.performance.now",
           clock: { start: window.__ccStartupAttributionBootstrap.start, timeOrigin: window.__ccStartupAttributionBootstrap.timeOrigin },
-          capture: { start: captureStart, snapshotAt: end, installedRenderers: installed, activations,
-            limits: { drawRows: limit, longTaskRows: limit, bytes: 8192 }, truncated, late },
+          capture: { start: captureStart, snapshotAt: end, installedRenderers: installed, installedTickers,
+            activations, preActivationTickCalls,
+            limits: { drawRows: limit, tickRows: limit, longTaskRows: limit, bytes: 8192 }, truncated, late },
           observer: observerState,
           draws: draws.map((row) => Object.freeze({ ...row })),
+          tickRows: tickRows.map((row) => Object.freeze({ ...row })),
           longTasks: longTasks.map((row) => Object.freeze({ ...row })),
           status: failure === null ? "COMPLETE" : "HOLD", eligible: failure === null, failure,
           trusted: false, numericPass: false, releaseCleared: false,
           candidateQualified: false, browserDocumentIdentity: false,
-          qualification: "First bounded post-layer calls/tasks only; unknown cohorts; synchronous render-call time is not GPU completion, Node alignment, causality or removable work. Later rows cause truncated HOLD.",
+          qualification: "First bounded post-layer render/update calls and tasks; unknown cohorts. Pre-install/pre-activation and outside-update work are unmeasured. Call return is not GPU completion, Node alignment, cause or removable time. Later rows cause truncated HOLD.",
         };
         if (new TextEncoder().encode(JSON.stringify(output)).length > 8192) { fail("JSON_CAP"); throw null; }
-        Object.freeze(output.draws); Object.freeze(output.longTasks);
+        Object.freeze(output.draws); Object.freeze(output.tickRows); Object.freeze(output.longTasks);
         Object.freeze(output.capture.limits); Object.freeze(output.capture); Object.freeze(output.clock);
         cached = Object.freeze(output);
       } catch {
         fail("SNAPSHOT");
         frozen = true;
-        cached = { version: 1, sourceUnit: "ZK-1335_SOURCE1", status: "HOLD", eligible: false, failure,
-          draws: [], longTasks: [], trusted: false, numericPass: false, releaseCleared: false,
+        cached = { version: 1, sourceUnit: "ZK-1338_SOURCE1", status: "HOLD", eligible: false, failure,
+          draws: [], tickRows: [], longTasks: [], trusted: false, numericPass: false, releaseCleared: false,
           candidateQualified: false, browserDocumentIdentity: false,
           qualification: "Snapshot incomplete; no renderer, cohort, clock or causal authority." };
-        try { Object.freeze(cached.draws); Object.freeze(cached.longTasks); Object.freeze(cached); } catch { /* Bounded fallback. */ }
+        try { Object.freeze(cached.draws); Object.freeze(cached.tickRows); Object.freeze(cached.longTasks); Object.freeze(cached); } catch { /* Bounded fallback. */ }
       }
       return cached;
     };
@@ -184,14 +294,14 @@ export function bootstrapStartupRenderObservation() {
   } catch { /* Optional diagnostic setup cannot change the existing bootstrap behavior. */ }
 }
 
-export function observeStartupRenderer(renderer) {
+export function observeStartupRenderer(renderer, ticker) {
   try {
-    if (typeof window !== "undefined") window.__ccStartupRenderObservation?.install(renderer);
+    if (typeof window !== "undefined") window.__ccStartupRenderObservation?.install(renderer, ticker);
   } catch { /* Only the original renderer call may fail the renderer path. */ }
 }
 
-export function activateStartupRenderer(renderer) {
+export function activateStartupRenderer(renderer, ticker) {
   try {
-    if (typeof window !== "undefined") window.__ccStartupRenderObservation?.activate(renderer);
+    if (typeof window !== "undefined") window.__ccStartupRenderObservation?.activate(renderer, ticker);
   } catch { /* Optional observation never changes native readiness. */ }
 }
