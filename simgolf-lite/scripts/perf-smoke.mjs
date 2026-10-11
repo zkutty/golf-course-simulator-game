@@ -149,10 +149,37 @@ const startupSizeStage = startupWaitRecorder.begin(4);
 let startupSizeSucceeded = false;
 try {
   await page.waitForFunction(() => {
+    // Optional diagnostics bracket this already-invoked body; they never replay it.
+    let dimensionsObserver = null, dimensionsEnd = null, dimensionsTicket = null;
+    try {
+      const port = Object.getOwnPropertyDescriptor(window, "__ccStartupRenderObservation");
+      const value = port && "value" in port ? port.value : null;
+      const begin = value && Object.getOwnPropertyDescriptor(value, "beginDimensions");
+      const finish = value && Object.getOwnPropertyDescriptor(value, "endDimensions");
+      if (begin && "value" in begin && typeof begin.value === "function"
+        && finish && "value" in finish && typeof finish.value === "function") {
+        dimensionsObserver = value;
+        dimensionsEnd = finish.value;
+        dimensionsTicket = Reflect.apply(begin.value, value, []);
+      }
+    } catch { /* An optional clock/observer fault cannot decide readiness. */ }
+    const evaluateDimensions = () => {
     const target = document.querySelector(".cc-pixi-stage canvas");
     const ready = target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
     if (ready) window.__ccStartupAttribution?.markReady();
     return ready;
+    };
+    let dimensionsReturned = false, dimensionsResult;
+    try {
+      dimensionsResult = evaluateDimensions();
+      dimensionsReturned = true;
+      return dimensionsResult;
+    } finally {
+      try {
+        if (dimensionsEnd) Reflect.apply(dimensionsEnd, dimensionsObserver,
+          [dimensionsTicket, dimensionsReturned, dimensionsReturned ? !!dimensionsResult : null]);
+      } catch { /* Preserve the original return or first thrown value, including falsy values. */ }
+    }
   }, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
   startupSizeSucceeded = true;
 } finally {

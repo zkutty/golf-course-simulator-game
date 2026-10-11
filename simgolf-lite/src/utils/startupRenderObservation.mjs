@@ -245,6 +245,71 @@ export function bootstrapStartupRenderObservation() {
         item.active = true;
       } catch { late = true; fail("TICKER_ACTIVATION"); }
     };
+    // Dimensions rows are a separate unqualified observation, not document identity.
+    const dimensionsRows = [];
+    const dimensionsTickets = new WeakMap();
+    let dimensionsCalls = 0, dimensionsPending = 0, dimensionsFailure = null;
+    let dimensionsReentry = false, dimensionsLate = false, dimensionsReady = false;
+    const failDimensions = (code) => { if (dimensionsFailure === null) dimensionsFailure = code; };
+    const beginDimensions = () => {
+      try {
+        if (frozen) { dimensionsLate = true; failDimensions("LATE"); return null; }
+        dimensionsCalls = Math.min(dimensionsCalls + 1, limit + 1);
+        if (dimensionsReady) { dimensionsLate = true; failDimensions("AFTER_READY"); }
+        if (dimensionsPending) { dimensionsReentry = true; failDimensions("REENTRY"); }
+        dimensionsPending = Math.min(dimensionsPending + 1, limit + 1);
+        const ticket = {};
+        if (dimensionsRows.length >= limit) {
+          overflow(); failDimensions("ROW_CAP"); dimensionsTickets.set(ticket, null); return ticket;
+        }
+        const start = clock();
+        if (start === null) failDimensions("CLOCK");
+        const row = { id: dimensionsRows.length + 1, start, end: null, duration: null,
+          outcome: "pending", ready: null };
+        dimensionsRows.push(row);
+        dimensionsTickets.set(ticket, row);
+        return ticket;
+      } catch { failDimensions("BEGIN"); return null; }
+    };
+    const endDimensions = (ticket, returned, ready) => {
+      try {
+        if (ticket === null) return;
+        if (!dimensionsTickets.has(ticket)) { failDimensions("TICKET"); return; }
+        const row = dimensionsTickets.get(ticket);
+        dimensionsTickets.delete(ticket);
+        dimensionsPending = Math.max(0, dimensionsPending - 1);
+        if (frozen) { dimensionsLate = true; failDimensions("LATE"); return; }
+        if (typeof returned !== "boolean" || (ready !== null && typeof ready !== "boolean")) {
+          failDimensions("SCHEMA"); return;
+        }
+        if (!row) return;
+        row.outcome = returned ? "returned" : "threw";
+        row.ready = returned ? ready : null;
+        row.end = clock();
+        if (row.start !== null && row.end !== null && row.end >= row.start) row.duration = row.end - row.start;
+        else failDimensions("CLOCK");
+        if (!returned) failDimensions("PREDICATE_THROW");
+        if (returned && ready) dimensionsReady = true;
+      } catch { failDimensions("END"); }
+    };
+    const snapshotDimensions = () => {
+      if (!dimensionsRows.length) failDimensions("MISSING");
+      if (dimensionsPending || dimensionsRows.some((row) => row.outcome === "pending" || row.duration === null)) {
+        failDimensions("PENDING");
+      }
+      if (!dimensionsReady) failDimensions("NOT_READY");
+      const rows = dimensionsRows.map((row) => Object.freeze({ ...row }));
+      Object.freeze(rows);
+      return Object.freeze({
+        sourceUnit: "ZK-1339_SOURCE1", domain: "browser.performance.now", rows,
+        calls: dimensionsCalls, pending: dimensionsPending, readyObserved: dimensionsReady,
+        reentry: dimensionsReentry, late: dimensionsLate, rowLimit: limit,
+        observationComplete: dimensionsFailure === null,
+        status: "HOLD", eligible: false, failure: dimensionsFailure ?? "DOCUMENT_IDENTITY_UNKNOWN",
+        documentIdentity: "UNKNOWN", candidateQualified: false, trusted: false,
+        qualification: "First bounded synchronous dimensions callbacks including diagnostic overhead. Unknown document/candidate; no full-startup, scheduling, Node, native/GPU, cause or removable-time credit.",
+      });
+    };
     const install = (renderer, ticker) => { installRenderer(renderer); installTicker(renderer, ticker); };
     const activate = (renderer, ticker) => { activateRenderer(renderer); activateTicker(renderer, ticker); };
     const snapshot = () => {
@@ -265,11 +330,12 @@ export function bootstrapStartupRenderObservation() {
           clock: { start: window.__ccStartupAttributionBootstrap.start, timeOrigin: window.__ccStartupAttributionBootstrap.timeOrigin },
           capture: { start: captureStart, snapshotAt: end, installedRenderers: installed, installedTickers,
             activations, preActivationTickCalls,
-            limits: { drawRows: limit, tickRows: limit, longTaskRows: limit, bytes: 8192 }, truncated, late },
+            limits: { drawRows: limit, tickRows: limit, longTaskRows: limit, dimensionsRows: limit, bytes: 8192 }, truncated, late },
           observer: observerState,
           draws: draws.map((row) => Object.freeze({ ...row })),
           tickRows: tickRows.map((row) => Object.freeze({ ...row })),
           longTasks: longTasks.map((row) => Object.freeze({ ...row })),
+          dimensionsPredicate: snapshotDimensions(),
           status: failure === null ? "COMPLETE" : "HOLD", eligible: failure === null, failure,
           trusted: false, numericPass: false, releaseCleared: false,
           candidateQualified: false, browserDocumentIdentity: false,
@@ -283,14 +349,18 @@ export function bootstrapStartupRenderObservation() {
         fail("SNAPSHOT");
         frozen = true;
         cached = { version: 1, sourceUnit: "ZK-1338_SOURCE1", status: "HOLD", eligible: false, failure,
-          draws: [], tickRows: [], longTasks: [], trusted: false, numericPass: false, releaseCleared: false,
+          draws: [], tickRows: [], longTasks: [],
+          dimensionsPredicate: { sourceUnit: "ZK-1339_SOURCE1", status: "HOLD", eligible: false,
+            failure: "SNAPSHOT", rows: [], documentIdentity: "UNKNOWN", candidateQualified: false, trusted: false },
+          trusted: false, numericPass: false, releaseCleared: false,
           candidateQualified: false, browserDocumentIdentity: false,
           qualification: "Snapshot incomplete; no renderer, cohort, clock or causal authority." };
-        try { Object.freeze(cached.draws); Object.freeze(cached.tickRows); Object.freeze(cached.longTasks); Object.freeze(cached); } catch { /* Bounded fallback. */ }
+        try { Object.freeze(cached.draws); Object.freeze(cached.tickRows); Object.freeze(cached.longTasks);
+          Object.freeze(cached.dimensionsPredicate.rows); Object.freeze(cached.dimensionsPredicate); Object.freeze(cached); } catch { /* Bounded fallback. */ }
       }
       return cached;
     };
-    window.__ccStartupRenderObservation = Object.freeze({ version: 1, install, activate, snapshot });
+    window.__ccStartupRenderObservation = Object.freeze({ version: 1, install, activate, beginDimensions, endDimensions, snapshot });
   } catch { /* Optional diagnostic setup cannot change the existing bootstrap behavior. */ }
 }
 
