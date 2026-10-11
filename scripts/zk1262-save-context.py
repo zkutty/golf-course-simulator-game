@@ -38,7 +38,8 @@ COMPONENTS = {'driver':'scripts/zk1262-save-final-driver.py',
  'normalizer':'scripts/zk1262-build-audit-normalization.py',
  'stabilityContract':'simgolf-lite/scripts/zk682-stability-contract.mjs'}
 KNOWN = {
- COMPONENTS['driver']:(29983,'23c3d5e8e4bd2a81f3beb69a6e8d3f0580effd9e2e96fa90c69ba6b930411a0b'),
+ 'simgolf-lite/scripts/zk1325-html-report-owner.py':(19058,'5e5cd4c9074db38d41e864fca597b20bcb7d87f8f53ff85b7f9bf00b81ff76fb'),
+ COMPONENTS['driver']:(32381,'bcbd3b135627cc11213c89d26635e02b6c2fc889c72c3766fb2afcfed99568c1'),
  COMPONENTS['phase']:(24432,'74e475795537a49dafe054d2b345061dfa548731bdd3f9fba88e8b41485d60e8'),
  COMPONENTS['typed']:(26432,'88b7db38efa3692c972ca7fc9a8b12b1dfbf6fafc4559f30c51089543b3bc3f8'),
  COMPONENTS['normalizer']:(17794,'75ffda7ac5d4849ce160c117c475edd7bdf86a211ce889b908b901b252eea8d0'),

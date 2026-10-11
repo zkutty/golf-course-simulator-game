@@ -24,6 +24,32 @@ COLLECTOR_SHA = '917c4dcc17cce4714dc20008fdd845d9948df1eecd2ffd53ada5f14bc998bf5
 DECLARATION_SHA = '68ac78feee2b9bc48b2ece2f9f9f78c89e2ad47f46a8bf8f28afde61a9ca45c6'
 RUNNER_SHA = '43587e0f25cba83c3fe0f16884a91e291cf7bce7e813bd5c9a9805e038393647'
 SPEC = 'e2e/zk1262-save-final-owner-diagnostic.e2e.ts'
+
+def parse_discovery_listing(text, spec):
+    # This frozen configuration has one unnamed project, not a named chromium project.
+    if type(text) is not str or spec != 'e2e/zk1262-save-final-owner-diagnostic.e2e.ts':
+        return None
+    try:
+        if len(text.encode('utf8')) > 262144:
+            return None
+    except UnicodeError:
+        return None
+    if not text.endswith('\n') or any(ord(c) < 32 and c != '\n' or 127 <= ord(c) < 160 or c in '\u2028\u2029' for c in text):
+        return None
+    lines = text[:-1].split('\n')
+    if len(lines) < 3 or lines[0] != 'Listing tests:' or lines[-1] != 'Total: 1 test in 1 file' or text.count('Total: 1 test in 1 file') != 1:
+        return None
+    body = lines[1:-1]
+    if body and body[0] == '::notice title=🎭 Playwright Run Summary::  1 did not run':
+        body = body[1:]
+    if len(body) != 1:
+        return None
+    row = re.fullmatch(r'  ([^\s:]+):([1-9][0-9]{0,8}):([1-9][0-9]{0,8}) › (.+)', body[0])
+    if row is None or row[1] not in (spec, spec.rsplit('/', 1)[-1]) or not row[4].strip() or row[4] != row[4].strip():
+        return None
+    return {'tests': 1, 'files': 1, 'project': '', 'file': spec,
+            'listedFile': row[1], 'line': int(row[2]), 'column': int(row[3])}
+
 MAP = ('simgolf-lite/'+SPEC,
  'simgolf-lite/scripts/zk1262-save-owner-diagnostic/save-owner-collector.mjs',
  'simgolf-lite/scripts/zk1262-save-owner-diagnostic/save-owner-collector.d.mts',
@@ -270,7 +296,7 @@ def publish(p,ctx,final=False):
     return result
 
 
-def run(p,ctx,normalizer):
+def run(p,ctx,normalizer,report_api=None):
     """Future hosted owner entry: no default admission, no capture aliases."""
     p.identity(ctx)
     p.require(ctx.get('runtimeAdmission')=='ROOT_SEPARATELY_REGISTERED_SAVE_ONCE'
@@ -293,7 +319,15 @@ def run(p,ctx,normalizer):
         row={'phase':name,'entry':entry,'exit':entry,'allocation':allocation,'ceiling':ceiling,'outcome':'UNKNOWN','result':None}
         journal['phases'].append(row)
         try:
-            check(ceiling);row['result']=fn(ceiling);check(ceiling);row['outcome']='PASS';return row['result']
+            check(ceiling)
+            if report_hook is not None:
+                original_fn = fn
+                wrapped = report_hook(name,owner,ceiling,lambda:original_fn(ceiling))
+                p.require(callable(wrapped),'report action hook callable')
+                row['result'] = wrapped()
+            else:
+                row['result'] = fn(ceiling)
+            check(ceiling);row['outcome']='PASS';return row['result']
         except BaseException as error:
             cause.record(error);row['result']={'failure':cause.serial(error)};row['outcome']='FAIL';raise
         finally:
@@ -304,6 +338,11 @@ def run(p,ctx,normalizer):
     env=dict(os.environ);env.update(ZK682_EXPECTED_COMMIT=p.CANDIDATE,VITE_COMMIT_SHA=p.CANDIDATE,
       COURSECRAFT_ZK682_STABILITY_DIR=str(root),ZK1262_OWNER_CAPTURE_ADMISSION='ROOT_REGISTERED_ONCE_B7_SOURCE1',
       ZK1262_OWNER_LINK_PUBLICATION_RECEIPT_SHA256='46b63243a78085ead78720766f1c5031ba0b75acb8bec82865f73d17916544f9')
+    report_hook = None
+    if report_api is not None:
+        report_hook = report_api.ReportHook(root,env['RUNNER_TEMP'],
+            {'source':ctx['identity']['driver'],'candidate':p.CANDIDATE,
+             'run':int(env['GITHUB_RUN_ID']),'attempt':int(env['GITHUB_RUN_ATTEMPT'])},env)
     try:
         p.require(not os.environ.get('NODE_OPTIONS') and not os.environ.get('NODE_PATH'),'bound Node runtime hooks must be absent')
         p.require(type(ctx.get('environmentExpected')) is dict and set(ctx['environmentExpected'])=={'PATH','PLAYWRIGHT_BROWSERS_PATH'},'ROOT default toolchain/environment provenance required')
@@ -344,9 +383,8 @@ def run(p,ctx,normalizer):
             r=child(p,p.commands(ctx)['DISCOVERY'],cwd,env,ceiling,120,0,root/'discovery.log',None,budget)
             p.require(r['exitCode']==0 and not r['firstCausePresent'] and r['completed'],'discovery completion')
             raw,_=p.file_bytes(root/'discovery.log',262144);text=raw.decode('utf8','strict')
-            listed=re.findall(r'^\s*\[chromium\]\s+›\s+([^\s:]+):[0-9]+:[0-9]+\s+›.*$',text,re.MULTILINE)
-            p.require(text.count('Total: 1 test in 1 file')==1 and len(listed)==1
-              and listed[0] in (SPEC,Path(SPEC).name),'exact discovery list/path resolution')
+            listed=parse_discovery_listing(text,SPEC)
+            p.require(listed is not None,'exact discovery list/path resolution')
             projection.guard();discovered={'tests':1,'files':[cwd+'/'+SPEC]};return discovered
         phase('DISCOVERY',discovery)
         def ready(ceiling):
@@ -387,6 +425,9 @@ def run(p,ctx,normalizer):
             source_guard(p,ctx,normalizer);sources=True;p.wx(root/'source-after.json',{'ok':True})
         except BaseException as error:sources=False;cause.record(error)
         try:projection.close()
+        except BaseException as error:cause.record(error)
+        try:
+            if report_hook is not None:report_hook.close()
         except BaseException as error:cause.record(error)
         if owner:
             descriptors=[r[0] for r in owner.files.values()]+[r[0] for r in owner.dirs.values()]
@@ -429,6 +470,7 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('operation',choices=['run','publish','final'])
     parser.add_argument('--context',required=True);parser.add_argument('--context-sha256',required=True)
     parser.add_argument('--phase',required=True);parser.add_argument('--phase-sha256',required=True)
+    parser.add_argument('--report-owner',action='store_true')
     args=parser.parse_args();raw=source_bytes(args.phase,32768)
     if len(raw)>32768 or hashlib.sha256(raw).hexdigest()!=args.phase_sha256:raise RuntimeError('ROOT phase module binding')
     p=load_exact(args.phase,{'bytes':len(raw),'sha256':args.phase_sha256},'save_phase_adapter')
@@ -437,7 +479,14 @@ def main():
         p.require(ctx['normalizerRelative']==ctx['componentPaths']['normalizer'],'normalizer component path binding')
         pin=ctx['sourcePins'][ctx['normalizerRelative']];p.require(pin['sha256']==NORMALIZER_SHA,'exact accepted normalizer')
         path=Path(ctx['driverRoot'])/ctx['normalizerRelative']
-        n=load_exact(path,pin,'save_exact_normalizer');result=run(p,ctx,n);ok=result['ownerEligible']
+        n=load_exact(path,pin,'save_exact_normalizer')
+        report_api=None
+        if args.report_owner:
+            relative='simgolf-lite/scripts/zk1325-html-report-owner.py'
+            report_pin=ctx['sourcePins'][relative]
+            p.require(report_pin == {'bytes':19058,'sha256':'5e5cd4c9074db38d41e864fca597b20bcb7d87f8f53ff85b7f9bf00b81ff76fb'},'exact report owner source')
+            report_api=load_exact(Path(ctx['driverRoot'])/relative,report_pin,'save_html_report_owner')
+        result=run(p,ctx,n,report_api=report_api);ok=result['ownerEligible']
     else:result=publish(p,ctx,args.operation=='final');ok=result['eligible']
     print(json.dumps(result,allow_nan=False));return 0 if ok else 2
 if __name__=='__main__':sys.exit(main())
