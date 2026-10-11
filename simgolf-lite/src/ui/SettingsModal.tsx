@@ -34,7 +34,7 @@ export function SettingsModal(props: SettingsModalProps) {
   const id = useId();
   const tabsId = `${id}-options-tabs`;
   const panelId = `${id}-options-panel`;
-  const trapRef = useFocusTrap<HTMLElement>(props.open && !bindingsOpen, props.onClose);
+  const trapRef = useFocusTrap<HTMLElement>(props.open, props.onClose);
   const { t } = useI18n();
   if (!props.open) return null;
 

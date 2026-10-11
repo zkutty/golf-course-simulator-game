@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { SettingsModal } from "../../src/ui/SettingsModal";
 import { GolfopediaModal } from "../../src/ui/help/GolfopediaModal";
@@ -39,4 +39,4 @@ export function Fixture() {
     <GolfopediaModal open={help} onClose={() => setHelp(false)} />
   </AudioReactContext.Provider></I18nContext.Provider>;
 }
-createRoot(document.getElementById("root")!).render(<Fixture />);
+createRoot(document.getElementById("root")!).render(new URLSearchParams(window.location.search).has("strict") ? <StrictMode><Fixture /></StrictMode> : <Fixture />);

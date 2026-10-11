@@ -1,6 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type CDPSession } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+
+async function readWeekCloseScalar(session: CDPSession, field: "speed" | "week"): Promise<unknown> {
+  const { result, exceptionDetails } = await session.send("Runtime.evaluate", {
+    expression: `window.__coursecraftTest.weekCloseState().${field}`,
+    returnByValue: true,
+  });
+  if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
+  if (!Object.prototype.hasOwnProperty.call(result, "value") || result.unserializableValue !== undefined) {
+    throw new Error(`Unserializable week-close ${field} observation (${result.type})`);
+  }
+  return result.value;
+}
 
 test("quick start → playable course → live week → save → reload", async ({ page }) => {
   await page.goto("/");
@@ -22,24 +34,29 @@ test("quick start → playable course → live week → save → reload", async 
 });
 
 test("Sunday closes one authoritative week, pauses, and resumes explicitly", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Quick Start" }).click();
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
-  const tutorialOffer = page.getByRole("dialog", { name: "First-launch tutorial" });
-  if (await tutorialOffer.count()) await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
-  await page.evaluate(() => window.__coursecraftTest!.startWeekCloseFixture(3));
+  const weekCloseSession = await page.context().newCDPSession(page);
+  try {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Quick Start" }).click();
+    await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
+    const tutorialOffer = page.getByRole("dialog", { name: "First-launch tutorial" });
+    if (await tutorialOffer.count()) await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
+    await page.evaluate(() => window.__coursecraftTest!.startWeekCloseFixture(3));
 
-  const report = page.getByTestId("week-close-report");
-  await expect(report).toBeVisible({ timeout: 15_000 });
-  await expect(report.getByText("Week 3 complete")).toBeVisible();
-  await expect(report).toHaveAttribute("data-resume-speed", "4x");
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.weekCloseState().speed)).toBe("paused");
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.weekCloseState().week)).toBe(4);
-  await page.screenshot({ path: "/tmp/coursecraft-m31-week-close.png", fullPage: true });
+    const report = page.getByTestId("week-close-report");
+    await expect(report).toBeVisible({ timeout: 15_000 });
+    await expect(report.getByText("Week 3 complete")).toBeVisible();
+    await expect(report).toHaveAttribute("data-resume-speed", "4x");
+    await expect.poll(() => readWeekCloseScalar(weekCloseSession, "speed")).toBe("paused");
+    await expect.poll(() => readWeekCloseScalar(weekCloseSession, "week")).toBe(4);
+    await page.screenshot({ path: "/tmp/coursecraft-m31-week-close.png", fullPage: true });
 
-  await page.getByTestId("week-close-continue").click();
-  await expect(report).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.weekCloseState().speed)).toBe("4x");
+    await page.getByTestId("week-close-continue").click();
+    await expect(report).toHaveCount(0);
+    await expect.poll(() => readWeekCloseScalar(weekCloseSession, "speed")).toBe("4x");
+  } finally {
+    await weekCloseSession.detach();
+  }
 });
 
 test("screen flow, hard pause, dirty guard, and save acknowledgement", async ({ page }) => {

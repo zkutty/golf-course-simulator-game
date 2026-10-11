@@ -2,6 +2,71 @@ import { expect, test } from "@playwright/test";
 
 const fixture = "/e2e/fixtures/zk382-settings-accessibility.html";
 
+for (const strict of [false, true]) for (const scale of [100, 130]) for (const close of ["Done click", "Done Enter", "Escape"]) {
+  test(`Nested keybindings returns native focus to its Options opener: ${scale}% ${close} ${strict ? "StrictMode" : "normal"}`, async ({ page }, testInfo) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(strict ? `${fixture}?strict=1` : fixture);
+    const outerOpener = page.getByTestId("open-settings");
+    await outerOpener.click();
+    const screen = page.getByTestId("options-screen");
+    await screen.getByRole("tab", { name: "Accessibility", exact: true }).click();
+    await screen.getByLabel("Text scale").selectOption(String(scale));
+    await expect(page.locator("html")).toHaveAttribute("style", `font-size: ${scale}%;`);
+    expect(await page.locator("html").evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBe(16 * scale / 100);
+    const opener = screen.getByRole("button", { name: "Configure keybindings…", exact: true });
+    const openerElement = await opener.elementHandle();
+    expect(openerElement).not.toBeNull();
+    await opener.click();
+    const nested = page.getByTestId("keybindings-panel");
+    const first = nested.getByRole("button").first();
+    const done = nested.getByRole("button", { name: "Done", exact: true });
+    await expect(first).toBeFocused();
+    const changes = (await page.getByTestId("change-count").textContent())!;
+    const binding = (await first.textContent())!;
+    await first.click();
+    await page.keyboard.press("Escape");
+    await expect(nested).toBeVisible();
+    await expect(first).toBeFocused();
+    await expect(first).toHaveText(binding);
+    await expect(page.getByTestId("change-count")).toHaveText(changes);
+    await expect(page.getByTestId("close-count")).toHaveText("0");
+    await page.keyboard.press("Shift+Tab");
+    await expect(done).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(first).toBeFocused();
+    await done.focus();
+    if (close === "Done click") await done.click();
+    else await page.keyboard.press(close === "Done Enter" ? "Enter" : "Escape");
+    await expect(nested).toHaveCount(0);
+    await expect(screen).toBeVisible();
+    await expect(opener).toBeVisible();
+    await expect(opener).toBeEnabled();
+    await expect(opener).toBeFocused();
+    expect(await openerElement!.evaluate((element) => element.isConnected && document.activeElement === element)).toBe(true);
+    const bounds = await opener.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.y).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    await page.screenshot({ path: testInfo.outputPath("restored-configure-focus.png") });
+    const closeOptions = screen.getByRole("button", { name: "Close options", exact: true });
+    const optionsDone = screen.getByRole("button", { name: "Done", exact: true });
+    await closeOptions.focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(optionsDone).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(closeOptions).toBeFocused();
+    await expect(page.getByTestId("close-count")).toHaveText("0");
+    await page.keyboard.press("Escape");
+    await expect(screen).toHaveCount(0);
+    await expect(outerOpener).toBeFocused();
+    await expect(page.getByTestId("close-count")).toHaveText("1");
+    expect(errors).toEqual([]);
+  });
+}
+
 test("GameTabs roves focus and calls selection for Arrow, Home, End and click", async ({ page }) => {
   await page.goto(fixture);
   const tabs = page.getByTestId("tabs-demo").getByRole("tab");
