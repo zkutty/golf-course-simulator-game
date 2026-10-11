@@ -21,6 +21,7 @@
 //        PERF_HARDWARE_CLASS / PERF_POWER_STATE / PERF_RUN_LABEL (evidence labels)
 import { publishStartupAttribution } from "./startup-attribution-delivery.mjs";
 import { createStartupWaitStages } from "./startup-wait-stages.mjs";
+import { bootstrapStartupRenderObservation } from "../src/utils/startupRenderObservation.mjs";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -92,14 +93,7 @@ page.on("pageerror", (error) => console.error(`[perf-smoke] page error: ${error.
 page.on("console", (message) => {
   if (message.type() === "error") console.error(`[perf-smoke] console error: ${message.text()}`);
 });
-await page.addInitScript(() => {
-  const params = new URLSearchParams(location.search);
-  if (params.get("m27Fixture") === "1" && params.get("perfMeasure") === "1") {
-    window.__ccStartupAttributionBootstrap = { version: 1, start: performance.now(), timeOrigin: performance.timeOrigin };
-  }
-  localStorage.setItem("coursecraft_perfhud", "on");
-  localStorage.setItem("coursecraft_ambience", "on");
-});
+await page.addInitScript(bootstrapStartupRenderObservation);
 const coldStartedAt = performance.now();
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 await page.getByRole("button", { name: "Quick Start" }).waitFor({ state: "visible", timeout: 30_000 });
@@ -199,7 +193,7 @@ while (Date.now() - t0 < MEASURE_S * 1000) {
   await sleep(400);
 }
 const perf = await page.evaluate(() => window.__ccPerf ?? null);
-const browserEvidence = await page.evaluate(() => {
+const { startupRenderObservation, ...browserEvidence } = await page.evaluate(() => {
   const canvas = [...document.querySelectorAll("canvas")]
     .sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
   let renderer = null;
@@ -215,7 +209,21 @@ const browserEvidence = await page.evaluate(() => {
     // Evidence stays explicitly unknown rather than failing an otherwise valid
     // physical run on browsers that withhold debug renderer information.
   }
+  let startupRenderObservation = null;
+  try {
+    startupRenderObservation = window.__ccStartupRenderObservation?.snapshot() ?? null;
+    if (!startupRenderObservation && window.__ccStartupAttributionBootstrap) {
+      startupRenderObservation = { version: 1, sourceUnit: "ZK-1335_SOURCE1", status: "HOLD", eligible: false,
+        failure: "MISSING", draws: [], longTasks: [], trusted: false, numericPass: false,
+        releaseCleared: false, candidateQualified: false, browserDocumentIdentity: false };
+    }
+  } catch {
+    startupRenderObservation = { version: 1, sourceUnit: "ZK-1335_SOURCE1", status: "HOLD", eligible: false,
+      failure: "SNAPSHOT_ACCESS", draws: [], longTasks: [], trusted: false, numericPass: false,
+      releaseCleared: false, candidateQualified: false, browserDocumentIdentity: false };
+  }
   return {
+    startupRenderObservation,
     userAgent: navigator.userAgent,
     viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
     visibilityState: document.visibilityState,
@@ -279,6 +287,7 @@ const evidence = {
   coldStartupMs: Math.round(coldStartupMs),
   fixtureLoadMs: Math.round(fixtureLoadMs),
   startupWaitStages,
+  startupRenderObservation,
   renderer: perf,
   effective: {
     theme: PERF_THEME,

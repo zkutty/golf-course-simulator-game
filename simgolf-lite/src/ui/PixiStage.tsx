@@ -1,4 +1,5 @@
 import { startupAttempt, startupBegin, startupEnd, startupCancel, startupSpan } from "../utils/startupAttribution.mjs";
+import { observeStartupRenderer, activateStartupRenderer } from "../utils/startupRenderObservation.mjs";
 import { failedEmoteOwnership } from "./renderer/scenes/emoteOwnershipSnapshot";
 import { countManagedTextureSources } from "./renderer/countManagedTextureSources";
 import { ownSceneMeshGeometry } from "./renderer/ownedSceneMeshGeometry";
@@ -894,6 +895,7 @@ function createNativeRendererOwner(): NativeRendererOwner<PIXI.Application, PIXI
         autoDensity: true,
         eventFeatures: { move: false, globalMove: false, click: false, wheel: false },
       });
+      try { observeStartupRenderer(app.renderer); } catch { /* Diagnostic-only hook. */ }
     },
     compatible: (created, requested) => created.resolution === requested.resolution
       && created.antialias === requested.antialias,
@@ -2176,6 +2178,7 @@ function PixiScene(requestedProps: PixiStageProps & { nativeSession: PixiRendere
       owner.markReady(generation);
       setAppReady(true);
       startupEnd(startupLayerSpan);
+      try { activateStartupRenderer(app.renderer); } catch { /* Diagnostic-only hook. */ }
       devLog(`initialized ${width}x${height}`);
     };
 
