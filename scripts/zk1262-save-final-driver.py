@@ -355,7 +355,7 @@ def run(p,ctx,normalizer,report_api=None):
         owner=normalizer.AuditOwner(ctx['targetRoot'],str(root)+'-audit-owner',normalizer.registered_policy())
         audit.update(oneOwner=True,beforeBuild=True)
         def build(ceiling):
-            r=child(p,p.commands(ctx)['BUILD'],cwd,env,ceiling,600,0,None,None,budget)
+            r=child(p,p.commands(ctx)['BUILD'],cwd,{**env,'GITHUB_SHA':p.CANDIDATE},ceiling,600,0,None,None,budget)
             p.require(r['entered'] and r['waited'] and r['completed'] and r['exitCode']==0 and not r['firstCausePresent'],'real successful build')
             audit['buildSucceeded']=True
             return {'exitCode':r['exitCode'],'actualOuterWait':True,'boundedOutput':r['output']}
@@ -393,7 +393,7 @@ def run(p,ctx,normalizer,report_api=None):
         phase('READY',ready)
         def producer(ceiling):
             nonlocal receipt
-            r=child(p,p.commands(ctx)['PRODUCER'],cwd,env,ceiling,1920,60,root/'producer.stdout.log',root/'producer.stderr.log',budget)
+            r=child(p,p.commands(ctx)['PRODUCER'],cwd,{**env,'GITHUB_SHA':p.CANDIDATE},ceiling,1920,60,root/'producer.stdout.log',root/'producer.stderr.log',budget)
             receipt=neutral(p,ctx,r);p.wx(root/'producer-exit.json',{'exitCode':r['exitCode'],'signal':r['signal'],'firstCausePresent':r['firstCausePresent'],'firstCause':r['firstCause']})
             p.wx(root/'producer-status.json',r)
             if r['firstCausePresent']:cause.record(r['firstCause'])
