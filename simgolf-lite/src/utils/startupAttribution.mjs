@@ -3,6 +3,20 @@ const LIMIT = 256;
 const PHASES = Object.freeze(Array.from({ length: 15 }, (_, i) => i + 1));
 const integer = (n) => Number.isSafeInteger(n) && n >= 0;
 const stamp = (n) => typeof n === "number" && Number.isFinite(n) && n >= 0;
+const ownedGeneration = (n) => integer(n) && n > 0;
+
+// Observe the declared native token member; this grants no object-identity authority.
+// Use the same adapter in production and isolated recorder regressions.
+export function recordRendererStartupAttempt(recorder, generationToken) {
+  let generation;
+  try {
+    if (generationToken !== null && typeof generationToken === "object" && !Array.isArray(generationToken)) {
+      const member = Object.getOwnPropertyDescriptor(generationToken, "generation");
+      if (member && "value" in member) generation = member.value;
+    }
+  } catch { /* Malformed tokens fail through the scalar recorder boundary. */ }
+  return recorder.owner(generation);
+}
 
 export function createStartupRecorder({ now, start, timeOrigin }) {
   const events = [];
@@ -28,7 +42,7 @@ export function createStartupRecorder({ now, start, timeOrigin }) {
     if (ready !== null) return 0;
     if (attempt >= LIMIT) { overflow = true; fail(20); return 0; }
     const id = ++attempt;
-    if (!integer(generation)) { fail(32); generation = 0; }
+    if (!ownedGeneration(generation)) { fail(32); generation = 0; }
     generations.set(id, generation);
     return id;
   };
@@ -112,6 +126,7 @@ export function analyzeStartupAttribution(journal) {
     previous = row[7];
     const [, kind, phase, id, parent, ownerAttempt, gen, t] = row;
     if (ownerAttempt !== 0) {
+      if (!ownedGeneration(gen)) fail("invalid-owned-generation");
       if (generation.has(ownerAttempt) && generation.get(ownerAttempt) !== gen) fail("generation-drift");
       generation.set(ownerAttempt, gen);
     } else if (gen !== 0) fail("foreign-generation");
@@ -229,7 +244,7 @@ if (typeof window !== "undefined" && import.meta.env?.DEV) {
     window.__ccStartupAttribution = recorder;
   }
 }
-export const startupAttempt = (generation) => recorder?.owner(generation) ?? 0;
+export const startupAttempt = (generation) => recorder ? recordRendererStartupAttempt(recorder, generation) : 0;
 export const startupBegin = (phase, parent = null, attempt = 0) => recorder?.begin(phase, parent, attempt) ?? null;
 export const startupEnd = (token, kind = 1) => { recorder?.end(token, kind); };
 export const startupCancel = (attempt, kind = 3) => { recorder?.finishAttempt(attempt, kind); };
