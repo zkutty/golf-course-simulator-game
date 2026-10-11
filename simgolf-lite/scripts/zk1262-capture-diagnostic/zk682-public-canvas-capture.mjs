@@ -105,13 +105,14 @@ export async function capturePublicCDPCanvas(page,{canvasClip,timing={now:()=>pe
   assert.equal(typeof canvasClip,'function','pinned baseline canvasClip required');const started=timing.now(),deadline=started+CAPTURE_MS,timeoutError=new Error('Public CDP capture deadline10000ms exceeded');
   let expired=false,closed=false,session,sessionPending,failed=false,primary,result,selected,rootFrame,invalidated=false,invalidation,stopping=false,detaching=false,foreignClosed=false,cleanupPromise;
   const pending=new Set(),objectIds=new Set(),contexts=new Map(),listeners=[];
-  const fail=error=>{if(!failed){failed=true;primary=error;observer.primary(error);}};
+  const observedContexts=new Map(),observedIds=new Map();let contextEvents=0;
+  const fail=(error,phase)=>{if(!failed){failed=true;primary=error;observer.primary(error,phase);}};
   let rejectDeadline,rejectInvalid,resolveReady;const timeout=new Promise((_,reject)=>{rejectDeadline=reject;});timeout.catch(()=>{});
   const invalid=new Promise((_,reject)=>{rejectInvalid=reject;});invalid.catch(()=>{});
   const ready=new Promise(resolve=>{resolveReady=resolve;});
-  const timer=timing.set(()=>{expired=true;observer.timer();rejectDeadline(timeoutError);},CAPTURE_MS);
-  const invalidate=error=>{if(!invalidated){invalidated=true;invalidation=error;observer.invalidation(error);rejectInvalid(error);}};
-  const guard=()=>{if(expired||timing.now()>=deadline){expired=true;observer.guard('helper-guard');throw timeoutError;}if(invalidated)throw invalidation;};
+  const timer=timing.set(()=>{expired=true;observer.timer();if(!failed)observer.caught(timeoutError);fail(timeoutError);rejectDeadline(timeoutError);},CAPTURE_MS);
+  const invalidate=error=>{if(!invalidated){invalidated=true;invalidation=error;observer.invalidation(error);observer.caught(error,'CONTEXT_READY');fail(error,'CONTEXT_READY');rejectInvalid(error);}};
+  const guard=()=>{if(expired||timing.now()>=deadline){expired=true;observer.guard('helper-guard');if(!failed)observer.caught(timeoutError);fail(timeoutError);throw timeoutError;}if(invalidated)throw invalidation;};
   const within=async promise=>{observer.site('within-before');guard();const value=await Promise.race([Promise.resolve(promise),timeout,invalid]);observer.site('within-after');guard();return value;};
   const register=response=>{
     let rejected=false,first;const inspect=action=>{try{action();}catch(error){if(!rejected){rejected=true;first=error;}}};
@@ -121,23 +122,42 @@ export async function capturePublicCDPCanvas(page,{canvasClip,timing={now:()=>pe
     inspect(()=>{const details=ownData(response,'exceptionDetails');if(details!==undefined)collect(ownData(details,'exception'));});
     if(rejected)throw first;return response;
   };
-  const invoke=(method,args)=>{
+  const invoke=(method,args,phase)=>{
     observer.site('invoke-before');guard();assert.ok(!stopping&&session&&!foreignClosed,'Live owned public session required');
-    const observedPhase=observer.start();let transportFulfilled=false;
-    let original;try{original=session.send(method,args);}catch(error){observer.caught(error,observedPhase);original=Promise.reject(error);}
-    const tracked=Promise.resolve(original).then(response=>{transportFulfilled=true;observer.fulfilled(observedPhase);return register(response);});pending.add(tracked);observer.pending(pending.size);tracked.then(()=>{pending.delete(tracked);observer.finished(observedPhase);observer.pending(pending.size);},error=>{pending.delete(tracked);observer.finished(observedPhase,true,transportFulfilled);observer.caught(error,observedPhase);observer.pending(pending.size);});return tracked;
+    const observedPhase=observer.start(phase);let transportFulfilled=false;
+    let original;try{original=session.send(method,args);}catch(error){if(phase===undefined)observer.caught(error,observedPhase);original=Promise.reject(error);}
+    const tracked=Promise.resolve(original).then(response=>{transportFulfilled=true;observer.fulfilled(observedPhase);return register(response);});pending.add(tracked);observer.pending(pending.size);tracked.then(()=>{pending.delete(tracked);observer.finished(observedPhase);observer.pending(pending.size);},error=>{pending.delete(tracked);observer.finished(observedPhase,true,transportFulfilled);observer.caught(error,observedPhase);if(phase==='FRAME_TREE'||phase==='RUNTIME_ENABLE')fail(error,observedPhase);observer.pending(pending.size);});return tracked;
   };
   const checkEvaluation=response=>{const details=ownData(response,'exceptionDetails');if(details!==undefined)throw evaluationError(details);return response;};
-  const onCreated=event=>{try{
-    const context=ownData(event,'context',true),id=ownData(context,'id',true),unique=ownData(context,'uniqueId',true),aux=ownData(context,'auxData');
-    assert.ok(Number.isInteger(id)&&id>0&&typeof unique==='string'&&unique.length>0,'Observed unique execution context required');
-    if(!aux)return;const isDefault=ownData(aux,'isDefault');if(isDefault!==undefined)assert.equal(typeof isDefault,'boolean','Default-world boolean required');
-    if(!isDefault)return;const frame=ownData(aux,'frameId',true);assert.equal(typeof frame,'string');if(frame!==rootFrame)return;
-    assert.ok(!contexts.has(unique),'Reused execution context refused');contexts.set(unique,{id,unique});
+  const contextMetadata=(id,unique,frame)=>{
+    assert.ok(Number.isSafeInteger(id)&&id>0&&typeof unique==='string'&&unique.length>0&&unique.length<=4096,'Observed unique execution context required');
+    if(frame!==undefined)assert.ok(typeof frame==='string'&&frame.length>0&&frame.length<=4096,'Context frame required');
+    assert.ok(Buffer.byteLength(JSON.stringify([id,unique,frame]))<=4096,'Context metadata cap');
+  };
+  const contextEvent=()=>assert.ok(++contextEvents<=128,'Context event cap');
+  const admitContext=context=>{
+    if(context.frame!==rootFrame)return;
+    assert.ok(context.alive,'Owned main execution context destroyed');
+    assert.ok(!contexts.has(context.unique),'Reused execution context refused');contexts.set(context.unique,{id:context.id,unique:context.unique});
     assert.equal(contexts.size,1,'Exactly one root main execution context required');
-    if(selected&&selected.unique!==unique)throw new Error('Owned main execution context replaced');observer.validated('CONTEXT_READY');resolveReady();observer.fulfilled('CONTEXT_READY');
+    if(selected&&selected.unique!==context.unique)throw new Error('Owned main execution context replaced');
+    observer.validated('CONTEXT_READY');resolveReady();observer.fulfilled('CONTEXT_READY');
+  };
+  const onCreated=event=>{try{
+    contextEvent();const context=ownData(event,'context',true),id=ownData(context,'id',true),unique=ownData(context,'uniqueId',true),aux=ownData(context,'auxData');
+    contextMetadata(id,unique);if(!aux)return;const isDefault=ownData(aux,'isDefault');if(isDefault!==undefined)assert.equal(typeof isDefault,'boolean','Default-world boolean required');
+    if(!isDefault)return;const frame=ownData(aux,'frameId',true);contextMetadata(id,unique,frame);
+    assert.ok(!observedContexts.has(unique)&&!observedIds.has(id),'Reused execution context refused');
+    assert.ok(observedContexts.size<64,'Context record cap');const record={id,unique,frame,alive:true};observedContexts.set(unique,record);observedIds.set(id,unique);
+    if(rootFrame!==undefined)admitContext(record);
   }catch(error){invalidate(error);}};
-  const onDestroyed=event=>{try{const unique=ownData(event,'executionContextUniqueId',true),id=ownData(event,'executionContextId',true);assert.ok(typeof unique==='string'&&unique.length>0&&Number.isInteger(id),'Exact destroyed execution context required');const context=contexts.get(unique);if(context){assert.equal(context.id,id,'Destroyed context binding mismatch');contexts.delete(unique);throw new Error('Owned main execution context destroyed');}}catch(error){invalidate(error);}};
+  const onDestroyed=event=>{try{
+    contextEvent();const unique=ownData(event,'executionContextUniqueId',true),id=ownData(event,'executionContextId',true);contextMetadata(id,unique);
+    const context=observedContexts.get(unique);assert.ok(!observedIds.has(id)||observedIds.get(id)===unique,'Destroyed context binding mismatch');
+    if(context){assert.equal(context.id,id,'Destroyed context binding mismatch');assert.ok(context.alive,'Repeated context destruction refused');context.alive=false;
+      if(context.frame===rootFrame){contexts.delete(unique);throw new Error('Owned main execution context destroyed');}}
+    else {assert.ok(observedContexts.size<64,'Context record cap');observedContexts.set(unique,{id,unique,frame:undefined,alive:false});observedIds.set(id,unique);}
+  }catch(error){invalidate(error);}};
   const onCleared=()=>invalidate(new Error('Owned execution contexts cleared'));
   // A close during our detach is provisional until detach succeeds; the public event has no origin tag.
   const onClose=()=>{observer.close(detaching);if(!detaching){foreignClosed=true;invalidate(new Error('Owned public CDP session closed externally'));}};
@@ -153,8 +173,18 @@ export async function capturePublicCDPCanvas(page,{canvasClip,timing={now:()=>pe
     observer.phase('SESSION');observer.start('SESSION');sessionPending=Promise.resolve(page.context().newCDPSession(page)).then(value=>{session=value;observer.fulfilled('SESSION');observer.finished('SESSION');return value;});
     session=await within(sessionPending);assert.ok(session,'Attached public CDP session required');
     for(const [name,listener]of [['Runtime.executionContextCreated',onCreated],['Runtime.executionContextDestroyed',onDestroyed],['Runtime.executionContextsCleared',onCleared],['close',onClose]]){session.on(name,listener);listeners.push([name,listener]);}
-    observer.phase('FRAME_TREE');const tree=await within(invoke('Page.getFrameTree',{})),frame=ownData(ownData(tree,'frameTree',true),'frame',true);rootFrame=ownData(frame,'id',true);assert.ok(typeof rootFrame==='string'&&rootFrame.length>0,'Root frame required');assert.equal(Object.getOwnPropertyDescriptor(frame,'parentId'),undefined,'Root frame parentId must be absent');
-    observer.validated('FRAME_TREE');observer.phase('RUNTIME_ENABLE');const enabled=await within(invoke('Runtime.enable',{}));assert.equal(Reflect.ownKeys(enabled).length,0,'Runtime.enable response must be empty');observer.validated('RUNTIME_ENABLE');if(!contexts.size){observer.phase('CONTEXT_READY');observer.start('CONTEXT_READY');await within(ready);observer.finished('CONTEXT_READY');}observer.site('context-ready');guard();assert.equal(contexts.size,1);selected=[...contexts.values()][0];
+    observer.phase('FRAME_TREE');const treePending=invoke('Page.getFrameTree',{},'FRAME_TREE');
+    observer.phase('RUNTIME_ENABLE');const runtimePending=invoke('Runtime.enable',{},'RUNTIME_ENABLE');
+    const frameGate=within(treePending).then(tree=>{try{
+      const frame=ownData(ownData(tree,'frameTree',true),'frame',true);rootFrame=ownData(frame,'id',true);
+      assert.ok(typeof rootFrame==='string'&&rootFrame.length>0&&rootFrame.length<=4096,'Root frame required');assert.equal(Object.getOwnPropertyDescriptor(frame,'parentId'),undefined,'Root frame parentId must be absent');
+    }catch(error){observer.caught(error,'FRAME_TREE');fail(error,'FRAME_TREE');throw error;}
+      observer.validated('FRAME_TREE');
+      try{for(const context of observedContexts.values())admitContext(context);}catch(error){invalidate(error);throw error;}
+    });
+    const runtimeGate=within(runtimePending).then(enabled=>{try{assert.equal(Reflect.ownKeys(enabled).length,0,'Runtime.enable response must be empty');observer.validated('RUNTIME_ENABLE');}catch(error){observer.caught(error,'RUNTIME_ENABLE');fail(error,'RUNTIME_ENABLE');throw error;}});
+    await within(Promise.all([frameGate,runtimeGate]));
+    if(!contexts.size){observer.phase('CONTEXT_READY');observer.start('CONTEXT_READY');await within(ready);observer.finished('CONTEXT_READY');}observer.site('context-ready');guard();assert.equal(contexts.size,1);selected=[...contexts.values()][0];
     observer.phase('ACQUIRE_A');const acquired=checkEvaluation(await within(invoke('Runtime.evaluate',{expression:'('+acquireCanvasEnvelope.toString()+')()',uniqueContextId:selected.unique,returnByValue:false,generatePreview:false,awaitPromise:true,userGesture:true}))),remote=ownData(acquired,'result',true);
     assert.equal(ownData(remote,'type',true),'object','Attached raw canvas envelope required');assert.equal(ownData(remote,'subtype'),undefined,'Private ordinary canvas envelope required');const envelopeId=ownData(remote,'objectId',true);assert.ok(typeof envelopeId==='string'&&envelopeId.length>0,'Exact owned envelope objectId required');
     observer.validated('ACQUIRE_A');const stateArgs={objectId:envelopeId,functionDeclaration:taggedOwnedCanvas.toString(),arguments:[],returnByValue:true,generatePreview:false,awaitPromise:true,userGesture:true};
@@ -162,7 +192,7 @@ export async function capturePublicCDPCanvas(page,{canvasClip,timing={now:()=>pe
     observer.phase('SCREENSHOT');const response=await within(invoke('Page.captureScreenshot',{format:'png',clip:{...clip,scale:1},fromSurface:true,captureBeyondViewport:false,optimizeForSpeed:false}));
     observer.phase('PNG_VALIDATE');const png=strictBase64(ownData(response,'data',true)),decoded=decodeStrictPng(png,clip);observer.validated('PNG_VALIDATE');observer.site('png-after');guard();observer.phase('AFTER_D');const after=decodeCanvasState(checkEvaluation(await within(invoke('Runtime.callFunctionOn',stateArgs))));canvasClip(after);assert.deepEqual(after,before,'canvas identity/current connection/geometry changed');observer.validated('AFTER_D');
     result={png,receipt:{method:'public-cdp-page-captureScreenshot-canvas-viewport-clip-v1',clip,before,after,bytes:png.length,sha256:sha256(png),pixelSHA256:decoded.pixelSHA256,qualification:'Diagnostic public CDP comparison only; both APIs may share Chromium backend; no canonical receipt enum or causal claim'}};
-  }catch(error){observer.caught(error);fail(error);}
+  }catch(error){if(!failed||!Object.is(primary,error))observer.caught(error);fail(error);}
   // Cleanup can finish after a failed deadline, but cannot accept a result or publish bytes.
   const disposal=cleanup();observer.phase('CLEANUP_WAIT');try{await within(disposal);}catch(error){observer.caught(error);fail(error);}
   closed=true;timing.clear(timer);if(failed)throw primary;observer.phase('HELPER_FINAL');observer.site('helper-final');guard();result.receipt.elapsedMs=timing.now()-started;result.receipt.deadlineHostMs=deadline;

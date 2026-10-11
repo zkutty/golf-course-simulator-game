@@ -23,10 +23,12 @@ DISCOVERY = ['npx','playwright','test','e2e/zk1262-capture-phase-diagnostic.e2e.
              '--list','--reporter=line','--workers=1','--retries=0']
 NORMALIZER_PIN = {'bytes':17794,'sha256':'75ffda7ac5d4849ce160c117c475edd7bdf86a211ce889b908b901b252eea8d0'}
 NORMALIZER_TEST_PIN = {'bytes':13545,'sha256':'f5f1f98606855971a4e17eb5f3897134a6f6dee36c1a11214feaa6a686f50e6d'}
+OWNER_SOURCE_BYTES = 34426
 EXTRA_PATHS = ('simgolf-lite/scripts/zk1262-build-capture-audit-owner.py',
                'simgolf-lite/scripts/zk1262-build-capture-audit-owner.test.py',
                'simgolf-lite/scripts/zk1262-build-audit-normalization.py',
-               'simgolf-lite/scripts/zk1262-build-audit-normalization.test.py')
+               'simgolf-lite/scripts/zk1262-build-audit-normalization.test.py',
+               'simgolf-lite/scripts/zk1325-html-report-owner.py')
 AUDIT_NAMES = ('baseline-audit.json','before.json','generated-audit.json','generated.json',
                'normalized.json','normalization-failure.json','before-failure.json',
                'final.json','final-failure.json')
@@ -185,11 +187,12 @@ def source_bindings(h, driver, source):
     h['driver_guard'](driver,source)
     result = {}
     for relative in EXTRA_PATHS:
-        data,pin = h['file_bytes'](driver/relative,CAP)
+        data,pin = h['file_bytes'](driver/relative,OWNER_SOURCE_BYTES if relative==EXTRA_PATHS[0] else CAP)
         require(data==h['git'](driver,'show',source+':'+relative),'held-owner committed source drift')
         result[relative] = {k:pin[k] for k in ('bytes','sha256')}
     require(result[EXTRA_PATHS[2]]==NORMALIZER_PIN,'immutable normalizer module')
     require(result[EXTRA_PATHS[3]]==NORMALIZER_TEST_PIN,'immutable normalizer controls')
+    require(result[EXTRA_PATHS[4]]=={'bytes': 19058, 'sha256': '5e5cd4c9074db38d41e864fca597b20bcb7d87f8f53ff85b7f9bf00b81ff76fb'},'immutable report module')
     return result
 
 
@@ -378,7 +381,7 @@ def evidence_pins(h, path):
 
 
 def run(h, driver, target, root, env, *, owner_factory=None, runner=child,
-        clock=time.monotonic, phase_hook=None, bindings=None):
+        clock=time.monotonic, phase_hook=None, bindings=None, action_hook=None):
     deadline = Deadline(clock)
     roles = h['roles'](env)
     state = h['read_state'](root)
@@ -425,6 +428,9 @@ def run(h, driver, target, root, env, *, owner_factory=None, runner=child,
             signal.setitimer(signal.ITIMER_REAL,deadline.remaining(active_end))
             if phase_hook is not None:
                 phase_hook(name,owner)
+            if action_hook is not None:
+                action = action_hook(name,owner,active_end,action)
+                require(callable(action),'action hook must return callable')
             result = action()
             deadline.remaining(active_end)
             journal.append({'kind':'COMPLETED','phase':name,'at':clock(),'argv':argv[name],
@@ -530,6 +536,10 @@ def run(h, driver, target, root, env, *, owner_factory=None, runner=child,
             except BaseException as error:
                 failures.record('CLOSE',error)
             try:projection.close()
+            except BaseException as error:failures.record('CLEANUP_CLOSE',error)
+            try:
+                report_close = getattr(action_hook,'close',None)
+                if callable(report_close):report_close()
             except BaseException as error:failures.record('CLEANUP_CLOSE',error)
             subprocess.run = original_run
             signal.signal(signal.SIGALRM,old_alarm)
@@ -693,13 +703,27 @@ def finalize(h, driver, target, root, env):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('action',choices=['run'])
-    parser.parse_args()
+    parser.add_argument('--report-owner', action='store_true')
+    args = parser.parse_args()
     sys.dont_write_bytecode = True
     driver = Path(os.environ['CAPTURE_DRIVER_ROOT'])
     target = Path(os.environ['CAPTURE_TARGET_ROOT'])
     root = Path(os.environ['CAPTURE_ARTIFACT_ROOT'])
     helper = load(driver/'simgolf-lite/scripts/zk1262-capture-phase-driver.py','zk1262_capture_driver')
-    return 0 if run(vars(helper),driver,target,root,dict(os.environ)) else 1
+    env = dict(os.environ)
+    report_hook = None
+    if args.report_owner:
+        report_path = driver/'simgolf-lite/scripts/zk1325-html-report-owner.py'
+        require(report_path.lstat().st_nlink == 1, 'report module single link')
+        raw, pin = helper.file_bytes(report_path,32768)
+        require(pin['bytes'] == 19058 and pin['sha256'] == '5e5cd4c9074db38d41e864fca597b20bcb7d87f8f53ff85b7f9bf00b81ff76fb', 'exact report owner source')
+        namespace = {'__name__':'zk1325_html_report_owner','__file__':str(report_path)}
+        exec(compile(raw,str(report_path),'exec'),namespace)
+        roles = helper.roles(env)
+        report_hook = namespace['ReportHook'](root,env['RUNNER_TEMP'],
+            {'source':roles['driver_sha'],'candidate':roles['candidate_sha'],
+             'run':roles['run_id'],'attempt':roles['run_attempt']},env)
+    return 0 if run(vars(helper),driver,target,root,env,action_hook=report_hook) else 1
 
 
 if __name__=='__main__':

@@ -22,17 +22,19 @@ POLICY = {'parentTERM':2820,'parentKILL':2880,'build':600,
 WORKFLOW = '.github/workflows/zk1262-capture-phase.yml'
 OWNER = 'simgolf-lite/scripts/zk1262-build-capture-audit-owner.py'
 SELF = 'simgolf-lite/scripts/zk1262-held-phase-adjudicator.py'
-OWNER_SHA = '9c60ec41141e53525fc77e9ad3d961cd5e95407863c322256ceb1fab7f54dbc0'
+OWNER_SHA = '63a9a41fb68c91dd6bc4a105b37d8e0277b0fe1a178d2567cceb1c2c341f2e94'
 HELPER = 'simgolf-lite/scripts/zk1262-capture-phase-driver.py'
-HELPER_BYTES = 32931
-HELPER_SHA = '88112d63c6322a667aca0a791f4d48e583492b47bf80056b8206627a91176249'
-BINDINGS = {OWNER:{'bytes':32767,'sha256':OWNER_SHA},
+HELPER_BYTES = 46553
+OWNER_BYTES = 34426
+HELPER_SHA = '25e5a8123a7ebaa8a78f126e4a24fa10f2a424fc658dc64b437684d73bc8a1eb'
+BINDINGS = {OWNER:{'bytes':OWNER_BYTES,'sha256':OWNER_SHA},
     'simgolf-lite/scripts/zk1262-build-capture-audit-owner.test.py':
         {'bytes':29020,'sha256':'8d8fb18e7c875cd6e88bd08344816f3fbb283d5040d17ca329c0eecadbc176ef'},
     'simgolf-lite/scripts/zk1262-build-audit-normalization.py':
         {'bytes':17794,'sha256':'75ffda7ac5d4849ce160c117c475edd7bdf86a211ce889b908b901b252eea8d0'},
     'simgolf-lite/scripts/zk1262-build-audit-normalization.test.py':
-        {'bytes':13545,'sha256':'f5f1f98606855971a4e17eb5f3897134a6f6dee36c1a11214feaa6a686f50e6d'}}
+        {'bytes':13545,'sha256':'f5f1f98606855971a4e17eb5f3897134a6f6dee36c1a11214feaa6a686f50e6d'},
+    'simgolf-lite/scripts/zk1325-html-report-owner.py':{'bytes': 19058, 'sha256': '5e5cd4c9074db38d41e864fca597b20bcb7d87f8f53ff85b7f9bf00b81ff76fb'}}
 CLOCK = 'clock_gettime(CLOCK_MONOTONIC)'
 BOUNDARY = 'held-phase-prelaunch-boundary.json'
 JOURNAL = 'held-owner-phases.jsonl'
@@ -130,7 +132,7 @@ def directory(path):
 
 
 def read_file(path, cap=CAP):
-    require(type(cap) is int and cap in (CAP,HELPER_BYTES),'source-read-cap')
+    require(type(cap) is int and cap in (CAP,HELPER_BYTES,OWNER_BYTES),'source-read-cap')
     path = canonical(path)
     parent = directory(path.parent)
     before = path.lstat()
@@ -197,7 +199,7 @@ def clock_facts():
 
 
 def owner_argv(driver):
-    return ['timeout','--signal=TERM','--kill-after=60s','2820s','python3',str(driver/OWNER),'run']
+    return ['timeout','--signal=TERM','--kill-after=60s','2820s','python3',str(driver/OWNER),'run','--report-owner']
 
 
 def commands(expected):
@@ -232,7 +234,7 @@ def expected_args(args):
     require(args.owner_argv==expected['expected_owner_argv'],'caller-exact-owner-argv')
     # Fixed source snapshots bind the journal-producing monotonic implementation.
     for relative,pin in BINDINGS.items():
-        _,found = read_file(Path(expected['driver_root'])/relative)
+        _,found = read_file(Path(expected['driver_root'])/relative,OWNER_BYTES if relative==OWNER else CAP)
         require({k:found[k] for k in ('bytes','sha256')}==pin,'frozen-source-pin:'+relative)
     _,helper = read_file(Path(expected['driver_root'])/HELPER,HELPER_BYTES)
     require(helper['bytes']==HELPER_BYTES and helper['sha256']==HELPER_SHA,'frozen-helper-pin')

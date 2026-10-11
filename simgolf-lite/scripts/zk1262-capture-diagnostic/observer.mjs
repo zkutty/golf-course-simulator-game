@@ -25,7 +25,7 @@ export function createObserver(){
   finished(phase,rejected=false,transportFulfilled=false){act(()=>{const r=row(phase);if(r){if(rejected&&!transportFulfilled)bump(r,'rejectedCount');r.pending=false;}if(phase==='SESSION')meta.pendingSession=false;if(phase==='RELEASE')meta.pendingRelease=false;if(phase==='DETACH')meta.pendingDetach=false;});},
   validated(phase=active){act(()=>{const r=row(phase);if(r){bump(r,'validatedCount');r.validationMs=now();}});},
   caught(error,phase=active){act(()=>{const r=row(phase);if(r)bump(r,'caughtCount');meta.lastCaughtKind=kind(error);});},
-  primary(error){act(()=>{if(!meta.firstPrimaryPresent){meta.firstPrimaryPresent=true;meta.firstPrimaryKind=kind(error);meta.firstPrimaryPhase=active;}});},
+  primary(error,phase=active){act(()=>{if(!PHASES.includes(phase)){invalid('overflow');return;}if(!meta.firstPrimaryPresent){meta.firstPrimaryPresent=true;meta.firstPrimaryKind=kind(error);meta.firstPrimaryPhase=phase;}});},
   pending(count){act(()=>{if(Number.isSafeInteger(count)&&count>=0)meta.pendingOperationCount=count;else invalid('overflow');});},
   owned(count){act(()=>{if(Number.isSafeInteger(count)&&count>=0)meta.ownedObjectCount=count;else invalid('overflow');});},
   timer(){act(()=>{meta.deadlineTimerFired=true;});},

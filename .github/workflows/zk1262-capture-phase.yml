@@ -40,7 +40,7 @@ jobs:
     env:
       CAPTURE_REPOSITORY_ID: ${{ github.repository_id }}
       CAPTURE_FIXED_POLICY_SHA256: 1d3082188bd8aff2153dbc20df43b3c10cae3f409f312eed5699439e742289e8
-      CAPTURE_ADJUDICATOR_SHA256: d3631ed01f8d8e830eff1cd99a886074c36b2fd2bd05439d77e75e7cd151b07c
+      CAPTURE_ADJUDICATOR_SHA256: c9e42b6bfea17450b148cf33999a6a2b157ebc5460b96ac612d855bcb8b0274c
       CAPTURE_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
       CAPTURE_SOURCE_SHA: ${{ inputs.source_sha }}
       CAPTURE_DRIVER_ROOT: ${{ github.workspace }}/capture-driver
@@ -113,13 +113,13 @@ jobs:
             --driver-sha "$GITHUB_SHA" --candidate-sha "$CAPTURE_CANDIDATE_SHA" \
             --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --policy-sha256 "$CAPTURE_FIXED_POLICY_SHA256" \
-            --owner-source-sha256 9c60ec41141e53525fc77e9ad3d961cd5e95407863c322256ceb1fab7f54dbc0 \
+            --owner-source-sha256 63a9a41fb68c91dd6bc4a105b37d8e0277b0fe1a178d2567cceb1c2c341f2e94 \
             --adjudicator-source-sha256 "$CAPTURE_ADJUDICATOR_SHA256" \
             --driver-root "$CAPTURE_DRIVER_ROOT" --target-root "$CAPTURE_TARGET_ROOT" \
             --artifact-root "$CAPTURE_ARTIFACT_ROOT" \
             --output "$CAPTURE_ARTIFACT_ROOT-external/held-phase-prelaunch-boundary.json" \
-            -- timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run
-          timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run
+            -- timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run --report-owner
+          timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run --report-owner
       - name: Always neutral post-source status and bounded role inventory
         id: publication
         if: always()
@@ -161,12 +161,12 @@ jobs:
             --driver-sha "$GITHUB_SHA" --candidate-sha "$CAPTURE_CANDIDATE_SHA" \
             --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --policy-sha256 "$CAPTURE_FIXED_POLICY_SHA256" \
-            --owner-source-sha256 9c60ec41141e53525fc77e9ad3d961cd5e95407863c322256ceb1fab7f54dbc0 \
+            --owner-source-sha256 63a9a41fb68c91dd6bc4a105b37d8e0277b0fe1a178d2567cceb1c2c341f2e94 \
             --adjudicator-source-sha256 "$CAPTURE_ADJUDICATOR_SHA256" \
             --driver-root "$CAPTURE_DRIVER_ROOT" --target-root "$CAPTURE_TARGET_ROOT" \
             --artifact-root "$CAPTURE_ARTIFACT_ROOT" \
             --output "$CAPTURE_ARTIFACT_ROOT-external/external-phase-adjudication.json" \
-            -- timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run
+            -- timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run --report-owner
           gate_code=$?
           if test "$helper_code" -ne 0; then exit "$helper_code"; fi
           exit "$gate_code"
@@ -213,6 +213,7 @@ jobs:
             ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/before-failure.json
             ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/final.json
             ${{ env.CAPTURE_ARTIFACT_ROOT }}-audit-owner/final-failure.json
+            ${{ steps.publication.outputs.report_metadata_path }}
           if-no-files-found: error
           retention-days: 30
       - name: Preserve strict whole-run failure disposition
@@ -229,12 +230,12 @@ jobs:
             --driver-sha "$GITHUB_SHA" --candidate-sha "$CAPTURE_CANDIDATE_SHA" \
             --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --policy-sha256 "$CAPTURE_FIXED_POLICY_SHA256" \
-            --owner-source-sha256 9c60ec41141e53525fc77e9ad3d961cd5e95407863c322256ceb1fab7f54dbc0 \
+            --owner-source-sha256 63a9a41fb68c91dd6bc4a105b37d8e0277b0fe1a178d2567cceb1c2c341f2e94 \
             --adjudicator-source-sha256 "$CAPTURE_ADJUDICATOR_SHA256" \
             --driver-root "$CAPTURE_DRIVER_ROOT" --target-root "$CAPTURE_TARGET_ROOT" \
             --artifact-root "$CAPTURE_ARTIFACT_ROOT" \
             --output "$CAPTURE_ARTIFACT_ROOT-external/external-phase-adjudication-final.json" \
-            -- timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run
+            -- timeout --signal=TERM --kill-after=60s 2820s python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-build-capture-audit-owner.py" run --report-owner
           gate_code=$?
           python3 "$CAPTURE_DRIVER_ROOT/simgolf-lite/scripts/zk1262-capture-phase-driver.py" verdict
           old_code=$?
