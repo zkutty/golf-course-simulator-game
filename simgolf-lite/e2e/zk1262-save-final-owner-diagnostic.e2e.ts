@@ -1,0 +1,375 @@
+import { expect, test, type CDPSession, type Locator, type Page } from "@playwright/test";
+import { mkdir, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import {
+  ZK682_STABILITY_THRESHOLDS,
+  createZk682ConservationStabilityReport,
+  writeZk682ConservationStabilityReport,
+} from "../scripts/zk682-stability-contract.mjs";
+
+import { clearReactComponentTimings } from "../scripts/react-component-timing-cleanup.mjs";
+import { captureSaveFinalOwnerGraph } from "../scripts/zk1262-save-owner-diagnostic/save-owner-collector.mjs";
+
+test.use({ launchOptions: { args: ["--enable-precise-memory-info"] } });
+
+type Measured = {
+  resources: NonNullable<ReturnType<NonNullable<Window["__coursecraftPixiTest"]>["resourceSnapshot"]>>;
+  rendererQuality: "high" | "medium" | "low";
+  heap: { runtimeUsedBytes: number; runtimeTotalBytes: number };
+};
+
+const timingCleanupSamples: ReturnType<typeof clearReactComponentTimings>[] = [];
+
+async function measure(page: Page, cdp: CDPSession): Promise<Measured> {
+  // Separate CDP requests are not atomic; sample promptly after requested GC.
+  await page.waitForTimeout(120);
+  timingCleanupSamples.push(await page.evaluate(clearReactComponentTimings));
+  await cdp.send("HeapProfiler.collectGarbage");
+  const heap = await cdp.send("Runtime.getHeapUsage");
+  const renderer = await page.evaluate(() => ({
+    resources: window.__coursecraftPixiTest?.resourceSnapshot() ?? null,
+    quality: window.__coursecraftPixiTest?.rendererAtlasState().rendered.quality ?? null,
+  }));
+  expect(renderer.resources, "Pixi resource diagnostics must be mounted").not.toBeNull();
+  expect(renderer.quality, "renderer quality must be part of every resource sample").toMatch(/^(high|medium|low)$/);
+  return {
+    resources: renderer.resources!,
+    rendererQuality: renderer.quality!,
+    heap: { runtimeUsedBytes: heap.usedSize, runtimeTotalBytes: heap.totalSize },
+  };
+}
+
+async function canonicalState(page: Page) {
+  return page.evaluate(() => {
+    const state = window.__coursecraftTest!.state();
+    return {
+      screen: state.screen,
+      week: state.week,
+      cash: state.cash,
+      terrainCounts: state.terrainCounts,
+    };
+  });
+}
+
+async function pauseSimulation(page: Page) {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await expect.poll(async () => {
+    const speed = await page.evaluate(() => window.__coursecraftTest?.state().speed);
+    if (speed !== "paused") {
+      await page.keyboard.press("Space");
+      await page.waitForTimeout(100);
+    }
+    return page.evaluate(() => window.__coursecraftTest?.state().speed);
+  }, { timeout: 120_000, intervals: [250] }).toBe("paused");
+}
+
+async function waitForStableResourceTopology(page: Page) {
+  let previous = "";
+  let stableSamples = 0;
+  await expect.poll(async () => {
+    const snapshot = await page.evaluate(() => {
+      const renderer = window.__coursecraftPixiTest?.rendererAtlasState();
+      const resources = window.__coursecraftPixiTest?.resourceSnapshot();
+      if (renderer?.rendered.status !== "activated" || !resources?.canvasConnected) return null;
+      return {
+        displayObjects: resources.displayObjects,
+        containers: resources.containers,
+        sprites: resources.sprites,
+        graphics: resources.graphics,
+        meshes: resources.meshes,
+        text: resources.text,
+      };
+    });
+    const serialized = snapshot == null ? "" : JSON.stringify(snapshot);
+    stableSamples = serialized !== "" && serialized === previous ? stableSamples + 1 : (serialized === "" ? 0 : 1);
+    previous = serialized;
+    return stableSamples;
+  }, { timeout: 120_000, intervals: [100, 200, 400] }).toBeGreaterThanOrEqual(3);
+}
+
+async function openPause(page: Page) {
+  const pause = page.getByTestId("pause-overlay");
+  await expect.poll(async () => {
+    if (!await pause.isVisible()) await page.keyboard.press("Escape");
+    return pause.isVisible();
+  }, { timeout: 120_000, intervals: [250] }).toBe(true);
+}
+
+async function loadQuickSave(page: Page) {
+  await openPause(page);
+  await page.getByTestId("pause-overlay").getByRole("button", { name: /load game/i }).click();
+  const slot = page.getByTestId("save-slot-quick-save");
+  await expect(slot).toContainText("Quick Save", { timeout: 30_000 });
+  await slot.getByRole("button", { name: "Load", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), { timeout: 120_000 }).toBe("game");
+  await expect(page.locator(".cc-pixi-stage canvas")).toBeVisible({ timeout: 120_000 });
+  await waitForStableResourceTopology(page);
+}
+
+async function projectTile(page: Page, canvas: Locator, point: { x: number; y: number }) {
+  const projected = await page.evaluate((target) => ({
+    point: window.__coursecraftPixiTest!.tileToScreen(target.x, target.y),
+    viewport: window.__coursecraftPixiTest!.viewport(),
+  }), point);
+  const bounds = await canvas.boundingBox();
+  if (!bounds || !projected.point || !projected.viewport) throw new Error("Course projection unavailable");
+  return {
+    x: bounds.x + projected.point.x * bounds.width / projected.viewport.width,
+    y: bounds.y + projected.point.y * bounds.height / projected.viewport.height,
+  };
+}
+
+test("ZK-682 produces candidate-bound supplemental stability evidence", async ({ page, browserName }, testInfo) => {
+  test.slow();
+  timingCleanupSamples.length = 0;
+  expect(browserName).toBe("chromium");
+  const expectedCommit = process.env.ZK682_EXPECTED_COMMIT;
+  expect(expectedCommit, "ZK682_EXPECTED_COMMIT must be a full candidate SHA").toMatch(/^[0-9a-f]{40}$/);
+  const outputDirectory = resolve(process.env.COURSECRAFT_ZK682_STABILITY_DIR ?? testInfo.outputDir);
+  await mkdir(outputDirectory, { recursive: true });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
+  page.on("console", (message) => { if (message.type() === "error") errors.push(`console.error: ${message.text()}`); });
+  await page.addInitScript(() => localStorage.setItem("coursecraft_app_profile_v5", JSON.stringify({
+    version: 5,
+    tutorialOffered: true,
+    tutorialCompleted: true,
+    gameplay: { autosaveCadence: "off" },
+  })));
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("HeapProfiler.enable");
+  await cdp.send("Page.enable");
+  await page.goto("/?perfFixture=1");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), { timeout: 120_000 }).toBe("game");
+  await expect(page.locator(".cc-pixi-stage canvas")).toBeVisible({ timeout: 120_000 });
+  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest?.rendererAtlasState().rendered.status), { timeout: 120_000 }).toBe("activated");
+  const runtimeCommit = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().pathMaterialCrossSection.commit);
+  expect(runtimeCommit).toBe(expectedCommit);
+
+  // Repeated production quick-save loads, including real IndexedDB reads and
+  // full App state restoration, are measured after a post-GC baseline.
+  await pauseSimulation(page);
+  await page.keyboard.press("Control+KeyS");
+  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+  // The synthetic heavy fixture is not itself a save-round-trip fixed point:
+  // normal loading canonicalizes derived course fields. Warm that one-time
+  // normalization, then save the canonical production state before measuring
+  // repeated loads. No measured cycle may drift after this boundary.
+  await loadQuickSave(page);
+  await page.keyboard.press("Control+KeyS");
+  await page.waitForTimeout(250);
+  await waitForStableResourceTopology(page);
+  const savedCourseHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
+  const savedState = await canonicalState(page);
+  const saveLoadSamples = [{ cycle: 0, slotId: "quick-save", loaded: false, courseHash: savedCourseHash, state: savedState, ...await measure(page, cdp) }];
+  for (let cycle = 1; cycle <= ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"].minimumSaveLoads; cycle += 1) {
+    await loadQuickSave(page);
+    saveLoadSamples.push({ cycle, slotId: "quick-save", loaded: true, courseHash: await page.evaluate(() => window.__coursecraftTest!.state().courseHash), state: await canonicalState(page), ...await measure(page, cdp) });
+  }
+  const saveLoadReport = createZk682ConservationStabilityReport({
+    gate: "save-load-resource-stability",
+    candidateCommit: expectedCommit!,
+    capturedAt: new Date().toISOString(),
+    command: "npm run test:stability",
+    browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true, heapMeasurementProtocol: { id: "settle-cleanup-gc-query-v1", settlementMs: 120 } },
+    thresholds: ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"],
+    samples: saveLoadSamples,
+  });
+  await writeZk682ConservationStabilityReport(resolve(outputDirectory, "save-load-resource-stability.json"), saveLoadReport);
+  // ZK1345_PRECOLLECTOR_BEGIN
+  async function publishTimingPrecollector(directory: string, sourceCommit: string, candidateCommit: string, samples: ReturnType<typeof clearReactComponentTimings>[]) {
+    const fs = await import("node:fs/promises");
+    const { constants } = await import("node:fs");
+    const { createHash } = await import("node:crypto");
+    const keys = ["measureEntriesBefore", "reactComponentEntriesBefore", "clearedEntries", "clearedNames", "preservedCollisionNames", "measureEntriesAfter"];
+    let present = false; let primary: unknown; const secondary: unknown[] = [];
+    let parentHandle: Awaited<ReturnType<typeof fs.open>> | undefined;
+    let rootHandle: Awaited<ReturnType<typeof fs.open>> | undefined;
+    let fileHandle: Awaited<ReturnType<typeof fs.open>> | undefined;
+    const record = (error: unknown) => { if (!present) { present = true; primary = error; } else secondary.push(error); };
+    try {
+      if (!/^[0-9a-f]{40}$/.test(sourceCommit) || !/^[0-9a-f]{40}$/.test(candidateCommit) || sourceCommit === candidateCommit || !Array.isArray(samples) || samples.length !== 13) throw new Error("ZK1345_IDENTITY_OR_COUNT");
+      const copied = samples.map((sample) => {
+        if (!sample || typeof sample !== "object" || Object.getPrototypeOf(sample) !== Object.prototype || Reflect.ownKeys(sample).length !== keys.length) throw new Error("ZK1345_SAMPLE_SCHEMA");
+        const result: Record<string, number> = {};
+        for (const key of keys) {
+          const field = Object.getOwnPropertyDescriptor(sample, key);
+          if (!field || !("value" in field) || typeof field.value !== "number" || !Number.isSafeInteger(field.value) || field.value < 0 || field.value > 1_000_000_000) throw new Error("ZK1345_SCALAR_TYPE_CAP");
+          result[key] = field.value;
+        }
+        return result;
+      });
+      const raw = Buffer.from(JSON.stringify({ schema: 1, kind: "SAVE_PRECOLLECTOR_TIMING_SCALARS_V1", candidateCommit, sourceCommit, sampleCount: 13, measurementProtocol: "settle-cleanup-gc-query-v1", filter: "detail.devtools.track === Components ⚛; all entries of each name must match", samples: copied, metadataTransportOnly: true, numericPASS: false, graphAccepted: false, releaseCleared: false, nativeClosure: "UNKNOWN" }) + "\n", "utf8");
+      if (raw.length > 32768 || resolve(directory) !== directory || await fs.realpath(directory) !== directory) throw new Error("ZK1345_CAP_OR_CANONICAL");
+      const parent = resolve(directory, ".."); const root = directory + "-timing-precollector";
+      if (await fs.realpath(parent) !== parent) throw new Error("ZK1345_PARENT_ALIAS");
+      parentHandle = await fs.open(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+      const parentIdentity = await parentHandle.stat(); const originalRoot = await fs.lstat(directory);
+      if (!originalRoot.isDirectory() || originalRoot.uid !== process.getuid!() || (originalRoot.mode & 0o077) !== 0) throw new Error("ZK1345_ORIGINAL_ROOT");
+      await fs.mkdir(root, { mode: 0o700 });
+      rootHandle = await fs.open(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+      const rootIdentity = await rootHandle.stat();
+      const same = (a: { dev: number; ino: number }, b: { dev: number; ino: number }) => a.dev === b.dev && a.ino === b.ino;
+      const guard = async () => {
+        if (await fs.realpath(parent) !== parent || await fs.realpath(directory) !== directory || await fs.realpath(root) !== root || !same(await parentHandle!.stat(), parentIdentity) || !same(await fs.lstat(parent), parentIdentity) || !same(await fs.lstat(directory), originalRoot) || !same(await rootHandle!.stat(), rootIdentity) || !same(await fs.lstat(root), rootIdentity) || (await fs.lstat(root)).uid !== process.getuid!() || ((await fs.lstat(root)).mode & 0o077) !== 0) throw new Error("ZK1345_ROOT_DRIFT");
+      };
+      await guard();
+      if ((await fs.readdir(root)).length !== 0) throw new Error("ZK1345_FOREIGN_ROLE");
+      const path = resolve(root, "zk1262-save-timing-precollector.json");
+      fileHandle = await fs.open(path, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+      await fileHandle.writeFile(raw); await fileHandle.sync();
+      const first = await fileHandle.stat();
+      if (!first.isFile() || first.nlink !== 1 || first.size !== raw.length || (first.mode & 0o077) !== 0 || first.uid !== process.getuid!()) throw new Error("ZK1345_FILE_SHAPE");
+      const back = Buffer.alloc(raw.length + 1); let offset = 0;
+      while (offset < back.length) { const result = await fileHandle.read(back, offset, back.length - offset, offset); if (result.bytesRead === 0) break; offset += result.bytesRead; }
+      const last = await fileHandle.stat(); const located = await fs.lstat(path);
+      if (offset !== raw.length || !back.subarray(0, offset).equals(raw) || !same(first, last) || !same(last, located) || first.size !== last.size || first.mtimeMs !== last.mtimeMs || first.ctimeMs !== last.ctimeMs || located.nlink !== 1 || !located.isFile()) throw new Error("ZK1345_FILE_DRIFT");
+      await guard(); if ((await fs.readdir(root)).join("\n") !== "zk1262-save-timing-precollector.json") throw new Error("ZK1345_ROLE_DRIFT");
+      await rootHandle.sync(); await parentHandle.sync(); await guard();
+      if (createHash("sha256").update(back.subarray(0, offset)).digest("hex") !== createHash("sha256").update(raw).digest("hex")) throw new Error("ZK1345_HASH");
+    } catch (error) { record(error); }
+    finally {
+      for (const handle of [fileHandle, rootHandle, parentHandle]) { if (handle) { try { await handle.close(); } catch (error) { record(error); } } }
+    }
+    return { eligible: !present, errorPresent: present, error: primary, secondary, metadataTransportOnly: true, numericPASS: false };
+  }
+  const timingPrecollector = await publishTimingPrecollector(outputDirectory, process.env.ZK1345_SOURCE_COMMIT ?? "", expectedCommit!, timingCleanupSamples).catch((error: unknown) => ({ eligible: false, errorPresent: true, error, secondary: [], metadataTransportOnly: true, numericPASS: false }));
+  // ZK1345_PRECOLLECTOR_END
+  // ZK1345_COLLECTOR_WRAP_BEGIN
+  try {
+  await captureSaveFinalOwnerGraph(cdp, { outputDirectory, candidateCommit: expectedCommit!, sampleCount: saveLoadSamples.length, saveReportErrors: saveLoadReport.errors });
+  } catch (error) {
+    if (timingPrecollector.errorPresent) {
+      try { console.log(JSON.stringify({ diagnostic: "zk1345-precollector-secondary", sourceCommit: process.env.ZK1345_SOURCE_COMMIT, candidateCommit: expectedCommit, publicationFault: true, publicationSecondaryCount: timingPrecollector.secondary.length, collectorCausePreserved: true, metadataTransportOnly: true, numericPASS: false })); } catch { /* original collector cause remains primary */ }
+    }
+    throw error;
+  }
+  if (timingPrecollector.errorPresent) throw timingPrecollector.error;
+  // ZK1345_COLLECTOR_WRAP_END
+
+  // Run the actual mutable live simulation for at least two in-game hours.
+  await page.keyboard.press("Digit3");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("4x");
+  const startMinute = await page.evaluate(() => window.__coursecraftTest!.state().dayMinute);
+  const longSessionSamples = [{ elapsedGameMinutes: 0, courseHash: await page.evaluate(() => window.__coursecraftTest!.state().courseHash), state: { ...(await page.evaluate(() => { const state = window.__coursecraftTest!.state(); return { dayMinute: state.dayMinute, speed: state.speed, onCourse: state.golferPositions.length }; })) }, ...await measure(page, cdp) }];
+  while (longSessionSamples.length < ZK682_STABILITY_THRESHOLDS["long-session-resource-stability"].minimumSamples
+    || (longSessionSamples.at(-1)?.elapsedGameMinutes ?? 0) < ZK682_STABILITY_THRESHOLDS["long-session-resource-stability"].minimumSessionMinutes) {
+    await page.evaluate(() => window.advanceTime!(2_000));
+    await page.waitForTimeout(80);
+    const state = await page.evaluate(() => window.__coursecraftTest!.state());
+    longSessionSamples.push({ elapsedGameMinutes: Number((state.dayMinute - startMinute).toFixed(4)), courseHash: state.courseHash, state: { dayMinute: state.dayMinute, speed: state.speed, onCourse: state.golferPositions.length }, ...await measure(page, cdp) });
+    expect(longSessionSamples.length, "bounded long-session producer").toBeLessThanOrEqual(10);
+  }
+  const longSessionReport = createZk682ConservationStabilityReport({
+    gate: "long-session-resource-stability",
+    candidateCommit: expectedCommit!,
+    capturedAt: new Date().toISOString(),
+    command: "npm run test:stability",
+    browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true, heapMeasurementProtocol: { id: "settle-cleanup-gc-query-v1", settlementMs: 120 } },
+    thresholds: ZK682_STABILITY_THRESHOLDS["long-session-resource-stability"],
+    samples: longSessionSamples,
+  });
+  await writeZk682ConservationStabilityReport(resolve(outputDirectory, "long-session-resource-stability.json"), longSessionReport);
+
+  // Save a recovery point, then exercise editing, diagnostic overlay,
+  // Chromium frozen/active lifecycle, and production load recovery.
+  await pauseSimulation(page);
+  await page.keyboard.press("Control+KeyS");
+  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+  const recoveryPoint = await page.evaluate(() => window.__coursecraftTest!.state());
+  const interactionSamples: Array<Record<string, unknown> & Measured> = [];
+
+  const canvas = page.locator(".cc-pixi-stage canvas");
+  const placement = await page.evaluate(() => window.__coursecraftTest!.setZk470PlacementFixture("terrain-stroke"));
+  await page.evaluate(({ point }) => window.__coursecraftPixiTest!.focusTileForTest(point.x, point.y, 1.15), placement);
+  await page.evaluate(() => new Promise<void>((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame))));
+  const paintPoint = await projectTile(page, canvas, placement.point);
+  const beforeEdit = await page.evaluate(() => window.__coursecraftTest!.state());
+  await page.mouse.move(paintPoint.x, paintPoint.y);
+  await page.mouse.down();
+  await page.mouse.move(paintPoint.x + 20, paintPoint.y + 8, { steps: 4 });
+  await expect(page.getByTestId("terrain-stroke-preview")).toBeVisible();
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().terrainVersion)).toBe(beforeEdit.terrainVersion + 1);
+  const afterEdit = await page.evaluate(() => window.__coursecraftTest!.state());
+  interactionSamples.push({ scenario: "editing", passed: true, before: { terrainVersion: beforeEdit.terrainVersion }, after: { terrainVersion: afterEdit.terrainVersion, screen: afterEdit.screen }, ...await measure(page, cdp) });
+
+  const beforeOverlay = await page.evaluate(() => {
+    const review = JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview;
+    return { panelOpen: review?.panelOpen === true, kind: review?.overlay?.kind ?? null };
+  });
+  await page.getByTestId("open-architecture-review").click();
+  await expect(page.getByTestId("architecture-review")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("architecture-overlay-recovery").click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview?.overlay?.kind)).toBe("recovery");
+  interactionSamples.push({ scenario: "overlay", passed: true, before: beforeOverlay, after: { kind: "recovery", visible: await page.getByTestId("architecture-review").isVisible() }, ...await measure(page, cdp) });
+  await page.getByTestId("architecture-review").getByRole("button", { name: "Close" }).click();
+
+  const beforeSleepHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
+  await cdp.send("Page.setWebLifecycleState" as never, { state: "frozen" } as never);
+  await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  await cdp.send("Page.setWebLifecycleState" as never, { state: "active" } as never);
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().courseHash)).toBe(beforeSleepHash);
+  const responsive = await page.evaluate(() => { window.advanceTime?.(50); return typeof window.render_game_to_text?.() === "string"; });
+  interactionSamples.push({ scenario: "sleep-wake", passed: responsive, before: { courseHash: beforeSleepHash }, after: { courseHash: await page.evaluate(() => window.__coursecraftTest!.state().courseHash), lifecycle: "active", responsive }, ...await measure(page, cdp) });
+
+  await loadQuickSave(page);
+  const recovered = await page.evaluate(() => window.__coursecraftTest!.state());
+  interactionSamples.push({ scenario: "recovery", passed: true, before: { savedCourseHash: recoveryPoint.courseHash, mutatedCourseHash: afterEdit.courseHash }, after: { courseHash: recovered.courseHash, quickSaveLoaded: true }, ...await measure(page, cdp) });
+  const interactionReport = createZk682ConservationStabilityReport({
+    gate: "editing-overlay-sleep-recovery",
+    candidateCommit: expectedCommit!,
+    capturedAt: new Date().toISOString(),
+    command: "npm run test:stability",
+    browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true, heapMeasurementProtocol: { id: "settle-cleanup-gc-query-v1", settlementMs: 120 } },
+    thresholds: ZK682_STABILITY_THRESHOLDS["editing-overlay-sleep-recovery"],
+    samples: interactionSamples,
+  });
+  await writeZk682ConservationStabilityReport(resolve(outputDirectory, "editing-overlay-sleep-recovery.json"), interactionReport);
+
+  const timingCleanupPath = testInfo.outputPath("react-component-timing-cleanup.json");
+  const timingCleanupPayload = `${JSON.stringify({
+    candidateCommit: expectedCommit,
+    command: "npm run test:stability",
+    browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown" },
+    filter: "detail.devtools.track === Components ⚛; all entries of each name must match",
+    samples: timingCleanupSamples,
+  }, null, 2)}\n`;
+  await writeFile(timingCleanupPath, timingCleanupPayload);
+  const timingDeliveryFs = await import("node:fs/promises");
+  const timingDeliveryRoot = process.env.COURSECRAFT_ZK682_STABILITY_DIR;
+  if (!timingDeliveryRoot || timingDeliveryRoot !== outputDirectory
+    || resolve(timingDeliveryRoot) !== timingDeliveryRoot
+    || await timingDeliveryFs.realpath(timingDeliveryRoot) !== timingDeliveryRoot
+    || !(await timingDeliveryFs.lstat(timingDeliveryRoot)).isDirectory()) {
+    throw new Error("SAVE timing delivery requires the declared canonical artifact root");
+  }
+  if (Buffer.byteLength(timingCleanupPayload, "utf8") > 65_536) {
+    throw new Error("SAVE timing delivery exceeds declared metadata role cap");
+  }
+  await writeFile(resolve(outputDirectory, "zk682-react-component-timing-cleanup.json"), timingCleanupPayload, { flag: "wx" });
+
+  await testInfo.attach("react-component-timing-cleanup", { path: timingCleanupPath, contentType: "application/json" });
+  console.log(JSON.stringify({
+    diagnostic: "react-component-timing-cleanup",
+    candidateCommit: expectedCommit,
+    samples: timingCleanupSamples.length,
+    clearedEntries: timingCleanupSamples.reduce((total, sample) => total + sample.clearedEntries, 0),
+    preservedCollisionNames: timingCleanupSamples.reduce((total, sample) => total + sample.preservedCollisionNames, 0),
+    remainingMeasureEntries: timingCleanupSamples.at(-1)?.measureEntriesAfter ?? 0,
+  }));
+
+  const finalScreenshot = resolve(outputDirectory, "zk682-stability-final.png");
+  await page.screenshot({ path: finalScreenshot, fullPage: true });
+  await testInfo.attach("zk682-stability-final", { path: finalScreenshot, contentType: "image/png" });
+  expect(errors).toEqual([]);
+  expect({
+    saveLoad: saveLoadReport.errors,
+    longSession: longSessionReport.errors,
+    interactions: interactionReport.errors,
+  }, "all supplemental reports are retained even when one gate fails").toEqual({
+    saveLoad: [],
+    longSession: [],
+    interactions: [],
+  });
+});
