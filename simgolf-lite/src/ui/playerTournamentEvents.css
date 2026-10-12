@@ -1,0 +1,55 @@
+.player-tournament-events {
+  display: grid;
+  gap: .75rem;
+  min-width: 0;
+  color: #2f2b1e;
+  font-size: .9rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.player-tournament-events :where(h3, h4, p, ul, ol, dl) { margin: 0; }
+.player-tournament-events h3 { font-size: 1.15rem; }
+.player-tournament-events h4 { font-size: 1.05rem; }
+.player-tournament-events .player-tournament-event {
+  display: grid;
+  gap: .65rem;
+  min-width: 0;
+  padding: .75rem;
+  border: 1px solid #827451;
+  border-radius: .6rem;
+  background: #fff9e9;
+}
+.player-tournament-events header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; }
+.player-tournament-events header h4 { flex: 1 1 10rem; }
+.player-tournament-events .player-tournament-status { border: 1px solid #687357; border-radius: .3rem; padding: .15rem .4rem; background: #e8eedb; color: #263c2c; }
+.player-tournament-events details { min-width: 0; border-top: 1px solid #a69b7c; padding-top: .4rem; }
+.player-tournament-events summary { cursor: pointer; font-weight: 700; padding: .35rem .2rem; }
+.player-tournament-events details[open] > :not(summary) { margin-top: .5rem; }
+.player-tournament-events details details { margin-top: .6rem; }
+.player-tournament-events .player-tournament-facts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: .35rem .7rem; }
+.player-tournament-events dt { font-weight: 700; }
+.player-tournament-events dd { margin: 0; min-width: 0; }
+.player-tournament-events table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: inherit; }
+.player-tournament-events caption { text-align: left; font-weight: 700; padding-bottom: .5rem; }
+.player-tournament-events :is(th, td) { text-align: left; vertical-align: top; padding: .4rem .3rem; border: 1px solid #a69b7c; overflow-wrap: anywhere; white-space: normal; }
+.player-tournament-events thead { background: #e8eedb; color: #263c2c; }
+.player-tournament-events :is(th, td, li) > span { display: block; font-weight: 400; }
+.player-tournament-events :is(ul, ol) { padding-left: 1.2rem; }
+.player-tournament-events li + li { margin-top: .35rem; }
+.player-tournament-events .player-tournament-entry { display: grid; gap: .5rem; }
+.player-tournament-events .player-tournament-entry p { color: #793226; }
+.player-tournament-events button {
+  justify-self: start;
+  min-height: 2.5rem;
+  max-width: 100%;
+  padding: .45rem .7rem;
+  border: 1px solid #314d36;
+  border-radius: .4rem;
+  color: #fff9e9;
+  background: #314d36;
+  font: inherit;
+  cursor: pointer;
+  white-space: normal;
+}
+.player-tournament-events button:disabled { color: #534b39; background: #e6e0cc; border-color: #827451; cursor: default; opacity: 1; }
+.player-tournament-events :is(button, summary):focus-visible { outline: 3px solid #0b67a3; outline-offset: 2px; }

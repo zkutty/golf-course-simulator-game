@@ -23,12 +23,17 @@ function record(name: string, ...args: unknown[]) {
   calls.push({ name, args });
   document.querySelector<HTMLOutputElement>("[data-testid=callback-log]")!.value = JSON.stringify(calls);
 }
+function frame(node: import("react").ReactNode) {
+  return new URLSearchParams(location.search).has("shortParent")
+    ? <div data-testid="short-player-parent" style={{ position: "relative", height: 170, width: 274, overflow: "hidden", containerType: "inline-size" }}>{node}</div>
+    : node;
+}
 export function Fixture() {
   const [open, setOpen] = useState(true);
   return <I18nContext.Provider value={{ locale, setLocale: () => {}, t: (key, args) => translate(locale, key, args) }}>
     <button data-testid="outside-before" onClick={() => setOpen(true)}>Open player</button>
     <output data-testid="callback-log" />
-    {open && <PlayerProPanel career={career} course={fixture.course} world={fixture.world} day={0}
+    {frame(open && <PlayerProPanel career={career} course={fixture.course} world={fixture.world} day={0}
       onUpdateIdentity={(identity) => record("identity", identity)}
       onStartRound={async (...args) => { record("start", ...args); return "Returned round notice"; }}
       onTrain={async (...args) => { record("train", ...args); return "Returned training notice"; }}
@@ -36,7 +41,7 @@ export function Fixture() {
       onMentorChallenge={async (...args) => { record("mentor", ...args); return null; }}
       onLoadout={async (...args) => { record("loadout", ...args); return "Returned loadout notice"; }}
       onTournament={async (...args) => { record("tournament", ...args); return null; }}
-      onResume={() => record("resume")} onClose={() => { record("close"); setOpen(false); }} />}
+      onResume={() => record("resume")} onClose={() => { record("close"); setOpen(false); }} />)}
     <button data-testid="outside-after">Outside focus destination</button>
   </I18nContext.Provider>;
 }

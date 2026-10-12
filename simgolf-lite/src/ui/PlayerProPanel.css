@@ -97,3 +97,7 @@
 .cc-player-pro-body :where(input, select, button) { max-width: 100%; box-sizing: border-box; }
 
 .cc-player-pro-tabs button:focus-visible { box-shadow: inset 0 0 0 6px #fff8dc !important; }
+
+@media (max-width: 768px) {
+  .cc-player-pro-panel { position: fixed; }
+}

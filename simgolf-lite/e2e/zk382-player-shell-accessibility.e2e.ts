@@ -176,3 +176,132 @@ for (const locale of ["en", "pseudo"] as const) for (const width of [320, 768, 1
     expect(errors).toEqual([]);
   });
 }
+
+async function shortParentRing(control: import("@playwright/test").Locator, authored: boolean, testInfo: import("@playwright/test").TestInfo) {
+  const paint = await control.evaluate((node) => {
+    const css = getComputedStyle(node), box = node.getBoundingClientRect();
+    const extra = Math.max(0, Number.parseFloat(css.outlineWidth) + Number.parseFloat(css.outlineOffset));
+    const ring = { left: box.left - extra, right: box.right + extra, top: box.top - extra, bottom: box.bottom + extra };
+    const clips = [{ left: 0, right: innerWidth, top: 0, bottom: innerHeight }];
+    // The alpha-over formulas are pinned to the accepted tournament V paint authority.
+    type RGBA = [number, number, number, number];
+    const rgba = (value: string): RGBA => { const values = value.match(/[\d.]+/g)!.map(Number); return [values[0], values[1], values[2], values[3] ?? 1]; };
+    const over = (fg: RGBA, bg: RGBA): RGBA => { const alpha = fg[3] + bg[3] * (1 - fg[3]); return [0, 1, 2].map((index) => alpha ? (fg[index] * fg[3] + bg[index] * bg[3] * (1 - fg[3])) / alpha : 0).concat(alpha) as RGBA; };
+    let pairs = [{ foreground: rgba(css.outlineColor), background: [0, 0, 0, 0] as RGBA }];
+    const layers = [];
+    const inset = extra === 0 && css.boxShadow.includes("inset") ? css.boxShadow.match(/rgba?\([^)]+\)/)?.[0] : null;
+    for (let parent: Element | null = node; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent), outside = parent === node && extra > 0;
+      const base: RGBA = outside ? [0, 0, 0, 0] : rgba(style.backgroundColor);
+      const gradient = outside ? null : style.backgroundImage.match(/rgba?\([^)]+\)/g);
+      let colors = gradient?.map((value) => over(rgba(value), base)) ?? [base];
+      if (parent === node && inset) colors = colors.map((color) => over(rgba(inset), color));
+      const opacity = Number(style.opacity);
+      layers.push({ tag: parent.tagName, background: style.backgroundColor, image: style.backgroundImage, opacity, outside, inset: parent === node ? inset : null });
+      pairs = pairs.flatMap((pair) => colors.map((background) => {
+        const foreground = over(pair.foreground, background), composite = over(pair.background, background);
+        foreground[3] *= opacity; composite[3] *= opacity;
+        return { foreground, background: composite };
+      }));
+      if (parent.matches(".cc-player-pro-panel, .cc-player-pro-header, [role=tablist], [role=tabpanel]")) {
+        const bounds = parent.getBoundingClientRect();
+        clips.push({ left: bounds.left + parent.clientLeft, right: bounds.left + parent.clientLeft + parent.clientWidth, top: bounds.top + parent.clientTop, bottom: bounds.top + parent.clientTop + parent.clientHeight });
+      }
+    }
+    const opaquePairs = pairs.map((pair) => ({ foreground: over(pair.foreground, [255, 255, 255, 1]), background: over(pair.background, [255, 255, 255, 1]) }));
+    return { text: node.textContent, ring, clips, layers, opaquePairs, color: css.outlineColor, style: css.outlineStyle, width: Number.parseFloat(css.outlineWidth), visible: node.matches(":focus-visible") };
+  });
+  const ratios = paint.opaquePairs.map((pair) => contrast(`rgb(${pair.foreground.slice(0, 3).join(",")})`, `rgb(${pair.background.slice(0, 3).join(",")})`));
+  await testInfo.attach("focused ring paint", { body: JSON.stringify({ ...paint, contrastRatios: ratios }), contentType: "application/json" });
+  expect(paint.visible).toBe(true); expect(paint.style).not.toBe("none"); expect(paint.width).toBeGreaterThan(0);
+  if (authored) { expect(paint.width).toBe(3); expect(paint.style).toBe("solid"); }
+  expect(ratios.length).toBeGreaterThan(0); expect(Math.min(...ratios)).toBeGreaterThanOrEqual(3);
+  for (const clip of paint.clips) {
+    expect(paint.ring.left).toBeGreaterThanOrEqual(clip.left - 1); expect(paint.ring.right).toBeLessThanOrEqual(clip.right + 1);
+    expect(paint.ring.top).toBeGreaterThanOrEqual(clip.top - 1); expect(paint.ring.bottom).toBeLessThanOrEqual(clip.bottom + 1);
+  }
+  return { ...paint, contrastRatios: ratios };
+}
+async function shortParentGlyphs(body: import("@playwright/test").Locator) {
+  return body.evaluate((pane) => {
+    const panel = pane.closest<HTMLElement>(".cc-player-pro-panel")!, bounds = pane.getBoundingClientRect(), outer = panel.getBoundingClientRect();
+    const walker = document.createTreeWalker(pane, NodeFilter.SHOW_TEXT), lines: { id: string; text: string | null; horizontal: boolean; painted: boolean }[] = [];
+    let textIndex = 0;
+    while (walker.nextNode()) {
+      const node = walker.currentNode, parent = node.parentElement;
+      if (!node.textContent?.trim() || !parent?.checkVisibility() || parent.closest("select,option,button")) continue;
+      const range = document.createRange(); range.selectNodeContents(node);
+      Array.from(range.getClientRects()).forEach((box, index) => lines.push({ id: `${textIndex}:${index}`, text: node.textContent,
+        horizontal: box.left >= Math.max(bounds.left, outer.left, 0) - 1 && box.right <= Math.min(bounds.right, outer.right, innerWidth) + 1,
+        painted: box.top >= Math.max(bounds.top, outer.top, 0) - 1 && box.bottom <= Math.min(bounds.bottom, outer.bottom, innerHeight) + 1 }));
+      textIndex += 1;
+    }
+    return lines;
+  });
+}
+for (const locale of ["en", "pseudo"] as const) for (const scale of [100, 130]) {
+  test(`ZK-1351 short parent ${locale} ${scale} percent preserves mobile shell and native reachability`, async ({ page }, testInfo) => {
+    test.setTimeout(45_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+    await page.addInitScript((value) => localStorage.setItem("coursecraft_locale", value), locale);
+    await page.setViewportSize({ width: 320, height: 640 });
+    await open(page, "?shortParent=1");
+    await page.evaluate((value) => { document.documentElement.style.fontSize = `${16 * value / 100}px`; }, scale);
+    const panel = page.getByTestId("player-pro-panel"), parent = page.getByTestId("short-player-parent"), body = panel.getByRole("tabpanel"), tab = panel.getByTestId("player-pro-tab-career"), close = panel.locator(".cc-player-pro-close");
+    const geometry = await panel.evaluate((node) => {
+      const box = node.getBoundingClientRect(), header = node.querySelector("header")!.getBoundingClientRect(), tabs = node.querySelector('[role=tablist]')!.getBoundingClientRect(), pane = node.querySelector<HTMLElement>('[role=tabpanel]')!;
+      return { position: getComputedStyle(node).position, offsetParent: (node as HTMLElement).offsetParent?.tagName ?? null, left: box.left, right: box.right, top: box.top, bottom: box.bottom, height: box.height, headerHeight: header.height, tabsHeight: tabs.height, bodyHeight: pane.clientHeight, bodyTop: pane.getBoundingClientRect().top, bodyBottom: pane.getBoundingClientRect().bottom };
+    });
+    expect(await parent.evaluate((node) => ({ width: node.clientWidth, height: node.clientHeight, position: getComputedStyle(node).position, overflow: getComputedStyle(node).overflow, containerType: getComputedStyle(node).containerType }))).toEqual({ width: 274, height: 170, position: "relative", overflow: "hidden", containerType: "inline-size" });
+    expect(geometry.position).toBe("fixed"); expect(geometry.offsetParent).toBeNull(); expect(geometry.left).toBe(10); expect(geometry.top).toBe(54);
+    expect(geometry.right).toBe(310); expect(geometry.bottom).toBeLessThanOrEqual(640);
+    expect(geometry.bodyHeight).toBeGreaterThan(geometry.headerHeight); expect(geometry.bodyBottom).toBeLessThanOrEqual(geometry.bottom);
+    await expect(panel).toHaveAttribute("aria-modal", "false"); await expect(panel.locator("h2")).toHaveText(fullName);
+    const headerGlyphs = await panel.locator("h2").evaluate((node) => {
+      const range = document.createRange(); range.selectNodeContents(node); const clip = node.closest("header")!.getBoundingClientRect();
+      return Array.from(range.getClientRects()).every((box) => box.left >= clip.left && box.right <= clip.right && box.top >= clip.top && box.bottom <= clip.bottom);
+    });
+    expect(headerGlyphs).toBe(true);
+    await page.getByTestId("outside-before").focus(); await page.keyboard.press("Tab"); await expect(close).toBeFocused();
+    const rings = [await shortParentRing(close, true, testInfo)];
+    await page.keyboard.press("Tab"); await expect(tab).toBeFocused(); rings.push(await shortParentRing(tab, true, testInfo));
+    await page.keyboard.press("Tab"); await expect(body).toBeFocused(); rings.push(await shortParentRing(body, true, testInfo));
+    const controls = body.locator('button:not([disabled]), input:not([disabled]), select:not([disabled]), summary');
+    for (const control of await controls.all()) {
+      if (!await control.evaluate((node) => node.checkVisibility())) continue;
+      await page.keyboard.press("Tab"); await expect(control).toBeFocused(); rings.push(await shortParentRing(control, false, testInfo));
+    }
+    await page.keyboard.press("Tab"); await expect(page.getByTestId("outside-after")).toBeFocused();
+    await page.keyboard.press("Shift+Tab"); await expect(controls.last()).toBeFocused();
+    await body.focus(); await expect(body).toBeFocused();
+    const metrics = await body.evaluate((node) => ({ height: node.scrollHeight, viewport: node.clientHeight }));
+    const pages = Math.ceil(metrics.height / metrics.viewport), cap = pages + Math.ceil(pages * .25) + 8; expect(cap).toBeLessThanOrEqual(512);
+    const frames = () => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    let upSteps = 0;
+    for (; upSteps < cap; upSteps += 1) { if (await body.evaluate((node) => node.scrollTop === 0)) break; await page.keyboard.press("PageUp"); await frames(); }
+    await expect.poll(() => body.evaluate((node) => node.scrollTop)).toBe(0);
+    const painted = new Set<string>(), initialGlyphs = await shortParentGlyphs(body);
+    const observe = async () => { for (const line of await shortParentGlyphs(body)) { expect(line.horizontal).toBe(true); if (line.painted) painted.add(line.id); } };
+    await observe();
+    let downSteps = 0;
+    for (; downSteps < cap; downSteps += 1) { if (await body.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop <= 1)) break; await page.keyboard.press("PageDown"); await frames(); await observe(); }
+    await expect.poll(() => body.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop)).toBeLessThanOrEqual(1);
+    expect(painted.size).toBe(initialGlyphs.length); await expect(body.locator("section").last()).toBeInViewport();
+    const boundaries = [];
+    for (const width of [768, 769, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      const position = await panel.evaluate((node) => getComputedStyle(node).position);
+      expect(position).toBe(width === 768 ? "fixed" : "absolute"); boundaries.push({ width, position });
+    }
+    await page.setViewportSize({ width: 320, height: 640 });
+    await immutable(page); expect(errors).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath(`short-parent-${locale}-${scale}.png`) });
+    await close.focus(); await page.keyboard.press("Tab"); await page.keyboard.press("Shift+Tab"); await expect(close).toBeFocused();
+    await page.keyboard.press("Enter"); await expect(panel).toHaveCount(0);
+    await expect(page.getByTestId("callback-log")).toHaveJSProperty("value", JSON.stringify([{ name: "close", args: [] }]));
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("BODY"); await immutable(page); expect(errors).toEqual([]);
+    await testInfo.attach("short parent acceptance", { body: JSON.stringify({ locale, scale, geometry, rings, metrics, cap, upSteps, downSteps, paintedGlyphLines: painted.size, totalGlyphLines: initialGlyphs.length, boundaries, errors, close: "once", activeAfterClose: "BODY" }), contentType: "application/json" });
+  });
+}

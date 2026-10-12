@@ -23,7 +23,8 @@ import {
   type PlayerShotSelection,
   type PlayerTrainingOption,
 } from "../game/playerPro/playerPro";
-import { eligiblePlayerOpponents, playerProTournamentEntries, playerProTournamentEntryEligibility, playerTechniqueCatalog, playerTrainingOptions } from "../game/playerPro/playerProPanelAuthority";
+import { eligiblePlayerOpponents, playerProTournamentEntries, playerTechniqueCatalog, playerTrainingOptions } from "../game/playerPro/playerProPanelAuthority";
+import { PlayerTournamentEvents } from "./PlayerTournamentEvents";
 import type { ShotClearanceEvidence, ShotCollision, ShotFlightProfile, ShotRuling } from "../game/rules/contracts";
 import { normalizeCourseLayouts } from "../game/models/courseLayouts";
 import type { TournamentEvent } from "../game/tournaments/types";
@@ -615,13 +616,8 @@ export function PlayerProPanel(props: {
           {social.custody.length === 0 ? <EmptySocial message={t("playerPro.social.noCustody")} /> : social.custody.map((entry) => <article key={entry.id} style={cardStyle}><strong>{entry.item.name} · {entry.status}</strong><div>{entry.rivalName} · {t("property.ledger.when", { week: entry.acquiredWeek, day: entry.acquiredDay + 1 })}</div>{entry.rematchChallengeId && <small>{t("challenge.rematchReady")}</small>}</article>)}
         </section>}
 
-        {tab === "tournaments" && <section>
-          <h3 style={{ margin: 0 }}>{t("playerPro.tournament.title")}</h3><p style={{ fontSize: 12 }}>{t("playerPro.tournament.help")}</p>
-          {events.length === 0 ? <p>{t("playerPro.tournament.none")}</p> : <div style={{ display: "grid", gap: 7 }}>{events.map((event) => {
-            const eligibility = playerProTournamentEntryEligibility(props.career, event, props.world, props.day);
-            return <div key={event.id} style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><strong>{event.name}</strong><small style={{ display: "block" }}>{t("playerPro.tournament.meta", { tier: event.tier, week: event.scheduledWeek, day: event.scheduledDay + 1 })}</small>{!eligibility.eligible && <div style={{ color: "#873324", fontSize: 11 }}>{t("playerPro.tournament.blocked", { reason: eligibility.reason ?? "" })}</div>}<button disabled={!eligibility.eligible} onClick={() => { void props.onTournament(event).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }} style={{ marginTop: 6 }}>{t("playerPro.tournament.enter")}</button></div>;
-          })}</div>}
-        </section>}
+        {tab === "tournaments" && <PlayerTournamentEvents world={props.world} career={props.career} day={props.day} entryEvents={events}
+          onEnter={(event) => { void props.onTournament(event).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }} />}
       </div>
     </aside>
   );
