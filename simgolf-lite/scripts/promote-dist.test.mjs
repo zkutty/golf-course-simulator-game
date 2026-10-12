@@ -242,3 +242,37 @@ test('timeout and type categories expose no raw message or request metadata', as
     assert.equal(failureDiagnostic('receipt-run', { name, message: 'SECRET', request: { signedURL: 'SECRET' } }), `Artifact promotion verification failed; deployment is blocked. phase=receipt-run error=${category}\n`);
   }
 });
+
+
+test('pre-upload inventory omits exact source-bound policy and retains every published byte', t => {
+  const root = temporary(t), policy = readFileSync(new URL('../public/.assetsignore', import.meta.url));
+  writeFileSync(join(root, 'index.html'), 'published'); writeFileSync(join(root, '.assetsignore'), policy);
+  assert.equal(sha256(policy), '67cf78011982c3b42d96b4eec7e652eb82fa61988a976f05faceda11da576c0a');
+  assert.deepEqual(inventory(root, true), [{ path: 'index.html', bytes: 9, sha256: sha256(Buffer.from('published')) }]);
+});
+test('changed deployment policy is rejected rather than silently omitted', t => {
+  const root = temporary(t); writeFileSync(join(root, 'index.html'), 'published');
+  writeFileSync(join(root, '.assetsignore'), '**/.DS_Store\n**/.gitX\n**/node_modules\n');
+  assert.throws(() => inventory(root, true), /known unpublished deployment policy bytes/);
+});
+test('dist policy must also equal actual tracked source in an isolated module image', t => {
+  const root = temporary(t), scripts = join(root, 'scripts'), assets = join(root, 'dist');
+  mkdirSync(scripts); mkdirSync(join(root, 'public')); mkdirSync(assets);
+  writeFileSync(join(scripts, 'promote-dist.mjs'), readFileSync(new URL('./promote-dist.mjs', import.meta.url)));
+  writeFileSync(join(root, 'public/.assetsignore'), 'changed tracked policy');
+  writeFileSync(join(assets, 'index.html'), 'published'); writeFileSync(join(assets, '.assetsignore'), readFileSync(new URL('../public/.assetsignore', import.meta.url)));
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `const { inventory } = await import(${JSON.stringify(new URL('file://' + join(scripts, 'promote-dist.mjs')).href)}); inventory(${JSON.stringify(assets)}, true);`], { encoding: 'utf8', timeout: 10_000 });
+  assert.equal(child.status, 1); assert.match(child.stderr, /copied deployment policy matches tracked source/);
+});
+test('downloaded dist still rejects hidden policy and pre-upload rejects any other hidden input', t => {
+  const root = temporary(t); writeFileSync(join(root, 'index.html'), 'published');
+  writeFileSync(join(root, '.assetsignore'), readFileSync(new URL('../public/.assetsignore', import.meta.url)));
+  assert.throws(() => inventory(root), /unexpected hidden publish file/);
+  writeFileSync(join(root, '.unknown'), 'unexpected'); assert.throws(() => inventory(root, true), /unexpected hidden publish file/);
+});
+test('deployment policy directory and symlink cannot qualify as unpublished metadata', t => {
+  const root = temporary(t); writeFileSync(join(root, 'index.html'), 'published'); mkdirSync(join(root, '.assetsignore'));
+  assert.throws(() => inventory(root, true), /deployment policy must be regular/); rmSync(join(root, '.assetsignore'), { recursive: true });
+  writeFileSync(join(root, 'policy'), readFileSync(new URL('../public/.assetsignore', import.meta.url))); symlinkSync(join(root, 'policy'), join(root, '.assetsignore'));
+  assert.throws(() => inventory(root, true), /symlink in dist/);
+});

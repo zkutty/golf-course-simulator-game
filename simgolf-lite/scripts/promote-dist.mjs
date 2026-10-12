@@ -23,8 +23,9 @@ export const VISION_CASES = ['en', 'pseudo'].flatMap(locale => [320, 820, 1280, 
   file: 'zk741-player-career-vision.e2e.ts', title: `Player career Vision ${locale} ${width} paired app profile100 and130`, project: '',
 })));
 const WORKFLOW = '.github/workflows/ci.yml';
+const ASSETS_IGNORE_SHA256 = '67cf78011982c3b42d96b4eec7e652eb82fa61988a976f05faceda11da576c0a';
 const ARTIFACT_NAMES = ['dist', 'golden-path-e2e-report', 'vision-player-career-e2e-report', 'm65-machine-certification'];
-export const PIN_PATHS = [WORKFLOW, 'simgolf-lite/scripts/promote-dist.mjs', 'simgolf-lite/scripts/promote-dist.test.mjs', 'simgolf-lite/package.json', 'simgolf-lite/package-lock.json', 'simgolf-lite/vite.config.ts', 'simgolf-lite/playwright.config.ts', 'simgolf-lite/e2e/golden-path.e2e.ts', 'simgolf-lite/e2e/vision-page.e2e.ts', 'simgolf-lite/e2e/zk741-player-career-vision.e2e.ts', 'simgolf-lite/scripts/m65-certify.mjs', 'simgolf-lite/scripts/m65-certification-contract.mjs', 'simgolf-lite/release/m65-certification-manifest.json', 'simgolf-lite/src/game/analysis/analysis.worker.ts', 'simgolf-lite/src/game/analysis/benchmark.ts'];
+export const PIN_PATHS = [WORKFLOW, 'simgolf-lite/scripts/promote-dist.mjs', 'simgolf-lite/scripts/promote-dist.test.mjs', 'simgolf-lite/public/.assetsignore', 'simgolf-lite/package.json', 'simgolf-lite/package-lock.json', 'simgolf-lite/vite.config.ts', 'simgolf-lite/playwright.config.ts', 'simgolf-lite/e2e/golden-path.e2e.ts', 'simgolf-lite/e2e/vision-page.e2e.ts', 'simgolf-lite/e2e/zk741-player-career-vision.e2e.ts', 'simgolf-lite/scripts/m65-certify.mjs', 'simgolf-lite/scripts/m65-certification-contract.mjs', 'simgolf-lite/release/m65-certification-manifest.json', 'simgolf-lite/src/game/analysis/analysis.worker.ts', 'simgolf-lite/src/game/analysis/benchmark.ts'];
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const same = (a, b, label) => assert.deepEqual(a, b, label);
@@ -113,6 +114,13 @@ export function inventory(directory, omitAudit = false) {
       const path = relative ? `${relative}/${name}` : name;
       const info = lstatSync(join(directory, path));
       assert(!info.isSymbolicLink(), 'symlink in dist');
+      if (path === '.assetsignore' && omitAudit) {
+        assert(info.isFile(), 'deployment policy must be regular');
+        const policy = readFileSync(join(directory, path));
+        same(sha256(policy), ASSETS_IGNORE_SHA256, 'known unpublished deployment policy bytes');
+        same(policy, readFileSync(new URL('../public/.assetsignore', import.meta.url)), 'copied deployment policy matches tracked source');
+        continue;
+      }
       if (path === '.vite' && omitAudit) {
         same(readdirSync(join(directory, path)), ['manifest.json'], 'only known unpublished audit input');
         assert(lstatSync(join(directory, path, 'manifest.json')).isFile(), 'audit input must be regular');
