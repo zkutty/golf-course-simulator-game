@@ -14,6 +14,7 @@ export default defineConfig({
     video: "retain-on-failure",
     ...devices["Desktop Chrome"],
   },
+  projects: [{ use: { channel: "chromium" } }],
   webServer: {
     command: "npm run dev -- --configLoader runner --mode e2e --host 127.0.0.1 --port 4174",
     url: "http://127.0.0.1:4174",
