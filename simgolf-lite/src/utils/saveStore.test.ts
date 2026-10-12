@@ -29,6 +29,201 @@ function payload(week = 1, cash = 25_000, name = "Test Links"): SavePayload {
   };
 }
 
+/** Runs the production driver against serialized transactions and durable storage. */
+function transactionalIndexedDb() {
+  const values = new Map<string, string>();
+  const transactions: Array<{ mode: IDBTransactionMode; operations: string[] }> = [];
+  const pending: Array<() => Promise<void>> = [];
+  let running = false;
+  let holdNext = false;
+  let throwPut = 0;
+  let signalHeld: (() => void) | undefined;
+  let releaseHeld: ((abort: boolean) => void) | undefined;
+  const drain = async () => {
+    if (running) return;
+    running = true;
+    while (pending.length) await pending.shift()!();
+    running = false;
+  };
+  const database = {
+    transaction: (_store: string, mode: IDBTransactionMode) => {
+      const record = { mode, operations: [] as string[] };
+      transactions.push(record);
+      const requests: Array<() => void> = [];
+      const tx = {
+        oncomplete: null as Handler,
+        onerror: null as Handler,
+        onabort: null as Handler,
+        error: null as DOMException | null,
+        abort: () => {
+          if (aborted) throw new DOMException("Already aborted", "InvalidStateError");
+          aborted = true;
+          tx.error = new DOMException("Aborted", "AbortError");
+          queueMicrotask(() => tx.onabort?.(new Event("abort")));
+        },
+        objectStore: () => ({
+          get: (key: string) => request("get", () => staged.get(key)),
+          put: (value: string, key: string) => request("put", () => { staged.set(key, value); return key; }),
+          delete: (key: string) => request("delete", () => { staged.delete(key); }),
+        }),
+      };
+      let staged = new Map<string, string>();
+      let aborted = false;
+      function request<T>(operation: string, perform: () => T) {
+        record.operations.push(operation);
+        if (operation === "put" && throwPut && --throwPut === 0) throw new DOMException("Disk full", "QuotaExceededError");
+        const req = deferredRequest<T>(undefined as T);
+        requests.push(() => { req.result = perform(); req.onsuccess?.(new Event("success")); });
+        return req as unknown as IDBRequest<T>;
+      }
+      pending.push(async () => {
+        staged = new Map(values);
+        while (requests.length && !aborted) {
+          requests.shift()!();
+          await Promise.resolve();
+        }
+        if (mode === "readwrite" && holdNext && !aborted) {
+          holdNext = false;
+          await new Promise<void>((resolve) => {
+            releaseHeld = (abort) => { if (abort) tx.abort(); resolve(); };
+            signalHeld?.();
+          });
+        }
+        if (aborted) return;
+        if (mode === "readwrite") {
+          values.clear();
+          for (const [key, value] of staged) values.set(key, value);
+        }
+        tx.oncomplete?.(new Event("complete"));
+      });
+      queueMicrotask(() => { void drain(); });
+      return tx as unknown as IDBTransaction;
+    },
+  } as unknown as IDBDatabase;
+  const open = deferredRequest<IDBDatabase>(database);
+  const factory = { open: () => { queueMicrotask(() => open.onsuccess?.(new Event("success"))); return open; } } as unknown as IDBFactory;
+  return {
+    factory, values, transactions,
+    holdCommit: () => { holdNext = true; return new Promise<void>((resolve) => { signalHeld = resolve; }); },
+    finishCommit: (abort = false) => { releaseHeld?.(abort); },
+    throwOnPut: (ordinal: number) => { throwPut = ordinal; },
+  };
+}
+
+describe("atomic IndexedDB slot publication", () => {
+  beforeEach(() => __resetSaveStoreForTests());
+
+  it("commits a slot payload and manifest in one transaction against the production driver", async () => {
+    const fake = transactionalIndexedDb();
+    const driver = __createIndexedDbKVForTests(fake.factory);
+    await driver.ready;
+    __setSaveStoreKVForTests(driver);
+    const meta = await saveToSlot("atomic", "manual", "Atomic", payload(4));
+    expect(fake.transactions).toHaveLength(1);
+    expect(fake.transactions[0]).toEqual({ mode: "readwrite", operations: ["get", "put", "put"] });
+    expect(JSON.parse(fake.values.get("coursecraft_saves_manifest_v1")!)).toMatchObject([{ id: meta.id, week: 4 }]);
+    expect(JSON.parse(fake.values.get(meta.storageKey!)!).world.week).toBe(4);
+  });
+
+  it("publishes the replacement and notifies listeners only after transaction completion", async () => {
+    const fake = transactionalIndexedDb();
+    const driver = __createIndexedDbKVForTests(fake.factory);
+    await driver.ready;
+    __setSaveStoreKVForTests(driver);
+    const previous = await saveToSlot("atomic", "manual", "Atomic", payload(2));
+    const held = fake.holdCommit();
+    let notifications = 0;
+    let settled = false;
+    const unsubscribe = subscribeToSaveSlots(() => notifications++);
+    try {
+      const pending = saveToSlot("atomic", "manual", "Atomic", payload(9)).then((meta) => { settled = true; return meta; });
+      await held;
+      expect(settled).toBe(false);
+      expect(notifications).toBe(0);
+      expect((await listSlots())[0].week).toBe(2);
+      expect(fake.values.has(previous.storageKey!)).toBe(true);
+      fake.finishCommit();
+      const committed = await pending;
+      expect(settled).toBe(true);
+      expect(notifications).toBe(1);
+      expect((await listSlots())[0].week).toBe(9);
+      expect(fake.values.has(previous.storageKey!)).toBe(false);
+      expect(fake.values.has(committed.storageKey!)).toBe(true);
+    } finally { unsubscribe(); }
+  });
+
+  it("rolls back payload, manifest and cache after successful requests but an aborted commit", async () => {
+    const fake = transactionalIndexedDb();
+    const driver = __createIndexedDbKVForTests(fake.factory);
+    await driver.ready;
+    __setSaveStoreKVForTests(driver);
+    const previous = await saveToSlot("atomic", "manual", "Atomic", payload(2));
+    const before = [...fake.values];
+    const held = fake.holdCommit();
+    let notifications = 0;
+    const unsubscribe = subscribeToSaveSlots(() => notifications++);
+    try {
+      const pending = saveToSlot("atomic", "manual", "Atomic", payload(9));
+      const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      await held;
+      fake.finishCommit(true);
+      await rejected;
+      expect([...fake.values]).toEqual(before);
+      expect((await listSlots())[0].storageKey).toBe(previous.storageKey);
+      expect((await loadSlot(previous.id))?.world.week).toBe(2);
+      expect(notifications).toBe(0);
+    } finally { unsubscribe(); }
+  });
+
+  it("aborts queued payload writes if enqueueing the manifest throws synchronously", async () => {
+    const fake = transactionalIndexedDb();
+    const driver = __createIndexedDbKVForTests(fake.factory);
+    await driver.ready;
+    __setSaveStoreKVForTests(driver);
+    const previous = await saveToSlot("atomic", "manual", "Atomic", payload(2));
+    const before = [...fake.values];
+    fake.throwOnPut(2);
+    await expect(saveToSlot("atomic", "manual", "Atomic", payload(9))).rejects.toMatchObject({ name: "QuotaExceededError" });
+    expect([...fake.values]).toEqual(before);
+    expect((await listSlots())[0].storageKey).toBe(previous.storageKey);
+  });
+
+  it("keeps both simultaneous new slots in the current durable manifest", async () => {
+    const fake = transactionalIndexedDb();
+    const driver = __createIndexedDbKVForTests(fake.factory);
+    await driver.ready;
+    __setSaveStoreKVForTests(driver);
+    const saved = await Promise.all([saveToSlot("first", "manual", "First", payload(2)), saveToSlot("second", "manual", "Second", payload(9))]);
+    expect(fake.transactions).toHaveLength(2);
+    expect((await listSlots()).map((meta) => meta.id).sort()).toEqual(["first", "second"]);
+    expect(JSON.parse(fake.values.get("coursecraft_saves_manifest_v1")!).map((meta: { id: string }) => meta.id)).toEqual(["first", "second"]);
+    expect(saved.every((meta) => fake.values.has(meta.storageKey!))).toBe(true);
+  });
+
+  it("serializes simultaneous replacements and removes only superseded revision keys", async () => {
+    const fake = transactionalIndexedDb();
+    const driver = __createIndexedDbKVForTests(fake.factory);
+    await driver.ready;
+    __setSaveStoreKVForTests(driver);
+    const [first, second] = await Promise.all([saveToSlot("same", "manual", "Same", payload(2)), saveToSlot("same", "manual", "Same", payload(9))]);
+    expect((await listSlots())).toMatchObject([{ id: "same", seq: second.seq, week: 9 }]);
+    expect(fake.values.has(first.storageKey!)).toBe(false);
+    expect(fake.values.has(second.storageKey!)).toBe(true);
+    expect((await loadSlot("same"))?.world.week).toBe(9);
+  });
+
+  it("reads the durable manifest rather than overwriting an entry absent from the runtime cache", async () => {
+    const fake = transactionalIndexedDb();
+    const driver = __createIndexedDbKVForTests(fake.factory);
+    await driver.ready;
+    __setSaveStoreKVForTests(driver);
+    const previous = await saveToSlot("first", "manual", "First", payload(2));
+    await driver.set("coursecraft_saves_manifest_v1", JSON.stringify([previous, { ...previous, id: "other-runtime", storageKey: "other-runtime-payload" }]));
+    await saveToSlot("new", "manual", "New", payload(9));
+    expect((await listSlots()).map((meta) => meta.id).sort()).toEqual(["first", "new", "other-runtime"]);
+  });
+});
+
 type Handler = ((event: Event) => void) | null;
 
 interface FakeRequest<T> {

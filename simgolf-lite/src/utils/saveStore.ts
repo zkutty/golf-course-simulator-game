@@ -81,6 +81,7 @@ interface KV {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
   del(key: string): Promise<void>;
+  commitSlot?(meta: SaveSlotMeta, serializePayload: () => Promise<string>): Promise<SaveSlotMeta[] | null>;
 }
 
 function memoryKV(): KV {
@@ -171,6 +172,58 @@ function indexedDbKV(factory: IDBFactory = indexedDB): KV & { ready: Promise<voi
     get: (k) => tx<string | undefined>("readonly", (s) => s.get(k)).then((v) => v ?? null),
     set: (k, v) => tx("readwrite", (s) => s.put(v, k)).then(() => undefined),
     del: (k) => tx("readwrite", (s) => s.delete(k)).then(() => undefined),
+    commitSlot: async (meta, serializePayload) => {
+      // Serialization can load modules; finish it before opening a transaction.
+      const serialized = await serializePayload();
+      const db = await open;
+      return new Promise<SaveSlotMeta[]>((resolve, reject) => {
+        const transaction = db.transaction("kv", "readwrite");
+        const store = transaction.objectStore("kv");
+        let committedManifest: SaveSlotMeta[] | undefined;
+        let settled = false;
+        const fail = (error: unknown) => {
+          if (settled) return;
+          settled = true;
+          // A callback exception must not leave already queued writes live.
+          try { transaction.abort(); } catch { /* already aborted/completed */ }
+          reject(error);
+        };
+        transaction.onerror = () => fail(transaction.error ?? new Error("IndexedDB slot commit failed"));
+        transaction.onabort = () => fail(transaction.error ?? new Error("IndexedDB slot commit aborted"));
+        transaction.oncomplete = () => {
+          if (settled) return;
+          if (!committedManifest) { fail(new Error("IndexedDB slot commit completed without a manifest")); return; }
+          settled = true;
+          resolve(committedManifest);
+        };
+        const check = (request: IDBRequest) => {
+          request.onerror = () => fail(request.error ?? transaction.error ?? new Error("IndexedDB slot request failed"));
+        };
+        try {
+          const read = store.get(MANIFEST_KEY);
+          check(read);
+          read.onsuccess = () => {
+            try {
+              const manifest = parseManifest(read.result ?? null);
+              const index = manifest.findIndex((entry) => entry.id === meta.id);
+              const previous = index >= 0 ? manifest[index] : undefined;
+              if (!meta.storageKey) throw new Error("IndexedDB slot commit requires a revision key");
+              check(store.put(serialized, meta.storageKey));
+              if (index >= 0) manifest[index] = meta;
+              else manifest.push(meta);
+              if (failNextManifestWrite) {
+                failNextManifestWrite = false;
+                throw new Error("Simulated interrupted manifest commit");
+              }
+              check(store.put(JSON.stringify(manifest), MANIFEST_KEY));
+              const previousKey = payloadKey(previous, meta.id);
+              if (previous && previousKey !== meta.storageKey) check(store.delete(previousKey));
+              committedManifest = manifest;
+            } catch (error) { fail(error); }
+          };
+        } catch (error) { fail(error); }
+      });
+    },
   };
 }
 
@@ -204,6 +257,7 @@ function pickKV(): KV {
       get: (k) => driver.then((d) => d.get(k)),
       set: (k, v) => driver.then((d) => d.set(k, v)),
       del: (k) => driver.then((d) => d.del(k)),
+      commitSlot: (meta, serializePayload) => driver.then((d) => d.commitSlot?.(meta, serializePayload) ?? null),
     };
   } catch {
     return fallbackKV();
@@ -324,7 +378,10 @@ export async function __deleteSlotPayloadForTests(id: string): Promise<void> {
 async function readManifest(): Promise<SaveSlotMeta[]> {
   const cached = manifestCache();
   if (cached) return copyManifest(cached);
-  const raw = await kv.get(MANIFEST_KEY);
+  return parseManifest(await kv.get(MANIFEST_KEY));
+}
+
+function parseManifest(raw: string | null): SaveSlotMeta[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as SaveSlotMeta[];
@@ -439,10 +496,15 @@ export async function saveToSlot(
   await migrateLegacyOnce();
   const slotId = id ?? `${kind}-${Date.now().toString(36)}`;
   const meta = metaFor(slotId, kind, name, payload);
+  meta.storageKey = `${SLOT_PREFIX}${slotId}@${meta.savedAt.toString(36)}-${meta.seq.toString(36)}`;
+  const committed = await kv.commitSlot?.(meta, async () => JSON.stringify(await payloadToFile(payload)));
+  if (committed) {
+    commitManifestCache(committed);
+    return meta;
+  }
   const manifest = await readManifest();
   const idx = manifest.findIndex((m) => m.id === slotId);
   const previous = idx >= 0 ? manifest[idx] : undefined;
-  meta.storageKey = `${SLOT_PREFIX}${slotId}@${meta.savedAt.toString(36)}-${meta.seq.toString(36)}`;
   await kv.set(meta.storageKey, JSON.stringify(await payloadToFile(payload)));
   if (idx >= 0) manifest[idx] = meta;
   else manifest.push(meta);

@@ -16,6 +16,9 @@ jobs:
     # The full Playwright regression can exceed 30 minutes on GitHub's shared
     # runners, in addition to setup, typecheck, lint, and unit tests.
     timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
 
@@ -100,12 +103,17 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Verify exact first-attempt Golden and Vision reports
+        run: node scripts/promote-dist.mjs verify-reports
+
+      - name: Artifact promotion contract tests
+        run: node --test scripts/promote-dist.test.mjs
+
       - name: Build
         run: npm run build
         env:
-          # No VITE_SENTRY_ENVIRONMENT override here: this artifact is reused
-          # unmodified by both the staging and production deploy jobs below,
-          # so the environment tag is resolved from hostname at runtime instead.
+          # Accepted development assets are promoted unchanged to production.
+          # Resolve the environment tag from hostname at runtime.
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_CF_WEB_ANALYTICS_TOKEN: ${{ vars.VITE_CF_WEB_ANALYTICS_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
@@ -117,6 +125,21 @@ jobs:
         with:
           name: dist
           path: simgolf-lite/dist
+          retention-days: 7
+
+      - name: Bind release receipt to immutable CI artifacts
+        if: github.event_name == 'push'
+        run: node scripts/promote-dist.mjs receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload release receipt
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-receipt
+          path: simgolf-lite/release-evidence/release-receipt.json
+          if-no-files-found: error
           retention-days: 7
 
   deploy-playtest:
@@ -164,15 +187,42 @@ jobs:
       name: cloudflare
     permissions:
       contents: read
+      actions: read
       deployments: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download tested build
-        uses: actions/download-artifact@v4
         with:
-          name: dist
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Select and verify accepted development artifact
+        run: node scripts/promote-dist.mjs promote
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload production consumed artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-consumed-dist
           path: simgolf-lite/dist
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload exact artifact promotion receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-promotion-receipt
+          path: simgolf-lite/promotion-evidence/promotion-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Recheck selected provenance and raw deployed files
+        run: node scripts/promote-dist.mjs recheck
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Deploy static assets
         uses: cloudflare/wrangler-action@v3
