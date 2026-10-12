@@ -1256,3 +1256,62 @@
     transition-duration: .001ms !important;
   }
 }
+
+
+/* Player career section: keep every text size tied to the app accessibility scale. */
+.cc-vision-player-career .cc-vision-section-heading {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cc-vision-player-career .cc-vision-section-heading .cc-vision-kicker {
+  color: var(--vision-forest);
+  font-size: .6875rem;
+  line-height: 1.4;
+}
+
+.cc-vision-player-career .cc-vision-section-heading h2 {
+  font-size: 2.375rem;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+
+.cc-vision-player-career .cc-vision-section-heading > p:last-child {
+  color: var(--vision-forest);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.cc-vision-player-career .cc-vision-feature-grid {
+  min-width: 0;
+}
+
+.cc-vision-player-career .cc-vision-feature {
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+.cc-vision-player-career .cc-vision-feature h3 {
+  margin-top: 0;
+  font-size: 1.5rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.cc-vision-player-career .cc-vision-feature p {
+  font-size: 1rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.cc-vision-player-career .cc-vision-feature small {
+  color: var(--vision-forest);
+  font-size: .75rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  text-transform: none;
+}

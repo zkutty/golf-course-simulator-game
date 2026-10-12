@@ -49,6 +49,18 @@ const SYSTEM_STORIES: SystemStory[] = [
   { eyebrow: "vision.loop.card.remember.eyebrow", title: "vision.loop.card.remember.title", body: "vision.loop.card.remember.body", detail: "vision.loop.card.remember.detail" },
 ];
 
+type PlayerCareerFeature = {
+  title: MessageKey;
+  body: MessageKey;
+  detail: MessageKey;
+};
+
+const PLAYER_CAREER_FEATURES: PlayerCareerFeature[] = [
+  { title: "vision.playerCareer.handicap.title", body: "vision.playerCareer.handicap.body", detail: "vision.playerCareer.handicap.detail" },
+  { title: "vision.playerCareer.scorecard.title", body: "vision.playerCareer.scorecard.body", detail: "vision.playerCareer.scorecard.detail" },
+  { title: "vision.playerCareer.tournament.title", body: "vision.playerCareer.tournament.body", detail: "vision.playerCareer.tournament.detail" },
+];
+
 const CHAPTERS = [
   { number: "01", title: "vision.chapter.land.title", body: "vision.chapter.land.body" },
   { number: "02", title: "vision.chapter.course.title", body: "vision.chapter.course.body" },
@@ -213,6 +225,28 @@ export function VisionPage({ onClose }: { onClose: () => void }) {
               <h3>{t(feature.title)}</h3>
               <p>{t(feature.body)}</p>
               <strong>{t(feature.detail)}</strong>
+            </article>
+          ))}
+        </div>
+      </section>
+
+
+      <section
+        className="cc-vision-systems cc-vision-player-career"
+        data-testid="vision-player-career"
+        aria-labelledby="vision-player-career-title"
+      >
+        <div className="cc-vision-section-heading">
+          <p className="cc-vision-kicker">{t("vision.playerCareer.kicker")}</p>
+          <h2 id="vision-player-career-title">{t("vision.playerCareer.title")}</h2>
+          <p>{t("vision.playerCareer.body")}</p>
+        </div>
+        <div className="cc-vision-feature-grid">
+          {PLAYER_CAREER_FEATURES.map((feature) => (
+            <article key={feature.title} className="cc-vision-feature">
+              <h3>{t(feature.title)}</h3>
+              <p>{t(feature.body)}</p>
+              <small>{t(feature.detail)}</small>
             </article>
           ))}
         </div>

@@ -32,7 +32,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(caches.match(event.request, matchOptions).then(async (cached) => {
       if (cached) return cached;
       const response = await fetch(event.request);
-      if (response.ok || response.type === "opaque") {
+      if (response.status !== 206 && (response.ok || response.type === "opaque")) {
         const cache = await caches.open(VERSION);
         await cache.put(event.request, response.clone());
       }

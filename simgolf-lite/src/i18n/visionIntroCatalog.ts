@@ -39,6 +39,19 @@ export const visionIntroEn = {
   "vision.course.beat2": "Multiple tees, pins, and daily setups",
   "vision.course.beat3": "Golfer skill, personality, and shot planning",
   "vision.course.beat4": "Architecture reports and safety tradeoffs",
+  // Player career copy is grounded in posted scoring and recorded event results.
+  "vision.playerCareer.kicker": "Your Player Pro",
+  "vision.playerCareer.title": "A career written on the scorecard.",
+  "vision.playerCareer.body": "Your course becomes a place to find your own playing level. Read each round, build a score history, and follow the field with a record you can return to.",
+  "vision.playerCareer.handicap.title": "Know your game",
+  "vision.playerCareer.handicap.body": "Begin with a provisional Handicap Index, then build a history of eligible posted scores. Training develops your shot skills; confidence changes with practice and play. Your Index follows the score record.",
+  "vision.playerCareer.handicap.detail": "Skills, confidence, and scores each have their own role.",
+  "vision.playerCareer.scorecard.title": "Read the round",
+  "vision.playerCareer.scorecard.body": "Check the tees, rating, slope, and strokes received before play. Read gross and net scores on the competition card, then revisit the recorded scores and posting state.",
+  "vision.playerCareer.scorecard.detail": "The setup stays with the round.",
+  "vision.playerCareer.tournament.title": "Follow the field",
+  "vision.playerCareer.tournament.body": "Follow scheduled events and frozen setups, then read standings reconstructed from recorded scorecards. Tied winners stay together, and participant gross cards remain part of the record. In recorded Pro-Am results, a scored hole counts the best two net balls, including at least one amateur.",
+  "vision.playerCareer.tournament.detail": "Read the result through the evidence behind it.",
 } as const;
 
 export function registerVisionIntroCatalog(): () => void {

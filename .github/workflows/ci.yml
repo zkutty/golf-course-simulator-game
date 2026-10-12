@@ -81,6 +81,25 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      - name: Vision Player Pro narrative regression
+        run: npx playwright test e2e/zk741-player-career-vision.e2e.ts --workers=1 --retries=0 --output=vision-player-career-test-results --reporter=github,html,json
+        env:
+          VISION_CAREER_EVIDENCE_DIR: vision-player-career-evidence
+          PLAYWRIGHT_HTML_OUTPUT_DIR: vision-player-career-report
+          PLAYWRIGHT_JSON_OUTPUT_NAME: vision-player-career-report/results.json
+
+      - name: Upload Vision Player Pro narrative report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision-player-career-e2e-report
+          path: |
+            simgolf-lite/vision-player-career-report
+            simgolf-lite/vision-player-career-test-results
+            simgolf-lite/vision-player-career-evidence
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Build
         run: npm run build
         env:
