@@ -209,3 +209,36 @@ test('initial receipt binds authenticated successful Build metadata even while C
   const j = copy(jobs); j[0].status = 'in_progress'; j[0].conclusion = null; assert.equal(initialBuild(j, ctx).jobID, 31);
   j[0].steps[0].conclusion = 'failure'; assert.throws(() => initialBuild(j, ctx));
 });
+
+
+test('real receipt CLI remains red and reports only context enum on invalid context', () => {
+  const secret = 'SECRET-do-not-print-signed-url-token';
+  const child = spawnSync(process.execPath, [fileURLToPath(new URL('./promote-dist.mjs', import.meta.url)), 'receipt'], { env: { ...process.env, GITHUB_SHA: secret, GH_TOKEN: secret }, encoding: 'utf8', timeout: 10_000 });
+  assert.equal(child.status, 1); assert.equal(child.stdout, '');
+  assert.equal(child.stderr, 'Artifact promotion verification failed; deployment is blocked. phase=context error=assertion\n');
+  assert(!child.stderr.includes(secret));
+});
+test('known diagnostic phase never serializes assertion actual expected or stack', async () => {
+  const { failureDiagnostic } = await import('./promote-dist.mjs');
+  const secret = 'SECRET-CREDENTIAL';
+  const error = Object.assign(new Error(secret), { code: 'ERR_ASSERTION', actual: secret, expected: secret, stack: secret, headers: { Authorization: secret } });
+  for (const phase of ['receipt-artifacts', 'receipt-release-identity']) assert.equal(failureDiagnostic(phase, error), `Artifact promotion verification failed; deployment is blocked. phase=${phase} error=assertion\n`);
+});
+test('unknown phase containing signed URL is mapped to static unknown', async () => {
+  const { failureDiagnostic } = await import('./promote-dist.mjs');
+  assert.equal(failureDiagnostic('https://signed.invalid/?token=SECRET', new Error('SECRET')), 'Artifact promotion verification failed; deployment is blocked. phase=unknown error=verification\n');
+});
+test('malformed phase and error names cannot inject diagnostic output', async () => {
+  const { failureDiagnostic } = await import('./promote-dist.mjs');
+  assert.equal(failureDiagnostic('receipt-run\nSECRET', { name: 'TypeError\nSECRET', code: 'ERR_ASSERTION\nSECRET' }), 'Artifact promotion verification failed; deployment is blocked. phase=unknown error=verification\n');
+});
+test('diagnostic property getter failure cannot expose thrown credentials', async () => {
+  const { failureDiagnostic } = await import('./promote-dist.mjs');
+  assert.equal(failureDiagnostic('receipt-run', { get code() { throw new Error('SECRET'); } }), 'Artifact promotion verification failed; deployment is blocked. phase=receipt-run error=verification\n');
+});
+test('timeout and type categories expose no raw message or request metadata', async () => {
+  const { failureDiagnostic } = await import('./promote-dist.mjs');
+  for (const [name, category] of [['TimeoutError', 'timeout'], ['AbortError', 'timeout'], ['TypeError', 'type']]) {
+    assert.equal(failureDiagnostic('receipt-run', { name, message: 'SECRET', request: { signedURL: 'SECRET' } }), `Artifact promotion verification failed; deployment is blocked. phase=receipt-run error=${category}\n`);
+  }
+});

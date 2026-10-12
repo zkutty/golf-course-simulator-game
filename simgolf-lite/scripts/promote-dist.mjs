@@ -325,25 +325,41 @@ async function verifyPromotion(api, ctx, repoRoot, root, promotion) {
   if (promotion.sentry) same(promotion.sentry, sentry, 'Sentry provenance recheck'); else promotion.sentry = sentry;
   return receipt;
 }
+const DIAGNOSTIC_PHASES = new Set(['context', 'verify-reports', 'receipt-run', 'receipt-artifacts', 'receipt-release-identity', 'receipt-source-pins', 'receipt-build-metadata', 'receipt-reports', 'receipt-m65', 'receipt-inventory', 'receipt-worker-binding', 'receipt-debug-bindings', 'receipt-write', 'promotion']);
+let diagnosticPhase = 'context';
+function receiptPhase(phase, operation) { diagnosticPhase = phase; return operation(); }
+export function failureDiagnostic(phase, error) {
+  const safePhase = DIAGNOSTIC_PHASES.has(phase) ? phase : 'unknown';
+  let category = 'verification';
+  try {
+    if (error?.code === 'ERR_ASSERTION') category = 'assertion';
+    else if (error?.name === 'AbortError' || error?.name === 'TimeoutError') category = 'timeout';
+    else if (error?.name === 'TypeError') category = 'type';
+  } catch { /* Diagnostic property reads cannot expose a thrown value. */ }
+  return `Artifact promotion verification failed; deployment is blocked. phase=${safePhase} error=${category}\n`;
+}
 async function main(mode) {
   const project = process.cwd(), repoRoot = resolve(project, '..');
   if (mode === 'verify-reports') {
+    diagnosticPhase = 'verify-reports';
     verifyReports(join(project, 'playwright-report/index.html'), join(project, 'vision-player-career-report/results.json')); return;
   }
   const ctx = context(), api = new GitHub(ctx.repository, process.env.GH_TOKEN);
   if (mode === 'receipt') {
-    const run = await api.request(`/actions/runs/${ctx.runID}`);
+    const run = await receiptPhase('receipt-run', () => api.request(`/actions/runs/${ctx.runID}`));
     same(run.id, ctx.runID, 'current run ID'); same(run.head_sha, ctx.sha, 'current run SHA'); same(run.run_attempt, 1, 'current run attempt');
-    const artifacts = artifactSet(await api.pages(`/actions/runs/${ctx.runID}/artifacts`, 'artifacts'), ARTIFACT_NAMES, run);
+    const artifacts = await receiptPhase('receipt-artifacts', async () => artifactSet(await api.pages(`/actions/runs/${ctx.runID}/artifacts`, 'artifacts'), ARTIFACT_NAMES, run));
     const receipt = {
-      schema: 1, ...ctx, release: releaseIdentity(repoRoot, ctx.sha), sourcePins: sourcePins(repoRoot),
-      authenticatedBuild: initialBuild(await api.pages(`/actions/runs/${ctx.runID}/attempts/1/jobs`, 'jobs'), ctx),
-      reports: verifyReports(join(project, 'playwright-report/index.html'), join(project, 'vision-player-career-report/results.json')),
-      m65: m65Binding(repoRoot, join(project, 'artifacts/m65/certification-report.json')), artifacts, files: inventory(join(project, 'dist'), true),
-      sentry: { scope: 'authenticated-build-debug-bindings; upload-log-verification-required-at-promotion', uninstrumentedWorker: { type: 'Vite separate analysis worker', source: 'src/game/analysis/analysis.worker.ts', published: inventory(join(project, 'dist'), true).filter(f => /^assets\/analysis\.worker-[\w-]+\.js$/.test(f.path)) }, debugBindings: debugBindings(join(project, 'dist')) },
+      schema: 1, ...ctx, release: receiptPhase('receipt-release-identity', () => releaseIdentity(repoRoot, ctx.sha)), sourcePins: receiptPhase('receipt-source-pins', () => sourcePins(repoRoot)),
+      authenticatedBuild: await receiptPhase('receipt-build-metadata', async () => initialBuild(await api.pages(`/actions/runs/${ctx.runID}/attempts/1/jobs`, 'jobs'), ctx)),
+      reports: receiptPhase('receipt-reports', () => verifyReports(join(project, 'playwright-report/index.html'), join(project, 'vision-player-career-report/results.json'))),
+      m65: receiptPhase('receipt-m65', () => m65Binding(repoRoot, join(project, 'artifacts/m65/certification-report.json'))), artifacts, files: receiptPhase('receipt-inventory', () => inventory(join(project, 'dist'), true)),
+      sentry: { scope: 'authenticated-build-debug-bindings; upload-log-verification-required-at-promotion', uninstrumentedWorker: { type: 'Vite separate analysis worker', source: 'src/game/analysis/analysis.worker.ts', published: receiptPhase('receipt-worker-binding', () => inventory(join(project, 'dist'), true).filter(f => /^assets\/analysis\.worker-[\w-]+\.js$/.test(f.path))) }, debugBindings: receiptPhase('receipt-debug-bindings', () => debugBindings(join(project, 'dist'))) },
     };
+    diagnosticPhase = 'receipt-write';
     mkdirSync(join(project, 'release-evidence'), { recursive: true }); writeJson(join(project, 'release-evidence/release-receipt.json'), receipt); return;
   }
+  diagnosticPhase = 'promotion';
   same(ctx.branch, 'main', 'production branch');
   const root = join(project, 'promotion-evidence');
   if (mode === 'promote') {
@@ -362,5 +378,5 @@ async function main(mode) {
   await verifyPromotion(api, ctx, repoRoot, root, json(join(root, 'promotion-receipt.json')));
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main(process.argv[2]).catch(() => { process.stderr.write('Artifact promotion verification failed; deployment is blocked.\n'); process.exitCode = 1; });
+  main(process.argv[2]).catch(error => { process.stderr.write(failureDiagnostic(diagnosticPhase, error)); process.exitCode = 1; });
 }
