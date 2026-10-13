@@ -25,7 +25,7 @@
         "x": 196,
         "y": 2,
         "w": 128,
-        "h": 164
+        "h": 113
       },
       "rotated": false,
       "trimmed": false,
@@ -33,39 +33,39 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 164
+        "h": 113
       },
       "sourceSize": {
         "w": 128,
-        "h": 164
+        "h": 113
       }
     },
     "links_bin": {
       "frame": {
         "x": 326,
         "y": 2,
-        "w": 128,
-        "h": 190
+        "w": 113,
+        "h": 192
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
-        "h": 190
+        "w": 113,
+        "h": 192
       },
       "sourceSize": {
-        "w": 128,
-        "h": 190
+        "w": 113,
+        "h": 192
       }
     },
     "links_boardwalk": {
       "frame": {
-        "x": 456,
+        "x": 441,
         "y": 2,
         "w": 128,
-        "h": 105
+        "h": 102
       },
       "rotated": false,
       "trimmed": false,
@@ -73,16 +73,16 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 105
+        "h": 102
       },
       "sourceSize": {
         "w": 128,
-        "h": 105
+        "h": 102
       }
     },
     "links_bridge": {
       "frame": {
-        "x": 586,
+        "x": 571,
         "y": 2,
         "w": 128,
         "h": 102
@@ -102,7 +102,7 @@
     },
     "links_bridge_approach": {
       "frame": {
-        "x": 716,
+        "x": 701,
         "y": 2,
         "w": 128,
         "h": 106
@@ -123,7 +123,7 @@
     "links_cart_rental_t1": {
       "frame": {
         "x": 2,
-        "y": 194,
+        "y": 196,
         "w": 192,
         "h": 160
       },
@@ -143,7 +143,7 @@
     "links_cart_rental_t2": {
       "frame": {
         "x": 196,
-        "y": 194,
+        "y": 196,
         "w": 192,
         "h": 160
       },
@@ -163,7 +163,7 @@
     "links_cart_rental_t3": {
       "frame": {
         "x": 390,
-        "y": 194,
+        "y": 196,
         "w": 192,
         "h": 160
       },
@@ -183,7 +183,7 @@
     "links_clubhouse_t1": {
       "frame": {
         "x": 584,
-        "y": 194,
+        "y": 196,
         "w": 256,
         "h": 256
       },
@@ -203,9 +203,9 @@
     "links_fence": {
       "frame": {
         "x": 842,
-        "y": 194,
+        "y": 196,
         "w": 128,
-        "h": 140
+        "h": 97
       },
       "rotated": false,
       "trimmed": false,
@@ -213,19 +213,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 140
+        "h": 97
       },
       "sourceSize": {
         "w": 128,
-        "h": 140
+        "h": 97
       }
     },
     "links_flower_bed": {
       "frame": {
         "x": 2,
-        "y": 452,
+        "y": 454,
         "w": 128,
-        "h": 128
+        "h": 100
       },
       "rotated": false,
       "trimmed": false,
@@ -233,18 +233,18 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 128
+        "h": 100
       },
       "sourceSize": {
         "w": 128,
-        "h": 128
+        "h": 100
       }
     },
     "links_lamp": {
       "frame": {
         "x": 132,
-        "y": 452,
-        "w": 98,
+        "y": 454,
+        "w": 64,
         "h": 192
       },
       "rotated": false,
@@ -252,20 +252,20 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 98,
+        "w": 64,
         "h": 192
       },
       "sourceSize": {
-        "w": 98,
+        "w": 64,
         "h": 192
       }
     },
     "links_ornamental_feature": {
       "frame": {
-        "x": 232,
-        "y": 452,
+        "x": 198,
+        "y": 454,
         "w": 128,
-        "h": 141
+        "h": 131
       },
       "rotated": false,
       "trimmed": false,
@@ -273,19 +273,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 141
+        "h": 131
       },
       "sourceSize": {
         "w": 128,
-        "h": 141
+        "h": 131
       }
     },
     "links_parked_cart": {
       "frame": {
-        "x": 362,
-        "y": 452,
+        "x": 328,
+        "y": 454,
         "w": 128,
-        "h": 143
+        "h": 129
       },
       "rotated": false,
       "trimmed": false,
@@ -293,19 +293,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 143
+        "h": 129
       },
       "sourceSize": {
         "w": 128,
-        "h": 143
+        "h": 129
       }
     },
     "links_planter": {
       "frame": {
-        "x": 492,
-        "y": 452,
+        "x": 458,
+        "y": 454,
         "w": 128,
-        "h": 158
+        "h": 137
       },
       "rotated": false,
       "trimmed": false,
@@ -313,17 +313,17 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 158
+        "h": 137
       },
       "sourceSize": {
         "w": 128,
-        "h": 158
+        "h": 137
       }
     },
     "links_pro_shop_t1": {
       "frame": {
-        "x": 622,
-        "y": 452,
+        "x": 588,
+        "y": 454,
         "w": 192,
         "h": 150
       },
@@ -342,8 +342,8 @@
     },
     "links_pro_shop_t2": {
       "frame": {
-        "x": 816,
-        "y": 452,
+        "x": 782,
+        "y": 454,
         "w": 192,
         "h": 150
       },
@@ -363,7 +363,7 @@
     "links_pro_shop_t3": {
       "frame": {
         "x": 2,
-        "y": 646,
+        "y": 648,
         "w": 192,
         "h": 150
       },
@@ -383,7 +383,7 @@
     "links_snack_bar_t1": {
       "frame": {
         "x": 196,
-        "y": 646,
+        "y": 648,
         "w": 192,
         "h": 146
       },
@@ -403,7 +403,7 @@
     "links_snack_bar_t2": {
       "frame": {
         "x": 390,
-        "y": 646,
+        "y": 648,
         "w": 192,
         "h": 146
       },
@@ -423,7 +423,7 @@
     "links_snack_bar_t3": {
       "frame": {
         "x": 584,
-        "y": 646,
+        "y": 648,
         "w": 192,
         "h": 146
       },
@@ -443,31 +443,31 @@
     "links_tee_sign": {
       "frame": {
         "x": 778,
-        "y": 646,
-        "w": 120,
-        "h": 192
+        "y": 648,
+        "w": 128,
+        "h": 173
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 120,
-        "h": 192
+        "w": 128,
+        "h": 173
       },
       "sourceSize": {
-        "w": 120,
-        "h": 192
+        "w": 128,
+        "h": 173
       }
     }
   },
   "meta": {
     "app": "simgolf-lite build-atlas",
-    "image": "buildings-decor-links-high.8c0014a6e7d2.png",
+    "image": "buildings-decor-links-high.6fc2d699ac25.png",
     "format": "RGBA8888",
     "size": {
-      "w": 1010,
-      "h": 840
+      "w": 976,
+      "h": 823
     },
     "scale": "1"
   }

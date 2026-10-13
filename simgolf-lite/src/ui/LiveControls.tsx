@@ -3,8 +3,8 @@ import { LIVE, type SpeedName } from "../game/live/liveConfig";
 import { formatCurrency, formatDayLabel, formatWeekLabel } from "../i18n/format";
 import type { LiveStatus } from "../hooks/useLiveSimulation";
 import { translateCurrent } from "../i18n/core";
-import type { PinRotation } from "../game/models/types";
-import { PIN_ROTATIONS } from "../game/models/courseSetup";
+import type { Hole, PinRotation } from "../game/models/types";
+import { dailyPinFallbacks, PIN_ROTATIONS } from "../game/models/courseSetup";
 
 const SPEEDS: { key: SpeedName; label: string }[] = [
   { key: "paused", label: "❚❚" },
@@ -31,10 +31,12 @@ export function LiveControls(props: {
   onOpenOverview?: () => void;
   overviewOpen?: boolean;
   activePinRotation?: PinRotation;
+  holes?: readonly Hole[];
   onSetActivePinRotation?: (rotation: PinRotation) => void;
 }) {
   const { status, speed, onSetSpeed, cash, reputation } = props;
   const last = status.lastDay;
+  const pinFallbacks = dailyPinFallbacks(props.holes ?? [], props.activePinRotation ?? "A");
   const controlsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -89,6 +91,12 @@ export function LiveControls(props: {
         <span style={{ opacity: 0.7, fontSize: 11 }}>{formatWeekLabel(props.week)} · {formatDayLabel(status.dayIndex + 1)}</span>
         <div aria-hidden="true" style={{ height: 3, borderRadius: 3, background: "rgba(255,255,255,.14)", marginTop: 4, overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, status.dayMinute / LIVE.day.closeMinute * 100))}%`, background: "#86efac" }} /></div>
         {props.onSetActivePinRotation && <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, opacity: .9, marginTop: 4 }}>{translateCurrent("courseSetup.dailyPin")}<select data-testid="daily-pin-rotation" aria-label={translateCurrent("courseSetup.activePin")} value={props.activePinRotation ?? "A"} onChange={(event) => props.onSetActivePinRotation?.(event.target.value as PinRotation)} style={{ background: "#23352a", color: "white", border: "1px solid rgba(255,255,255,.3)", borderRadius: 5, fontSize: 10 }}>{PIN_ROTATIONS.map((rotation) => <option key={rotation}>{rotation}</option>)}</select></label>}
+        {props.onSetActivePinRotation && PIN_ROTATIONS.map((resolved) => {
+          const fallbackHoles = pinFallbacks.filter((fallback) => fallback.pinRotation === resolved);
+          return fallbackHoles.length > 0 && <span key={resolved} data-testid="daily-pin-fallback-status" role="status" style={{ fontSize: 10, lineHeight: 1.25, marginTop: 4, color: "#fde68a", maxWidth: 210 }}>
+            {translateCurrent(fallbackHoles.length === 1 ? "courseSetup.pinFallbackOneHole" : "courseSetup.pinFallbackHoles", {requested: props.activePinRotation ?? "A", resolved, count: fallbackHoles.length})}
+          </span>;
+        })}
       </div>
 
       <div style={{ display: "flex", gap: 4 }}>

@@ -40,7 +40,7 @@ export function holeForCourseSetup(hole: Hole, teeSet: TeeSet, pinRotation: PinR
   return {
     ...hole,
     tee: getTeeBox(hole, teeSet),
-    green: getPinPosition(hole, pinRotation),
+    green: resolveCourseSetup(hole, teeSet, pinRotation).pin,
     parMode: par.mode,
     parManual: par.mode === "MANUAL" ? par.par : undefined,
   };
@@ -137,6 +137,16 @@ export function resolveCourseSetup(
     usedTeeFallback: teeSet !== requestedTeeSet,
     usedPinFallback: pinRotation !== requestedPinRotation,
   };
+}
+
+/** Explicit presentation evidence from the same resolver used by round setup. */
+export function dailyPinFallbacks(holes: readonly Hole[], requestedPinRotation: PinRotation) {
+  return holes.flatMap((hole, holeIndex) => {
+    const setup = resolveCourseSetup(hole, "member", requestedPinRotation);
+    return setup.pin && setup.usedPinFallback
+      ? [{ holeIndex, requestedPinRotation, pinRotation: setup.pinRotation }]
+      : [];
+  });
 }
 
 export function preferredTeeForArchetype(archetype: string): TeeSet {

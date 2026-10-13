@@ -50,13 +50,13 @@
       "high": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-parkland-high.291bca113f4e.json",
-            "image": "buildings-decor-parkland-high.bc2b7a340d96.png",
-            "jsonBytes": 8257,
-            "imageBytes": 1169073,
+            "json": "buildings-decor-parkland-high.755f5ce0a07c.json",
+            "image": "buildings-decor-parkland-high.4aa03218a96a.png",
+            "jsonBytes": 8253,
+            "imageBytes": 1046421,
             "frames": 23,
-            "width": 1010,
-            "height": 840,
+            "width": 976,
+            "height": 823,
             "scale": "1",
             "mipDivisor": 1
           },
@@ -175,13 +175,13 @@
       "medium": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-parkland-high.291bca113f4e.json",
-            "image": "buildings-decor-parkland-high.bc2b7a340d96.png",
-            "jsonBytes": 8257,
-            "imageBytes": 1169073,
+            "json": "buildings-decor-parkland-high.755f5ce0a07c.json",
+            "image": "buildings-decor-parkland-high.4aa03218a96a.png",
+            "jsonBytes": 8253,
+            "imageBytes": 1046421,
             "frames": 23,
-            "width": 1010,
-            "height": 840,
+            "width": 976,
+            "height": 823,
             "scale": "1",
             "mipDivisor": 1
           },
@@ -300,13 +300,13 @@
       "low": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-parkland-high.291bca113f4e.json",
-            "image": "buildings-decor-parkland-high.bc2b7a340d96.png",
-            "jsonBytes": 8257,
-            "imageBytes": 1169073,
+            "json": "buildings-decor-parkland-high.755f5ce0a07c.json",
+            "image": "buildings-decor-parkland-high.4aa03218a96a.png",
+            "jsonBytes": 8253,
+            "imageBytes": 1046421,
             "frames": 23,
-            "width": 1010,
-            "height": 840,
+            "width": 976,
+            "height": 823,
             "scale": "1",
             "mipDivisor": 1
           },
@@ -333,13 +333,13 @@
       "high": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-links-high.9249a187daa8.json",
-            "image": "buildings-decor-links-high.8c0014a6e7d2.png",
-            "jsonBytes": 8188,
-            "imageBytes": 1174975,
+            "json": "buildings-decor-links-high.a0b85a3cda0c.json",
+            "image": "buildings-decor-links-high.6fc2d699ac25.png",
+            "jsonBytes": 8184,
+            "imageBytes": 1050267,
             "frames": 23,
-            "width": 1010,
-            "height": 840,
+            "width": 976,
+            "height": 823,
             "scale": "1",
             "mipDivisor": 1
           },
@@ -458,13 +458,13 @@
       "medium": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-links-high.9249a187daa8.json",
-            "image": "buildings-decor-links-high.8c0014a6e7d2.png",
-            "jsonBytes": 8188,
-            "imageBytes": 1174975,
+            "json": "buildings-decor-links-high.a0b85a3cda0c.json",
+            "image": "buildings-decor-links-high.6fc2d699ac25.png",
+            "jsonBytes": 8184,
+            "imageBytes": 1050267,
             "frames": 23,
-            "width": 1010,
-            "height": 840,
+            "width": 976,
+            "height": 823,
             "scale": "1",
             "mipDivisor": 1
           },
@@ -583,13 +583,13 @@
       "low": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-links-high.9249a187daa8.json",
-            "image": "buildings-decor-links-high.8c0014a6e7d2.png",
-            "jsonBytes": 8188,
-            "imageBytes": 1174975,
+            "json": "buildings-decor-links-high.a0b85a3cda0c.json",
+            "image": "buildings-decor-links-high.6fc2d699ac25.png",
+            "jsonBytes": 8184,
+            "imageBytes": 1050267,
             "frames": 23,
-            "width": 1010,
-            "height": 840,
+            "width": 976,
+            "height": 823,
             "scale": "1",
             "mipDivisor": 1
           },
@@ -616,13 +616,13 @@
       "high": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-desert-high.ae1b0dc467b2.json",
-            "image": "buildings-decor-desert-high.c39e277c1b6e.png",
-            "jsonBytes": 8211,
-            "imageBytes": 1169105,
+            "json": "buildings-decor-desert-high.d9ad6c019904.json",
+            "image": "buildings-decor-desert-high.3ed3113bf659.png",
+            "jsonBytes": 8207,
+            "imageBytes": 1043905,
             "frames": 23,
-            "width": 1010,
-            "height": 840,
+            "width": 976,
+            "height": 823,
             "scale": "1",
             "mipDivisor": 1
           },
@@ -741,13 +741,13 @@
       "medium": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-desert-high.ae1b0dc467b2.json",
-            "image": "buildings-decor-desert-high.c39e277c1b6e.png",
-            "jsonBytes": 8211,
-            "imageBytes": 1169105,
+            "json": "buildings-decor-desert-high.d9ad6c019904.json",
+            "image": "buildings-decor-desert-high.3ed3113bf659.png",
+            "jsonBytes": 8207,
+            "imageBytes": 1043905,
             "frames": 23,
-            "width": 1010,
-            "height": 840,
+            "width": 976,
+            "height": 823,
             "scale": "1",
             "mipDivisor": 1
           },
@@ -866,13 +866,13 @@
       "low": {
         "base": {
           "buildings": {
-            "json": "buildings-decor-desert-high.ae1b0dc467b2.json",
-            "image": "buildings-decor-desert-high.c39e277c1b6e.png",
-            "jsonBytes": 8211,
-            "imageBytes": 1169105,
+            "json": "buildings-decor-desert-high.d9ad6c019904.json",
+            "image": "buildings-decor-desert-high.3ed3113bf659.png",
+            "jsonBytes": 8207,
+            "imageBytes": 1043905,
             "frames": 23,
-            "width": 1010,
-            "height": 840,
+            "width": 976,
+            "height": 823,
             "scale": "1",
             "mipDivisor": 1
           },

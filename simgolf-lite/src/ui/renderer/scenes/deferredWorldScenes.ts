@@ -6,3 +6,4 @@ export {
   createStableSceneDecalLayers,
   createStructuresPropsSceneSystem,
 } from "./structuresPropsScene";
+export { createArchitectureOverlaySceneSystem } from "./architectureOverlayScene";

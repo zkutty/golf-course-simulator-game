@@ -1,6 +1,7 @@
 import * as PIXI from "pixi.js";
+import { createRoutingLabelOverlay } from "./routingLabelOverlay";
 import { getPinPosition } from "../../../game/models/courseSetup";
-import type { Hole, PinRotation, Point } from "../../../game/models/types";
+import type { Point } from "../../../game/models/types";
 import { TILE_H, TILE_W, tileCenterIso, worldToIso } from "../../../game/render/iso";
 import type { RenderSceneSystem } from "../SceneSystemHost";
 
@@ -17,24 +18,7 @@ type ShotDestinationGraphic = PIXI.Graphics & {
   __coursecraftShotDestination?: ShotDestinationMarkerGeometry;
 };
 
-export function routeDestinationHierarchy(
-  hole: Hole | undefined,
-  activePinRotation: PinRotation,
-  solverDestinations: readonly Point[] | undefined,
-): readonly Point[] {
-  const pin = hole && (getPinPosition(hole, activePinRotation) ?? getPinPosition(hole, "A"));
-  const source = hole?.waypoints?.length ? hole.waypoints : solverDestinations ?? [];
-  const seen = new Set<string>();
-  const hierarchy: Point[] = [];
-  for (const point of source) {
-    const key = `${point.x}:${point.y}`;
-    if (pin && point.x === pin.x && point.y === pin.y || seen.has(key)) continue;
-    seen.add(key);
-    hierarchy.push({ ...point });
-  }
-  if (pin) hierarchy.push({ ...pin });
-  return hierarchy;
-}
+export { routeDestinationHierarchy } from "./routeDestinationHierarchy";
 
 export type ArchitectureOverlayTestLayer = "all" | "traces" | "points" | "none";
 export interface ArchitectureOverlayTestState {
@@ -56,11 +40,14 @@ type TestWindow = Window & {
 export function createArchitectureOverlaySceneSystem(
   layer: PIXI.Container,
   requestRender: () => void = () => undefined,
+  canvas: () => HTMLCanvasElement | undefined = () => undefined,
 ): RenderSceneSystem {
+  let routing: ReturnType<typeof createRoutingLabelOverlay> | null = null;
   let testLayer: ArchitectureOverlayTestLayer = "all";
 
-  const clear = () => {
-    layer.children.filter((child) => child.label === ROUTE_LABEL).forEach((child) => {
+  const clear = (keepRouting = false) => {
+    if (!keepRouting) { routing?.dispose(); routing = null; }
+    layer.children.filter((child) => child.label === ROUTE_LABEL && child !== routing?.container).forEach((child) => {
       layer.removeChild(child);
       child.destroy();
     });
@@ -77,7 +64,8 @@ export function createArchitectureOverlaySceneSystem(
   return {
     id: "architectureOverlay",
     render(snapshot) {
-      clear();
+      const keepRouting = snapshot.showMarkers !== false && snapshot.architectureOverlay?.kind === "routing" && !!routing?.matches(snapshot);
+      clear(keepRouting);
       clearTestControls();
       if (snapshot.showMarkers === false) return;
 
@@ -114,7 +102,13 @@ export function createArchitectureOverlaySceneSystem(
         layer.addChild(graphics);
       }
 
-      if (snapshot.architectureOverlay) {
+      if (snapshot.architectureOverlay?.kind === "routing") {
+        if (keepRouting) routing!.update(snapshot, project);
+        else routing = createRoutingLabelOverlay(snapshot, project, requestRender, canvas);
+        layer.addChild(routing!.container);
+      }
+
+      if (snapshot.architectureOverlay && snapshot.architectureOverlay.kind !== "routing") {
         const isolateReferenceLayers = import.meta.env.DEV && snapshot.architectureOverlay.kind === "reference";
         const cells = new PIXI.Graphics();
         const traces = isolateReferenceLayers ? new PIXI.Graphics() : cells;

@@ -872,6 +872,17 @@ export default function App() {
   const architectureReport = useMemo(() => showCourseManager ? analyzeArchitecture(activeOperatingCourse) : null, [activeOperatingCourse, showCourseManager]);
   const [showArchitectureReview, setShowArchitectureReview] = useState(false);
   const [architectureFilters, setArchitectureFilters] = useState(() => defaultArchitectureFilters(course));
+  const jumpToArchitectureHole = useCallback((point: Point, holeId?: string) => {
+    if (holeId) {
+      const index = course.holes.findIndex((hole) => hole.id === holeId);
+      if (index >= 0) {
+        setActiveHoleIndex(index);
+        setHoleEditMode("hole");
+      }
+      setArchitectureFilters(current => current.holeId === holeId ? current : { ...current, holeId });
+    }
+    setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 }));
+  }, [course.holes]);
   const architectureReviewBase = useMemo(
     () => buildArchitectureReview(course, world, architectureFilters),
     [architectureFilters, course, world],
@@ -6155,6 +6166,7 @@ export default function App() {
                 selectedParcelId={selectedParcelId}
                 architectureWarnings={architectureReport?.warnings}
                 architectureOverlay={showArchitectureReview ? architectureReview.overlay : null}
+                onArchitectureHoleSelect={jumpToArchitectureHole}
                 paceBottlenecks={live.status.pace.bottlenecks}
                 animationsEnabled={effectiveAnimations && resolvedGraphicsQuality !== "low"}
                 graphicsQuality={resolvedGraphicsQuality}
@@ -6374,16 +6386,7 @@ export default function App() {
               course={course}
               review={architectureReview}
               onFilters={setArchitectureFilters}
-              onJump={(point, holeId) => {
-                if (holeId) {
-                  const index = course.holes.findIndex((hole) => hole.id === holeId);
-                  if (index >= 0) {
-                    setActiveHoleIndex(index);
-                    setHoleEditMode("hole");
-                  }
-                }
-                setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 }));
-              }}
+              onJump={jumpToArchitectureHole}
               onPracticeRound={async (courseId) => {
                 const reason = await beginArchitectureTestRound(courseId);
                 if (!reason) setShowArchitectureReview(false);
@@ -6527,6 +6530,7 @@ export default function App() {
               onOpenOverview={() => setShowLiveOverview((open) => !open)}
               overviewOpen={showLiveOverview}
               activePinRotation={course.activePinRotation ?? "A"}
+              holes={course.holes}
               onSetActivePinRotation={(pinRotation) => dispatch({ type: "SET_ACTIVE_PIN_ROTATION", pinRotation })}
             />
             {live.status.selected && <Suspense fallback={<div

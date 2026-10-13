@@ -139,6 +139,16 @@ function holeReaction(value: unknown): boolean {
     (value.memory == null || typeof value.memory === "string");
 }
 
+function pinRotationsByHole(value: unknown, holeIds: unknown): boolean {
+  if(value === undefined)return true; // Legacy saves keep their frozen setup.
+  if(!isRecord(value) || !Array.isArray(holeIds) || holeIds.length > M47_MAX_PLANS)return false;
+  const booked = new Set(holeIds);
+  const entries = Object.entries(value);
+  return entries.length === booked.size && entries.every(([id,rotation]) =>
+    booked.has(id) && !["__proto__", "constructor", "prototype"].includes(id)
+    && (rotation === "A" || rotation === "B" || rotation === "C"));
+}
+
 function golfer(value: unknown): value is Golfer {
   if (!isRecord(value)) return false;
   if (!Number.isInteger(value.id) || typeof value.name !== "string" || typeof value.archetype !== "string") return false;
@@ -153,6 +163,7 @@ function golfer(value: unknown): value is Golfer {
   return typeof value.finished === "boolean" && (value.thought === null || typeof value.thought === "string") &&
     (value.teeSet == null || value.teeSet === "forward" || value.teeSet === "member" || value.teeSet === "championship") &&
     (value.pinRotation == null || value.pinRotation === "A" || value.pinRotation === "B" || value.pinRotation === "C") &&
+    pinRotationsByHole(value.pinRotationsByHole, value.holeIds) &&
     (value.courseId == null || typeof value.courseId === "string") &&
     (value.courseName == null || typeof value.courseName === "string") &&
     (value.holeIds == null || (Array.isArray(value.holeIds) && value.holeIds.every((id) => typeof id === "string"))) &&

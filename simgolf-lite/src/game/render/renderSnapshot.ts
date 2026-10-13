@@ -136,6 +136,7 @@ export interface RenderSnapshot {
   readonly activeShotDestinations?: readonly Point[];
   readonly architectureWarnings?: readonly ArchitectureWarning[];
   readonly architectureOverlay?: ArchitectureOverlayRender | null;
+  readonly onArchitectureHoleSelect?: (point: Point, holeId: string) => void;
   readonly paceBottlenecks?: readonly PaceAdvisorFinding[];
   readonly showFixOverlay?: boolean;
   readonly failingCorridorSegments?: readonly Point[];
@@ -206,6 +207,7 @@ export interface ArchitectureOverlayRevisionInput {
   readonly failingCorridorSegments?: readonly Point[];
   readonly holes: readonly Hole[];
   readonly architectureOverlay?: ArchitectureOverlayRender | null;
+  readonly onArchitectureHoleSelect?: (point: Point, holeId: string) => void;
   readonly architectureWarnings?: readonly ArchitectureWarning[];
   readonly paceBottlenecks?: readonly PaceAdvisorFinding[];
   readonly showMarkers?: boolean;
@@ -401,6 +403,7 @@ export function architectureOverlayRevisionDependencies(
     input.failingCorridorSegments,
     input.holes,
     input.architectureOverlay,
+    input.onArchitectureHoleSelect,
     input.architectureWarnings,
     input.paceBottlenecks,
     input.showMarkers !== false,

@@ -99,3 +99,16 @@
     padding: .625rem;
   }
 }
+
+.cc-routing-summary { margin-top: .75rem; padding: .625rem; background: #fffdf6; border: 1px solid #806946; border-radius: .5rem; }
+.cc-routing-summary p { font-size: .8125rem; margin: .375rem 0; }
+.cc-routing-list { padding: 0; margin: .5rem 0 0; list-style: none; display: grid; gap: .375rem; }
+.cc-routing-list button { width: 100%; text-align: left; background: #fffdf6; }
+.cc-routing-list small { display: block; }
+.cc-routing-map { position: fixed; inset: 0; z-index: 140; pointer-events: none; }
+.cc-routing-map button { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; min-width: 2rem; min-height: 2rem; padding: .125rem .375rem; border: 2px solid #182f29; background: #fffdf6; color: #182f29; font: 800 1rem/1.25 system-ui, sans-serif; box-shadow: 0 1px 4px #0008; cursor: pointer; white-space: nowrap; }
+.cc-routing-map button[data-role="number"] { border-radius: 50%; min-width: 2.25rem; min-height: 2.25rem; }
+.cc-routing-map button[data-role="pin"] { border-radius: .375rem .375rem 50% 50%; }
+.cc-routing-map button[data-role="tee"] { border-radius: .125rem; }
+.cc-routing-map button[data-emphasized="true"], .cc-routing-map button:focus-visible { outline: 3px solid #175bd1; outline-offset: 2px; border-style: double; background: #fff1a8; }
+.cc-routing-map button[data-dimmed="true"] { opacity: .82; }

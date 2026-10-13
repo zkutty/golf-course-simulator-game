@@ -3,7 +3,8 @@ import { IconUi } from "../assets/icons/IconUi";
 import type { Course } from "../game/models/types";
 import type { ArchitectureReviewData, ArchitectureReviewFilters } from "../game/architecture/review";
 import type { ArchitectureOverlayKind } from "../game/architecture/reviewTypes";
-import { courseLayouts } from "../game/models/courseLayouts";
+import { buildArchitectureRouting } from "../game/architecture/routingLabels";
+import { courseLayouts, courseForLayout, layoutById } from "../game/models/courseLayouts";
 import { useI18n } from "../i18n/useI18n";
 import type { MessageKey } from "../i18n/catalog";
 import { HoleIllustrationPreviewPanel } from "./HoleIllustrationPreviewPanel";
@@ -11,7 +12,7 @@ import { appliedWindCues } from "../game/render/shotTruthCues";
 import "./ArchitectureReviewPanel.css";
 
 const OVERLAYS: ArchitectureOverlayKind[] = [
-  "reference", "traces", "dispersion", "heatmap", "recovery", "scoring", "hazards", "walking", "mobility", "congestion", "options", "advantage", "bailouts", "carries", "misses",
+  "routing", "reference", "traces", "dispersion", "heatmap", "recovery", "scoring", "hazards", "walking", "mobility", "congestion", "options", "advantage", "bailouts", "carries", "misses",
   "green-preferred", "green-putts", "green-leaves", "green-misses", "green-rollout", "green-risk",
 ];
 
@@ -36,9 +37,16 @@ export function ArchitectureReviewPanel(props: {
   const currentRevision = props.review.revisions.find((revision) => revision.geometryVersion === props.review.currentGeometryVersion);
   const strategicComparison = props.review.comparison;
   const signed = (value: number) => value > 0 ? `+${value}` : `${value}`;
-  const holes = useMemo(() => props.course.holes.filter((hole) => hole.id), [props.course.holes]);
+  const holes = useMemo(() => props.review.filters.kind === "routing"
+    ? courseForLayout(props.course, props.review.filters.courseId, props.review.filters.routingOrder === "draft" || (!props.review.filters.routingOrder && !layoutById(props.course, props.review.filters.courseId)?.publishedHoleIds.length)).holes
+    : props.course.holes.filter(hole => hole.id), [props.course, props.review.filters.kind, props.review.filters.courseId, props.review.filters.routingOrder]);
   const set = <K extends keyof ArchitectureReviewFilters>(key: K, value: ArchitectureReviewFilters[K]) =>
     props.onFilters({ ...props.review.filters, [key]: value });
+  const routing = useMemo(() => buildArchitectureRouting(props.course, props.review.filters), [props.course, props.review.filters]);
+  const selectRoutingHole = (point: { x: number; y: number }, holeId: string) => {
+    set("holeId", holeId);
+    props.onJump(point, holeId);
+  };
   return <aside
     className="cc-tycoon-panel cc-architecture-review"
     role="dialog"
@@ -76,6 +84,18 @@ export function ArchitectureReviewPanel(props: {
       <label style={{ gridColumn: "1 / -1" }}>{t("architecture.review.evidenceAge")}<select data-testid="architecture-age-filter" value={props.review.filters.recency} onChange={(event) => set("recency", event.target.value as ArchitectureReviewFilters["recency"])}>{(["current", "recent", "historical", "all"] as const).map((value) => <option value={value} key={value}>{t(`architecture.review.age.${value}` as MessageKey)}</option>)}</select></label>
       {props.review.filters.kind === "mobility" && <label style={{ gridColumn: "1 / -1" }}>{t("architecture.review.mobility.mode")}<select data-testid="architecture-mobility-mode" value={props.review.filters.mobilityMode} onChange={(event) => set("mobilityMode", event.target.value as ArchitectureReviewFilters["mobilityMode"])}><option value="all">{t("architecture.review.mobility.allModes")}</option><option value="walk">{t("architecture.review.mobility.walk")}</option><option value="pushcart">{t("architecture.review.mobility.pushcart")}</option><option value="riding_cart">{t("architecture.review.mobility.ridingCart")}</option></select></label>}
     </div>
+
+    {props.review.filters.kind === "routing" && <section data-testid="architecture-routing-summary" className="cc-routing-summary">
+      <strong>{t("architecture.routing.title")}</strong>
+      <p>{t("architecture.routing.spineExplanation")}</p>
+      <label>{t("architecture.illustration.routeSource")}<select data-testid="architecture-routing-order" value={props.review.filters.routingOrder ?? (courseLayouts(props.course).find(layout => layout.id === props.review.filters.courseId)?.publishedHoleIds.length ? "published" : "draft")} onChange={event => set("routingOrder", event.target.value as "draft" | "published")}><option value="published">{t("architecture.illustration.published")}</option><option value="draft">{t("architecture.illustration.draft")}</option></select></label>
+      <p>{t("architecture.routing.legend")}</p>
+      <ol className="cc-routing-list">{routing.map(hole => <li key={hole.holeId}>
+        <button data-testid={`architecture-routing-hole-${hole.holeId}`} aria-pressed={props.review.filters.holeId === hole.holeId} onClick={() => selectRoutingHole(hole.anchor, hole.holeId)} onFocus={() => { if (props.review.filters.holeId !== hole.holeId) set("holeId", hole.holeId); }}>
+          <b>{t("architecture.routing.hole", { number: hole.number })}</b> · {hole.name}<small>{t(`architecture.routing.status.${hole.status}` as MessageKey)} · {t(`playerPro.play.tee.${hole.teeSet}`)} · {t("architecture.review.pin")} {hole.pinRotation}{(hole.usedTeeFallback || hole.usedPinFallback) && ` · ${t("architecture.routing.fallback")}`}</small>
+        </button>
+      </li>)}</ol>
+    </section>}
 
     <section data-status={props.review.status} style={{ marginTop: 11, padding: 10, borderRadius: 9, background: props.review.status === "ready" ? "#e0efdf" : props.review.status === "stale-only" ? "#f8e3b8" : "#fff7e6", border: "1px solid #b9aa91" }}>
       <strong>{t(`architecture.review.status.${props.review.status}` as MessageKey)}</strong>

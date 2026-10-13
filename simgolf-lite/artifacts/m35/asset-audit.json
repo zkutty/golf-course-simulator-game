@@ -11,98 +11,98 @@
     "bundles": {
       "parkland": {
         "high": {
-          "bytes": 3474806,
-          "mib": 3.314,
+          "bytes": 3352150,
+          "mib": 3.197,
           "frames": 237,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 3474806,
-          "cumulativeResidencyMiB": 3.314
+          "cumulativeResidencyBytes": 3352150,
+          "cumulativeResidencyMiB": 3.197
         },
         "medium": {
-          "bytes": 2887596,
-          "mib": 2.754,
+          "bytes": 2764940,
+          "mib": 2.637,
           "frames": 226,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 2887596,
-          "cumulativeResidencyMiB": 2.754
+          "cumulativeResidencyBytes": 2764940,
+          "cumulativeResidencyMiB": 2.637
         },
         "low": {
-          "bytes": 2078998,
-          "mib": 1.983,
+          "bytes": 1956342,
+          "mib": 1.866,
           "frames": 203,
           "fields": 0,
           "pathMaterials": 0,
           "overlays": {},
-          "cumulativeResidencyBytes": 2078998,
-          "cumulativeResidencyMiB": 1.983
+          "cumulativeResidencyBytes": 1956342,
+          "cumulativeResidencyMiB": 1.866
         }
       },
       "links": {
         "high": {
-          "bytes": 3524876,
-          "mib": 3.362,
+          "bytes": 3400164,
+          "mib": 3.243,
           "frames": 235,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 3524876,
-          "cumulativeResidencyMiB": 3.362
+          "cumulativeResidencyBytes": 3400164,
+          "cumulativeResidencyMiB": 3.243
         },
         "medium": {
-          "bytes": 2933019,
-          "mib": 2.797,
+          "bytes": 2808307,
+          "mib": 2.678,
           "frames": 225,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 2933019,
-          "cumulativeResidencyMiB": 2.797
+          "cumulativeResidencyBytes": 2808307,
+          "cumulativeResidencyMiB": 2.678
         },
         "low": {
-          "bytes": 2194176,
-          "mib": 2.093,
+          "bytes": 2069464,
+          "mib": 1.974,
           "frames": 203,
           "fields": 0,
           "pathMaterials": 0,
           "overlays": {},
-          "cumulativeResidencyBytes": 2194176,
-          "cumulativeResidencyMiB": 2.093
+          "cumulativeResidencyBytes": 2069464,
+          "cumulativeResidencyMiB": 1.974
         }
       },
       "desert": {
         "high": {
-          "bytes": 3534481,
-          "mib": 3.371,
+          "bytes": 3409277,
+          "mib": 3.251,
           "frames": 235,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 3534481,
-          "cumulativeResidencyMiB": 3.371
+          "cumulativeResidencyBytes": 3409277,
+          "cumulativeResidencyMiB": 3.251
         },
         "medium": {
-          "bytes": 2935645,
-          "mib": 2.8,
+          "bytes": 2810441,
+          "mib": 2.68,
           "frames": 225,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 2935645,
-          "cumulativeResidencyMiB": 2.8
+          "cumulativeResidencyBytes": 2810441,
+          "cumulativeResidencyMiB": 2.68
         },
         "low": {
-          "bytes": 2187710,
-          "mib": 2.086,
+          "bytes": 2062506,
+          "mib": 1.967,
           "frames": 203,
           "fields": 0,
           "pathMaterials": 0,
           "overlays": {},
-          "cumulativeResidencyBytes": 2187710,
-          "cumulativeResidencyMiB": 2.086
+          "cumulativeResidencyBytes": 2062506,
+          "cumulativeResidencyMiB": 1.967
         }
       }
     }
@@ -112,114 +112,115 @@
     "bundles": {
       "parkland": {
         "high": {
-          "bytes": 3474806,
-          "mib": 3.314,
+          "bytes": 3352150,
+          "mib": 3.197,
           "frames": 237,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 3474806,
-          "cumulativeResidencyMiB": 3.314
+          "cumulativeResidencyBytes": 3352150,
+          "cumulativeResidencyMiB": 3.197
         },
         "medium": {
-          "bytes": 2887596,
-          "mib": 2.754,
+          "bytes": 2764940,
+          "mib": 2.637,
           "frames": 226,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 2887596,
-          "cumulativeResidencyMiB": 2.754
+          "cumulativeResidencyBytes": 2764940,
+          "cumulativeResidencyMiB": 2.637
         },
         "low": {
-          "bytes": 2078998,
-          "mib": 1.983,
+          "bytes": 1956342,
+          "mib": 1.866,
           "frames": 203,
           "fields": 0,
           "pathMaterials": 0,
           "overlays": {},
-          "cumulativeResidencyBytes": 2078998,
-          "cumulativeResidencyMiB": 1.983
+          "cumulativeResidencyBytes": 1956342,
+          "cumulativeResidencyMiB": 1.866
         }
       },
       "links": {
         "high": {
-          "bytes": 3524876,
-          "mib": 3.362,
+          "bytes": 3400164,
+          "mib": 3.243,
           "frames": 235,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 3524876,
-          "cumulativeResidencyMiB": 3.362
+          "cumulativeResidencyBytes": 3400164,
+          "cumulativeResidencyMiB": 3.243
         },
         "medium": {
-          "bytes": 2933019,
-          "mib": 2.797,
+          "bytes": 2808307,
+          "mib": 2.678,
           "frames": 225,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 2933019,
-          "cumulativeResidencyMiB": 2.797
+          "cumulativeResidencyBytes": 2808307,
+          "cumulativeResidencyMiB": 2.678
         },
         "low": {
-          "bytes": 2194176,
-          "mib": 2.093,
+          "bytes": 2069464,
+          "mib": 1.974,
           "frames": 203,
           "fields": 0,
           "pathMaterials": 0,
           "overlays": {},
-          "cumulativeResidencyBytes": 2194176,
-          "cumulativeResidencyMiB": 2.093
+          "cumulativeResidencyBytes": 2069464,
+          "cumulativeResidencyMiB": 1.974
         }
       },
       "desert": {
         "high": {
-          "bytes": 3534481,
-          "mib": 3.371,
+          "bytes": 3409277,
+          "mib": 3.251,
           "frames": 235,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 3534481,
-          "cumulativeResidencyMiB": 3.371
+          "cumulativeResidencyBytes": 3409277,
+          "cumulativeResidencyMiB": 3.251
         },
         "medium": {
-          "bytes": 2935645,
-          "mib": 2.8,
+          "bytes": 2810441,
+          "mib": 2.68,
           "frames": 225,
           "fields": 10,
           "pathMaterials": 2,
           "overlays": {},
-          "cumulativeResidencyBytes": 2935645,
-          "cumulativeResidencyMiB": 2.8
+          "cumulativeResidencyBytes": 2810441,
+          "cumulativeResidencyMiB": 2.68
         },
         "low": {
-          "bytes": 2187710,
-          "mib": 2.086,
+          "bytes": 2062506,
+          "mib": 1.967,
           "frames": 203,
           "fields": 0,
           "pathMaterials": 0,
           "overlays": {},
-          "cumulativeResidencyBytes": 2187710,
-          "cumulativeResidencyMiB": 2.086
+          "cumulativeResidencyBytes": 2062506,
+          "cumulativeResidencyMiB": 1.967
         }
       }
     }
   },
   "initialCritical": {
-    "bytes": 3786115,
-    "mib": 3.611,
+    "bytes": 3666887,
+    "mib": 3.497,
     "files": [
-      "assets/building-sites-sA2JWQgX.js",
-      "assets/index-2Sun2Hjz.css",
-      "assets/index-DJopEnkp.js",
-      "assets/pixi-CHPDOepS.js",
+      "assets/building-sites-B97MrCeF.js",
+      "assets/index-1_Npmv8T.js",
+      "assets/index-CTFEYrgK.css",
+      "assets/pixi-DVdddYTY.js",
+      "assets/property-assets-DW9w1IwJ.js",
       "assets/react-CGmq1y7D.js",
       "assets/vendor-CAfNi7eK.js",
-      "atlases/biomes/buildings-decor-parkland-high.291bca113f4e.json",
-      "atlases/biomes/buildings-decor-parkland-high.bc2b7a340d96.png",
+      "atlases/biomes/buildings-decor-parkland-high.4aa03218a96a.png",
+      "atlases/biomes/buildings-decor-parkland-high.755f5ce0a07c.json",
       "atlases/biomes/core-golfers.b2d25a57f740.png",
       "atlases/biomes/core-golfers.d9ce70a9ebcf.json",
       "atlases/biomes/field-parkland-high-deep_rough.258643c67ef7.png",

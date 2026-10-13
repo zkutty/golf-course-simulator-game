@@ -167,7 +167,7 @@ import {
   type OverlaysDiagnosticsSceneSystem,
 } from "./renderer/scenes/overlaysDiagnosticsScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
-import { createArchitectureOverlaySceneSystem, routeDestinationHierarchy } from "./renderer/scenes/architectureOverlayScene";
+import { routeDestinationHierarchy } from "./renderer/scenes/routeDestinationHierarchy";
 import { createPropertyAssetsSceneSystem } from "./renderer/scenes/propertyAssetsScene";
 import { createSurfaceEditorSceneSystem } from "./renderer/scenes/surfaceEditorScene";
 import {
@@ -592,6 +592,7 @@ export interface PixiStageProps {
   selectedParcelId?: string | null;
   architectureWarnings?: ArchitectureWarning[];
   architectureOverlay?: ArchitectureOverlayRender | null;
+  onArchitectureHoleSelect?: (point: Point, holeId: string) => void;
   paceBottlenecks?: PaceAdvisorFinding[];
   animationsEnabled: boolean;
   graphicsQuality: "high" | "medium" | "low";
@@ -1287,6 +1288,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       failingCorridorSegments,
       holes,
       architectureOverlay: props.architectureOverlay,
+      onArchitectureHoleSelect: props.onArchitectureHoleSelect,
       architectureWarnings: props.architectureWarnings,
       paceBottlenecks: props.paceBottlenecks,
       showMarkers: props.showMarkers,
@@ -1334,6 +1336,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     activeShotDestinations: activeRouteDestinations,
     architectureWarnings: props.architectureWarnings,
     architectureOverlay: props.architectureOverlay,
+    onArchitectureHoleSelect: props.onArchitectureHoleSelect,
     paceBottlenecks: props.paceBottlenecks,
     showFixOverlay,
     failingCorridorSegments,
@@ -1378,6 +1381,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     activeRouteDestinations,
     props.architectureWarnings,
     props.architectureOverlay,
+    props.onArchitectureHoleSelect,
     props.paceBottlenecks,
     showFixOverlay,
     failingCorridorSegments,
@@ -3929,7 +3933,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       holeMarkers,
       mobilityEntities,
       liveEntities,
-      createArchitectureOverlaySceneSystem(layers.terrainDecals, () => app.render()),
+      deferredWorldScenes.createArchitectureOverlaySceneSystem(layers.terrainDecals, () => app.render(), () => app.canvas),
       overlaysDiagnostics,
       createOpeningPreviewSceneSystem(layers.fx),
       createEstateSurveySceneSystem(layers.sceneDecals.estateSurvey),
