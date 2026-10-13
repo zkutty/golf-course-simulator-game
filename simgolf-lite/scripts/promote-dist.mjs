@@ -161,28 +161,264 @@ export function selectRun(runs, context) {
   same(candidates.length, 1, 'exactly one develop run, no ambiguous or unfinished candidates');
   return verifyRun(candidates[0], context);
 }
-export function verifyJobs(jobs, run) {
-  let ciJob;
-  for (const name of ['Typecheck, lint, test, build', 'Deploy tested artifact to Cloudflare playtest']) {
-    const matches = jobs.filter(j => j.name === name); same(matches.length, 1, 'unique required job');
-    const job = matches[0]; same(job.run_id, run.id, 'job run'); same(job.head_sha, run.head_sha, 'job SHA');
-    same(job.status, 'completed', 'job completion'); same(job.conclusion, 'success', 'job success');
-    if (name === 'Typecheck, lint, test, build') {
-      const build = job.steps.filter(s => s.name === 'Build'); same(build.length, 1, 'unique Build step');
-      same(build[0].status, 'completed', 'Build completion'); same(build[0].conclusion, 'success', 'Build success');
-      ciJob = job;
-    }
+// The execution contract is deliberately exact: changing release commands,
+// suppression, permissions or artifact semantics requires a reviewed update.
+export const PRODUCER = 'Typecheck, lint, test, build';
+export const QUALIFIER = 'Qualify completed producer artifacts';
+export const BUILD_COMMAND = 'node scripts/biome-consumer-audit.mjs && tsc -b && vite build && node scripts/audit-audio-assets.mjs && node scripts/inject-sw-assets.mjs && node scripts/m35-asset-audit.mjs && node scripts/parkland-4x-asset-audit.mjs && node scripts/parkland-habitat-field-audit.mjs && node scripts/zk680-surface-budget.mjs && node scripts/zk680-delivery-evidence.mjs';
+export const MARKER_COMMAND = String.raw`printf 'ZK1359_BUILD_V1 %s sha=%s run=%s attempt=%s job=%s\n'`;
+const MARKER_ARGS = '"$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_JOB"';
+export const BUILD_SCRIPT = `${MARKER_COMMAND} BEGIN ${MARKER_ARGS}\nnpm run build\n${MARKER_COMMAND} END ${MARKER_ARGS}`;
+const WORKFLOW_CONTRACT_SHA256 = '4e7c9454bb144f1caf54da49c9540441345f1b76e18612b79b1b138a8f0d6889';
+const PACKAGE_CONTRACT_SHA256 = '1cf56ace41bc7610c24f6b375fa5909f5aee1e0ae6e68eb16f19ee1469e690d0';
+export function verifyExecutionContract(repoRoot) {
+  const workflow = readFileSync(join(repoRoot, WORKFLOW)), packageBytes = readFileSync(join(repoRoot, 'simgolf-lite/package.json'));
+  same(sha256(workflow), WORKFLOW_CONTRACT_SHA256, 'reviewed unconditional producer/qualification/deployment workflow');
+  same(sha256(packageBytes), PACKAGE_CONTRACT_SHA256, 'reviewed chained package build command');
+  same(JSON.parse(packageBytes).scripts.build, BUILD_COMMAND, 'normal chained build execution');
+  return { schema: 1, workflowSHA256: sha256(workflow), packageSHA256: sha256(packageBytes), buildScript: BUILD_SCRIPT, buildCommand: BUILD_COMMAND, producerJobKey: 'ci' };
+}
+export function verifyRunIdentity(run, context, branch = context.branch) {
+  assert(Number.isSafeInteger(run.id) && run.id > 0, 'run ID');
+  same(run.head_sha, context.sha, 'full SHA'); same(run.repository.full_name, context.repository, 'run repository');
+  same(run.head_repository.full_name, context.repository, 'head repository'); same(run.path.split('@')[0], WORKFLOW, 'workflow path');
+  same(run.head_branch, branch, 'branch'); same(run.event, 'push', 'event'); same(run.run_attempt, 1, 'attempt');
+  assert(['queued', 'in_progress', 'completed'].includes(run.status), 'known run state');
+  if (run.status === 'completed') same(run.conclusion, 'success', 'successful terminal qualification run');
+  else same(run.conclusion, null, 'nonterminal run conclusion');
+  return run;
+}
+function successfulJob(job, ctx, name) {
+  same(job.name, name, 'job name'); same(job.run_id, ctx.runID, 'job run'); same(job.head_sha, ctx.sha, 'job SHA');
+  same(job.run_attempt, 1, 'job attempt'); same(job.status, 'completed', 'job completion'); same(job.conclusion, 'success', 'job success');
+  assert(Number.isSafeInteger(job.id) && job.id > 0, 'job ID');
+  const start = Date.parse(job.started_at), end = Date.parse(job.completed_at);
+  assert(Number.isFinite(start) && Number.isFinite(end) && end >= start, 'completed job timestamps');
+  same(job.html_url, `https://github.com/${ctx.repository}/actions/runs/${ctx.runID}/job/${job.id}`, 'exact job URL');
+  assert(Array.isArray(job.steps), 'observed job steps');
+  same(new Set(job.steps.map(s => s.name)).size, job.steps.length, 'unique observed step names');
+  same(new Set(job.steps.map(s => s.number)).size, job.steps.length, 'unique observed step numbers');
+  assert(job.steps.every(s => typeof s.name === 'string' && Number.isSafeInteger(s.number) && s.number > 0), 'observed step identity');
+  for (const step of job.steps) {
+    assert(['completed', 'pending', 'in_progress'].includes(step.status), 'known step state');
+    if (step.status === 'completed') same(step.conclusion, 'success', 'contradictory terminal step');
+    else same(step.conclusion, null, 'incomplete step conclusion');
   }
-  return ciJob;
+  return job;
 }
-export function initialBuild(jobs, ctx) {
-  const matches = jobs.filter(j => j.name === 'Typecheck, lint, test, build'); same(matches.length, 1, 'unique receipt CI job');
-  const job = matches[0]; same(job.run_id, ctx.runID, 'receipt Build run'); same(job.head_sha, ctx.sha, 'receipt Build SHA');
-  const builds = job.steps.filter(s => s.name === 'Build'); same(builds.length, 1, 'receipt Build step');
-  const build = builds[0]; same(build.status, 'completed', 'receipt Build complete'); same(build.conclusion, 'success', 'receipt Build success');
-  assert(Number.isSafeInteger(job.id) && job.id > 0, 'Build job ID');
-  return { jobID: job.id, runID: job.run_id, attempt: 1, step: build };
+function uniqueJob(jobs, ctx, name) {
+  const matches = jobs.filter(j => j.name === name); same(matches.length, 1, 'unique required job');
+  return successfulJob(matches[0], ctx, name);
 }
+function producerObservation(jobs, ctx, direct) {
+  const job = uniqueJob(jobs, ctx, PRODUCER);
+  if (direct !== undefined) {
+    successfulJob(direct, ctx, PRODUCER);
+    for (const key of ['id', 'run_id', 'run_attempt', 'head_sha', 'name', 'status', 'conclusion', 'started_at', 'completed_at', 'html_url', 'steps']) same(direct[key], job[key], 'direct/attempt producer agreement');
+  }
+  const builds = job.steps.filter(s => s.name === 'Build'); assert(builds.length <= 1, 'unique Build step');
+  const step = builds[0] ?? null;
+  let kind;
+  if (step?.status === 'completed') {
+    same(step.conclusion, 'success', 'Build success');
+    const start = Date.parse(step.started_at), end = Date.parse(step.completed_at);
+    assert(Number.isFinite(start) && Number.isFinite(end) && end >= start, 'Build timestamps');
+    assert(start >= Date.parse(job.started_at) && end <= Date.parse(job.completed_at), 'Build within producer timestamps');
+    kind = 'github-completed-build-step-v1';
+  } else {
+    // Only the observed stalled Test frontier with a pending/null (or absent)
+    // Build is eligible. Missing endpoints, arbitrary API errors and other
+    // incomplete states never enter this route.
+    assert(direct !== undefined, 'direct authenticated producer observation required');
+    if (step) same(step, { name: 'Build', status: 'pending', conclusion: null, number: 19, started_at: null, completed_at: null }, 'allowlisted pending Build record');
+    const names = ['Set up job', 'Run actions/checkout@v4', 'Run actions/setup-node@v4', 'Install dependencies', 'Typecheck', 'Lint (zero errors)', 'Test', 'Install Playwright Chromium', 'Pixi renderer ownership regression', 'Upload Pixi renderer ownership report', 'M65 machine certification', 'Upload verified M65 report', 'Golden-path E2E', 'Upload Golden-path E2E report', 'Vision Player Pro narrative regression', 'Upload Vision Player Pro narrative report', 'Verify exact first-attempt Golden and Vision reports', 'Artifact promotion contract tests', 'Build', 'Upload build artifact'];
+    const numbered = job.steps.filter(s => s.number <= 20);
+    same(numbered.length, step ? 20 : 19, 'known incomplete producer step inventory');
+    for (let i = 0; i < names.length; i++) {
+      if (i === 18 && !step) continue;
+      const matches = numbered.filter(s => s.number === i + 1); same(matches.length, 1, 'unique observed step number');
+      const observed = matches[0]; same(observed.name, names[i], 'known producer step identity');
+      if (i < 6) {
+        same(observed.status, 'completed', 'completed pre-Test frontier'); same(observed.conclusion, 'success', 'successful pre-Test frontier');
+        assert(Number.isFinite(Date.parse(observed.started_at)) && Date.parse(observed.completed_at) >= Date.parse(observed.started_at), 'observed frontier timestamps');
+      } else if (i === 6) {
+        same(observed.status, 'in_progress', 'known stalled Test frontier'); same(observed.conclusion, null, 'stalled Test conclusion');
+        assert(Number.isFinite(Date.parse(observed.started_at)), 'observed Test start'); same(observed.completed_at, null, 'stalled Test end');
+      } else same(observed, { name: names[i], status: 'pending', conclusion: null, number: i + 1, started_at: null, completed_at: null }, 'known pending tail');
+    }
+    for (const tail of job.steps.filter(s => s.number > 20)) {
+      assert(['Post Run actions/setup-node@v4', 'Post Run actions/checkout@v4', 'Complete job'].includes(tail.name), 'known producer cleanup step');
+      same(tail.status, 'pending', 'stalled cleanup'); same(tail.conclusion, null, 'stalled cleanup conclusion');
+      same(tail.started_at, null, 'stalled cleanup start'); same(tail.completed_at, null, 'stalled cleanup end');
+    }
+    kind = 'completed-producer-log-v1';
+  }
+  return { schema: 1, kind, producer: Object.fromEntries(['id', 'run_id', 'run_attempt', 'head_sha', 'name', 'status', 'conclusion', 'started_at', 'completed_at', 'html_url'].map(k => [k, job[k]])), apiObservations: { attemptSteps: job.steps, directSteps: direct?.steps ?? null }, step };
+}
+function terminalJobs(jobs, run, repository) {
+  const ctx = { sha: run.head_sha, runID: run.id, repository };
+  const job = uniqueJob(jobs, ctx, PRODUCER);
+  uniqueJob(jobs, ctx, QUALIFIER); uniqueJob(jobs, ctx, 'Deploy tested artifact to Cloudflare playtest');
+  return job;
+}
+export function verifyJobs(jobs, run, proof) {
+  verifyRun(run, { sha: run.head_sha, repository: run.repository.full_name });
+  const job = terminalJobs(jobs, run, run.repository.full_name);
+  const ctx = { sha: run.head_sha, runID: run.id, repository: run.repository.full_name };
+  if (proof) {
+    verifyBuildProofShape(proof); same(proof.producer, Object.fromEntries(Object.keys(proof.producer).map(k => [k, job[k]])), 'proof exact producer observation');
+    same(proof.apiObservations.attemptSteps, job.steps, 'proof unchanged attempt observation');
+  } else initialBuild(jobs, ctx);
+  return job;
+}
+export function initialBuild(jobs, ctx, options = {}) {
+  const observed = producerObservation(jobs, ctx, options.direct);
+  if (!options.log) { same(observed.kind, 'github-completed-build-step-v1', 'completed API Build required without log proof'); return observed; }
+  const execution = verifyExecutionContract(options.repoRoot);
+  const completedLog = verifyCompletedProducerLog(options.log, observed.producer, ctx, execution, options.dist, options.distZIP);
+  if (observed.kind === 'github-completed-build-step-v1') {
+    assert(Date.parse(completedLog.build.begin.timestamp) >= Date.parse(observed.step.started_at) && Date.parse(completedLog.build.end.timestamp) < providerEndExclusive(observed.step.completed_at), 'markers within actual API Build window');
+  }
+  const proof = { ...observed, execution, completedLog };
+  proof.sentry = verifySentryLog(options.log, { ...observed.producer, steps: observed.apiObservations.attemptSteps }, options.release, options.bindings, proof);
+  verifyBuildProofShape(proof); return proof;
+}
+export function verifyBuildProofShape(proof) {
+  same(Object.keys(proof).sort(), ['schema', 'kind', 'producer', 'apiObservations', 'step', 'execution', 'completedLog', 'sentry'].sort(), 'exact typed proof fields');
+  same(proof.schema, 1, 'build proof schema'); assert(['github-completed-build-step-v1', 'completed-producer-log-v1'].includes(proof.kind), 'typed build proof kind');
+  same(proof.producer.status, 'completed', 'proof completed producer'); same(proof.producer.conclusion, 'success', 'proof successful producer');
+  same(proof.producer.run_attempt, 1, 'proof producer attempt');
+  same(proof.producer.name, PRODUCER, 'proof producer identity'); assert(/^[0-9a-f]{40}$/.test(proof.producer.head_sha), 'proof full source SHA');
+  assert(Number.isSafeInteger(proof.producer.id) && proof.producer.id > 0 && Number.isSafeInteger(proof.producer.run_id) && proof.producer.run_id > 0, 'proof run/job identity');
+  assert(Array.isArray(proof.apiObservations.attemptSteps) && Array.isArray(proof.apiObservations.directSteps), 'retained authentic dual API observations');
+  same(proof.apiObservations.attemptSteps, proof.apiObservations.directSteps, 'unchanged dual API observations');
+  if (proof.kind === 'github-completed-build-step-v1') {
+    same(proof.step.status, 'completed', 'real completed Build record'); same(proof.step.conclusion, 'success', 'real successful Build record');
+    assert(Number.isFinite(Date.parse(proof.step.started_at)) && Date.parse(proof.step.completed_at) >= Date.parse(proof.step.started_at), 'real ordered Build timestamps');
+  } else {
+    assert(proof.step === null || (proof.step.status === 'pending' && proof.step.conclusion === null && proof.step.started_at === null && proof.step.completed_at === null), 'truthful incomplete Build record');
+  }
+  same(proof.step, proof.apiObservations.attemptSteps.find(s => s.name === 'Build') ?? null, 'provider Build record retained verbatim');
+  same(proof.execution.schema, 1, 'execution contract schema'); same(proof.execution.workflowSHA256, WORKFLOW_CONTRACT_SHA256, 'proof workflow contract');
+  same(proof.execution.packageSHA256, PACKAGE_CONTRACT_SHA256, 'proof package contract');
+  same(proof.execution.buildScript, BUILD_SCRIPT, 'proof unchanged shell execution'); same(proof.execution.buildCommand, BUILD_COMMAND, 'proof unchanged build chain'); same(proof.execution.producerJobKey, 'ci', 'proof marker job key');
+  same(proof.completedLog.schema, 1, 'completed log proof schema'); assert(/^[0-9a-f]{64}$/.test(proof.completedLog.rawSHA256), 'raw completed log digest');
+  assert(Number.isSafeInteger(proof.completedLog.bytes) && proof.completedLog.bytes > 0 && proof.completedLog.bytes <= 32 * 1024 * 1024, 'proof bounded full log');
+  same(proof.completedLog.endpoint, `/actions/jobs/${proof.producer.id}/logs`, 'proof exact job log endpoint');
+  const points = [proof.completedLog.build.group, proof.completedLog.build.begin, proof.completedLog.build.end, proof.completedLog.upload.begin, proof.completedLog.upload.finalized, proof.completedLog.upload.end, proof.completedLog.cleanup];
+  for (const [i, point] of points.entries()) {
+    assert(Number.isSafeInteger(point.line) && point.line > 0 && Number.isSafeInteger(point.byteOffset) && point.byteOffset >= 0 && point.byteOffset < proof.completedLog.bytes && Number.isFinite(Date.parse(point.timestamp)), 'observed log point');
+    if (i) assert(point.line > points[i - 1].line && point.byteOffset > points[i - 1].byteOffset, 'ordered observed log offsets');
+  }
+  same(proof.completedLog.upload.artifact.name, 'dist', 'proof original artifact name'); same(proof.completedLog.upload.artifact.path, 'simgolf-lite/dist', 'proof original artifact path');
+  assert(/^sha256:[0-9a-f]{64}$/.test(proof.completedLog.upload.artifact.digest), 'proof immutable artifact digest');
+  same(proof.sentry.schema, 1, 'Sentry proof schema'); same(proof.sentry.proofKind, proof.kind, 'Sentry typed proof route');
+  same(proof.sentry.jobID, proof.producer.id, 'Sentry producer identity'); same(proof.sentry.runID, proof.producer.run_id, 'Sentry run identity'); same(proof.sentry.attempt, 1, 'Sentry attempt');
+  same(proof.sentry.rawLogSHA256, proof.completedLog.rawSHA256, 'Sentry raw log binding');
+}
+// A provider timestamp with whole seconds reports that second at its native
+// resolution. Preserve the real timestamp; this exclusive bound only compares
+// the finer log timestamps and does not invent a provider completion time.
+function providerEndExclusive(timestamp) {
+  const fraction = timestamp.match(/\.(\d+)Z$/)?.[1];
+  return Date.parse(timestamp) + (fraction ? Math.max(1, 1000 / 10 ** fraction.length) : 1000);
+}
+export function parsedLog(bytes) {
+  assert(bytes.length > 0 && bytes.length <= 32 * 1024 * 1024, 'bounded nonempty completed log');
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  assert(text.endsWith('\n') && !text.includes('\0') && !text.includes('\r'), 'complete strict log encoding');
+  // These are the unchanged workflow's three multiline upload inputs. Only
+  // their ordinary action-input echo may contain untimestamped physical rows.
+  // Keep those rows on the timestamped path record, with a null timestamp and
+  // exact raw offsets; they can never serve as temporal/provenance evidence.
+  const sourcePaths = {
+    'pixi-peer-ownership-e2e-report': ['simgolf-lite/pixi-peer-ownership-report', 'simgolf-lite/pixi-peer-ownership-test-results'],
+    'golden-path-e2e-report': ['simgolf-lite/playwright-report', 'simgolf-lite/test-results'],
+    'vision-player-career-e2e-report': ['simgolf-lite/vision-player-career-report', 'simgolf-lite/vision-player-career-test-results', 'simgolf-lite/vision-player-career-evidence'],
+  };
+  const inputTail = ['  if-no-files-found: ignore', '  retention-days: 14', '  compression-level: 6', '  overwrite: false', '  include-hidden-files: false', '##[endgroup]'];
+  let offset = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0, prior = '', echo = null, pending = null;
+  const lines = [], point = line => ({ line: line.line, byteOffset: line.byteOffset, timestamp: line.timestamp });
+  for (const [index, raw] of text.slice(0, -1).split('\n').entries()) {
+    const physicalLine = index + 1, byteOffset = offset, byteLength = Buffer.byteLength(raw) + 1; offset += byteLength;
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3,9}Z) (.*)$/);
+    if (!match) {
+      assert(pending && pending.continuationIndex < pending.continuations.length, 'source-bound untimed path continuation required');
+      same(raw, pending.continuations[pending.continuationIndex], 'exact source-bound upload path continuation');
+      pending.parent.continuations.push({ line: physicalLine, byteOffset, byteLength, timestamp: null, text: raw, source: { workflow: WORKFLOW, action: 'actions/upload-artifact@v4', artifact: pending.artifact, groupLine: pending.group.line, pathLine: pending.parent.line, kind: raw === '' ? 'input-terminator' : 'path', pathIndex: raw === '' ? null : pending.continuationIndex + 1 } });
+      pending.continuationIndex++; continue;
+    }
+    const time = Date.parse(match[1]);
+    const chronology = match[1].replace(/\.(\d+)Z$/, (_, digits) => `.${digits.padEnd(9, '0')}Z`);
+    assert(Number.isFinite(time) && new Date(time).toISOString().slice(0, 19) === match[1].slice(0, 19) && chronology >= prior, 'ordered log chronology'); prior = chronology;
+    const line = { line: physicalLine, byteOffset, timestamp: match[1], text: match[2].replace(/\x1b\[[0-9;]*m/g, '') };
+    assert(!/[\x00-\x08\x0b-\x1f\x7f]/.test(line.text), 'log control characters'); lines.push(line);
+    if (pending) {
+      same(pending.continuationIndex, pending.continuations.length, 'complete source-bound path continuation sequence');
+      same(line.text, inputTail[pending.tailIndex], 'complete normal upload input echo');
+      pending.tailIndex++;
+      if (pending.tailIndex === inputTail.length) { pending.parent.sourceEcho.completed = point(line); pending = null; }
+      continue;
+    }
+    if (echo?.phase === 'with' && line.text === 'with:') { echo.phase = 'name'; echo.with = point(line); continue; }
+    if (echo?.phase === 'name') {
+      const name = line.text.match(/^  name: (.+)$/)?.[1];
+      if (Object.hasOwn(sourcePaths, name)) { echo.phase = 'path'; echo.artifact = name; echo.name = point(line); continue; }
+    }
+    if (echo?.phase === 'path' && line.text === `  path: ${sourcePaths[echo.artifact][0]}`) {
+      line.continuations = [];
+      line.sourceEcho = { workflow: WORKFLOW, action: 'actions/upload-artifact@v4', artifact: echo.artifact, paths: sourcePaths[echo.artifact], group: echo.group, with: echo.with, name: echo.name };
+      pending = { parent: line, artifact: echo.artifact, group: echo.group, continuations: [...sourcePaths[echo.artifact].slice(1), ''], continuationIndex: 0, tailIndex: 0 }; echo = null; continue;
+    }
+    echo = line.text === '##[group]Run actions/upload-artifact@v4' ? { phase: 'with', group: point(line) } : null;
+  }
+  assert(!pending, 'nontruncated source-bound upload input echo');
+  return lines;
+}
+export function verifyCompletedProducerLog(bytes, producer, ctx, execution, dist, distZIP) {
+  same(producer.status, 'completed', 'completed log producer'); same(producer.conclusion, 'success', 'successful log producer');
+  same(producer.head_sha, ctx.sha, 'log producer SHA'); same(producer.run_id, ctx.runID, 'log producer run'); same(producer.run_attempt, 1, 'log producer attempt');
+  same(execution.buildScript, BUILD_SCRIPT, 'reviewed marker command'); same(execution.buildCommand, BUILD_COMMAND, 'reviewed build command');
+  same(execution.workflowSHA256, WORKFLOW_CONTRACT_SHA256, 'reviewed log workflow'); same(execution.packageSHA256, PACKAGE_CONTRACT_SHA256, 'reviewed log package');
+  const lines = parsedLog(bytes);
+  assert(/^Current runner version: /.test(lines[0].text), 'full producer log starts with runner setup');
+  assert(lines.every(l => Date.parse(l.timestamp) >= Date.parse(producer.started_at) && Date.parse(l.timestamp) < providerEndExclusive(producer.completed_at)), 'log within genuine producer window');
+  assert(!lines.some(l => /##\[error\]|Process completed with exit code [1-9]|The operation was canceled/.test(l.text)), 'no contradictory completed job errors');
+  const exact = text => { const matches = lines.filter(l => l.text === text); same(matches.length, 1, 'unique log evidence'); return matches[0]; };
+  const marker = edge => `ZK1359_BUILD_V1 ${edge} sha=${ctx.sha} run=${ctx.runID} attempt=1 job=ci`;
+  const begin = exact(marker('BEGIN')), end = exact(marker('END')); assert(begin.line < end.line, 'ordered build markers');
+  const groupText = `##[group]Run ${BUILD_SCRIPT.split('\n')[0]}`;
+  const group = exact(groupText);
+  assert(group.line < begin.line, 'actual build command before begin marker');
+  const echoBegin = exact(BUILD_SCRIPT.split('\n')[0]), echoBuild = exact('npm run build'), echoEnd = exact(BUILD_SCRIPT.split('\n')[2]);
+  assert(group.line < echoBegin.line && echoBegin.line < echoBuild.line && echoBuild.line < echoEnd.line && echoEnd.line < begin.line, 'unique unchanged normal build command echo');
+  const close = lines.filter(l => l.line > echoEnd.line && l.line < begin.line && l.text === '##[endgroup]'); same(close.length, 1, 'build command echo group closure');
+  assert(!lines.some(l => l.line > begin.line && l.line < end.line && /^##\[(?:group|endgroup)\]/.test(l.text)), 'no nested or spoofed build boundary');
+  const permitted = new Set([group.line, echoBegin.line, echoEnd.line, begin.line, end.line]);
+  assert(!lines.some(l => l.text.includes('ZK1359_BUILD_V1') && !permitted.has(l.line)), 'no duplicate or spoofed markers');
+  const command = exact(`> ${BUILD_COMMAND}`); assert(command.line > begin.line && command.line < end.line, 'actual package build execution within markers');
+  const uploadGroups = lines.filter(l => l.line > end.line && l.text.startsWith('##[group]'));
+  assert(uploadGroups.length > 0, 'following upload action'); const upload = uploadGroups[0]; same(upload.text, '##[group]Run actions/upload-artifact@v4', 'immediately following normal upload');
+  assert(lines.filter(l => l.line > end.line && l.line < upload.line).every(l => !l.text.trim()), 'no post-build artifact mutation command');
+  const next = uploadGroups[1]?.line ?? lines.at(-1).line + 1;
+  const uploadLines = lines.filter(l => l.line >= upload.line && l.line < next);
+  const uploadExact = text => { const matches = uploadLines.filter(l => l.text === text); same(matches.length, 1, 'unique dist upload evidence'); return matches[0]; };
+  const uploadClose = uploadExact('##[endgroup]');
+  for (const text of ['  name: dist', '  path: simgolf-lite/dist', '  retention-days: 7', '  overwrite: false', '  include-hidden-files: false']) assert(uploadExact(text).line < uploadClose.line, 'normal immutable upload inputs');
+  assert(!uploadLines.some(l => l.text === '  overwrite: true' || l.text === '  include-hidden-files: true'), 'unmutated dist upload settings');
+  assert(Number.isSafeInteger(dist.size) && dist.size > 0, 'API artifact ZIP size');
+  same(distZIP.length, dist.size, 'independent raw ZIP size'); verifyDigest(distZIP, dist.digest);
+  const digest = uploadExact(`SHA256 digest of uploaded artifact zip is ${dist.digest.slice(7)}`);
+  const finalization = uploadExact(`Artifact dist.zip successfully finalized. Artifact ID ${dist.id}`);
+  const success = uploadExact(`Artifact dist has been successfully uploaded! Final size is ${dist.size} bytes. Artifact ID is ${dist.id}`);
+  const url = uploadExact(`Artifact download URL: https://github.com/${ctx.repository}/actions/runs/${ctx.runID}/artifacts/${dist.id}`);
+  assert(uploadClose.line < digest.line && digest.line < finalization.line && finalization.line < success.line && success.line < url.line, 'ordered actual artifact finalization');
+  const cleanup = exact('Cleaning up orphan processes'); assert(cleanup.line > url.line, 'full completed producer cleanup tail');
+  assert(!lines.filter(l => l.line >= next).some(l => /name: dist|Artifact dist(?:\.zip)? |npm run build|ZK1359_BUILD_V1/.test(l.text)), 'no later producer build or dist upload');
+  const point = l => ({ line: l.line, byteOffset: l.byteOffset, timestamp: l.timestamp });
+  return { schema: 1, scope: 'authenticated-full-completed-producer-job-log; markers are execution evidence, not provider step metadata', rawSHA256: sha256(bytes), bytes: bytes.length, endpoint: `/actions/jobs/${producer.id}/logs`, build: { group: point(group), begin: point(begin), end: point(end) }, upload: { begin: point(upload), finalized: point(finalization), end: point(url), artifact: { name: 'dist', path: 'simgolf-lite/dist', ...dist } }, cleanup: point(cleanup) };
+}
+
 export function artifactSet(artifacts, names, run, now = Date.now()) {
   const result = {};
   for (const name of names) {
@@ -193,7 +429,8 @@ export function artifactSet(artifacts, names, run, now = Date.now()) {
     same(a.workflow_run.id, run.id, 'artifact run'); same(a.workflow_run.head_sha, run.head_sha, 'artifact SHA');
     same(a.workflow_run.head_branch, run.head_branch, 'artifact branch');
     assert(a.size_in_bytes > 0, 'nonempty artifact');
-    result[name] = { id: a.id, digest: a.digest };
+    assert(Number.isSafeInteger(a.size_in_bytes), 'artifact size integer');
+    result[name] = { id: a.id, digest: a.digest, size: a.size_in_bytes };
   }
   same(new Set(Object.values(result).map(a => a.id)).size, names.length, 'distinct artifact IDs');
   return result;
@@ -217,21 +454,47 @@ export function debugBindings(directory) {
   assert(bindings.length > 0, 'Sentry debug bindings required');
   same(new Set(bindings.map(b => b.debugID)).size, bindings.length, 'unique Sentry debug UUIDs'); return bindings;
 }
-export function verifySentryLog(bytes, job, release, bindings) {
-  const build = job.steps.find(s => s.name === 'Build');
-  assert(build && build.conclusion === 'success', 'successful Build step');
-  const start = Date.parse(build.started_at), end = Date.parse(build.completed_at);
-  assert(Number.isFinite(start) && Number.isFinite(end) && end >= start, 'Build timestamps');
-  // Use only lines within the completed Build step's server-provided time window.
-  const lines = bytes.toString('utf8').split('\n').filter(line => {
-    const timestamp = line.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z/);
-    return timestamp && Date.parse(timestamp[0]) >= start && Date.parse(timestamp[0]) <= end;
-  }).join('\n');
-  assert(lines.includes('[sentry-vite-plugin] Info: Successfully uploaded source maps to Sentry'), 'successful Sentry upload message');
-  assert(lines.includes('> Upload type: artifact bundle'), 'Sentry artifact bundle');
-  assert(lines.includes(`> Release: ${release}`), 'Sentry release');
-  for (const { debugID } of bindings) assert(lines.includes(`(debug id ${debugID})`), 'uploaded debug ID');
-  return { scope: 'masked-GitHub-completed-job-log-upload-provenance; no remote Sentry retrieval', jobID: job.id, runID: job.run_id, attempt: 1, rawLogSHA256: sha256(bytes), release, debugBindings: bindings };
+export function verifySentryLog(bytes, job, release, bindings, proof) {
+  let lines;
+  if (proof) {
+    same(sha256(bytes), proof.completedLog.rawSHA256, 'full Sentry log digest');
+    const allLines = parsedLog(bytes);
+    lines = allLines.filter(l => l.line > proof.completedLog.build.begin.line && l.line < proof.completedLog.build.end.line);
+    const buildLines = new Set(lines.map(l => l.line));
+    assert(!allLines.some(l => /^(?:> Release:|> Upload type:|Source Map Upload Report|\[sentry-vite-plugin\] Info: Successfully uploaded source maps to Sentry)/.test(l.text) && !buildLines.has(l.line)), 'Sentry upload evidence only within actual Build');
+    assert(!allLines.some(l => l.text.includes('debug id ') && !buildLines.has(l.line)), 'debug upload evidence only within actual Build');
+    if (proof.kind === 'github-completed-build-step-v1') {
+      const start = Date.parse(proof.step.started_at), end = providerEndExclusive(proof.step.completed_at);
+      assert(lines.every(l => Date.parse(l.timestamp) >= start && Date.parse(l.timestamp) < end), 'actual API Build timestamps');
+    } else same(proof.kind, 'completed-producer-log-v1', 'Sentry proof route');
+  } else {
+    // Kept for the real API-step verifier and its original negative controls.
+    const build = job.steps.find(s => s.name === 'Build');
+    assert(build && build.conclusion === 'success', 'successful Build step');
+    const start = Date.parse(build.started_at), end = Date.parse(build.completed_at);
+    assert(Number.isFinite(start) && Number.isFinite(end) && end >= start, 'Build timestamps');
+    lines = parsedLog(bytes).filter(l => Date.parse(l.timestamp) >= start && Date.parse(l.timestamp) <= end);
+  }
+  const exact = text => { const found = lines.filter(l => l.text === text); same(found.length, 1, 'unique Sentry build evidence'); return found[0]; };
+  const uploaded = exact('[sentry-vite-plugin] Info: Successfully uploaded source maps to Sentry');
+  const bundle = exact('> Upload type: artifact bundle'), releaseLine = exact(`> Release: ${release}`);
+  same(lines.filter(l => l.text.startsWith('> Release:')).length, 1, 'unique actual release');
+  same(lines.filter(l => l.text.startsWith('> Upload type:')).length, 1, 'unique actual bundle');
+  const debugLines = lines.filter(l => /debug id /.test(l.text));
+  for (const { debugID } of bindings) assert(debugLines.some(l => l.text.endsWith(`debug id ${debugID})`)), 'uploaded debug ID');
+  if (proof) {
+    const report = exact('Source Map Upload Report'), scripts = exact('  Scripts'), maps = exact('  Source Maps');
+    assert(releaseLine.line < report.line && bundle.line < report.line && report.line < scripts.line && scripts.line < maps.line && maps.line < uploaded.line, 'ordered Sentry upload report');
+    const expected = bindings.map(b => b.debugID).sort();
+    const actualIDs = (from, to, kind) => lines.filter(l => l.line > from && l.line < to && l.text.includes('debug id ')).map(l => {
+      const pattern = kind === 'script' ? /^    ~\/[^\s]+\.js \(sourcemap at [^\s]+\.js\.map, debug id ([0-9a-f-]{36})\)$/ : /^    ~\/[^\s]+\.js\.map \(debug id ([0-9a-f-]{36})\)$/;
+      const match = l.text.match(pattern); assert(match, 'actual uploaded script/map debug record'); return match[1];
+    }).sort();
+    same(actualIDs(scripts.line, maps.line, 'script'), expected, 'exact uploaded script debug IDs');
+    same(actualIDs(maps.line, uploaded.line, 'map'), expected, 'exact uploaded map debug IDs');
+    same(debugLines.length, bindings.length * 2, 'no duplicate or outside uploaded debug records');
+  }
+  return { schema: 1, scope: 'authenticated-completed-producer-build-upload-provenance; no remote Sentry retrieval', proofKind: proof?.kind ?? 'github-completed-build-step-v1', jobID: job.id, runID: job.run_id, attempt: 1, rawLogSHA256: sha256(bytes), release, debugBindings: bindings };
 }
 
 export class GitHub {
@@ -270,7 +533,7 @@ export class GitHub {
     for await (const chunk of response.body) { received += chunk.length; assert(received <= maxBytes, 'bounded storage response'); chunks.push(chunk); }
     assert(received > 0, 'nonempty storage response'); return Buffer.concat(chunks);
   }
-  async download(id, digest, zipPath, destination) {
+  async download(id, digest, zipPath, destination, expectedSize) {
     assert(Number.isSafeInteger(id) && id > 0, 'download artifact ID');
     const redirect = await this.request(`/actions/artifacts/${id}/zip`, true);
     const url = new URL(redirect.headers.get('location'));
@@ -283,6 +546,7 @@ export class GitHub {
     const chunks = []; let received = 0;
     for await (const chunk of response.body) { received += chunk.length; assert(received <= size, 'artifact exceeds advertised size'); chunks.push(chunk); }
     same(received, size, 'complete download');
+    if (expectedSize !== undefined) same(size, expectedSize, 'API/download raw ZIP size');
     const bytes = Buffer.concat(chunks); verifyDigest(bytes, digest); writeFileSync(zipPath, bytes); safeExtract(zipPath, destination);
   }
 }
@@ -296,21 +560,38 @@ function context(env = process.env) {
 }
 function releaseIdentity(repoRoot, sha) { return `coursecraft@${json(join(repoRoot, 'simgolf-lite/package.json')).version}+${sha.slice(0, 12)}`; }
 export function verifyReceipt(receipt, ctx, pins, reports, m65, files, artifacts) {
-  same(receipt.schema, 1, 'receipt schema'); same(receipt.sha, ctx.sha, 'receipt SHA'); same(receipt.repository, ctx.repository, 'receipt repository');
+  same(receipt.schema, 2, 'receipt schema'); same(receipt.sha, ctx.sha, 'receipt SHA'); same(receipt.repository, ctx.repository, 'receipt repository');
   same(receipt.workflow, WORKFLOW, 'receipt workflow'); same(receipt.attempt, 1, 'receipt attempt'); same(receipt.branch, 'develop', 'receipt branch');
   same(receipt.event, 'push', 'receipt event'); same(receipt.runID, ctx.runID, 'receipt run ID');
   same(receipt.sourcePins, pins, 'source pins'); same(receipt.reports, reports, 'recomputed reports'); same(receipt.m65, m65, 'M65 binding');
   same(receipt.files, files, 'raw file inventory'); same(receipt.artifacts, artifacts, 'immutable artifact metadata');
+  verifyBuildProofShape(receipt.authenticatedBuild);
 }
 async function selected(api, ctx) {
   const run = selectRun(await api.pages(`/actions/workflows/ci.yml/runs?branch=develop&event=push&head_sha=${ctx.sha}`, 'workflow_runs'), ctx);
   const fresh = verifyRun(await api.request(`/actions/runs/${run.id}`), ctx); same(fresh.id, run.id, 'fresh run ID');
-  verifyJobs(await api.pages(`/actions/runs/${run.id}/attempts/1/jobs`, 'jobs'), run); return run;
+  terminalJobs(await api.pages(`/actions/runs/${run.id}/attempts/1/jobs`, 'jobs'), run, ctx.repository); return run;
 }
 function downloadedEvidence(root) {
   return verifyReports(join(root, 'golden-path-e2e-report/playwright-report/index.html'), join(root, 'vision-player-career-e2e-report/vision-player-career-report/results.json'));
 }
-async function verifyPromotion(api, ctx, repoRoot, root, promotion) {
+// Artifact reports contain legitimate hidden Playwright files. Only the dist
+// publication inventory applies the stricter hidden-file policy above.
+function artifactTree(directory) {
+  const files = [];
+  function walk(relative = '') {
+    for (const name of readdirSync(join(directory, relative)).sort()) {
+      const path = relative ? `${relative}/${name}` : name, info = lstatSync(join(directory, path));
+      assert(!info.isSymbolicLink(), 'symlink in retained artifact');
+      if (info.isDirectory()) { files.push({ path, kind: 'directory' }); walk(path); }
+      else { assert(info.isFile(), 'regular retained artifact'); files.push({ path, bytes: info.size, sha256: sha256(readFileSync(join(directory, path))) }); }
+    }
+  }
+  walk(); return files;
+}
+
+export async function verifyPromotion(api, ctx, repoRoot, root, promotion) {
+  same(promotion.schema, 2, 'promotion schema');
   same(promotion.production, ctx, 'production receipt context');
   const run = await selected(api, ctx); same(run.id, promotion.selectedRunID, 'selected run changed');
   const all = artifactSet(await api.pages(`/actions/runs/${run.id}/artifacts`, 'artifacts'), [...ARTIFACT_NAMES, 'release-receipt'], run);
@@ -323,14 +604,25 @@ async function verifyPromotion(api, ctx, repoRoot, root, promotion) {
   same(receipt.release, releaseIdentity(repoRoot, ctx.sha), 'release identity');
   verifyInventory(join(repoRoot, 'simgolf-lite/dist'), files);
   const bindings = debugBindings(join(root, 'dist')); same(receipt.sentry.debugBindings, bindings, 'Sentry debug binding receipt');
-  same(receipt.sentry.scope, 'authenticated-build-debug-bindings; upload-log-verification-required-at-promotion', 'honest initial Sentry scope');
+  same(receipt.sentry.scope, 'qualified-completed-producer-upload; no remote Sentry retrieval', 'honest qualified Sentry scope');
   same(receipt.sentry.uninstrumentedWorker, { type: 'Vite separate analysis worker', source: 'src/game/analysis/analysis.worker.ts', published: files.filter(f => /^assets\/analysis\.worker-[\w-]+\.js$/.test(f.path)) }, 'known worker source/type/raw file binding');
+  // Recheck every retained ZIP independently, including reports and receipt.
+  for (const [name, artifact] of Object.entries(all)) {
+    const bytes = readFileSync(join(root, `${name}.zip`)); same(bytes.length, artifact.size, 'retained raw ZIP size'); verifyDigest(bytes, artifact.digest);
+    const freshRoot = join(root, `recheck-${name}`); rmSync(freshRoot, { recursive: true, force: true });
+    safeExtract(join(root, `${name}.zip`), freshRoot);
+    same(artifactTree(freshRoot), artifactTree(join(root, name)), 'raw extracted artifact bytes unchanged');
+    rmSync(freshRoot, { recursive: true, force: true });
+  }
   const selectedJobs = await api.pages(`/actions/runs/${run.id}/attempts/1/jobs`, 'jobs');
-  same(receipt.authenticatedBuild, initialBuild(selectedJobs, { ...ctx, runID: run.id }), 'authenticated successful initial Build metadata');
-  const job = verifyJobs(selectedJobs, run);
+  const job = terminalJobs(selectedJobs, run, ctx.repository);
+  const direct = await api.request(`/actions/jobs/${job.id}`);
   const log = await api.signedBytes(`/actions/jobs/${job.id}/logs`, 32 * 1024 * 1024);
-  const sentry = verifySentryLog(log, job, receipt.release, bindings);
-  if (promotion.sentry) same(promotion.sentry, sentry, 'Sentry provenance recheck'); else promotion.sentry = sentry;
+  const proof = initialBuild(selectedJobs, { ...ctx, runID: run.id }, { direct, log, repoRoot, dist: all.dist, distZIP: readFileSync(join(root, 'dist.zip')), release: receipt.release, bindings });
+  same(receipt.authenticatedBuild, proof, 'recomputed truthful producer proof');
+  verifyJobs(selectedJobs, run, proof);
+  same(receipt.sentry.upload, proof.sentry, 'qualified Sentry upload proof');
+  if (promotion.sentry) same(promotion.sentry, proof.sentry, 'Sentry provenance recheck'); else promotion.sentry = proof.sentry;
   return receipt;
 }
 const DIAGNOSTIC_PHASES = new Set(['context', 'verify-reports', 'receipt-run', 'receipt-artifacts', 'receipt-release-identity', 'receipt-source-pins', 'receipt-build-metadata', 'receipt-reports', 'receipt-m65', 'receipt-inventory', 'receipt-worker-binding', 'receipt-debug-bindings', 'receipt-write', 'promotion']);
@@ -354,18 +646,33 @@ async function main(mode) {
   }
   const ctx = context(), api = new GitHub(ctx.repository, process.env.GH_TOKEN);
   if (mode === 'receipt') {
-    const run = await receiptPhase('receipt-run', () => api.request(`/actions/runs/${ctx.runID}`));
-    same(run.id, ctx.runID, 'current run ID'); same(run.head_sha, ctx.sha, 'current run SHA'); same(run.run_attempt, 1, 'current run attempt');
+    // Q consumes a completed-success P; the enclosing run and D may still be
+    // active. No producer rebuild, report regeneration or artifact re-upload.
+    const run = verifyRunIdentity(await receiptPhase('receipt-run', () => api.request(`/actions/runs/${ctx.runID}`)), ctx);
+    same(run.id, ctx.runID, 'current qualification run ID');
+    const jobs = await receiptPhase('receipt-build-metadata', () => api.pages(`/actions/runs/${ctx.runID}/attempts/1/jobs`, 'jobs'));
+    const producer = uniqueJob(jobs, ctx, PRODUCER);
+    const direct = await receiptPhase('receipt-build-metadata', () => api.request(`/actions/jobs/${producer.id}`));
     const artifacts = await receiptPhase('receipt-artifacts', async () => artifactSet(await api.pages(`/actions/runs/${ctx.runID}/artifacts`, 'artifacts'), ARTIFACT_NAMES, run));
+    const root = join(project, 'release-evidence'); rmSync(root, { recursive: true, force: true }); mkdirSync(root);
+    for (const [name, artifact] of Object.entries(artifacts)) await receiptPhase('receipt-artifacts', () => api.download(artifact.id, artifact.digest, join(root, `${name}.zip`), join(root, name), artifact.size));
+    const files = receiptPhase('receipt-inventory', () => inventory(join(root, 'dist')));
+    const bindings = receiptPhase('receipt-debug-bindings', () => debugBindings(join(root, 'dist')));
+    const release = receiptPhase('receipt-release-identity', () => releaseIdentity(repoRoot, ctx.sha));
+    const log = await receiptPhase('receipt-build-metadata', () => api.signedBytes(`/actions/jobs/${producer.id}/logs`, 32 * 1024 * 1024));
+    const authenticatedBuild = receiptPhase('receipt-build-metadata', () => initialBuild(jobs, ctx, { direct, log, repoRoot, dist: artifacts.dist, distZIP: readFileSync(join(root, 'dist.zip')), release, bindings }));
     const receipt = {
-      schema: 1, ...ctx, release: receiptPhase('receipt-release-identity', () => releaseIdentity(repoRoot, ctx.sha)), sourcePins: receiptPhase('receipt-source-pins', () => sourcePins(repoRoot)),
-      authenticatedBuild: await receiptPhase('receipt-build-metadata', async () => initialBuild(await api.pages(`/actions/runs/${ctx.runID}/attempts/1/jobs`, 'jobs'), ctx)),
-      reports: receiptPhase('receipt-reports', () => verifyReports(join(project, 'playwright-report/index.html'), join(project, 'vision-player-career-report/results.json'))),
-      m65: receiptPhase('receipt-m65', () => m65Binding(repoRoot, join(project, 'artifacts/m65/certification-report.json'))), artifacts, files: receiptPhase('receipt-inventory', () => inventory(join(project, 'dist'), true)),
-      sentry: { scope: 'authenticated-build-debug-bindings; upload-log-verification-required-at-promotion', uninstrumentedWorker: { type: 'Vite separate analysis worker', source: 'src/game/analysis/analysis.worker.ts', published: receiptPhase('receipt-worker-binding', () => inventory(join(project, 'dist'), true).filter(f => /^assets\/analysis\.worker-[\w-]+\.js$/.test(f.path))) }, debugBindings: receiptPhase('receipt-debug-bindings', () => debugBindings(join(project, 'dist'))) },
+      schema: 2, ...ctx, release, sourcePins: receiptPhase('receipt-source-pins', () => sourcePins(repoRoot)), authenticatedBuild,
+      reports: receiptPhase('receipt-reports', () => downloadedEvidence(root)),
+      m65: receiptPhase('receipt-m65', () => m65Binding(repoRoot, join(root, 'm65-machine-certification/certification-report.json'))), artifacts, files,
+      sentry: { scope: 'qualified-completed-producer-upload; no remote Sentry retrieval', uninstrumentedWorker: { type: 'Vite separate analysis worker', source: 'src/game/analysis/analysis.worker.ts', published: receiptPhase('receipt-worker-binding', () => files.filter(f => /^assets\/analysis\.worker-[\w-]+\.js$/.test(f.path))) }, debugBindings: bindings, upload: authenticatedBuild.sentry },
     };
-    diagnosticPhase = 'receipt-write';
-    mkdirSync(join(project, 'release-evidence'), { recursive: true }); writeJson(join(project, 'release-evidence/release-receipt.json'), receipt); return;
+    // Reauthenticate identity/artifact bindings before emitting the Q result.
+    const freshRun = verifyRunIdentity(await api.request(`/actions/runs/${ctx.runID}`), ctx); same(freshRun.id, run.id, 'qualification run unchanged');
+    same(artifactSet(await api.pages(`/actions/runs/${ctx.runID}/artifacts`, 'artifacts'), ARTIFACT_NAMES, freshRun), artifacts, 'qualification artifacts unchanged');
+    diagnosticPhase = 'receipt-write'; writeJson(join(root, 'release-receipt.json'), receipt);
+    assert(process.env.GITHUB_OUTPUT, 'qualification output file');
+    writeFileSync(process.env.GITHUB_OUTPUT, `dist-id=${artifacts.dist.id}\n`, { flag: 'a' }); return;
   }
   diagnosticPhase = 'promotion';
   same(ctx.branch, 'main', 'production branch');
@@ -374,8 +681,8 @@ async function main(mode) {
     const run = await selected(api, ctx);
     const artifacts = artifactSet(await api.pages(`/actions/runs/${run.id}/artifacts`, 'artifacts'), [...ARTIFACT_NAMES, 'release-receipt'], run);
     rmSync(root, { recursive: true, force: true }); mkdirSync(root);
-    for (const [name, artifact] of Object.entries(artifacts)) await api.download(artifact.id, artifact.digest, join(root, `${name}.zip`), join(root, name));
-    const promotion = { schema: 1, production: ctx, selectedRunID: run.id, artifacts, receiptSHA256: sha256(readFileSync(join(root, 'release-receipt/release-receipt.json'))) };
+    for (const [name, artifact] of Object.entries(artifacts)) await api.download(artifact.id, artifact.digest, join(root, `${name}.zip`), join(root, name), artifact.size);
+    const promotion = { schema: 2, production: ctx, selectedRunID: run.id, artifacts, receiptSHA256: sha256(readFileSync(join(root, 'release-receipt/release-receipt.json'))) };
     // Install only the downloaded archive, then revalidate against its receipt.
     rmSync(join(project, 'dist'), { recursive: true, force: true });
     safeExtract(join(root, 'dist.zip'), join(project, 'dist'));
