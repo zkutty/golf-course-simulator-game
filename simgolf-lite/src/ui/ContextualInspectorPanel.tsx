@@ -3,6 +3,7 @@ import { IconUi } from "../assets/icons";
 import type { MessageKey } from "../i18n/catalog";
 import { translateCurrent } from "../i18n/core";
 import "./ContextualInspectorPanel.css";
+import { PacePresetPicker } from "./PacePresetPicker";
 import {
   biomeContextAttributes,
   type BiomeUiTheme,
@@ -208,11 +209,7 @@ export function ContextualInspectorPanel(props: {
         </div>
         <div className="cc-inspector-recommendation" data-tone="positive" style={{ marginTop: 12, padding: 10, borderRadius: 10 }}>
           <strong style={{ fontSize: 11 }}>{translateCurrent("inspector.recommendation.operations")}</strong>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-            <button onClick={() => props.onSetPacePreset("relaxed")} style={buttonStyle}>{translateCurrent("inspector.preset.relaxed")}</button>
-            <button onClick={() => props.onSetPacePreset("balanced")} style={buttonStyle}>{translateCurrent("inspector.preset.balanced")}</button>
-            <button onClick={() => props.onSetPacePreset("brisk")} style={buttonStyle}>{translateCurrent("inspector.preset.brisk")}</button>
-          </div>
+          <div style={{ marginTop: 8 }}><PacePresetPicker onApply={props.onSetPacePreset} /></div>
         </div>
       </>}
 

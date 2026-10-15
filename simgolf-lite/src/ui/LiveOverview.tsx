@@ -3,6 +3,7 @@ import { GameTabs } from "./gameui/GameTabs";
 import { IconUi } from "../assets/icons/IconUi";
 import { useI18n } from "../i18n/useI18n";
 import "./LiveOverview.css";
+import { PacePresetPicker } from "./PacePresetPicker";
 import type { CourseOperationsPatch, LiveStatus } from "../hooks/useLiveSimulation";
 import { unlockedStaffRoles } from "../game/progression/progression";
 import { translateCurrent } from "../i18n/core";
@@ -121,7 +122,7 @@ export function LiveOverview(props: { course?: Course; cash?: number; reservedMo
         <span>{translateCurrent("live.pace.averageWait")}</span><b>{translateCurrent("live.pace.minutes", { minutes: props.status.pace.averageWaitMinutes.toFixed(1) })}</b>
       </section>
       {props.paceVisibility === "full" && <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 5 }}>{(["relaxed", "balanced", "brisk"] as PacePreset[]).map((preset) => <button key={preset} aria-pressed={props.status.pace.preset === preset} onClick={() => props.onSetPacePreset?.(preset)} style={{ textTransform: "capitalize", padding: 8, borderRadius: 7, color: "inherit", border: props.status.pace.preset === preset ? "1px solid #9bd18a" : "1px solid rgba(255,255,255,.18)", background: props.status.pace.preset === preset ? "rgba(112,171,91,.28)" : "rgba(255,255,255,.06)" }}>{t(`live.pace.preset.${preset}`)}</button>)}</div>
+      <PacePresetPicker currentPreset={props.status.pace.preset} onApply={props.onSetPacePreset} />
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 7 }}><label style={{ display: "grid", gap: 3, fontSize: "0.6875rem" }}>{translateCurrent("live.pace.teeInterval")}<input aria-label={translateCurrent("live.pace.teeIntervalAria")} type="number" min={7} max={15} value={props.status.pace.teeIntervalMinutes} onChange={(event) => props.onUpdatePaceOperations?.({ teeIntervalMinutes: Number(event.target.value) })}/></label><label style={{ display: "grid", gap: 3, fontSize: "0.6875rem" }}>{translateCurrent("live.pace.beverageService")}<select aria-label={translateCurrent("live.pace.beverageService")} value={props.status.pace.beverageMenu} onChange={(event) => props.onUpdatePaceOperations?.({ beverage: { menu: event.target.value as CourseOperations["beverage"]["menu"] } })}><option value="off">{translateCurrent("common.off")}</option><option value="refreshments">{translateCurrent("live.pace.refreshments")}</option><option value="beer_wine">{translateCurrent("live.pace.beerWine")}</option></select></label></div>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 7 }}>
         <label style={{ display: "grid", gap: 3, fontSize: "0.6875rem" }}>{translateCurrent("live.pace.lastTee")}<input aria-label={translateCurrent("live.pace.lastTee")} type="number" min={240} max={720} step={15} value={props.status.pace.lastTeeMinute} onChange={(event) => props.onUpdatePaceOperations?.({ lastTeeMinute: Number(event.target.value) })}/></label>

@@ -20,10 +20,14 @@ export function GameButton({
 }: GameButtonProps) {
   const padding =
     size === "sm" ? "8px 14px" : size === "lg" ? "14px 18px" : "10px 16px";
-  const fontSize = size === "sm" ? 13 : size === "lg" ? 16 : 14;
+  const fontSize = size === "sm" ? "0.8125rem" : size === "lg" ? "1rem" : "0.875rem";
 
   const base: CSSProperties = {
     display: "inline-flex",
+    minWidth: 0,
+    maxWidth: "100%",
+    boxSizing: "border-box",
+    overflowWrap: "anywhere",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
@@ -68,6 +72,10 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
 export function IconButton({ icon, label, variant = "secondary", disabled, style, ...props }: IconButtonProps) {
   const base: CSSProperties = {
     display: "flex",
+    minWidth: 0,
+    maxWidth: "100%",
+    boxSizing: "border-box",
+    overflowWrap: "anywhere",
     flexDirection: "column",
     alignItems: "center",
     gap: 8,
@@ -93,7 +101,7 @@ export function IconButton({ icon, label, variant = "secondary", disabled, style
       {...props}
     >
       <div style={{ display: "grid", placeItems: "center" }}>{icon}</div>
-      <div style={{ fontSize: 12, fontWeight: 800, color: "inherit" }}>{label}</div>
+      <div style={{ fontSize: "0.75rem", maxWidth: "100%", fontWeight: 800, color: "inherit" }}>{label}</div>
     </button>
   );
 }
