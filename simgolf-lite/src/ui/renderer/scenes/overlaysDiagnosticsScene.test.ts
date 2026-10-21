@@ -60,6 +60,13 @@ class FakeText extends FakeDisplay {
   text = "";
 }
 
+class FakeSprite extends FakeDisplay {
+  anchor = point();
+  scale = point(1, 1);
+  texture: unknown;
+  tint = 0xffffff;
+}
+
 class FakeContainer extends FakeDisplay {
   children: FakeDisplay[] = [];
   override destroy = vi.fn((options?: { children?: boolean }) => {
@@ -70,6 +77,7 @@ class FakeContainer extends FakeDisplay {
 
   addChild<T extends FakeDisplay>(...children: T[]): T {
     for (const child of children) {
+      if (child.parent === this) this.children = this.children.filter((entry) => entry !== child);
       child.parent = this;
       this.children.push(child);
     }
@@ -115,12 +123,13 @@ function snapshot(revision = 1): RenderSnapshot {
   };
 }
 
-function fixture(options: { perfEnabled?: boolean } = {}) {
+function fixture(options: { perfEnabled?: boolean; atlasReady?: () => boolean } = {}) {
   const terrainDecals = new FakeContainer();
   const fx = new FakeContainer();
   const screenOverlay = new FakeContainer();
   const graphics: FakeGraphics[] = [];
   const texts: FakeText[] = [];
+  const sprites: FakeSprite[] = [];
   const published = vi.fn();
   let clock = 10;
   const system = createOverlaysDiagnosticsSceneSystem(
@@ -142,11 +151,17 @@ function fixture(options: { perfEnabled?: boolean } = {}) {
         return text as unknown as PIXI.Text;
       },
       readPerfEnabled: () => options.perfEnabled ?? false,
+      atlasReady: options.atlasReady ?? (() => false),
+      golferFrame: () => null,
+      createSprite: () => {
+        const sprite = new FakeSprite(); sprites.push(sprite);
+        return sprite as unknown as PIXI.Sprite;
+      },
       now: () => ++clock,
       publishPerf: published,
     },
   );
-  return { terrainDecals, fx, screenOverlay, graphics, texts, published, system };
+  return { terrainDecals, fx, screenOverlay, graphics, texts, sprites, published, system };
 }
 
 function tickInput(patch: Partial<OverlayTickInput> = {}): OverlayTickInput {
@@ -336,5 +351,22 @@ describe("overlay and diagnostics scene ownership", () => {
     expect(arc.clear).toHaveBeenCalledTimes(2);
     expect(arc.lineTo).toHaveBeenCalledTimes(64);
     expect(scene.system.playerShotPlayback()).toBeNull();
+  });
+
+  it("adds the existing golfer sprites when their atlas becomes ready after the first playback tick", () => {
+    let ready = false;
+    const scene = fixture({ atlasReady: () => ready });
+    scene.system.create!({ ...snapshot(), playerRound: playerShot().round });
+    const input = tickInput({ playerShotPlayback: playerShotPlaybackFrame("s1", .18) });
+    scene.system.tick(input);
+    expect(scene.sprites).toHaveLength(0);
+    ready = true;
+    scene.system.tick(input);
+    expect(scene.sprites).toHaveLength(2);
+    expect(scene.system.playerShotPlayback()!.golferFrame).toMatch(/_swing_\d_5$/);
+    scene.system.tick(input);
+    expect(scene.sprites).toHaveLength(2);
+    scene.system.destroy!();
+    scene.sprites.forEach((sprite) => expect(sprite.destroy).toHaveBeenCalledOnce());
   });
 });

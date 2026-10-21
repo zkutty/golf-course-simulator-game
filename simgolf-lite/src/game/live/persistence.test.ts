@@ -43,6 +43,22 @@ function midRound() {
   return { course, state, pendingCash };
 }
 
+/** An absent modern carrier explicitly exercises historical certificate repair. */
+function historicalSnapshot(state: ReturnType<typeof midRound>["state"]) {
+  const snapshot = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });
+  for (const golfer of snapshot.state.golfers) {
+    delete golfer.lastMotionSegmentIndex;
+    for (const segment of golfer.segments) {
+      delete segment.motion; delete segment.shotId; delete segment.motionContactTerrain;
+    }
+    for (const shot of golfer.shotOutcomes ?? []) {
+      delete shot.shotStyle;
+      if (shot.sharedOutcome) { delete shot.sharedOutcome.impact; delete shot.sharedOutcome.motion; }
+    }
+  }
+  return snapshot;
+}
+
 describe("live simulation persistence", () => {
   it("round-trips a mid-round golfer, clock, pending cash, speed, and selection", () => {
     const { state, pendingCash } = midRound();
@@ -78,7 +94,7 @@ describe("live simulation persistence", () => {
 
   it("drops only malformed applied-wind evidence while retaining its containing live outcome", () => {
     const { state } = midRound();
-    const source = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });
+    const source = historicalSnapshot(state);
     const outcome = source.state.golfers.flatMap((golfer) => golfer.shotOutcomes ?? []).find((shot) => shot.sharedOutcome?.appliedWind);
     expect(outcome?.sharedOutcome?.appliedWind).toBeDefined();
     const mutations: Array<(wind: Record<string, unknown>) => void> = [
@@ -102,7 +118,7 @@ describe("live simulation persistence", () => {
 
   it("drops incoherent bivariate evidence without discarding valid historical shot truth", () => {
     const { state } = midRound();
-    const source = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });
+    const source = historicalSnapshot(state);
     const selected = source.state.golfers.flatMap((golfer) => golfer.shotOutcomes ?? []).find((shot) => shot.sharedOutcome?.appliedDispersion);
     expect(selected?.sharedOutcome?.appliedDispersion).toBeDefined();
     selected!.sharedOutcome!.appliedDispersion!.seed += 1;
@@ -264,7 +280,7 @@ describe("live simulation persistence", () => {
 
   it("drops only malformed nested flight, collision, and relief payloads while retaining legacy live evidence", () => {
     const { state } = midRound();
-    const source = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });
+    const source = historicalSnapshot(state);
     const mutations: Array<(shared: Record<string, unknown>) => void> = [
       (shared) => {
         (shared.flight as Record<string, unknown>).apexHeightYards = Number.NaN;

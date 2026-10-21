@@ -381,7 +381,16 @@ export function isValidSharedShotOutcome(value: unknown): value is SharedShotOut
   }
   if (value.impact !== undefined && !isClubImpactV1(value.impact)) return false;
   if (value.motion !== undefined) {
-    if (!isValidRetainedShotMotionV1(value.motion)) return false;
+    if (!isValidRetainedShotMotionV1(value.motion) || value.motion.identity.modelVersion !== "club_styles_v1") return false;
+    const collision = value.motion.flight?.collision ?? { kind: "none" as const };
+    if (collision.kind !== value.collision.kind
+      || collision.kind !== "none" && value.collision.kind !== "none" && (
+        collision.point.x !== value.collision.point.x || collision.point.y !== value.collision.point.y
+        || collision.kind === "obstacle" && value.collision.kind === "obstacle" && collision.obstacleType !== value.collision.obstacleType
+        || collision.kind === "terrain" && value.collision.kind === "terrain" && collision.terrain !== value.collision.terrain)
+      || value.impact && (value.impact.style !== value.motion.identity.style
+        || dispersionClub(value.impact.clubId)?.label !== value.motion.identity.club)
+      || (value.relief.status === "resolved") !== (value.motion.reliefPosition !== null)) return false;
     const rest = value.motion.physicalRest.point;
     if (rest.x !== value.physicalRest.x || rest.y !== value.physicalRest.y
       || value.motion.landing.point.x !== value.flight.carryEnd.x || value.motion.landing.point.y !== value.flight.carryEnd.y

@@ -1,3 +1,6 @@
+import { usesClubShotModel } from "../rules/shotModelSnapshot";
+import { shotStyleForTechnique } from "../rules/shotStyles";
+import { plannerDistanceProfile, projectPlannerClubCarries } from "../rules/plannerClubProjection";
 import type { Course, Hole, Point } from "../models/types";
 import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
 import type { GolferProfile } from "../sim/golferProfiles";
@@ -169,16 +172,17 @@ function slopeAwareAim(args: {
   }, true);
 }
 
-function profileFor(capabilities: GolferCapabilities, course: Course): GolferProfile {
+function profileFor(capabilities: GolferCapabilities, course: Course, snapshot?: PlayerRoundCourseSnapshot): GolferProfile {
   const base = getGolferProfile(capabilities.accuracy >= 65 ? "SCRATCH" : "BOGEY", course);
+  const calibrated = plannerDistanceProfile(snapshot);
   const scale = (club: { name: string; carryYards: number; dispersionTilesBase: number }) => ({
     ...club,
-    carryYards: club.carryYards * (.84 + capabilities.power / 480),
+    carryYards: calibrated ? club.carryYards : club.carryYards * (.84 + capabilities.power / 480),
     dispersionTilesBase: club.dispersionTilesBase * (1.38 - capabilities.accuracy / 220),
   });
   return {
     ...base,
-    clubs: base.clubs.map(scale),
+    clubs: (calibrated ? projectPlannerClubCarries(calibrated, base.clubs) : base.clubs).map(scale),
     ratingMultipliers: {
       hazard: 1.42 - capabilities.recovery / 190,
       rough: 1.34 - capabilities.recovery / 210,
@@ -215,6 +219,7 @@ function legalRecoverySelection(args: {
   flightProfile: ShotFlightProfile;
   capabilities: GolferCapabilities;
   yardsPerTile: number;
+  snapshot?: PlayerRoundCourseSnapshot;
 }): LegalRecoverySelection | null {
   const targetYards = analyzeShotSlope({
     course: args.course,
@@ -223,6 +228,7 @@ function legalRecoverySelection(args: {
     yardsPerTile: args.yardsPerTile,
   }).playsLikeDistanceYards;
   const powerScale = .82 + args.capabilities.power / 500;
+  const calibrated = plannerDistanceProfile(args.snapshot);
   const legal = availableShotClubs(args.lie).flatMap((club) => {
     const result = calculateShotEffects({
       clubId: club.id,
@@ -232,7 +238,9 @@ function legalRecoverySelection(args: {
       flightProfile: args.flightProfile,
     });
     if (!result.ok) return [];
-    const fullCarry = result.value.carryYards * powerScale;
+    const fullCarry = calibrated
+      ? result.value.carryYards * (club.id === "putter" ? 1 : calibrated.clubCarryYards[club.id] / club.carryYards)
+      : result.value.carryYards * powerScale;
     const power = clamp(targetYards / Math.max(1, fullCarry), .25, 1.15);
     const utilization = targetYards / Math.max(1, fullCarry * power);
     const routeBias = args.route === "safe"
@@ -372,6 +380,7 @@ function recoveryCandidate(args: {
     flightProfile: args.spec.flightProfile,
     capabilities: args.capabilities,
     yardsPerTile: args.course.yardsPerTile,
+    snapshot: args.snapshot,
   });
   if (!selection) return null;
 
@@ -550,12 +559,12 @@ export function generateRecoveryCandidates(args: {
 }): ShotIntent[] {
   if (!args.hole.green || !hasRecoveryContext(args.course, args.from, args.hole.green, args.lie)) return [];
   const lie = args.lie as ShotLie;
-  const profile = profileFor(args.capabilities, args.course);
   const snapshot = args.snapshot ?? liveCourseSnapshot({
     course: args.course,
     teeSet: "member",
     pinRotation: args.course.activePinRotation ?? "A",
   });
+  const profile = profileFor(args.capabilities, args.course, snapshot);
   const currentDistanceYards = distance(args.from, args.hole.green) * args.course.yardsPerTile;
   const latest = args.recentOutcomes?.at(-1);
   const prior = args.recentOutcomes?.at(-2);
@@ -587,11 +596,20 @@ export function generateRecoveryCandidates(args: {
         || a.id.localeCompare(b.id));
 }
 
-function chooseClub(course: Course, kind: StrategicIntentKind, from: Point, target: Point, capabilities: GolferCapabilities, lie: string): { name: string; power: number } {
+function chooseClub(course: Course, kind: StrategicIntentKind, from: Point, target: Point, capabilities: GolferCapabilities, lie: string, snapshot?: PlayerRoundCourseSnapshot): { name: string; power: number } {
   const shotSlope = analyzeShotSlope({ course, from, to: target, yardsPerTile: course.yardsPerTile });
   const d = shotSlope.playsLikeDistanceYards;
   const names = lie === "green" ? ["Putter", "Chip"] : kind === "hero" ? ["Driver", "3 Wood", "5 Iron"] : kind === "safe" ? ["3 Wood", "5 Iron", "Driver"] : ["Driver", "3 Wood", "5 Iron", "7 Iron", "Pitching Wedge"];
   const available = names.filter((name) => CLUBS[name]);
+  const calibrated = plannerDistanceProfile(snapshot);
+  if (calibrated) {
+    const carries = projectPlannerClubCarries(calibrated, available.map((name) => ({ name, carryYards: CLUBS[name].carry })));
+    const reachable = carries.find((club) => club.carryYards * 1.1 >= d) ?? carries[carries.length - 1];
+    const chosen = shotSlope.targetElevationDelta === 0 ? reachable : carries.slice().sort((a, b) =>
+      Math.abs(a.carryYards - d) - Math.abs(b.carryYards - d)
+      || a.carryYards - b.carryYards || a.name.localeCompare(b.name))[0];
+    return { name: chosen?.name ?? "7 Iron", power: clamp(d / Math.max(1, chosen?.carryYards ?? 1), .35, kind === "hero" ? 1.12 : .98) };
+  }
   const legacyName = available.find((candidate) => CLUBS[candidate].carry * 1.1 >= d) ?? available[available.length - 1] ?? "7 Iron";
   const powerScale = .84 + capabilities.power / 480;
   const name = shotSlope.targetElevationDelta === 0
@@ -617,10 +635,10 @@ function candidateTarget(course: Course, hole: Hole, kind: StrategicIntentKind):
   return targetNear(course, pointAt(tee, green, .46, -3.5), true);
 }
 
-function buildIntent(args: { course: Course; hole: Hole; kind: StrategicIntentKind; capabilities: GolferCapabilities; personality: Personality; profile: GolferProfile; }): ShotIntent {
+function buildIntent(args: { course: Course; hole: Hole; kind: StrategicIntentKind; capabilities: GolferCapabilities; personality: Personality; profile: GolferProfile; snapshot?: PlayerRoundCourseSnapshot }): ShotIntent {
   const from = { ...args.hole.tee! };
   const desiredTarget = candidateTarget(args.course, args.hole, args.kind);
-  const club = chooseClub(args.course, args.kind, from, desiredTarget, args.capabilities, terrainAt(args.course, from));
+  const club = chooseClub(args.course, args.kind, from, desiredTarget, args.capabilities, terrainAt(args.course, from), args.snapshot);
   const technique = args.kind === "recovery" ? "punch" : "normal";
   const target = slopeAwareAim({ course: args.course, from, desired: desiredTarget, club: club.name, technique, capabilities: args.capabilities });
   const clubSpec = args.profile.clubs.find((candidate) => candidate.name === club.name) ?? args.profile.clubs[0];
@@ -674,12 +692,46 @@ function withSelectedPreview(args: {
   shotNumber: number;
   snapshot?: PlayerRoundCourseSnapshot;
 }): ShotIntent {
-  if (args.intent.previewSeed != null && args.intent.previewLanding && args.intent.previewRest) return args.intent;
+  const retainedPreview = args.intent.previewSeed != null && args.intent.previewLanding && args.intent.previewRest;
+  if (retainedPreview && (!usesClubShotModel(args.snapshot?.shotModel) || args.intent.style !== undefined)) return args.intent;
   const snapshot = args.snapshot ?? liveCourseSnapshot({
     course: args.course,
     teeSet: "member",
     pinRotation: args.course.activePinRotation ?? "A",
   });
+  if (usesClubShotModel(snapshot.shotModel)) {
+    const requested = DISPERSION_CLUBS.find((club) => club.label === args.intent.club);
+    if (requested && !requested.allowedLies.includes(args.lie as ShotLie)) {
+      const targetYards = analyzeShotSlope({ course: args.course, from: args.from, to: args.intent.target,
+        yardsPerTile: args.course.yardsPerTile }).playsLikeDistanceYards;
+      const carry = (club: typeof requested) => snapshot.distanceProfile?.clubCarryYards[club.id] ?? club.carryYards;
+      const legal = DISPERSION_CLUBS.filter((club) => club.allowedLies.includes(args.lie as ShotLie));
+      const chosen = [...legal].sort((a, b) => Math.abs(carry(a) - targetYards) - Math.abs(carry(b) - targetYards))[0];
+      if (chosen) args = { ...args, intent: { ...args.intent, club: chosen.label, technique: "normal", flightProfile: "standard",
+        power: clamp(targetYards / Math.max(1, carry(chosen)), .25, 1.08),
+        facts: [...args.intent.facts.slice(0, 11), { code: "context", detail: `legal-club:${requested.label}->${chosen.label} lie:${args.lie}` }] } };
+    }
+    const club = DISPERSION_CLUBS.find((candidate) => candidate.label === args.intent.club);
+    if (club && args.intent.style === undefined) {
+      const technique = club.allowedTechniques.includes(args.intent.technique) ? args.intent.technique : "normal";
+      let style = shotStyleForTechnique(club.id, technique);
+      let power = args.intent.power;
+      const fullCarry = snapshot.distanceProfile?.clubCarryYards[club.id] ?? club.carryYards;
+      const targetYards = analyzeShotSlope({ course: args.course, from: args.from, to: args.intent.target,
+        yardsPerTile: args.course.yardsPerTile }).playsLikeDistanceYards;
+      if (technique === "normal" && club.family === "wedge" && args.intent.kind === "approach"
+        && targetYards > 0 && targetYards <= fullCarry * .65) {
+        style = "pitch";
+        // Pitch owns its .55 effort conversion. Compensate once so its effective
+        // power remains the intended partial swing, bounded by the style API.
+        power = clamp(clamp(targetYards / Math.max(1, fullCarry), .25, .65) / .55, .25, 1.15);
+      }
+      args = { ...args, intent: { ...args.intent, technique, style, power,
+        ...(style === "pitch" ? { flightProfile: "standard" as const } : {}),
+        facts: [...args.intent.facts.slice(0, 11), { code: "context",
+          detail: `intent-style:${style}; source:CourseCraft-shot-style-v1; full-carry:${fullCarry.toFixed(2)}` }] } };
+    }
+  }
   const previewSeed = stableHash(`${args.capabilities.seed}:${args.intent.id}:slope-preview`);
   const preview = resolveLiveShot({
     snapshot,
@@ -700,19 +752,26 @@ function withSelectedPreview(args: {
   };
 }
 
-function greenReachable(course: Course, hole: Hole, from: Point, capabilities: GolferCapabilities): boolean {
+function greenReachable(course: Course, hole: Hole, from: Point, capabilities: GolferCapabilities, snapshot?: PlayerRoundCourseSnapshot): boolean {
   if (!hole.green) return false;
   const playsLikeYards = analyzeShotSlope({ course, from, to: hole.green, yardsPerTile: course.yardsPerTile }).playsLikeDistanceYards;
-  const maximumCarry = CLUBS.Driver.carry * (.84 + capabilities.power / 480) * 1.12;
+  const calibrated = plannerDistanceProfile(snapshot);
+  const maximumCarry = (calibrated ? calibrated.clubCarryYards.driver : CLUBS.Driver.carry * (.84 + capabilities.power / 480)) * 1.12;
   // A golfer needs a little reserve for dispersion and elevation; a target at
   // the absolute 112% hero ceiling is not treated as a viable green attack.
   return playsLikeYards <= maximumCarry * .92;
 }
 
-function chooseGreenClub(course: Course, from: Point, target: Point, capabilities: GolferCapabilities): { name: string; power: number } {
+function chooseGreenClub(course: Course, from: Point, target: Point, capabilities: GolferCapabilities, snapshot?: PlayerRoundCourseSnapshot): { name: string; power: number } {
   const playsLikeYards = analyzeShotSlope({ course, from, to: target, yardsPerTile: course.yardsPerTile }).playsLikeDistanceYards;
   const powerScale = .84 + capabilities.power / 480;
   const names = ["Chip", "Sand Wedge", "Pitching Wedge", "7 Iron", "5 Iron", "3 Wood", "Driver"];
+  const calibrated = plannerDistanceProfile(snapshot);
+  if (calibrated) {
+    const carries = projectPlannerClubCarries(calibrated, names.map((name) => ({ name, carryYards: CLUBS[name].carry })));
+    const chosen = carries.find((club) => club.carryYards * 1.08 >= playsLikeYards) ?? carries[carries.length - 1];
+    return { name: chosen.name, power: clamp(playsLikeYards / Math.max(1, chosen.carryYards), .25, 1.08) };
+  }
   const name = names.find((candidate) => CLUBS[candidate].carry * powerScale * 1.08 >= playsLikeYards) ?? "Driver";
   return { name, power: clamp(playsLikeYards / Math.max(1, CLUBS[name].carry * powerScale), .25, 1.08) };
 }
@@ -724,8 +783,9 @@ function buildGreenLandingIntent(args: {
   lie: string;
   capabilities: GolferCapabilities;
   candidate: GreenLandingCandidate;
+  snapshot: PlayerRoundCourseSnapshot;
 }): ShotIntent {
-  const club = chooseGreenClub(args.course, args.from, args.candidate.target, args.capabilities);
+  const club = chooseGreenClub(args.course, args.from, args.candidate.target, args.capabilities, args.snapshot);
   const shotSlope = analyzeShotSlope({
     course: args.course,
     from: args.from,
@@ -760,7 +820,7 @@ function greenLandingIntents(args: {
   personality: Personality;
   snapshot: PlayerRoundCourseSnapshot;
 }): ShotIntent[] {
-  if (!greenReachable(args.course, args.hole, args.from, args.capabilities)) return [];
+  if (!greenReachable(args.course, args.hole, args.from, args.capabilities, args.snapshot)) return [];
   return planGreenLandingZones(args).map((candidate) => buildGreenLandingIntent({ ...args, candidate }));
 }
 
@@ -776,7 +836,6 @@ export function generateStrategicHolePlan(args: {
   /** Skip physical preview resolution when a caller consumes only analytic ranking fields. */
   includeSelectedPreview?: boolean;
 }): StrategicHolePlan {
-  const profile = profileFor(args.capabilities, args.course);
   const snapshot = args.snapshot ?? (args.includeGreenLandingZones === false
     ? undefined
     : liveCourseSnapshot({
@@ -784,6 +843,7 @@ export function generateStrategicHolePlan(args: {
         teeSet: "member",
         pinRotation: args.course.activePinRotation ?? "A",
       }));
+  const profile = profileFor(args.capabilities, args.course, snapshot);
   const teeLie = args.hole.tee ? terrainAt(args.course, args.hole.tee) : null;
   const recoveryCandidates = args.hole.tee && args.hole.green && teeLie && recoveryLies.has(teeLie)
     ? generateRecoveryCandidates({
@@ -805,7 +865,7 @@ export function generateStrategicHolePlan(args: {
     ? recoveryCandidates
     : landingCandidates.length > 0
       ? landingCandidates
-      : INTENTS.map((kind) => buildIntent({ ...args, kind, profile }));
+      : INTENTS.map((kind) => buildIntent({ ...args, kind, profile, snapshot }));
   const legacyScore = (intent: ShotIntent) => {
     const riskPenalty = intent.hazardRisk * (1 - args.capabilities.riskTolerance) * 1.4;
     const challengeBonus = intent.kind === "hero" ? args.capabilities.challengeSeeking * .25 : 0;
@@ -886,11 +946,12 @@ export function followUpIntent(args: {
     const chosen = args.capabilities.riskStyle === "conservative" && !stalledOpenRecovery
       ? recoveryCandidates.find((candidate) => candidate.facts.some((fact) => fact.code === "context" && fact.detail.includes("recovery:safe"))) ?? recoveryCandidates[0]
       : recoveryCandidates[0];
-    return {
+    const intent: ShotIntent = {
       ...chosen,
       id: `${args.hole.id ?? "hole"}-follow-${args.shotNumber}-${chosen.id.split("-").slice(-2).join("-")}`,
       from: { ...args.from },
     };
+    return usesClubShotModel(args.snapshot?.shotModel) ? withSelectedPreview({ ...args, intent }) : intent;
   }
   const snapshot = args.snapshot ?? liveCourseSnapshot({
     course: args.course,
@@ -915,8 +976,8 @@ export function followUpIntent(args: {
   const kind: StrategicIntentKind = args.lie === "rough" || args.lie === "deep_rough" || args.lie === "sand" || args.lie === "waste_area"
     ? "recovery"
     : distance(args.from, target) <= 5 ? "approach" : "positional";
-  const profile = profileFor(args.capabilities, args.course);
-  const intent = buildIntent({ course: args.course, hole: { ...args.hole, tee: args.from, green: target }, kind, capabilities: args.capabilities, personality: args.personality, profile });
+  const profile = profileFor(args.capabilities, args.course, snapshot);
+  const intent = buildIntent({ course: args.course, hole: { ...args.hole, tee: args.from, green: target }, kind, capabilities: args.capabilities, personality: args.personality, profile, snapshot });
   return withSelectedPreview({
     course: args.course,
     hole: args.hole,

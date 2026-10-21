@@ -1,6 +1,6 @@
 import * as PIXI from "pixi.js";
 import { getPinPosition } from "../../../game/models/courseSetup";
-import type { Hole, PinRotation, Point } from "../../../game/models/types";
+import type { Point } from "../../../game/models/types";
 import { TILE_H, TILE_W, tileCenterIso, worldToIso } from "../../../game/render/iso";
 import type { RenderSceneSystem } from "../SceneSystemHost";
 
@@ -17,24 +17,7 @@ type ShotDestinationGraphic = PIXI.Graphics & {
   __coursecraftShotDestination?: ShotDestinationMarkerGeometry;
 };
 
-export function routeDestinationHierarchy(
-  hole: Hole | undefined,
-  activePinRotation: PinRotation,
-  solverDestinations: readonly Point[] | undefined,
-): readonly Point[] {
-  const pin = hole && (getPinPosition(hole, activePinRotation) ?? getPinPosition(hole, "A"));
-  const source = hole?.waypoints?.length ? hole.waypoints : solverDestinations ?? [];
-  const seen = new Set<string>();
-  const hierarchy: Point[] = [];
-  for (const point of source) {
-    const key = `${point.x}:${point.y}`;
-    if (pin && point.x === pin.x && point.y === pin.y || seen.has(key)) continue;
-    seen.add(key);
-    hierarchy.push({ ...point });
-  }
-  if (pin) hierarchy.push({ ...pin });
-  return hierarchy;
-}
+export { routeDestinationHierarchy } from "./routeDestinationHierarchy";
 
 export type ArchitectureOverlayTestLayer = "all" | "traces" | "points" | "none";
 export interface ArchitectureOverlayTestState {

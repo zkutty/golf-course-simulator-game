@@ -427,6 +427,9 @@ export function createRenderPerfLiveState(course: Course, world: World): LiveSta
       name: `Perf Golfer ${index + 1}`,
       color: colors[index % colors.length],
       segments: [{ kind: "walk" as const, from: pos, to, holeIndex, dur: 10_000 }],
+      // These synthetic walkers never played the template's retained shots.
+      // Keep saved shot ownership consistent with the replaced itinerary.
+      shotOutcomes: [],
       segIndex: 0,
       segElapsed: (index % 100) * 10,
       pos,

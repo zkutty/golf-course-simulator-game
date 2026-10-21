@@ -1,0 +1,88 @@
+{
+  "seed": 12160,
+  "actor": {
+    "id": 1,
+    "x": 7,
+    "y": 4,
+    "segment": "flight",
+    "segmentProgress": 0.9811409346761998,
+    "ball": {
+      "x": 29.544187530341905,
+      "y": 6.314812703274703
+    },
+    "ballMotion": {
+      "identity": {
+        "shotId": "shot-m47-hole-1-1",
+        "holeId": "m47-hole-1",
+        "shotNumber": 1,
+        "seed": 1158731082,
+        "club": "Driver",
+        "style": "straight_run",
+        "modelVersion": "club_styles_v1"
+      },
+      "pose": {
+        "point": {
+          "x": 29.544187530341905,
+          "y": 6.314812703274703
+        },
+        "heightYards": 5,
+        "time": 0.9811409346761998,
+        "phase": "rollout",
+        "reliefPosition": null
+      },
+      "active": true,
+      "eventKinds": [
+        "launch",
+        "first_contact",
+        "rest"
+      ]
+    },
+    "shot": "swing",
+    "mood": 0.7,
+    "teeSet": "member",
+    "pinRotation": "A",
+    "shotEvidence": {
+      "phase": "intent",
+      "holeId": "m47-hole-1",
+      "shotId": "shot-m47-hole-1-1",
+      "shotNumber": 1,
+      "club": "Driver",
+      "intent": "positional",
+      "flightProfile": "standard",
+      "aim": {
+        "x": 38,
+        "y": 5
+      }
+    },
+    "latestSharedOutcome": null,
+    "latestRuling": null,
+    "latestShotSlope": null,
+    "latestSlopeExplanation": null,
+    "latestLanding": null,
+    "latestRest": null
+  },
+  "identity": {
+    "shotId": "shot-m47-hole-1-1",
+    "holeId": "m47-hole-1",
+    "shotNumber": 1,
+    "seed": 1158731082,
+    "club": "Driver",
+    "style": "straight_run",
+    "modelVersion": "club_styles_v1"
+  },
+  "pose": {
+    "point": {
+      "x": 29.544187530341905,
+      "y": 6.314812703274703
+    },
+    "heightYards": 5,
+    "time": 0.9811409346761998,
+    "phase": "rollout",
+    "reliefPosition": null
+  },
+  "viewport": {
+    "width": 1440,
+    "height": 960
+  },
+  "errors": []
+}

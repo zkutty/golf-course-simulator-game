@@ -30,7 +30,7 @@
         },
         {
           "path": "src/game/testing/zk813ProfileCertification.test.ts",
-          "sha256": "10f08c8a77cdf0081f9f0ebaf4036f25abf3303d2e01517f294ba97ebc0c0cab"
+          "sha256": "b88be33c39224d21056c054039cb48209b78133e0eacbb96259c03caa36aab23"
         }
       ],
       "expected": {
@@ -73,7 +73,7 @@
         },
         {
           "path": "src/game/testing/zk813ProfileCertification.test.ts",
-          "sha256": "10f08c8a77cdf0081f9f0ebaf4036f25abf3303d2e01517f294ba97ebc0c0cab"
+          "sha256": "b88be33c39224d21056c054039cb48209b78133e0eacbb96259c03caa36aab23"
         }
       ],
       "expected": {

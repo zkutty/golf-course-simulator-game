@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { IconUi } from "../assets/icons";
 import "./PlayerProPanel.css";
 import "./PlayerShotHud.css";
+import { createCaddieGuidanceSelector } from "./playerPro/caddieGuidanceSelector";
 import type { Course, PinRotation, TeeSet, World } from "../game/models/types";
 import {
   PLAYER_PRO_SKILLS,
@@ -16,7 +17,6 @@ import {
 } from "../game/models/playerProTypes";
 import {
   availablePlayerClubs,
-  caddieShotGuidance,
   flightProfileForTechnique,
   previewPlayableShot,
   type PlayerOpponent,
@@ -646,7 +646,8 @@ export function PlayerShotHud(props: {
   onPreview?: (preview: PlayerShotPreview) => void;
 }) {
   const { t, locale } = useI18n();
-  const caddie = useMemo(() => caddieShotGuidance(props.round, props.career.skills), [props.career.skills, props.round]);
+  const readCaddie = useMemo(() => createCaddieGuidanceSelector(), []);
+  const caddie = readCaddie(props.round, props.career.skills);
   const clubs = availablePlayerClubs(props.round.lie);
   const [club, setClub] = useState(caddie.selection.club);
   const [power, setPower] = useState(caddie.selection.power);
@@ -686,7 +687,7 @@ export function PlayerShotHud(props: {
   const latestRuling = latestOutcome?.ruling ?? latestShot?.ruling ?? null;
   const latestRelief = latestOutcome?.relief ?? latestShot?.relief ?? null;
   const latestFinalPosition = latestOutcome?.finalPosition ?? latestShot?.finalPosition ?? latestShot?.rest ?? null;
-  const previewWindCues = appliedWindCues(newModel ? undefined : preview.sharedOutcome?.appliedWind, locale);
+  const previewWindCues = appliedWindCues(newModel ? preview.expectedWind : preview.sharedOutcome?.appliedWind, locale);
   const resultWindCues = appliedWindCues(latestOutcome?.appliedWind, locale);
 
   const useCaddie = () => {
@@ -788,6 +789,7 @@ export function PlayerShotHud(props: {
             <div>{t("playerPro.shot.flightEvidence", { profile: selectedFlight, launch: preview.shotEffects.flight.launchAngleDegrees.toFixed(0), apex: preview.shotEffects.flight.apexHeightYards.toFixed(1) })}</div>
             {preview.impact && <div>{t("playerPro.shot.style.stopping", { potential: t(preview.impact.stoppingPotential >= .6 ? "playerPro.shot.style.stop.high" : preview.impact.stoppingPotential >= .3 ? "playerPro.shot.style.stop.moderate" : "playerPro.shot.style.stop.low"), roll: preview.impact.forwardRollPotentialYards.toFixed(1) })}</div>}
           </div>}
+          {newModel && previewWindCues.length > 0 && <div data-testid="player-shot-wind-preview" style={{ display: "grid", gap: 2 }}>{previewWindCues.map((cue) => <span key={cue}>{cue}</span>)}</div>}
           {!newModel && preview.automaticPuttingEstimate && <div data-testid="player-shot-auto-putt-preview" style={{ marginTop: 6, fontSize: 12 }}>{t("playerPro.shot.autoPuttingPreview", { expected: preview.automaticPuttingEstimate.expectedPutts.toFixed(1), distance: preview.automaticPuttingEstimate.leaveDistanceYards.toFixed(1), break: preview.automaticPuttingEstimate.breakTiles.toFixed(2), speed: preview.automaticPuttingEstimate.realizedSpeedFeet.toFixed(1) })}</div>}
           {!newModel && preview.sharedOutcome && <div data-testid="player-shot-rules-preview" style={{ display: "grid", gap: 3, marginTop: 7, paddingTop: 7, borderTop: "1px solid rgba(73,55,23,.2)", fontSize: 12 }}>
             <div>{t("playerPro.shot.flightEvidence", { profile: preview.sharedOutcome.flight.profile, launch: preview.sharedOutcome.flight.launchAngleDegrees.toFixed(0), apex: preview.sharedOutcome.flight.apexHeightYards.toFixed(1) })}</div>

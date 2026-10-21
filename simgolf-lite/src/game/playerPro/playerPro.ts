@@ -273,7 +273,9 @@ function validActiveShotTrace(value: unknown): value is PlayerShotTrace {
   if (motion && (!isValidRetainedShotMotionV1(motion) || motion.identity.shotId !== trace.id
     || motion.identity.holeId !== trace.holeId || motion.identity.shotNumber !== trace.shotNumber
     || motion.identity.seed !== (trace.seed >>> 0) || motion.identity.club !== trace.club
-    || motion.identity.style !== trace.shotStyle)) return false;
+    || motion.identity.style !== trace.shotStyle
+    || (trace.sharedOutcome?.impact && (trace.sharedOutcome.impact.power !== trace.power
+      || trace.sharedOutcome.impact.clubId !== dispersionClubIdForLabel(trace.club))))) return false;
   if (trace.shotSlope != null && !normalizeShotSlopeContext(trace.shotSlope)) return false;
   if (trace.greenRollout != null && !isValidGreenRollout(trace.greenRollout)) return false;
   if (trace.greenPutting != null && !isValidGreenPutting(trace.greenPutting)) return false;
@@ -368,6 +370,7 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
   if (!["awaiting_shot", "flight", "hole_complete", "round_complete", "conceded"].includes(round.phase)) return null;
   if (round.rulesSnapshot != null && !decodeControlledRoundSnapshotV2(round.rulesSnapshot).ok) return null;
   if (round.course.shotModel !== undefined && !isValidShotModelSnapshot(round.course.shotModel)) return null;
+  if (round.course.distanceProfile !== undefined && !isProfileCalibrationV1(round.course.distanceProfile)) return null;
   if (usesClubShotModel(round.course.shotModel) && !isProfileCalibrationV1(round.course.distanceProfile)) return null;
   const dispersionSnapshot = decodeDispersionRoundSnapshotV1(round.course.dispersionSnapshot);
   if (!dispersionSnapshot.ok) return null;
@@ -683,6 +686,7 @@ export interface PlayerShotPreview {
   flightProfile: ShotFlightProfile;
   shotEffects?: CalculatedShotEffects;
   impact?: ClubImpactV1;
+  expectedWind?: SharedShotOutcome["appliedWind"];
   /** Unseeded aiming geometry; the boundary represents the central 68% dispersion. */
   expectedFlight?: { from: PlayerProPoint; landing: PlayerProPoint; apexHeightYards: number; curveOffsetTiles: number; envelope: PlayerProPoint[] };
   /**
@@ -891,7 +895,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
       dispersionTiles, expectedPenalty: penalty, landingTerrain: lieAt(round.course, landing),
       risk: penalty > .75 ? "high" : penalty > .25 ? "medium" : "low",
       recommended: available && Math.abs(carryYards - targetTiles * round.course.yardsPerTile) < 35 && penalty < .35,
-      flightProfile, shotEffects: calculated.effects, impact: selected.impact, sharedOutcome: null, greenRollout: null,
+      flightProfile, shotEffects: calculated.effects, impact: selected.impact, ...(wind ? { expectedWind: wind } : {}), sharedOutcome: null, greenRollout: null,
       automaticPuttingEstimate: null, shotSlope,
       ...(available ? { expectedFlight: { from: { ...round.ball }, landing, apexHeightYards: calculated.effects.flight.apexHeightYards,
         curveOffsetTiles: clamp(-curve * .5, -8, 8), envelope } } : {}) };
@@ -1442,6 +1446,20 @@ function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkill
             y: round.ball.y + (ax * Math.sin(angle) + ay * Math.cos(angle)) * escapeTiles });
       }
     }
+    // A radial escape can point off the property when a ball is beside an
+    // edge. Include a bounded fan of legal sideways/interior recoveries and
+    // a lofted wedge whose retained roll does not force that escape back out.
+    const edgeDistance = Math.min(round.ball.x, round.ball.y,
+      round.course.width - 1 - round.ball.x, round.course.height - 1 - round.ball.y);
+    if (edgeDistance < 2 || nearby.some((obstacle) => Math.hypot(obstacle.x - round.ball.x, obstacle.y - round.ball.y) < 1.2)) {
+      const loftedRecovery = clubs.find((club) => club.name === "Sand Wedge") ?? clubs.find((club) => club.name === "Pitching Wedge");
+      for (const distance of [2, 4]) for (let direction = 0; direction < 8; direction += 1) {
+        const angle = direction * Math.PI / 4;
+        const aim = { x: round.ball.x + Math.cos(angle) * distance, y: round.ball.y + Math.sin(angle) * distance };
+        add(recoveryClub.name, aim);
+        if (loftedRecovery && loftedRecovery.name !== recoveryClub.name) add(loftedRecovery.name, aim, "normal", "high");
+      }
+    }
     let best = fallback;
     let bestScore = Infinity;
     for (const selection of candidates) {
@@ -1449,12 +1467,21 @@ function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkill
       if (!preview.available || !preview.expectedFlight || !preview.impact || !preview.shotEffects) continue;
       const expected = preview.expectedFlight;
       const isPutter = selection.club === "Putter";
+      // The caddie consumes collision identity, not distant clearance evidence.
+      // This hull encloses the entire curve plus every obstacle volume radius.
+      const margin = Math.abs(expected.curveOffsetTiles) + .9;
+      const minX = Math.min(round.ball.x, expected.landing.x) - margin;
+      const maxX = Math.max(round.ball.x, expected.landing.x) + margin;
+      const minY = Math.min(round.ball.y, expected.landing.y) - margin;
+      const maxY = Math.max(round.ball.y, expected.landing.y) + margin;
+      const flightObstacles = obstacleInputFor(round.course).filter((obstacle) =>
+        obstacle.x >= minX && obstacle.x <= maxX && obstacle.y >= minY && obstacle.y <= maxY);
       const flight = resolveObstacleCollision({ from: round.ball, to: expected.landing,
         flight: { profile: preview.flightProfile, apexHeightYards: expected.apexHeightYards,
           curve: { kind: "lateral_quadratic_v1", lateralOffsetTiles: expected.curveOffsetTiles } },
         endpointHeightsYards: { from: heightAt(round.ball), to: heightAt(expected.landing) }, terrainHeightAtYards: heightAt,
         width: round.course.width, height: round.course.height, yardsPerTile: round.course.yardsPerTile,
-        elevations: round.course.elevations, tiles: round.course.tiles as Terrain[], obstacles: obstacleInputFor(round.course),
+        elevations: round.course.elevations, tiles: round.course.tiles as Terrain[], obstacles: flightObstacles,
         obstaclesAreStable: true, retainGeometry: true });
       const blocked = flight != null && flight.collision.kind !== "none";
       const landing = blocked ? flight.collision.kind !== "none" ? flight.collision.point : expected.landing : expected.landing;
@@ -1493,17 +1520,11 @@ function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkill
   const distance = shotSlope.playsLikeDistanceYards;
   const clubs = availablePlayerClubs(round.lie);
   const powerScale = 0.82 + skills.power / 500;
-  const carry = (club: typeof clubs[number]) => usesClubShotModel(round.course.shotModel)
-    ? selectedShotEffects(round.course, skills, round.lie, { club: club.name, aim: hole.pin, power: 1, technique: "normal" }, round.performanceLoadout).effects.carryYards
-      * (round.course.weather?.carryMultiplier ?? 1)
-    : club.carryYards * powerScale;
-  const club = [...clubs].sort((a, b) => Math.abs(carry(a) - distance) - Math.abs(carry(b) - distance))[0] ?? clubs[0];
+  const club = [...clubs].sort((a, b) => Math.abs(a.carryYards * powerScale - distance) - Math.abs(b.carryYards * powerScale - distance))[0] ?? clubs[0];
   return {
     club: club?.name ?? "Pitching Wedge",
     aim: { ...hole.pin },
-    power: usesClubShotModel(round.course.shotModel)
-      ? Number(clamp(distance / Math.max(1, club ? carry(club) : 115), .25, 1).toFixed(6))
-      : clamp(distance / Math.max(1, (club?.carryYards ?? 115) * powerScale), 0.35, 1),
+    power: clamp(distance / Math.max(1, (club?.carryYards ?? 115) * powerScale), 0.35, 1),
     technique: "normal",
   };
 }

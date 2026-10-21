@@ -1,0 +1,481 @@
+{
+  "profile": {
+    "version": 5,
+    "tutorialOffered": true,
+    "tutorialCompleted": false,
+    "advisorFrequency": "normal",
+    "advisorSeen": [],
+    "favoritePersonIds": [],
+    "gameplay": {
+      "autosaveCadence": "weekly",
+      "edgeScroll": true,
+      "edgeScrollSpeed": 1,
+      "cameraSmoothing": true,
+      "confirmBulldoze": true,
+      "confirmSalvage": true,
+      "defaultGameSpeed": "1x",
+      "tickerVisible": true,
+      "momentCamera": false
+    },
+    "graphics": {
+      "quality": "auto",
+      "animations": true,
+      "ambienceFx": true,
+      "waterAnimation": true,
+      "treeSway": true,
+      "resolutionScale": 1,
+      "gridOverlays": false
+    },
+    "audio": {
+      "masterVolume": 1,
+      "musicVolume": 0.25,
+      "sfxVolume": 0.6,
+      "ambienceVolume": 0.4,
+      "masterMuted": true,
+      "muteWhenHidden": true
+    },
+    "accessibility": {
+      "colorVision": "standard",
+      "terrainPatterns": false,
+      "reducedMotion": true,
+      "textScale": 130,
+      "keybindings": {
+        "panUp": "KeyW",
+        "panDown": "KeyS",
+        "panLeft": "KeyA",
+        "panRight": "KeyD",
+        "rotateLeft": "KeyQ",
+        "rotateRight": "KeyE",
+        "speed1": "Digit1",
+        "speed2": "Digit2",
+        "speed3": "Digit3",
+        "pause": "Space",
+        "terrainTool": "KeyT",
+        "obstacleTool": "KeyO",
+        "buildingTool": "KeyB",
+        "quicksave": "Ctrl+KeyS"
+      }
+    },
+    "achievements": {
+      "earned": [
+        {
+          "id": "arboretum",
+          "earnedAt": 1792612343126,
+          "courseName": "Alder Meadows"
+        },
+        {
+          "id": "cash-100k",
+          "earnedAt": 1792612343126,
+          "courseName": "Alder Meadows"
+        },
+        {
+          "id": "first-hole",
+          "earnedAt": 1792612345355,
+          "courseName": "Player Pro Three-Hole"
+        },
+        {
+          "id": "rep-50",
+          "earnedAt": 1792612345355,
+          "courseName": "Player Pro Three-Hole"
+        }
+      ]
+    }
+  },
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "rootText": "200%",
+  "after": {
+    "id": "pro-round-360037-1-0-casual-1",
+    "kind": "casual",
+    "phase": "awaiting_shot",
+    "courseId": "player-pro-slice",
+    "currentHole": 1,
+    "holes": 3,
+    "ball": {
+      "x": 7.478243,
+      "y": 7.515
+    },
+    "lie": "fairway",
+    "aim": {
+      "x": 58,
+      "y": 8
+    },
+    "strokes": 1,
+    "penalties": 0,
+    "scorecard": [
+      {
+        "holeId": "player-pro-hole-1",
+        "name": "Player Pro 1",
+        "par": 5,
+        "strokes": 1,
+        "penalties": 0,
+        "complete": false
+      },
+      {
+        "holeId": "player-pro-hole-2",
+        "name": "Player Pro 2",
+        "par": 5,
+        "strokes": 0,
+        "penalties": 0,
+        "complete": false
+      },
+      {
+        "holeId": "player-pro-hole-3",
+        "name": "Player Pro 3",
+        "par": 5,
+        "strokes": 0,
+        "penalties": 0,
+        "complete": false
+      }
+    ],
+    "handicapSnapshot": {
+      "version": 1,
+      "id": "handicap-snapshot:pro-round-360037-1-0-casual-1",
+      "roundId": "pro-round-360037-1-0-casual-1",
+      "handicapIndex": 17.3,
+      "confidence": {
+        "version": 1,
+        "status": "provisional",
+        "eligibleRoundCount": 0,
+        "lastPostedRoundId": null
+      },
+      "course": {
+        "id": "player-pro-slice",
+        "name": "Player Pro Three-Hole",
+        "geometryVersion": "g-1dcc1ot",
+        "teeSet": "member",
+        "pinRotation": "A",
+        "courseRating": 24.9,
+        "slopeRating": 55,
+        "par": 15,
+        "holes": [
+          {
+            "id": "player-pro-hole-1",
+            "par": 5,
+            "strokeIndex": 1
+          },
+          {
+            "id": "player-pro-hole-2",
+            "par": 5,
+            "strokeIndex": 2
+          },
+          {
+            "id": "player-pro-hole-3",
+            "par": 5,
+            "strokeIndex": 3
+          }
+        ]
+      },
+      "eligibility": {
+        "eligible": false,
+        "reasons": [
+          "Handicap posting requires a complete 9- or 18-hole routing."
+        ]
+      },
+      "postingKey": "handicap-post:pro-round-360037-1-0-casual-1",
+      "postingState": "unposted",
+      "startedWeek": 1,
+      "startedDay": 0
+    },
+    "performanceLoadout": {
+      "version": 1,
+      "frozenWeek": 1,
+      "frozenDay": 0,
+      "itemIds": [],
+      "modifiers": []
+    },
+    "rulesSnapshot": {
+      "version": 2,
+      "dimensions": {
+        "width": 64,
+        "height": 32
+      },
+      "snapshot": {
+        "version": 2,
+        "width": 64,
+        "height": 32,
+        "inBoundsRle": "1:1kw",
+        "penaltyComponentsRle": "0:1kw",
+        "penaltyComponentCount": 0,
+        "holeClassifications": [
+          {
+            "holeId": "player-pro-hole-1",
+            "red": [],
+            "yellow": []
+          },
+          {
+            "holeId": "player-pro-hole-2",
+            "red": [],
+            "yellow": []
+          },
+          {
+            "holeId": "player-pro-hole-3",
+            "red": [],
+            "yellow": []
+          }
+        ]
+      },
+      "classificationSummary": [
+        {
+          "holeId": "player-pro-hole-1",
+          "red": [],
+          "yellow": [],
+          "redCount": 0,
+          "yellowCount": 0
+        },
+        {
+          "holeId": "player-pro-hole-2",
+          "red": [],
+          "yellow": [],
+          "redCount": 0,
+          "yellowCount": 0
+        },
+        {
+          "holeId": "player-pro-hole-3",
+          "red": [],
+          "yellow": [],
+          "redCount": 0,
+          "yellowCount": 0
+        }
+      ],
+      "penaltyComponentCount": 0,
+      "inBoundsCells": 2048,
+      "penaltyCells": 0,
+      "decodeError": null
+    },
+    "pendingShot": null,
+    "presentation": null,
+    "recentTrace": {
+      "id": "shot-player-pro-hole-1-1",
+      "holeId": "player-pro-hole-1",
+      "shotNumber": 1,
+      "club": "Pitching Wedge",
+      "technique": "normal",
+      "shotStyle": "pitch",
+      "flightProfile": "standard",
+      "power": 0.25,
+      "from": {
+        "x": 4,
+        "y": 8
+      },
+      "aim": {
+        "x": 58,
+        "y": 8
+      },
+      "landing": {
+        "x": 7.181,
+        "y": 7.515
+      },
+      "rest": {
+        "x": 7.478243,
+        "y": 7.515
+      },
+      "carryYards": 32.2,
+      "rollYards": 3,
+      "lieBefore": "tee",
+      "lieAfter": "fairway",
+      "penaltyStrokes": 0,
+      "holed": false,
+      "seed": 331899,
+      "evidence": [
+        {
+          "id": "evidence-player-pro-hole-1-1-shortGame",
+          "skill": "shortGame",
+          "amount": 3,
+          "reason": "Pitching Wedge:tee->fairway",
+          "holeId": "player-pro-hole-1",
+          "shotNumber": 1,
+          "successful": true
+        }
+      ],
+      "shotSlope": {
+        "version": 1,
+        "flatDistanceYards": 540,
+        "targetElevationDelta": 0,
+        "playsLikeDistanceYards": 540,
+        "localGradient": {
+          "alongTargetLine": 0,
+          "crossTargetLine": 0
+        },
+        "handedness": "right",
+        "sidehill": "flat",
+        "naturalCurveBiasTiles": 0
+      },
+      "greenRollout": {
+        "version": 1,
+        "seed": 331899,
+        "landing": {
+          "x": 7.181,
+          "y": 7.515
+        },
+        "path": [
+          {
+            "x": 7.181,
+            "y": 7.515
+          },
+          {
+            "x": 7.259463,
+            "y": 7.515
+          },
+          {
+            "x": 7.325927,
+            "y": 7.515
+          },
+          {
+            "x": 7.38039,
+            "y": 7.515
+          },
+          {
+            "x": 7.422853,
+            "y": 7.515
+          },
+          {
+            "x": 7.453317,
+            "y": 7.515
+          },
+          {
+            "x": 7.47178,
+            "y": 7.515
+          },
+          {
+            "x": 7.478243,
+            "y": 7.515
+          }
+        ],
+        "rest": {
+          "x": 7.478243,
+          "y": 7.515
+        },
+        "lieAfter": "fairway",
+        "rollYards": 3,
+        "breakTiles": 0,
+        "downhillTiles": 0,
+        "pace": "medium",
+        "transitions": [],
+        "evidence": {
+          "geometryHash": "ca75f577",
+          "program": "balanced",
+          "realizedSpeedFeet": 9.46,
+          "realizedFirmness": 0.486,
+          "effectiveMoisture": 0.58,
+          "weatherKind": "cloudy",
+          "rainInches": 0,
+          "drainageLevel": 0,
+          "requestedRollYards": 3,
+          "club": "Pitching Wedge",
+          "sourceLie": "tee",
+          "trajectory": "standard",
+          "launchAngleDegrees": 25,
+          "landingAngleDegrees": 40,
+          "spin": "neutral",
+          "steps": 14,
+          "workloadCapped": false
+        }
+      },
+      "ruling": {
+        "status": "in_play",
+        "penaltyKind": "none",
+        "penaltyStrokes": 0,
+        "penaltyComponentId": null,
+        "penaltyAreaClassification": null,
+        "referencePoint": null,
+        "crossingPoint": null
+      },
+      "relief": {
+        "status": "not_required",
+        "type": "none",
+        "candidates": [],
+        "selectedCandidateId": null,
+        "finalPosition": {
+          "x": 7.478243,
+          "y": 7.515
+        }
+      },
+      "finalPosition": {
+        "x": 7.478243,
+        "y": 7.515
+      },
+      "sharedOutcome": {
+        "rulesVersion": 1,
+        "lieEffect": {
+          "sourceLie": "tee",
+          "effectiveLie": "tee",
+          "carryMultiplier": 1,
+          "dispersionMultiplier": 1,
+          "rollMultiplier": 1
+        },
+        "flightProfile": "standard",
+        "flight": {
+          "profile": "standard",
+          "launchAngleDegrees": 25,
+          "apexHeightYards": 11.5,
+          "apexPosition": {
+            "x": 5.5905,
+            "y": 7.7575
+          },
+          "carryEnd": {
+            "x": 7.181,
+            "y": 7.515
+          },
+          "clearance": []
+        },
+        "collision": {
+          "kind": "none"
+        },
+        "ruling": {
+          "status": "in_play",
+          "penaltyKind": "none",
+          "penaltyStrokes": 0,
+          "penaltyComponentId": null,
+          "penaltyAreaClassification": null,
+          "referencePoint": null,
+          "crossingPoint": null
+        },
+        "relief": {
+          "status": "not_required",
+          "type": "none",
+          "candidates": [],
+          "selectedCandidateId": null,
+          "finalPosition": {
+            "x": 7.478243,
+            "y": 7.515
+          }
+        },
+        "physicalRest": {
+          "x": 7.478243,
+          "y": 7.515
+        },
+        "finalPosition": {
+          "x": 7.478243,
+          "y": 7.515
+        },
+        "appliedWind": {
+          "version": 1,
+          "sourceMode": "directional",
+          "headwindMph": -10.495436485672748,
+          "crosswindMph": -5.817715442956045,
+          "carryMultiplier": 1.0109327463392423,
+          "lateralCenterlineTiles": -0.017045
+        }
+      },
+      "lieEffect": {
+        "sourceLie": "tee",
+        "effectiveLie": "tee",
+        "carryMultiplier": 1,
+        "dispersionMultiplier": 1,
+        "rollMultiplier": 1
+      },
+      "collision": {
+        "kind": "none"
+      },
+      "physicalRest": {
+        "x": 7.478243,
+        "y": 7.515
+      }
+    },
+    "editingLocked": true
+  },
+  "errors": []
+}

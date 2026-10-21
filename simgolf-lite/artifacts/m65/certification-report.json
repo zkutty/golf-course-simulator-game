@@ -7,7 +7,7 @@
   "verdict": "machine-pass/HOLD_FOR_HUMAN_VALIDATION",
   "sourceBindings": {
     "e2e/zk813-profile-certification.e2e.ts": "2f64b988490f584d3389425ef7a3c1dc3a3de621f343190b7f6972e182dfcd3e",
-    "src/game/testing/zk813ProfileCertification.test.ts": "10f08c8a77cdf0081f9f0ebaf4036f25abf3303d2e01517f294ba97ebc0c0cab",
+    "src/game/testing/zk813ProfileCertification.test.ts": "b88be33c39224d21056c054039cb48209b78133e0eacbb96259c03caa36aab23",
     "src/game/testing/zk813ProfileCertification.ts": "d4d395da2e6f44abe6db4dac5f846f527a96dd8c0e13b95ad68a04fd0868deb7"
   },
   "evidence": [
@@ -38,7 +38,7 @@
         },
         {
           "path": "src/game/testing/zk813ProfileCertification.test.ts",
-          "sha256": "10f08c8a77cdf0081f9f0ebaf4036f25abf3303d2e01517f294ba97ebc0c0cab"
+          "sha256": "b88be33c39224d21056c054039cb48209b78133e0eacbb96259c03caa36aab23"
         }
       ],
       "observed": {
@@ -136,7 +136,7 @@
         },
         {
           "path": "src/game/testing/zk813ProfileCertification.test.ts",
-          "sha256": "10f08c8a77cdf0081f9f0ebaf4036f25abf3303d2e01517f294ba97ebc0c0cab"
+          "sha256": "b88be33c39224d21056c054039cb48209b78133e0eacbb96259c03caa36aab23"
         }
       ],
       "observed": {
@@ -183,5 +183,5 @@
     "Campaign fixture assignments and receipt persistence are structural evidence; they are not fabricated proof of real phase mastery, finale completion, or a 12–18 hour player journey.",
     "Browser automation and native-shaped in-memory canonical-hash equality do not replace packaged-desktop or real filesystem validation."
   ],
-  "reportDigest": "56b36396783e4df3f91e8ead7d5a8418821716a98bd794429d9ac93198ac6fad"
+  "reportDigest": "2dc60eb64f9678b570ad4b4670b63b3aafc70758c3584a0bbd028e3ba170ba0e"
 }

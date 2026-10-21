@@ -55,12 +55,29 @@ function samePoint(a: unknown, b: unknown): boolean {
   return isRecord(a) && isRecord(b) && a.x === b.x && a.y === b.y;
 }
 
-function motionMatchesOutcome(value: Record<string, unknown>): boolean {
-  if (value.shotStyle != null && !isShotStyleId(value.shotStyle)) return false;
+function hasModernShotAuthority(value: Record<string, unknown>): boolean {
   const shared = value.sharedOutcome;
+  return value.shotStyle !== undefined || isRecord(shared)
+    && (shared.impact !== undefined || shared.motion !== undefined);
+}
+
+function motionMatchesOutcome(value: Record<string, unknown>): boolean {
+  const shared = value.sharedOutcome;
+  if (hasModernShotAuthority(value)) {
+    // Historical additive certificates may be discarded below, but a modern
+    // shot must retain its complete physical authority or reject the save.
+    if (!isShotStyleId(value.shotStyle) || !isRecord(shared)
+      || !isValidSharedShotOutcome(shared) || !shared.impact || !shared.motion
+      || shared.ruling.penaltyStrokes !== value.penaltyStrokes
+      || !samePoint(value.landing, shared.flight.carryEnd)
+      || !samePoint(value.finalPosition ?? value.rest, shared.finalPosition)
+      || shared.appliedDispersion != null && (shared.appliedDispersion.seed !== ((value.seed as number) >>> 0)
+        || shared.appliedDispersion.clubId !== dispersionClubIdForLabel(String(value.club)))) return false;
+  }
+  if (value.shotStyle != null && !isShotStyleId(value.shotStyle)) return false;
   if (!isRecord(shared) || shared.motion == null) return true;
   const motion = shared.motion;
-  return isValidRetainedShotMotionV1(motion)
+  return isValidRetainedShotMotionV1(motion) && motion.identity.modelVersion === "club_styles_v1"
     && motion.identity.shotId === value.id && motion.identity.holeId === value.holeId
     && motion.identity.shotNumber === value.shotNumber && motion.identity.seed === ((value.seed as number) >>> 0)
     && motion.identity.club === value.club && motion.identity.style === value.shotStyle
@@ -77,7 +94,9 @@ function segment(value: unknown): value is Segment {
     value.dur >= 0 &&
     Number.isInteger(value.holeIndex) &&
     (value.shot == null || value.shot === "swing" || value.shot === "putt") &&
-    (value.motion == null || (value.kind === "flight" && isValidRetainedShotMotionV1(value.motion)
+    (value.motion === undefined && value.shotId === undefined && value.motionContactTerrain === undefined
+      || (value.kind === "flight" && isValidRetainedShotMotionV1(value.motion)
+      && value.motion.identity.modelVersion === "club_styles_v1"
       && value.shotId === value.motion.identity.shotId && value.holeId === value.motion.identity.holeId
       && samePoint(value.from, value.motion.from.point) && samePoint(value.to, value.motion.physicalRest.point)
       && typeof value.motionContactTerrain === "string" && value.motionContactTerrain.length <= 40)) &&
@@ -103,6 +122,7 @@ function fact(value: unknown): boolean {
 function shotIntent(value: unknown): boolean {
   return isRecord(value) && typeof value.id === "string" && intentKinds.has(value.kind as StrategicIntentKind) &&
     point(value.from) && point(value.target) && typeof value.club === "string" && techniques.has(String(value.technique)) &&
+    (value.style === undefined || isShotStyleId(value.style)) &&
     (value.flightProfile == null || flightProfiles.has(String(value.flightProfile))) &&
     (value.shotSlope == null || normalizeShotSlopeContext(value.shotSlope) != null) &&
     (value.previewLanding == null || point(value.previewLanding)) &&
@@ -169,6 +189,12 @@ function golfer(value: unknown): value is Golfer {
   if (value.lastMotionSegmentIndex != null && (!Number.isInteger(value.lastMotionSegmentIndex)
     || (value.lastMotionSegmentIndex as number) < 0 || (value.lastMotionSegmentIndex as number) >= (value.segIndex as number)
     || !(value.segments[value.lastMotionSegmentIndex as number] as Segment | undefined)?.motion)) return false;
+  if (Array.isArray(value.shotOutcomes)) for (const owner of value.shotOutcomes) {
+    if (!isRecord(owner) || !hasModernShotAuthority(owner)) continue;
+    if (!motionMatchesOutcome(owner)) return false;
+    const associations = (value.segments as Segment[]).filter((entry) => entry.shotId === owner.id);
+    if (associations.length !== 1 || !associations[0]!.motion) return false;
+  }
   for (const retained of value.segments as Segment[]) {
     if (!retained.motion) continue;
     const owners = Array.isArray(value.shotOutcomes) ? value.shotOutcomes.filter((shot) => isRecord(shot) && shot.id === retained.shotId) : [];

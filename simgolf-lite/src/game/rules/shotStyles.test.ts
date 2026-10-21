@@ -147,6 +147,6 @@ describe("versioned club-dependent shot styles", () => {
   it("rejects malformed retained impact facts without repair", () => {
     const impact = calculate().impact;
     expect(isClubImpactV1(impact)).toBe(true);
-    for (const invalid of [null, [], {}, { ...impact, version: 2 }, { ...impact, clubId: "eight_iron" }, { ...impact, style: "unknown" }, { ...impact, power: 0 }, { ...impact, landingAngleDegrees: 90 }, { ...impact, spinControl: 1.1 }, { ...impact, stoppingPotential: Number.NaN }, { ...impact, forwardRollPotentialYards: Number.POSITIVE_INFINITY }, { ...impact, rollbackSupported: true }]) expect(isClubImpactV1(invalid)).toBe(false);
+    for (const invalid of [null, [], {}, { ...impact, extra: 1 }, { ...impact, version: 2 }, { ...impact, clubId: "eight_iron" }, { ...impact, style: "unknown" }, { ...impact, power: 0 }, { ...impact, landingAngleDegrees: 90 }, { ...impact, spinControl: 1.1 }, { ...impact, stoppingPotential: Number.NaN }, { ...impact, forwardRollPotentialYards: Number.POSITIVE_INFINITY }, { ...impact, rollbackSupported: true }]) expect(isClubImpactV1(invalid)).toBe(false);
   });
 });

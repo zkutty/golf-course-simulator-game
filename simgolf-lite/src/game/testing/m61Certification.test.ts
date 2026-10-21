@@ -141,7 +141,10 @@ function startedRound(course = sidehillCourse(), handedness: ShotHandedness = "r
     pinRotation: "A",
   });
   if (!started.ok) throw new Error(started.reason);
-  return { course, world, career: world.playerPro!, round: started.round };
+  // M61 certifies the historical slope/seeded-preview contract. Modern
+  // unseeded previews and round defaults have separate certification fixtures.
+  const { shotModel: _shotModel, distanceProfile: _distanceProfile, ...legacyCourse } = started.round.course;
+  return { course, world, career: world.playerPro!, round: { ...started.round, course: legacyCourse } };
 }
 
 describe("ZK-636 M61 release certification", () => {

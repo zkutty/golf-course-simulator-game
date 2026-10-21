@@ -111,10 +111,10 @@ export function usePlayerShotPlayback(options: PlaybackOptions) {
       cancelAnimationFrame(request);
       document.removeEventListener("visibilitychange", checkpointVisibility);
       window.removeEventListener("pagehide", checkpointVisibility);
-      if (!finished) optionsRef.current.onCheckpoint(round.id, driver.cursor());
+      if (!finished && optionsRef.current.round?.pendingShot === pending) optionsRef.current.onCheckpoint(round.id, driver.cursor());
       skipRef.current = null;
     };
-  }, [key]);
+  }, [key, shot]);
   const skip = useCallback(() => skipRef.current?.(), []);
   return { frameRef, skip };
 }

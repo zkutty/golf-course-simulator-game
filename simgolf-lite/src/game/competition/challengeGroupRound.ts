@@ -31,6 +31,7 @@ import type { HoleReaction } from "../live/m47Types";
 import type { PlayerConfidenceState } from "../playerPro/confidence";
 import { freezeProfileCalibration } from "../rules/profileCalibration";
 import { usesClubShotModel } from "../rules/shotModelSnapshot";
+import { normalizePerformanceLoadoutSnapshot } from "./equipmentRuntime";
 import {
   caddieRecommendation,
   previewPlayableShot,
@@ -343,6 +344,23 @@ function effectiveSkills(golfer: ChallengeGroupGolfer): PlayerProSkills {
   };
 }
 
+function shotSkills(round: ChallengeGroupRound, golfer: ChallengeGroupGolfer): PlayerProSkills {
+  return usesClubShotModel(round.course.shotModel) ? golfer.skills : effectiveSkills(golfer);
+}
+
+function participantPerformanceLoadout(round: ChallengeGroupRound, golfer: ChallengeGroupGolfer) {
+  if (!usesClubShotModel(round.course.shotModel)) return undefined;
+  return normalizePerformanceLoadoutSnapshot({
+    version: 1,
+    frozenWeek: round.startedWeek,
+    frozenDay: round.startedDay,
+    itemIds: golfer.equipment.items.map((item) => item.id),
+    modifiers: golfer.equipment.items.flatMap((item) => (item.modifiers ?? []).map((modifier) => ({
+      ...modifier, sourceKind: "equipment" as const, sourceId: item.definitionId,
+    }))),
+  });
+}
+
 function competitionHoles(course: Pick<PlayerRoundCourseSnapshot, "holes">) {
   return course.holes.map((hole, index) => ({
     id: hole.id,
@@ -591,9 +609,25 @@ function participantCourse(round: ChallengeGroupRound, golfer: ChallengeGroupGol
   };
 }
 
+function participantShotTrace(rawTrace: PlayerShotTrace, shotId: string, golferId: string): PlayerShotTrace {
+  const motion = rawTrace.sharedOutcome?.motion;
+  return {
+    ...rawTrace,
+    id: shotId,
+    evidence: rawTrace.evidence.map((entry) => ({ ...entry, id: `${entry.id}-${golferId}` })),
+    // Motion is retained only by the modern model. Renaming its owning trace
+    // changes identity alone, never geometry, timing, sampled outcomes or RNG.
+    ...(motion ? { sharedOutcome: {
+      ...rawTrace.sharedOutcome!,
+      motion: { ...motion, identity: { ...motion.identity, shotId } },
+    } } : {}),
+  };
+}
+
 function playableRound(round: ChallengeGroupRound, golfer: ChallengeGroupGolfer): PlayerPlayableRound {
   const setup = golfer.setup;
   const course = participantCourse(round, golfer);
+  const performanceLoadout = participantPerformanceLoadout(round, golfer);
   const scorecard = golfer.scorecard.map((score, index) => ({
     holeId: score.holeId,
     name: setup.holes[index].name,
@@ -608,6 +642,7 @@ function playableRound(round: ChallengeGroupRound, golfer: ChallengeGroupGolfer)
     kind: "friendly",
     handedness: golfer.handedness,
     confidenceSnapshot: golfer.confidenceSnapshot,
+    ...(performanceLoadout ? { performanceLoadout } : {}),
     phase: "awaiting_shot",
     course,
     rulesSnapshot: round.rulesSnapshot,
@@ -907,13 +942,14 @@ function commitTeamTurn(round: ChallengeGroupRound, golferId: string, selection:
   const ball = authority.balls.find((entry) => entry.teamId === golfer?.teamId);
   if (!golfer || !ball || !activeTeamBall(round, ball)) return round;
   const playableGolfer = withTeamBallGolfer(round, golfer);
-  const skills = effectiveSkills(golfer);
-  const preview = previewPlayableShot(playableRound(round, playableGolfer), skills, selection);
+  const skills = shotSkills(round, golfer);
+  const playable = playableRound(round, playableGolfer);
+  const preview = previewPlayableShot(playable, skills, selection);
   if (!preview.available) return round;
   const score = ball.scorecard[round.currentHoleIndex];
   const seed = (round.rngSeed + round.rngCursor * 104729) >>> 0;
   const rawTrace = resolvePlayableShot({
-    snapshot: round.course,
+    snapshot: participantCourse(round, playableGolfer),
     rulesSnapshot: round.rulesSnapshot,
     holeId: score.holeId,
     shotNumber: score.strokes + 1,
@@ -923,10 +959,11 @@ function commitTeamTurn(round: ChallengeGroupRound, golferId: string, selection:
     selection,
     handedness: golfer.handedness,
     confidenceSnapshot: golfer.confidenceSnapshot,
+    ...(playable.performanceLoadout ? { performanceLoadout: playable.performanceLoadout } : {}),
     seed,
   });
   const shotId = `shot-${round.id}-${golfer.id}-${score.holeId}-${round.turnEvidence.length + 1}`;
-  const trace: PlayerShotTrace = { ...rawTrace, id: shotId, evidence: rawTrace.evidence.map((entry) => ({ ...entry, id: `${entry.id}-${golfer.id}` })) };
+  const trace = participantShotTrace(rawTrace, shotId, golfer.id);
   const puttingStrokes = trace.greenPutting?.putts ?? 0;
   const strokeCost = 1 + puttingStrokes;
   const completesHole = trace.holed || puttingStrokes > 0;
@@ -999,8 +1036,9 @@ function commitTurn(round: ChallengeGroupRound, golferId: string, selection: Pla
   if (round.phase === "complete" || round.activeGolferId !== golferId) return round;
   const golfer = round.golfers.find((candidate) => candidate.id === golferId);
   if (!golfer || !activeOnHole(round, golfer)) return round;
-  const skills = effectiveSkills(golfer);
-  const preview = previewPlayableShot(playableRound(round, golfer), skills, selection);
+  const skills = shotSkills(round, golfer);
+  const playable = playableRound(round, golfer);
+  const preview = previewPlayableShot(playable, skills, selection);
   if (!preview.available) return round;
   const score = golfer.scorecard[round.currentHoleIndex];
   const seed = (round.rngSeed + round.rngCursor * 104729) >>> 0;
@@ -1015,14 +1053,11 @@ function commitTurn(round: ChallengeGroupRound, golferId: string, selection: Pla
     selection,
     handedness: golfer.handedness,
     confidenceSnapshot: golfer.confidenceSnapshot,
+    ...(playable.performanceLoadout ? { performanceLoadout: playable.performanceLoadout } : {}),
     seed,
   });
   const shotId = `shot-${round.id}-${golfer.id}-${score.holeId}-${score.strokes + 1}`;
-  const trace: PlayerShotTrace = {
-    ...rawTrace,
-    id: shotId,
-    evidence: rawTrace.evidence.map((entry) => ({ ...entry, id: `${entry.id}-${golfer.id}` })),
-  };
+  const trace = participantShotTrace(rawTrace, shotId, golfer.id);
   const puttingStrokes = trace.greenPutting?.putts ?? 0;
   const strokes = score.strokes + 1 + puttingStrokes;
   const penalties = score.penalties + trace.penaltyStrokes;
@@ -1072,7 +1107,7 @@ function runAiUntilPlayer(round: ChallengeGroupRound, freezeResult = true): Chal
     if (next.phase === "awaiting_ball_choice") break;
     const golfer = next.golfers.find((candidate) => candidate.id === next.activeGolferId);
     if (!golfer || golfer.controller === "player") break;
-    const selection = caddieRecommendation(playableRound(next, withTeamBallGolfer(next, golfer)), effectiveSkills(golfer));
+    const selection = caddieRecommendation(playableRound(next, withTeamBallGolfer(next, golfer)), shotSkills(next, golfer));
     const advanced = commitTurn(next, golfer.id, selection);
     if (advanced !== next) {
       next = advanced;
@@ -1212,7 +1247,7 @@ export function previewChallengeGroupPlayerShot(round: ChallengeGroupRound, golf
   if (round.phase !== "awaiting_player" || round.activeGolferId !== golferId) return null;
   const golfer = round.golfers.find((candidate) => candidate.id === golferId);
   if (!golfer || golfer.controller !== "player") return null;
-  return previewPlayableShot(playableRound(round, withTeamBallGolfer(round, golfer)), effectiveSkills(golfer), selection);
+  return previewPlayableShot(playableRound(round, withTeamBallGolfer(round, golfer)), shotSkills(round, golfer), selection);
 }
 
 /** Deferred UI projection of the authoritative group state; never persisted. */
@@ -1227,7 +1262,7 @@ export function challengeGroupPlayerRound(round: ChallengeGroupRound): PlayerPla
 export function challengeGroupPlayerSkills(round: ChallengeGroupRound): PlayerProSkills {
   const golfer = round.golfers.find((candidate) => candidate.id === round.playerGolferId);
   if (!golfer) throw new Error("Challenge group player is missing.");
-  return effectiveSkills(golfer);
+  return shotSkills(round, golfer);
 }
 
 export function commitChallengeGroupPlayerShot(round: ChallengeGroupRound, golferId: string, selection: PlayerShotSelection): ChallengeGroupRound {

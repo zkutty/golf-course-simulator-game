@@ -452,7 +452,10 @@ function parityEvidence(sourceCourse: Course) {
   };
   const started = startPlayableRound({ course, world, layoutId: "m62-strategy", teeSet: "member", pinRotation: "A" });
   if (!started.ok) throw new Error(started.reason);
-  const playable = { ...started.round, ball: { x: 19, y: 10 }, lie: "fairway" as const };
+  // Preserve M62's historical seeded-preview parity fixture. New-model
+  // previews intentionally reveal an envelope rather than the committed miss.
+  const { shotModel: _shotModel, distanceProfile: _distanceProfile, ...legacyCourse } = started.round.course;
+  const playable = { ...started.round, course: legacyCourse, ball: { x: 19, y: 10 }, lie: "fairway" as const };
   const pin = playable.course.holes[0].pin;
   let selection: { club: string; aim: Point; power: number; technique: "normal" } | null = null;
   let preview: ReturnType<typeof previewPlayableShot> | null = null;

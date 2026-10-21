@@ -28,8 +28,8 @@ dirty-worktree field, so identical inputs produce identical bytes and digest.
 The headless determinism hash is `0f18ca6b`. Certification code remains under
 `src/game/testing/` and is not imported by the production runtime.
 The generated report SHA-256 digest is
-`56b36396783e4df3f91e8ead7d5a8418821716a98bd794429d9ac93198ac6fad`.
-<!-- m65-report-digest:56b36396783e4df3f91e8ead7d5a8418821716a98bd794429d9ac93198ac6fad -->
+`2dc60eb64f9678b570ad4b4670b63b3aafc70758c3584a0bbd028e3ba170ba0e`.
+<!-- m65-report-digest:2dc60eb64f9678b570ad4b4670b63b3aafc70758c3584a0bbd028e3ba170ba0e -->
 
 ## Deferred human gates
 

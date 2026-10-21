@@ -21,6 +21,7 @@ import type {
 } from "./contracts";
 import {
   resolveObstacleCollision,
+  sampleAuthoritativeFlightGeometry,
   type ObstacleCollisionInput,
 } from "./obstacleCollision";
 import {
@@ -257,6 +258,10 @@ export function createSharedShotOutcome(args: {
       },
     })
     : null);
+  const retained = obstacleResolution?.retained;
+  const geometry = retained?.geometry;
+  const apexTime = geometry && geometry.apexHeightYards > 0
+    ? Math.max(0, Math.min(retained!.endSampleIndex / retained!.sampleDivisions, .5 + (geometry.endHeightYards - geometry.startHeightYards) / (8 * geometry.apexHeightYards))) : 0;
   return {
     rulesVersion: 1,
     lieEffect: effects.lieEffect,
@@ -268,7 +273,7 @@ export function createSharedShotOutcome(args: {
       profile: effects.flight.profile,
       launchAngleDegrees: effects.flight.launchAngleDegrees,
       apexHeightYards: effects.flight.apexHeightYards,
-      apexPosition: midpoint(trace.from, trace.landing),
+      apexPosition: geometry ? sampleAuthoritativeFlightGeometry(geometry, apexTime).point : midpoint(trace.from, trace.landing),
       carryEnd: { ...trace.landing },
       clearance: obstacleResolution?.clearance ?? [],
     },

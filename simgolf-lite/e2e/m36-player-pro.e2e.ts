@@ -36,13 +36,12 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   await expect(page.getByTestId("player-shot-caddie-guidance")).toContainText("Caddie read");
   await expect(page.getByTestId("player-shot-caddie-guidance")).toContainText("Plays");
   await expect(page.getByTestId("player-shot-caddie-guidance")).toContainText("Expected penalty:");
-  await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Flight: low");
-  await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Route evidence:");
-  await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Penalty risk:");
-  await expect(page.getByTestId("player-shot-green-rollout-preview")).toContainText("Ground path:");
+  await expect(page.getByTestId("player-shot-expected-style")).toContainText("Flight: low");
+  await expect(page.getByTestId("player-shot-rules-preview")).toHaveCount(0);
+  await expect(page.getByTestId("player-shot-green-rollout-preview")).toHaveCount(0);
   await page.getByTestId("player-shot-flight-high").click();
   await expect(page.getByTestId("player-shot-flight-high")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Flight: high");
+  await expect(page.getByTestId("player-shot-expected-style")).toContainText("Flight: high");
   await page.getByTestId("workspace-design").click();
   await expect(page.getByTestId("open-course-manager")).toBeDisabled();
 

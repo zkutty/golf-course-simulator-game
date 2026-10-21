@@ -16,6 +16,7 @@ describe("M12 render performance fixture", () => {
     expect(course.obstacles.filter((obstacle) => obstacle.type === "tree").length).toBeGreaterThanOrEqual(500);
     expect(live.golfers).toHaveLength(100);
     expect(live.golfers.every((golfer) => golfer.finished === false)).toBe(true);
+    expect(live.golfers.every((golfer) => golfer.shotOutcomes?.length === 0)).toBe(true);
   }, 60_000);
 
   it("snapshots and restores the 100-golfer renderer fixture within a bounded payload", () => {

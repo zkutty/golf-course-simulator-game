@@ -151,10 +151,7 @@ import {
 } from "../game/render/renderSnapshot";
 import { SceneSystemHost } from "./renderer/SceneSystemHost";
 import { createOpeningPreviewSceneSystem } from "./renderer/scenes/openingPreviewScene";
-import {
-  createAtmosphereSceneSystem,
-  type AtmosphereSceneSystem,
-} from "./renderer/scenes/atmosphereScene";
+import type { AtmosphereSceneSystem } from "./renderer/scenes/atmosphereScene";
 import {
   createSurfaceCareSceneSystem,
   type SurfaceCareWorkerSprite,
@@ -164,22 +161,13 @@ import type { NaturalPropsSceneSystem } from "./renderer/scenes/naturalPropsScen
 import type { HabitatFieldSceneSystem } from "./renderer/scenes/habitatFieldScene";
 import type { PlayerProCollectionSceneSystem } from "./renderer/scenes/playerProCollectionScene";
 import type { HoleMarkersSceneSystem } from "./renderer/scenes/holeMarkersScene";
-import {
-  createOverlaysDiagnosticsSceneSystem,
-  type OverlaysDiagnosticsSceneSystem,
-} from "./renderer/scenes/overlaysDiagnosticsScene";
+import type { OverlaysDiagnosticsSceneSystem } from "./renderer/scenes/overlaysDiagnosticsScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
-import { createArchitectureOverlaySceneSystem, routeDestinationHierarchy } from "./renderer/scenes/architectureOverlayScene";
+import { routeDestinationHierarchy } from "./renderer/scenes/routeDestinationHierarchy";
 import { createPropertyAssetsSceneSystem } from "./renderer/scenes/propertyAssetsScene";
 import { createSurfaceEditorSceneSystem } from "./renderer/scenes/surfaceEditorScene";
-import {
-  createMobilityEntitiesSceneSystem,
-  type MobilityEntitiesSceneSystem,
-} from "./renderer/scenes/mobilityEntitiesScene";
-import {
-  createLiveEntitiesSceneSystem,
-  type LiveEntitiesSceneSystem,
-} from "./renderer/scenes/liveEntitiesScene";
+import type { MobilityEntitiesSceneSystem } from "./renderer/scenes/mobilityEntitiesScene";
+import type { LiveEntitiesSceneSystem } from "./renderer/scenes/liveEntitiesScene";
 import type {
   TerrainWaterChunk,
   TerrainWaterSceneSystem,
@@ -3878,7 +3866,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       setRendererError(true);
       return;
     }
-    const atmosphere = createAtmosphereSceneSystem({
+    const atmosphere = deferredWorldScenes.createAtmosphereSceneSystem({
       stage: app.stage,
       world: layers.world,
       seasonalTerrain: layers.seasonalTerrain,
@@ -3899,14 +3887,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
       layers.terrainDecals,
       layers.objects,
     );
-    const mobilityEntities = createMobilityEntitiesSceneSystem(layers.objects);
-    const liveEntities = createLiveEntitiesSceneSystem({
+    const mobilityEntities = deferredWorldScenes.createMobilityEntitiesSceneSystem(layers.objects);
+    const liveEntities = deferredWorldScenes.createLiveEntitiesSceneSystem({
       objects: layers.objects,
       terrainDecals: layers.terrainDecals,
       fx: layers.fx,
       screenOverlay: layers.screenOverlay,
     });
-    const overlaysDiagnostics = createOverlaysDiagnosticsSceneSystem({
+    const overlaysDiagnostics = deferredWorldScenes.createOverlaysDiagnosticsSceneSystem({
       terrainDecals: layers.terrainDecals,
       fx: layers.fx,
       screenOverlay: layers.screenOverlay,
@@ -3934,7 +3922,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       holeMarkers,
       mobilityEntities,
       liveEntities,
-      createArchitectureOverlaySceneSystem(layers.terrainDecals, () => app.render()),
+      deferredWorldScenes.createArchitectureOverlaySceneSystem(layers.terrainDecals, () => app.render()),
       overlaysDiagnostics,
       createOpeningPreviewSceneSystem(layers.fx),
       createEstateSurveySceneSystem(layers.sceneDecals.estateSurvey),

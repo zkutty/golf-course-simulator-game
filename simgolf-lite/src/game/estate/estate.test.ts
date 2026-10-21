@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createNewGame } from "../gen/newGame";
 import { applyAction } from "../../core/reducer";
 import type { GameState } from "../gameState";
@@ -9,6 +9,14 @@ import type { Course, Terrain } from "../models/types";
 import { createLiveState, stepLive } from "../live/simulation";
 import { snapshotLiveSimulation } from "../live/persistence";
 import type { Action } from "../../core/actions";
+
+// Schema v7 predates retained modern shot geometry. Build its live fixture
+// through the real historical solver instead of relabeling a modern payload.
+vi.mock("../live/m47Round", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../live/m47Round")>();
+  return { ...actual, buildStrategicGolferRound: (args: Parameters<typeof actual.buildStrategicGolferRound>[0]) =>
+    actual.buildStrategicGolferRound({ ...args, modernShotModel: false }) };
+});
 
 function game(seed = 250025): GameState {
   const { course, world } = createNewGame({ mode: "sandbox", courseName: "Estate Test", seed, theme: "parkland", difficulty: "normal", sandboxOverrides: { startingCash: 2_000_000 } });

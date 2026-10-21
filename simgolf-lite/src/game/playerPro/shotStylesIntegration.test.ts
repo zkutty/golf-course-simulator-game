@@ -29,6 +29,32 @@ describe("versioned shot styles through shared authority", () => {
       expect(hit(snapshot(), style)).toEqual(shot);
     }
   });
+  it("rejects contradictory retained style, contact and relief metadata", () => {
+    const shot = hit(snapshot());
+    const outcome = shot.sharedOutcome!;
+    expect(isValidSharedShotOutcome({ ...outcome, motion: { ...outcome.motion!, identity: {
+      ...outcome.motion!.identity, modelVersion: "club_styles_v999",
+    } } })).toBe(false);
+    expect(isValidSharedShotOutcome({ ...outcome, impact: { ...outcome.impact!, style: "fade" } })).toBe(false);
+    expect(isValidSharedShotOutcome({ ...outcome, collision: { kind: "terrain", point: shot.from, terrain: "fairway", distanceFromStartYards: 0 } })).toBe(false);
+    expect(isValidSharedShotOutcome({ ...outcome, motion: { ...outcome.motion!, reliefPosition: shot.rest } })).toBe(false);
+  });
+  it("mirrors intentional curvature with handedness while retaining exact collision geometry", () => {
+    const course = snapshot();
+    const resolve = (handedness: "right" | "left", style: "draw" | "fade") => resolvePlayableShot({
+      snapshot: course, holeId: "h1", shotNumber: 1, from: { x: 3, y: 12 }, lie: "fairway", skills, seed: 42, handedness,
+      selection: { club: "7 Iron", technique: style, style, power: 1, aim: { x: 50, y: 12 } },
+    });
+    const right = resolve("right", "draw");
+    const left = resolve("left", "draw");
+    const fade = resolve("right", "fade");
+    const curve = (shot: ReturnType<typeof resolve>) => shot.sharedOutcome!.motion!.flight!.geometry.curve!.lateralOffsetTiles;
+    expect(curve(right)).toBe(-curve(left));
+    expect(curve(right)).toBe(-curve(fade));
+    const motion = right.sharedOutcome!.motion!;
+    const progress = motion.flight!.endTime * .5;
+    expect(sampleRetainedShotMotion(motion, progress)!.point).not.toEqual({ x: (right.from.x + right.landing.x) / 2, y: (right.from.y + right.landing.y) / 2 });
+  });
   it("keeps old snapshots on the historical path without invented motion", () => {
     const shot = hit(snapshot(false));
     expect(shot.shotStyle).toBeUndefined();

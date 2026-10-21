@@ -1,10 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import { createInvitedPreviewEvidence } from "./invitedPreview";
 import { compareOpening, diagnoseOpening, freezeOpeningContext, hasOpeningEdit, newOpeningDemo, normalizeOpeningDemo, openingPenaltyTotal, openingPlaybackFrame, openingRiskLeave, openingShots, openingTargetCells, openingTargetTiles, retestOpening } from "./openingDemo";
 import { validHoleCount } from "./invitedPreview";
 import { advanceTutorialProgress, claimTutorialPreviewReward, createTutorialProgress, normalizeTutorialProgress, restartTutorialProgress, tutorialCanAdvance, tutorialStep } from "./tutorial";
 import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSave } from "../../utils/save";
+
+// Preserve this released state-machine fixture's exact seeded leave. Current
+// actor physics/planning is covered by invitedPreview and live style tests.
+vi.mock("../live/m47Round", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../live/m47Round")>();
+  return { ...actual, buildStrategicGolferRound: (args: Parameters<typeof actual.buildStrategicGolferRound>[0]) =>
+    actual.buildStrategicGolferRound({ ...args, modernShotModel: false }) };
+});
 
 function fixture() {
   const course = structuredClone(DEFAULT_COURSE);

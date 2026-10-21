@@ -1666,7 +1666,7 @@ export default function App() {
 
   useEffect(() => {
     const round = activePlayerRound;
-    if (!round || round.phase === "flight") return;
+    if (!round || round.phase === "flight" && !round.pendingShot?.sharedOutcome?.motion) return;
     const timer = window.setTimeout(() => {
       const current = gameSession.getState();
       void autosaveState(current);
@@ -3500,6 +3500,10 @@ export default function App() {
           x: Number(golfer.x.toFixed(2)),
           y: Number(golfer.y.toFixed(2)),
           segment: golfer.segKind,
+          segmentProgress: golfer.segT,
+          ball: golfer.ballX != null && golfer.ballY != null ? { x: golfer.ballX, y: golfer.ballY } : null,
+          ballMotion: golfer.ballMotion ? { identity: golfer.ballMotion.identity, pose: golfer.ballMotion.pose,
+            active: golfer.ballMotion.active, eventKinds: golfer.ballMotion.events.map((event) => event.kind) } : null,
           shot: golfer.shot,
           mood: Number(golfer.mood.toFixed(2)),
           teeSet: golfer.teeSet,
@@ -3863,8 +3867,27 @@ export default function App() {
         dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
       },
-      setPlayerProFixture: () => {
+      setPlayerProFixture: (options) => {
         const fixtureCourse = createPlayerProReferenceCourse();
+        if (options?.shotStyles) {
+          // Setup-only certification course. No round, shot or result is injected.
+          fixtureCourse.width = 64;
+          fixtureCourse.height = 32;
+          fixtureCourse.yardsPerTile = 10;
+          fixtureCourse.tiles = Array<Terrain>(64 * 32).fill("fairway");
+          fixtureCourse.elevations = Array(64 * 32).fill(0);
+          fixtureCourse.obstacles = [];
+          fixtureCourse.decorations = [];
+          fixtureCourse.buildings = [{ type: "clubhouse", x: 2, y: 16 }];
+          fixtureCourse.holes = fixtureCourse.holes.map((hole, index) => {
+            const tee = { x: 4, y: 8 + index * 8 };
+            const green = { x: 58, y: tee.y };
+            fixtureCourse.tiles[tee.y * 64 + tee.x] = "tee";
+            for (let y = green.y - 2; y <= green.y + 2; y++) for (let x = green.x - 2; x <= green.x + 2; x++) fixtureCourse.tiles[y * 64 + x] = "green";
+            return { ...hole, tee, green, teeBoxes: { member: tee }, pinPositions: { A: green },
+              parMode: "MANUAL", parManual: 5, parByTee: { member: { mode: "MANUAL", par: 5 } } };
+          });
+        }
         const fixtureWorld = {
           ...gameSession.getState().world,
           cash: 250_000,
@@ -3874,6 +3897,10 @@ export default function App() {
           distressWeeks: 0,
           playerPro: createDefaultPlayerPro({ seed: 360037, name: "Casey Fairway", background: "architect" }),
         };
+        if (options?.shotStyles) {
+          fixtureWorld.playerPro.skills = { power: 95, driving: 95, irons: 95, shortGame: 95, putting: 95, recovery: 95 };
+          fixtureWorld.playerPro.unlockedTechniques = ["normal", "draw", "fade", "punch", "flop", "backspin"];
+        }
         dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
         setShowPlayerPro(false);

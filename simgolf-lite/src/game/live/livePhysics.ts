@@ -1,4 +1,4 @@
-import { calculateShotStyleEffects, defaultShotStyle, shotStyleForTechnique, SHOT_STYLES } from "../rules/shotStyles";
+import { calculateShotStyleEffects, defaultShotStyle, isShotStyleId, shotStyleForTechnique, SHOT_STYLES } from "../rules/shotStyles";
 import { dispersionClub, dispersionClubIdForLabel } from "../rules/dispersionRegistry";
 import type { ShotLie } from "../rules/contracts";
 import { createShotModelSnapshotV1, usesClubShotModel } from "../rules/shotModelSnapshot";
@@ -121,6 +121,7 @@ export function resolveLiveShot(args: {
     aim: args.intent.target,
     power: args.intent.power,
     technique: args.intent.technique,
+    ...(args.intent.style !== undefined ? { style: args.intent.style } : {}),
     flightProfile: args.intent.flightProfile,
   };
   let compatibilityFallback: string | null = null;
@@ -130,13 +131,14 @@ export function resolveLiveShot(args: {
     if (!club || !["normal", "draw", "fade", "punch", "flop", "backspin"].includes(selection.technique)) {
       throw new Error(`Invalid live shot selection: ${selection.club}/${selection.technique}.`);
     }
-    const requestedStyle = shotStyleForTechnique(club.id, selection.technique);
+    if (selection.style !== undefined && !isShotStyleId(selection.style)) throw new Error("Invalid live shot style.");
+    const requestedStyle = selection.style ?? shotStyleForTechnique(club.id, selection.technique);
     const definition = SHOT_STYLES.find((style) => style.id === requestedStyle)!;
     const input = { clubId: club.id, lie: args.lie as ShotLie, power: selection.power,
       recoverySkill: args.capabilities.recovery, shortGameSkill: args.capabilities.shortGame };
     let styled = calculateShotStyleEffects({ ...input, style: requestedStyle,
       ...(definition.flightProfile === null ? { flightProfile: selection.flightProfile } : {}) });
-    if (!styled.ok && (styled.blocker.code === "unsupported_technique"
+    if (!styled.ok && args.intent.style === undefined && (styled.blocker.code === "unsupported_technique"
       || (styled.blocker.code === "style_club_mismatch" && !club.allowedTechniques.includes(selection.technique)))) {
       const requested = `${selection.club}/${selection.technique}/${selection.flightProfile ?? "standard"}`;
       styled = calculateShotStyleEffects({ ...input, style: defaultShotStyle(club.id) });

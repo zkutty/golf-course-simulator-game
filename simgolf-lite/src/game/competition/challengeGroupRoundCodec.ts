@@ -1,6 +1,8 @@
 import type { PlayerProPoint, PlayerRoundCourseSnapshot, PlayerShotTrace } from "../models/playerProTypes";
 import { isValidSharedShotOutcome } from "../rules/contracts";
 import { decodeControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
+import { isProfileCalibrationV1 } from "../rules/profileCalibration";
+import { isValidShotModelSnapshot, usesClubShotModel } from "../rules/shotModelSnapshot";
 import { courseHandicapUnrounded, roundHalfAwayFromZero, strokesByHole, strokesOffLow } from "./handicap";
 import { captureTeamHandicapSnapshots } from "./teamAuthority";
 import type {
@@ -67,10 +69,14 @@ function unroundedHandicap(handicapIndex: number, course: Pick<PlayerRoundCourse
 }
 
 function validateShot(shot: PlayerShotTrace): boolean {
+  const motion = shot.sharedOutcome?.motion;
   return typeof shot.id === "string" && typeof shot.holeId === "string" && integer(shot.shotNumber)
     && point(shot.from) && point(shot.aim) && point(shot.rest) && finite(shot.seed)
     && integer(shot.penaltyStrokes) && shot.penaltyStrokes >= 0
-    && (!shot.sharedOutcome || isValidSharedShotOutcome(shot.sharedOutcome));
+    && (!shot.sharedOutcome || isValidSharedShotOutcome(shot.sharedOutcome))
+    && (!motion || (motion.identity.shotId === shot.id && motion.identity.holeId === shot.holeId
+      && motion.identity.shotNumber === shot.shotNumber && motion.identity.seed === (shot.seed >>> 0)
+      && motion.identity.club === shot.club && motion.identity.style === shot.shotStyle));
 }
 
 function validSideBet(sideBet: ChallengeSideBetState): boolean {
@@ -95,6 +101,9 @@ export function validateChallengeGroupRound(round: ChallengeGroupRound): string 
   const players = golfers.filter((golfer) => golfer.controller === "player");
   if (players.length !== 1 || round.playerGolferId !== players[0].id) return INVALID_SAVE;
   const course = round.course;
+  if (course.shotModel !== undefined && !isValidShotModelSnapshot(course.shotModel)) return INVALID_SAVE;
+  if (course.distanceProfile !== undefined && !isProfileCalibrationV1(course.distanceProfile)) return INVALID_SAVE;
+  if (usesClubShotModel(course.shotModel) && !isProfileCalibrationV1(course.distanceProfile)) return INVALID_SAVE;
   const route = course.holes;
   if (route.length !== 9 && route.length !== 18) return INVALID_SAVE;
   const holeIds = new Set(route.map((hole) => hole.id));

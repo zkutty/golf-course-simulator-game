@@ -1,10 +1,18 @@
 import { writeFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ADVANCED_SYSTEM_IDS } from "../experience/systemControl";
 import {
   ZK813_CERTIFICATION_ID,
   runZK813ProfileCertification,
 } from "./zk813ProfileCertification";
+
+// This historical certificate retains its exact released physical stream.
+// Modern defaults and retained ownership are certified in the separate file.
+vi.mock("../live/m47Round", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../live/m47Round")>();
+  return { ...actual, buildStrategicGolferRound: (args: Parameters<typeof actual.buildStrategicGolferRound>[0]) =>
+    actual.buildStrategicGolferRound({ ...args, modernShotModel: false }) };
+});
 
 const RELAXED_HIDDEN = new Set(["localized-turf", "irrigation", "drainage", "resort", "mobility"]);
 const CLASSIC_HIDDEN = new Set(["localized-turf", "irrigation", "drainage", "pace", "mobility", "community"]);

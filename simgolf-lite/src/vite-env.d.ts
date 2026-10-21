@@ -299,7 +299,7 @@ interface Window {
       clockRemainderMinutes: number;
     };
     setPropertyFixture(): void;
-    setPlayerProFixture(): void;
+    setPlayerProFixture(options?: { shotStyles?: boolean }): void;
     setChallengeContractFixture(): Promise<void>;
     setZk731DisplayFixture(): Promise<void>;
     moveZk731DisplayVehicleToCustody(): Promise<void>;

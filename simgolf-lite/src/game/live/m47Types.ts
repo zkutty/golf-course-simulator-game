@@ -45,6 +45,8 @@ export interface ShotIntent {
   club: string;
   power: number;
   technique: "normal" | "draw" | "fade" | "punch" | "flop" | "backspin";
+  /** Explicit modern style; absent historical intents keep their technique projection. */
+  style?: ShotStyleId;
   flightProfile?: ShotFlightProfile;
   expectedStrokes: number;
   variance: number;

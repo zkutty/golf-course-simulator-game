@@ -1,4 +1,5 @@
 import type { Course, Hole, Point, Terrain } from "../models/types";
+import { plannerDistanceProfile } from "../rules/plannerClubProjection";
 import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
 import { estimateAutomaticPutts } from "../greens/greenPutting";
 import { resolveGreenRollout, sampleGreenRolloutSurface } from "../greens/greenRollout";
@@ -165,6 +166,8 @@ export function planGreenLandingZones(args: {
   const snapshotHole = args.snapshot.holes.find((candidate) => candidate.id === (args.hole.id ?? ""));
   const pin = snapshotHole?.pin ?? args.hole.green;
   if (!pin) return [];
+  const maximumCarryYards = plannerDistanceProfile(args.snapshot)?.clubCarryYards.driver
+    ?? 270 * (.84 + args.capabilities.power / 480);
   const zones = boundedZones(args.course, args.hole, pin);
   const greenZones = zones.filter((point) => terrainAt(args.snapshot.tiles, args.snapshot.width, args.snapshot.height, point) === "green");
   const center = (greenZones.length ? greenZones : zones).reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
@@ -248,7 +251,6 @@ export function planGreenLandingZones(args: {
     const uphillQuality = clamp(uphill / .35);
     const runUpQuality = role === "run-up" ? clamp(args.capabilities.shortGame / 100 * angleQuality) : 0;
     const playsLikeYards = analyzeShotSlope({ course: args.course, from: args.from, to: target, yardsPerTile: args.course.yardsPerTile }).playsLikeDistanceYards;
-    const maximumCarryYards = 270 * (.84 + args.capabilities.power / 480);
     const carryUtilization = playsLikeYards / Math.max(1, maximumCarryYards);
     const conservative = args.capabilities.riskStyle === "conservative" || args.personality.prefs.difficulty < -.35;
     const aggressive = args.capabilities.riskStyle === "aggressive" || args.personality.prefs.difficulty > .45;

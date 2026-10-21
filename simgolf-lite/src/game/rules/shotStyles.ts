@@ -124,6 +124,8 @@ export function shotStyleForTechnique(clubId: string, technique: ShotTechnique):
 /** Strict finite bounds for retained impact metadata. Never repairs persisted facts. */
 export function isClubImpactV1(value: unknown): value is ClubImpactV1 {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = ["version", "clubId", "style", "power", "launchAngleDegrees", "landingAngleDegrees", "spinControl", "stoppingPotential", "forwardRollPotentialYards", "rollbackSupported"];
+  if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key))) return false;
   const candidate = value as Partial<ClubImpactV1>;
   const inRange = (number: unknown, minimum: number, maximum: number): boolean => typeof number === "number"
     && Number.isFinite(number) && number >= minimum && number <= maximum;

@@ -739,10 +739,14 @@ function runPlayerSaveArchitectureCheck(): PlayerCertificationResult {
     pinRotation: "A",
   });
   if (!started.ok) throw new Error(started.reason);
-  const selection = caddieRecommendation(started.round, career.skills);
-  const preview = previewPlayableShot(started.round, career.skills, selection);
-  const repeatedPreview = previewPlayableShot(started.round, career.skills, selection);
-  const committed = commitPlayerShot(started.round, career.skills, selection);
+  // M50 certifies the historical seeded-preview contract. Modern previews are
+  // unseeded envelopes, covered separately by shotStylesIntegration.test.ts.
+  const { shotModel: _shotModel, distanceProfile: _distanceProfile, ...legacySnapshot } = started.round.course;
+  const legacyRound = { ...started.round, course: legacySnapshot };
+  const selection = caddieRecommendation(legacyRound, career.skills);
+  const preview = previewPlayableShot(legacyRound, career.skills, selection);
+  const repeatedPreview = previewPlayableShot(legacyRound, career.skills, selection);
+  const committed = commitPlayerShot(legacyRound, career.skills, selection);
   const parity = preview.available
     && committed.phase === "flight"
     && preview.sharedOutcome !== null

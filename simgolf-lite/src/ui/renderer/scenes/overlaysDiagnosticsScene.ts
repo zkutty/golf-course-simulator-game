@@ -291,8 +291,20 @@ export function createOverlaysDiagnosticsSceneSystem(
     playerShotOverlay = next;
   };
 
+  const ensurePlayerGolferDisplays = () => {
+    if (!movingOverlay || golferBase || !(dependencies.atlasReady ?? golfersAtlasReady)()) return;
+    const makeSprite = dependencies.createSprite ?? (() => new PIXI.Sprite());
+    golferBase = makeSprite(); golferTint = makeSprite(); golferTint.tint = 0x467449;
+    for (const sprite of [golferBase, golferTint]) {
+      sprite.anchor.set(.5, GOLFER_FEET_Y / GOLFER_FRAME_H);
+      sprite.scale.set(GOLFER_DISPLAY_W / GOLFER_FRAME_W);
+      movingOverlay.addChild(sprite);
+    }
+    if (movingBall) movingOverlay.addChild(movingBall);
+  };
+
   const ensurePlayerMotionDisplays = () => {
-    if (movingOverlay) return;
+    if (movingOverlay) { ensurePlayerGolferDisplays(); return; }
     movingOverlay = createContainer(); movingOverlay.label = "player-pro-retained-motion";
     movingShadow = createGraphics(); movingShadow.label = "player-pro-ball-shadow";
     movingShadow.ellipse(0, 0, 3.4, 1.5); movingShadow.fill({ color: 0x101b13, alpha: .45 });
@@ -301,16 +313,8 @@ export function createOverlaysDiagnosticsSceneSystem(
     movingBall.circle(0, -2, 2.8); movingBall.fill({ color: 0xffffff, alpha: 1 });
     movingBall.stroke({ color: 0x283d2e, width: 1.1, alpha: 1 });
     movingOverlay.addChild(movingShadow, contactEffect);
-    if ((dependencies.atlasReady ?? golfersAtlasReady)()) {
-      const makeSprite = dependencies.createSprite ?? (() => new PIXI.Sprite());
-      golferBase = makeSprite(); golferTint = makeSprite(); golferTint.tint = 0x467449;
-      for (const sprite of [golferBase, golferTint]) {
-        sprite.anchor.set(.5, GOLFER_FEET_Y / GOLFER_FRAME_H);
-        sprite.scale.set(GOLFER_DISPLAY_W / GOLFER_FRAME_W);
-        movingOverlay.addChild(sprite);
-      }
-    }
     movingOverlay.addChild(movingBall);
+    ensurePlayerGolferDisplays();
     layers.fx.addChild(movingOverlay);
     expectedOverlay = createGraphics(); expectedOverlay.label = "player-pro-expected-envelope";
     layers.fx.addChild(expectedOverlay);
