@@ -1,0 +1,23 @@
+{
+  "implementationCommit": "c39ac227b1ed5aa33dd28c985b782798c80c9e7b",
+  "buildMode": "production",
+  "commitDefine": "c39ac227b1ed5aa33dd28c985b782798c80c9e7b",
+  "monitoringConfiguration": "public placeholders retain production branches; no provider authentication or upload",
+  "entry": "assets/index-D3n8iP_x.js",
+  "bytes": 1607915,
+  "sha256": "8782c5a7e299f5891e03338a70b183da5a575d1c19be60af94f0af0420eebe0c",
+  "unchangedCeilingBytes": 1608719,
+  "passed": true,
+  "fixtureOnlyChangesProductionEntryComparison": {
+    "entry": "assets/index-C2h8GY6t.js",
+    "bytes": 1607897,
+    "sha256": "c2f19b692a2883fed49ab2ab7651b2ea03b3d8cfa344572bf66998d15802b7b8",
+    "identicalToFullRegressionImplementation": true
+  },
+  "priorImplementationBuild": {
+    "implementationCommit": "46ede085e43506972996ed605b7236e8a3ceccb3",
+    "entry": "assets/index-C2h8GY6t.js",
+    "bytes": 1607897,
+    "sha256": "c2f19b692a2883fed49ab2ab7651b2ea03b3d8cfa344572bf66998d15802b7b8"
+  }
+}

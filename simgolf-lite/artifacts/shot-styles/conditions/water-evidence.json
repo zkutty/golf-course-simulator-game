@@ -1,0 +1,967 @@
+{
+  "motion": {
+    "version": 1,
+    "identity": {
+      "shotId": "shot-player-pro-hole-1-1",
+      "holeId": "player-pro-hole-1",
+      "shotNumber": 1,
+      "seed": 331899,
+      "club": "Driver",
+      "style": "straight_run",
+      "modelVersion": "club_styles_v1"
+    },
+    "units": {
+      "horizontal": "tiles",
+      "height": "yards",
+      "time": "normalized",
+      "yardsPerTile": 10
+    },
+    "from": {
+      "point": {
+        "x": 4,
+        "y": 8
+      },
+      "heightYards": 0
+    },
+    "landing": {
+      "point": {
+        "x": 11.091,
+        "y": 6.524
+      },
+      "heightYards": 0
+    },
+    "physicalRest": {
+      "point": {
+        "x": 11.091,
+        "y": 6.524
+      },
+      "heightYards": 0
+    },
+    "reliefPosition": {
+      "x": 4,
+      "y": 8
+    },
+    "facts": {
+      "launchAngleDegrees": 12,
+      "landingAngleDegrees": 20,
+      "spin": "neutral"
+    },
+    "flight": {
+      "geometry": {
+        "version": 1,
+        "from": {
+          "x": 4,
+          "y": 8
+        },
+        "to": {
+          "x": 11.091,
+          "y": 6.524
+        },
+        "startHeightYards": 0,
+        "endHeightYards": 0,
+        "apexHeightYards": 15,
+        "curve": {
+          "kind": "lateral_quadratic_v1",
+          "lateralOffsetTiles": 0
+        }
+      },
+      "sampleDivisions": 145,
+      "endSampleIndex": 145,
+      "collision": {
+        "kind": "none"
+      },
+      "endTime": 0.72
+    },
+    "postCollisionPath": [],
+    "groundPath": [
+      {
+        "point": {
+          "x": 11.091,
+          "y": 6.524
+        },
+        "heightYards": 0,
+        "time": 0.72
+      },
+      {
+        "point": {
+          "x": 11.091,
+          "y": 6.524
+        },
+        "heightYards": 0,
+        "time": 1
+      }
+    ],
+    "events": [
+      {
+        "point": {
+          "x": 4,
+          "y": 8
+        },
+        "heightYards": 0,
+        "time": 0,
+        "kind": "launch",
+        "source": "flight",
+        "sourceIndex": 0
+      },
+      {
+        "point": {
+          "x": 11.091,
+          "y": 6.524
+        },
+        "heightYards": 0,
+        "time": 0.72,
+        "kind": "first_contact",
+        "source": "ground",
+        "sourceIndex": 0
+      },
+      {
+        "point": {
+          "x": 11.091,
+          "y": 6.524
+        },
+        "heightYards": 0,
+        "time": 1,
+        "kind": "rest",
+        "source": "ground",
+        "sourceIndex": 1
+      }
+    ]
+  },
+  "shot": {
+    "id": "shot-player-pro-hole-1-1",
+    "holeId": "player-pro-hole-1",
+    "shotNumber": 1,
+    "club": "Driver",
+    "technique": "normal",
+    "shotStyle": "straight_run",
+    "flightProfile": "standard",
+    "power": 0.25,
+    "from": {
+      "x": 4,
+      "y": 8
+    },
+    "aim": {
+      "x": 18,
+      "y": 8
+    },
+    "landing": {
+      "x": 11.091,
+      "y": 6.524
+    },
+    "rest": {
+      "x": 4,
+      "y": 8
+    },
+    "carryYards": 72.4,
+    "rollYards": 0,
+    "lieBefore": "tee",
+    "lieAfter": "tee",
+    "penaltyStrokes": 1,
+    "holed": false,
+    "seed": 331899,
+    "evidence": [
+      {
+        "id": "evidence-player-pro-hole-1-1-driving",
+        "skill": "driving",
+        "amount": 1,
+        "reason": "Driver:tee->tee",
+        "holeId": "player-pro-hole-1",
+        "shotNumber": 1,
+        "successful": false
+      }
+    ],
+    "shotSlope": {
+      "version": 1,
+      "flatDistanceYards": 140,
+      "targetElevationDelta": 0,
+      "playsLikeDistanceYards": 140,
+      "localGradient": {
+        "alongTargetLine": 0,
+        "crossTargetLine": 0
+      },
+      "handedness": "right",
+      "sidehill": "flat",
+      "naturalCurveBiasTiles": 0
+    },
+    "greenRollout": {
+      "version": 1,
+      "seed": 331899,
+      "landing": {
+        "x": 11.091,
+        "y": 6.524
+      },
+      "path": [
+        {
+          "x": 11.091,
+          "y": 6.524
+        }
+      ],
+      "rest": {
+        "x": 11.091,
+        "y": 6.524
+      },
+      "lieAfter": "water",
+      "rollYards": 0,
+      "breakTiles": 0,
+      "downhillTiles": 0,
+      "pace": "medium",
+      "transitions": [],
+      "evidence": {
+        "geometryHash": "ca75f577",
+        "program": "balanced",
+        "realizedSpeedFeet": 9.46,
+        "realizedFirmness": 0.486,
+        "effectiveMoisture": 0.58,
+        "weatherKind": "cloudy",
+        "rainInches": 0,
+        "drainageLevel": 0,
+        "requestedRollYards": 0,
+        "club": "Driver",
+        "sourceLie": "tee",
+        "trajectory": "standard",
+        "launchAngleDegrees": 12,
+        "landingAngleDegrees": 20,
+        "spin": "neutral",
+        "steps": 0,
+        "workloadCapped": false
+      }
+    },
+    "ruling": {
+      "status": "penalty",
+      "penaltyKind": "penalty_area",
+      "penaltyStrokes": 1,
+      "penaltyComponentId": 1,
+      "penaltyAreaClassification": "yellow",
+      "referencePoint": {
+        "x": 11.091,
+        "y": 6.524
+      },
+      "crossingPoint": {
+        "x": 11.091,
+        "y": 6.524
+      }
+    },
+    "relief": {
+      "status": "resolved",
+      "type": "stroke_and_distance",
+      "candidates": [
+        {
+          "id": "stroke-and-distance",
+          "type": "stroke_and_distance",
+          "position": {
+            "x": 4,
+            "y": 8
+          },
+          "order": 0,
+          "legal": true,
+          "distanceFromReferenceYards": 7.242986745811426
+        },
+        {
+          "id": "lateral-0",
+          "type": "lateral",
+          "position": {
+            "x": 10.965202,
+            "y": 10.522021
+          },
+          "order": 1,
+          "legal": false,
+          "distanceFromReferenceYards": 3.9999996316556086
+        },
+        {
+          "id": "lateral-1",
+          "type": "lateral",
+          "position": {
+            "x": 11.216798,
+            "y": 2.525979
+          },
+          "order": 2,
+          "legal": false,
+          "distanceFromReferenceYards": 3.999999631655608
+        },
+        {
+          "id": "back-on-line-0",
+          "type": "back_on_line",
+          "position": {
+            "x": 11.091,
+            "y": 6.524
+          },
+          "order": 3,
+          "legal": false,
+          "distanceFromReferenceYards": 0
+        },
+        {
+          "id": "back-on-line-1",
+          "type": "back_on_line",
+          "position": {
+            "x": 10.591247,
+            "y": 6.508275
+          },
+          "order": 4,
+          "legal": false,
+          "distanceFromReferenceYards": 0.5000003366338868
+        },
+        {
+          "id": "back-on-line-2",
+          "type": "back_on_line",
+          "position": {
+            "x": 10.091495,
+            "y": 6.49255
+          },
+          "order": 5,
+          "legal": false,
+          "distanceFromReferenceYards": 0.999999673762446
+        },
+        {
+          "id": "back-on-line-3",
+          "type": "back_on_line",
+          "position": {
+            "x": 9.091989,
+            "y": 6.461101
+          },
+          "order": 6,
+          "legal": false,
+          "distanceFromReferenceYards": 2.0000003155804746
+        }
+      ],
+      "selectedCandidateId": "stroke-and-distance",
+      "finalPosition": {
+        "x": 4,
+        "y": 8
+      }
+    },
+    "finalPosition": {
+      "x": 4,
+      "y": 8
+    },
+    "sharedOutcome": {
+      "rulesVersion": 1,
+      "lieEffect": {
+        "sourceLie": "tee",
+        "effectiveLie": "tee",
+        "carryMultiplier": 1,
+        "dispersionMultiplier": 1,
+        "rollMultiplier": 1
+      },
+      "requestedCarryYards": 59.845197,
+      "effectiveCarryYards": 72.4,
+      "requestedDispersionTiles": 3.922,
+      "effectiveDispersionTiles": 3.7,
+      "flight": {
+        "profile": "standard",
+        "launchAngleDegrees": 12,
+        "apexHeightYards": 15,
+        "apexPosition": {
+          "x": 7.5455,
+          "y": 7.262
+        },
+        "carryEnd": {
+          "x": 11.091,
+          "y": 6.524
+        },
+        "clearance": []
+      },
+      "collision": {
+        "kind": "none"
+      },
+      "physicalRest": {
+        "x": 11.091,
+        "y": 6.524
+      },
+      "ruling": {
+        "status": "penalty",
+        "penaltyKind": "penalty_area",
+        "penaltyStrokes": 1,
+        "penaltyComponentId": 1,
+        "penaltyAreaClassification": "yellow",
+        "referencePoint": {
+          "x": 11.091,
+          "y": 6.524
+        },
+        "crossingPoint": {
+          "x": 11.091,
+          "y": 6.524
+        }
+      },
+      "relief": {
+        "status": "resolved",
+        "type": "stroke_and_distance",
+        "candidates": [
+          {
+            "id": "stroke-and-distance",
+            "type": "stroke_and_distance",
+            "position": {
+              "x": 4,
+              "y": 8
+            },
+            "order": 0,
+            "legal": true,
+            "distanceFromReferenceYards": 7.242986745811426
+          },
+          {
+            "id": "lateral-0",
+            "type": "lateral",
+            "position": {
+              "x": 10.965202,
+              "y": 10.522021
+            },
+            "order": 1,
+            "legal": false,
+            "distanceFromReferenceYards": 3.9999996316556086
+          },
+          {
+            "id": "lateral-1",
+            "type": "lateral",
+            "position": {
+              "x": 11.216798,
+              "y": 2.525979
+            },
+            "order": 2,
+            "legal": false,
+            "distanceFromReferenceYards": 3.999999631655608
+          },
+          {
+            "id": "back-on-line-0",
+            "type": "back_on_line",
+            "position": {
+              "x": 11.091,
+              "y": 6.524
+            },
+            "order": 3,
+            "legal": false,
+            "distanceFromReferenceYards": 0
+          },
+          {
+            "id": "back-on-line-1",
+            "type": "back_on_line",
+            "position": {
+              "x": 10.591247,
+              "y": 6.508275
+            },
+            "order": 4,
+            "legal": false,
+            "distanceFromReferenceYards": 0.5000003366338868
+          },
+          {
+            "id": "back-on-line-2",
+            "type": "back_on_line",
+            "position": {
+              "x": 10.091495,
+              "y": 6.49255
+            },
+            "order": 5,
+            "legal": false,
+            "distanceFromReferenceYards": 0.999999673762446
+          },
+          {
+            "id": "back-on-line-3",
+            "type": "back_on_line",
+            "position": {
+              "x": 9.091989,
+              "y": 6.461101
+            },
+            "order": 6,
+            "legal": false,
+            "distanceFromReferenceYards": 2.0000003155804746
+          }
+        ],
+        "selectedCandidateId": "stroke-and-distance",
+        "finalPosition": {
+          "x": 4,
+          "y": 8
+        }
+      },
+      "finalPosition": {
+        "x": 4,
+        "y": 8
+      },
+      "impact": {
+        "version": 1,
+        "clubId": "driver",
+        "style": "straight_run",
+        "power": 0.25,
+        "launchAngleDegrees": 12,
+        "landingAngleDegrees": 20,
+        "spinControl": 0.486344,
+        "stoppingPotential": 0.048634,
+        "forwardRollPotentialYards": 9.53808,
+        "rollbackSupported": false
+      },
+      "appliedWind": {
+        "version": 1,
+        "sourceMode": "directional",
+        "headwindMph": -10.495436485672748,
+        "crosswindMph": -5.817715442956045,
+        "carryMultiplier": 1.0109327463392423,
+        "lateralCenterlineTiles": -0.036267
+      },
+      "appliedDispersion": {
+        "version": 1,
+        "mode": "bivariate_v1",
+        "modelVersion": 1,
+        "clubId": "driver",
+        "seed": 331899,
+        "effectiveDispersionTiles": 3.922,
+        "accuracy": 95,
+        "consistency": 95,
+        "centerlineLongitudinalTiles": 0,
+        "centerlineLateralInputTiles": 0,
+        "centerlineLateralTiles": -0.036267,
+        "appliedWindLateralTiles": -0.036267,
+        "sample": {
+          "isTail": false,
+          "mahalanobisRadius": 2.175391576,
+          "longitudinalTiles": 1.106435421,
+          "lateralTiles": -1.439988695
+        }
+      },
+      "motion": {
+        "version": 1,
+        "identity": {
+          "shotId": "shot-player-pro-hole-1-1",
+          "holeId": "player-pro-hole-1",
+          "shotNumber": 1,
+          "seed": 331899,
+          "club": "Driver",
+          "style": "straight_run",
+          "modelVersion": "club_styles_v1"
+        },
+        "units": {
+          "horizontal": "tiles",
+          "height": "yards",
+          "time": "normalized",
+          "yardsPerTile": 10
+        },
+        "from": {
+          "point": {
+            "x": 4,
+            "y": 8
+          },
+          "heightYards": 0
+        },
+        "landing": {
+          "point": {
+            "x": 11.091,
+            "y": 6.524
+          },
+          "heightYards": 0
+        },
+        "physicalRest": {
+          "point": {
+            "x": 11.091,
+            "y": 6.524
+          },
+          "heightYards": 0
+        },
+        "reliefPosition": {
+          "x": 4,
+          "y": 8
+        },
+        "facts": {
+          "launchAngleDegrees": 12,
+          "landingAngleDegrees": 20,
+          "spin": "neutral"
+        },
+        "flight": {
+          "geometry": {
+            "version": 1,
+            "from": {
+              "x": 4,
+              "y": 8
+            },
+            "to": {
+              "x": 11.091,
+              "y": 6.524
+            },
+            "startHeightYards": 0,
+            "endHeightYards": 0,
+            "apexHeightYards": 15,
+            "curve": {
+              "kind": "lateral_quadratic_v1",
+              "lateralOffsetTiles": 0
+            }
+          },
+          "sampleDivisions": 145,
+          "endSampleIndex": 145,
+          "collision": {
+            "kind": "none"
+          },
+          "endTime": 0.72
+        },
+        "postCollisionPath": [],
+        "groundPath": [
+          {
+            "point": {
+              "x": 11.091,
+              "y": 6.524
+            },
+            "heightYards": 0,
+            "time": 0.72
+          },
+          {
+            "point": {
+              "x": 11.091,
+              "y": 6.524
+            },
+            "heightYards": 0,
+            "time": 1
+          }
+        ],
+        "events": [
+          {
+            "point": {
+              "x": 4,
+              "y": 8
+            },
+            "heightYards": 0,
+            "time": 0,
+            "kind": "launch",
+            "source": "flight",
+            "sourceIndex": 0
+          },
+          {
+            "point": {
+              "x": 11.091,
+              "y": 6.524
+            },
+            "heightYards": 0,
+            "time": 0.72,
+            "kind": "first_contact",
+            "source": "ground",
+            "sourceIndex": 0
+          },
+          {
+            "point": {
+              "x": 11.091,
+              "y": 6.524
+            },
+            "heightYards": 0,
+            "time": 1,
+            "kind": "rest",
+            "source": "ground",
+            "sourceIndex": 1
+          }
+        ]
+      }
+    }
+  },
+  "airborne": {
+    "frozen": {
+      "shotId": "shot-player-pro-hole-1-1",
+      "progress": 0.4121589277166101,
+      "motionProgress": 0.2831206435568416,
+      "phase": "airborne",
+      "point": {
+        "x": 6.788345,
+        "y": 7.419603
+      },
+      "heightYards": 14.315922,
+      "ball": {
+        "x": -20.200256000000024,
+        "y": 197.5162176
+      },
+      "shadow": {
+        "x": -20.200256000000024,
+        "y": 243.327168
+      },
+      "golferFrame": "golfer0_swing_1_7"
+    },
+    "expected": {
+      "point": {
+        "x": 6.788345,
+        "y": 7.419603
+      },
+      "heightYards": 14.315922,
+      "time": 0.2831206435568416,
+      "phase": "airborne",
+      "reliefPosition": {
+        "x": 4,
+        "y": 8
+      }
+    },
+    "visible": {
+      "point": {
+        "x": 6.788345,
+        "y": 7.419603
+      },
+      "heightYards": 14.315922,
+      "iso": {
+        "x": -20.200256000000024,
+        "y": 197.5162176
+      },
+      "projection": {
+        "x": 391.99658948146543,
+        "y": 379.8332552582148
+      },
+      "visiblePixels": 6,
+      "camera": {
+        "center": {
+          "x": 12.196515436168982,
+          "y": 6.024928229185166
+        },
+        "zoom": 0.8448191135877374,
+        "rotation": 0,
+        "visibleEstateBounds": {
+          "minX": 0,
+          "minY": 0,
+          "maxX": 39.902150433700534,
+          "maxY": 31
+        },
+        "viewMode": "COZY",
+        "renderer": "pixi",
+        "regionalSurround": true,
+        "reference": null
+      },
+      "transform": {
+        "world": {
+          "position": {
+            "x": 576,
+            "y": 461
+          },
+          "pivot": {
+            "x": 197.4907906234821,
+            "y": 291.54309864566636
+          },
+          "scale": {
+            "x": 0.8452502451181945,
+            "y": 0.8452502451181945
+          }
+        },
+        "camera": {
+          "center": {
+            "x": 12.196515436168982,
+            "y": 6.024928229185166
+          },
+          "targetCenter": {
+            "x": 12.196515436168982,
+            "y": 6.024928229185166
+          },
+          "zoom": 0.8452502451181945,
+          "targetZoom": 0.8452502451181945
+        }
+      }
+    }
+  },
+  "contact": {
+    "frozen": {
+      "shotId": "shot-player-pro-hole-1-1",
+      "progress": 0.8575873623743415,
+      "motionProgress": 0.8263260516760262,
+      "phase": "rollout",
+      "point": {
+        "x": 11.091,
+        "y": 6.524
+      },
+      "heightYards": 0,
+      "ball": {
+        "x": 146.14399999999998,
+        "y": 297.84
+      },
+      "shadow": {
+        "x": 146.14399999999998,
+        "y": 297.84
+      },
+      "golferFrame": "golfer0_swing_1_7"
+    },
+    "expected": {
+      "point": {
+        "x": 11.091,
+        "y": 6.524
+      },
+      "heightYards": 0,
+      "time": 0.8263260516760262,
+      "phase": "rollout",
+      "reliefPosition": {
+        "x": 4,
+        "y": 8
+      }
+    },
+    "visible": {
+      "point": {
+        "x": 11.091,
+        "y": 6.524
+      },
+      "heightYards": 0,
+      "iso": {
+        "x": 146.14399999999998,
+        "y": 297.84
+      },
+      "projection": {
+        "x": 532.5991126394691,
+        "y": 464.63195692299917
+      },
+      "visiblePixels": 8,
+      "camera": {
+        "center": {
+          "x": 12.196515436168982,
+          "y": 6.024928229185166
+        },
+        "zoom": 0.8448191135877374,
+        "rotation": 0,
+        "visibleEstateBounds": {
+          "minX": 0,
+          "minY": 0,
+          "maxX": 39.902150433700534,
+          "maxY": 31
+        },
+        "viewMode": "COZY",
+        "renderer": "pixi",
+        "regionalSurround": true,
+        "reference": null
+      },
+      "transform": {
+        "world": {
+          "position": {
+            "x": 576,
+            "y": 461
+          },
+          "pivot": {
+            "x": 197.4907906234821,
+            "y": 291.54309864566636
+          },
+          "scale": {
+            "x": 0.8452502451181945,
+            "y": 0.8452502451181945
+          }
+        },
+        "camera": {
+          "center": {
+            "x": 12.196515436168982,
+            "y": 6.024928229185166
+          },
+          "targetCenter": {
+            "x": 12.196515436168982,
+            "y": 6.024928229185166
+          },
+          "zoom": 0.8452502451181945,
+          "targetZoom": 0.8452502451181945
+        }
+      }
+    }
+  },
+  "rest": {
+    "point": {
+      "x": 11.091,
+      "y": 6.524
+    },
+    "heightYards": 0,
+    "iso": {
+      "x": 146.14399999999998,
+      "y": 297.84
+    },
+    "projection": {
+      "x": 532.5991126394691,
+      "y": 464.63195692299917
+    },
+    "visiblePixels": 25,
+    "camera": {
+      "center": {
+        "x": 12.196515436168982,
+        "y": 6.024928229185166
+      },
+      "zoom": 0.8448191135877374,
+      "rotation": 0,
+      "visibleEstateBounds": {
+        "minX": 0,
+        "minY": 0,
+        "maxX": 39.902150433700534,
+        "maxY": 31
+      },
+      "viewMode": "COZY",
+      "renderer": "pixi",
+      "regionalSurround": true,
+      "reference": null
+    },
+    "transform": {
+      "world": {
+        "position": {
+          "x": 576,
+          "y": 461
+        },
+        "pivot": {
+          "x": 197.4907906234821,
+          "y": 291.54309864566636
+        },
+        "scale": {
+          "x": 0.8452502451181945,
+          "y": 0.8452502451181945
+        }
+      },
+      "camera": {
+        "center": {
+          "x": 12.196515436168982,
+          "y": 6.024928229185166
+        },
+        "targetCenter": {
+          "x": 12.196515436168982,
+          "y": 6.024928229185166
+        },
+        "zoom": 0.8452502451181945,
+        "targetZoom": 0.8452502451181945
+      }
+    }
+  },
+  "relief": {
+    "point": {
+      "x": 4,
+      "y": 8
+    },
+    "heightYards": 0,
+    "iso": {
+      "x": -128,
+      "y": 208
+    },
+    "projection": {
+      "x": 300.8788294417868,
+      "y": 388.6946749015806
+    },
+    "visiblePixels": 350,
+    "camera": {
+      "center": {
+        "x": 12.196515436168982,
+        "y": 6.024928229185166
+      },
+      "zoom": 0.8448191135877374,
+      "rotation": 0,
+      "visibleEstateBounds": {
+        "minX": 0,
+        "minY": 0,
+        "maxX": 39.902150433700534,
+        "maxY": 31
+      },
+      "viewMode": "COZY",
+      "renderer": "pixi",
+      "regionalSurround": true,
+      "reference": null
+    },
+    "transform": {
+      "world": {
+        "position": {
+          "x": 576,
+          "y": 461
+        },
+        "pivot": {
+          "x": 197.4907906234821,
+          "y": 291.54309864566636
+        },
+        "scale": {
+          "x": 0.8452502451181945,
+          "y": 0.8452502451181945
+        }
+      },
+      "camera": {
+        "center": {
+          "x": 12.196515436168982,
+          "y": 6.024928229185166
+        },
+        "targetCenter": {
+          "x": 12.196515436168982,
+          "y": 6.024928229185166
+        },
+        "zoom": 0.8452502451181945,
+        "targetZoom": 0.8452502451181945
+      }
+    }
+  },
+  "savedPenalties": 1,
+  "errors": []
+}

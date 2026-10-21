@@ -1,0 +1,35 @@
+{
+  "profile": {
+    "version": 1,
+    "model": "coursecraft-usga-total-template-v1",
+    "skills": {
+      "power": 95,
+      "driving": 95,
+      "irons": 95,
+      "shortGame": 95,
+      "putting": 95,
+      "recovery": 95
+    },
+    "abilityHandicapAnchor": 1.4,
+    "powerHandicapAnchor": 1.4,
+    "driverTotalOffsetYards": 0,
+    "clubCarryYards": {
+      "driver": 236.792,
+      "three_wood": 203.64112,
+      "five_iron": 165.7544,
+      "seven_iron": 144.44312,
+      "pitching_wedge": 111.29224,
+      "sand_wedge": 80.50928,
+      "chip": 33.15088,
+      "putter": 0
+    }
+  },
+  "labels": [
+    "Driver · 237 yd",
+    "3 Wood · 204 yd",
+    "5 Iron · 166 yd",
+    "7 Iron · 144 yd",
+    "Pitching Wedge · 111 yd"
+  ],
+  "errors": []
+}

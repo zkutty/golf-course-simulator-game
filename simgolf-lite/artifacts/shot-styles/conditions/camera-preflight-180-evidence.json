@@ -1,0 +1,116 @@
+{
+  "rotation": 180,
+  "camera": {
+    "center": {
+      "x": -1.4872714993288814,
+      "y": 13.006293154658962
+    },
+    "zoom": 0.7318918312918845,
+    "rotation": 180,
+    "visibleEstateBounds": {
+      "minX": 0,
+      "minY": 0,
+      "maxX": 30.49320566856752,
+      "maxY": 31
+    },
+    "viewMode": "COZY",
+    "renderer": "pixi",
+    "regionalSurround": true,
+    "reference": null
+  },
+  "input": {
+    "attached": true,
+    "viewport": {
+      "width": 1152,
+      "height": 922
+    },
+    "camera": {
+      "center": {
+        "x": -1.4871216532649827,
+        "y": 13.006293154658962
+      },
+      "targetCenter": {
+        "x": -1.4871216532649827,
+        "y": 13.006293154658962
+      },
+      "zoom": 0.7318918312918845,
+      "targetZoom": 0.7318918312918845,
+      "initialized": true
+    },
+    "rotation": {
+      "committed": 180,
+      "tweening": false,
+      "screenRadians": 0
+    },
+    "flyover": {
+      "active": false,
+      "progress": null,
+      "openingFollow": false,
+      "saved": null
+    },
+    "input": {
+      "heldPanActions": [],
+      "panning": false,
+      "panPointerId": null,
+      "edgePointer": {
+        "x": 330.20111083984375,
+        "y": 420.20562744140625
+      },
+      "gestureScale": 1,
+      "editorGesture": null,
+      "hover": {
+        "x": 4,
+        "y": 8
+      }
+    },
+    "counters": {
+      "appliedTransforms": 258,
+      "culls": 263,
+      "overlayInvalidations": 267,
+      "cameraReports": 8,
+      "viewReports": 21
+    },
+    "terrain": {
+      "revision": 6,
+      "surroundRebuilds": 5,
+      "chunkRebuilds": 158,
+      "connectedRebuilds": 5,
+      "chunksTotal": 8,
+      "chunksVisible": 5,
+      "chunkWaterSprites": 0,
+      "chunkFoamSprites": 0,
+      "joinedWaterSprites": 0,
+      "generatedTextures": 3,
+      "borrowedTextures": 50
+    }
+  },
+  "transform": {
+    "world": {
+      "position": {
+        "x": 576,
+        "y": 461
+      },
+      "pivot": {
+        "x": 463.7892738535662,
+        "y": -184.3067440223037
+      },
+      "scale": {
+        "x": 0.7318918312918845,
+        "y": 0.7318918312918845
+      }
+    },
+    "camera": {
+      "center": {
+        "x": -1.4871216532649827,
+        "y": 13.006293154658962
+      },
+      "targetCenter": {
+        "x": -1.4871216532649827,
+        "y": 13.006293154658962
+      },
+      "zoom": 0.7318918312918845,
+      "targetZoom": 0.7318918312918845
+    }
+  },
+  "errors": []
+}

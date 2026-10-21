@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "gate": "offline-indexeddb-pwa",
+  "candidateCommit": "46ede085e43506972996ed605b7236e8a3ceccb3",
+  "capturedAt": "2026-10-21T20:23:39.480Z",
+  "command": "npm run test:pwa:certification",
+  "environment": {
+    "baseUrl": "http://127.0.0.1:4175/",
+    "browser": "chromium",
+    "browserVersion": "149.0.7827.55",
+    "buildCommit": "46ede085e43506972996ed605b7236e8a3ceccb3"
+  },
+  "roundTrip": {
+    "before": {
+      "screen": "game",
+      "screenBase": "in-game",
+      "paused": false,
+      "modal": null,
+      "dirty": true,
+      "speed": "paused",
+      "dayMinute": 0,
+      "weekReportOpen": false,
+      "golferPositions": [],
+      "week": 1,
+      "cash": 199898,
+      "terrainVersion": 2,
+      "economyVersion": 3,
+      "loadingContext": null,
+      "terrainCounts": {
+        "rough": 28826,
+        "water": 1816,
+        "wetland": 36,
+        "deep_rough": 98,
+        "sand": 18,
+        "waste_area": 5,
+        "fairway": 1
+      },
+      "courseHash": "d1cabe4a"
+    },
+    "storedBefore": {
+      "driver": "indexeddb",
+      "database": "coursecraft-saves",
+      "objectStore": "kv",
+      "slotId": "quick-save",
+      "storageKey": "coursecraft_save_quick-save@mvik7psd-1",
+      "saveSchemaVersion": 31,
+      "payloadBytes": 355244,
+      "payloadSha256": "2c53bb78d24b32ea54de0fec890c2c0d6deb5b1bc0720b0c93f630ebe924c576",
+      "localStorageFallbackKeys": []
+    },
+    "storedAfter": {
+      "driver": "indexeddb",
+      "database": "coursecraft-saves",
+      "objectStore": "kv",
+      "slotId": "quick-save",
+      "storageKey": "coursecraft_save_quick-save@mvik7psd-1",
+      "saveSchemaVersion": 31,
+      "payloadBytes": 355244,
+      "payloadSha256": "2c53bb78d24b32ea54de0fec890c2c0d6deb5b1bc0720b0c93f630ebe924c576",
+      "localStorageFallbackKeys": []
+    },
+    "after": {
+      "screen": "game",
+      "screenBase": "in-game",
+      "paused": false,
+      "modal": null,
+      "dirty": false,
+      "speed": "paused",
+      "dayMinute": 0,
+      "weekReportOpen": false,
+      "golferPositions": [],
+      "week": 1,
+      "cash": 199898,
+      "terrainVersion": 1,
+      "economyVersion": 2,
+      "loadingContext": null,
+      "terrainCounts": {
+        "rough": 28826,
+        "water": 1816,
+        "wetland": 36,
+        "deep_rough": 98,
+        "sand": 18,
+        "waste_area": 5,
+        "fairway": 1
+      },
+      "courseHash": "d1cabe4a"
+    }
+  },
+  "evidence": {
+    "evidenceVersion": 1,
+    "driver": "indexeddb",
+    "database": "coursecraft-saves",
+    "objectStore": "kv",
+    "slotId": "quick-save",
+    "storageKey": "coursecraft_save_quick-save@mvik7psd-1",
+    "saveSchemaVersion": 31,
+    "payloadBytes": 355244,
+    "payloadSha256": "2c53bb78d24b32ea54de0fec890c2c0d6deb5b1bc0720b0c93f630ebe924c576",
+    "courseHash": "d1cabe4a",
+    "projectionsEqual": true,
+    "payloadBytesSurvivedOfflineReload": true,
+    "sessionInvalidationCounters": {
+      "before": {
+        "terrain": 2,
+        "economy": 3
+      },
+      "after": {
+        "terrain": 1,
+        "economy": 2
+      }
+    },
+    "passed": true
+  },
+  "passed": true
+}

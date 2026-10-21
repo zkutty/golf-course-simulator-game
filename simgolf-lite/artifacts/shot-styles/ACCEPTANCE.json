@@ -1,0 +1,208 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-21",
+  "implementationCommit": "c39ac227b1ed5aa33dd28c985b782798c80c9e7b",
+  "releasedBase": "0371b431ee07047155ec40c9f7362650bb423925",
+  "branch": "codex/shot-styles-flight-calibration",
+  "models": {
+    "newRound": "club_styles_v1",
+    "calibration": 1,
+    "impact": 1,
+    "retainedMotion": 1,
+    "historicalAbsentCarrier": "preserved legacy authority"
+  },
+  "scope": [
+    "Player Pro",
+    "ordinary live AI",
+    "tournament actors",
+    "own-ball groups",
+    "alternate-shot teams",
+    "scramble teams"
+  ],
+  "checks": [
+    {
+      "id": "full-unit-regression",
+      "status": "pass",
+      "command": "npm run test:ci",
+      "evidence": {
+        "filesPassed": 301,
+        "testsPassed": 2556,
+        "testsSkipped": 1,
+        "audioTestsPassed": 5,
+        "sourceCommit": "46ede085e43506972996ed605b7236e8a3ceccb3"
+      }
+    },
+    {
+      "id": "typescript",
+      "status": "pass",
+      "command": "npx tsc -b",
+      "evidence": {}
+    },
+    {
+      "id": "lint-and-i18n",
+      "status": "pass",
+      "command": "npm run lint",
+      "evidence": {
+        "errors": 0,
+        "existingWarnings": 4,
+        "uiFiles": 62,
+        "authoredContentFiles": 4
+      }
+    },
+    {
+      "id": "production-build-and-delivery",
+      "status": "pass",
+      "command": "npm run build",
+      "evidence": {
+        "initialJavaScriptBytes": 1607915,
+        "unchangedCeilingBytes": 1608719,
+        "publicMonitoringPlaceholders": true,
+        "authenticatedProviderUpload": false,
+        "record": "BUILD.json",
+        "sourceCommit": "c39ac227b1ed5aa33dd28c985b782798c80c9e7b"
+      }
+    },
+    {
+      "id": "M47",
+      "status": "pass",
+      "command": "npm run test:cert:m47",
+      "evidence": {
+        "report": "m47-certification.json"
+      }
+    },
+    {
+      "id": "M62",
+      "status": "pass",
+      "command": "npm run test:cert:m62",
+      "evidence": {
+        "filesPassed": 14,
+        "testsPassed": 108,
+        "report": "m62-certification.json"
+      }
+    },
+    {
+      "id": "M66-unit",
+      "status": "pass",
+      "command": "npm run test:ci",
+      "evidence": {
+        "coverage": "existing M66 suites included in complete regression"
+      }
+    },
+    {
+      "id": "M69",
+      "status": "pass",
+      "command": "npm run test:ci; Playwright e2e/zk765-m69-certification.e2e.ts --workers=1 --retries=0",
+      "evidence": {
+        "browserCasesPassed": 13
+      }
+    },
+    {
+      "id": "M65",
+      "status": "pass",
+      "command": "node scripts/m65-certify.mjs --write",
+      "evidence": {
+        "historicalHash": "0f18ca6b",
+        "browserCasesPassed": 5,
+        "humanValidation": "not run; existing hold preserved"
+      }
+    },
+    {
+      "id": "repository-release-browser-flows",
+      "status": "pass",
+      "command": "Playwright golden-path, vision-page, pixi-peer-ownership, zk741-player-career-vision --workers=1 --retries=0",
+      "evidence": {
+        "casesPassed": 21
+      }
+    },
+    {
+      "id": "new-shot-style-browser-matrix",
+      "status": "pass",
+      "command": "Playwright e2e/shot-styles-flight.e2e.ts --workers=1 --retries=0",
+      "evidence": {
+        "casesPassed": 6,
+        "ordinaryAIAirborneRerun": "pass after calibrated planner integration"
+      }
+    },
+    {
+      "id": "PWA-offline-indexeddb",
+      "status": "pass",
+      "command": "npm run test:pwa -- --output artifacts/shot-styles/pwa-persistence.json --expected-commit 46ede085e43506972996ed605b7236e8a3ceccb3",
+      "evidence": {
+        "report": "pwa-persistence.json"
+      }
+    },
+    {
+      "id": "same-host-100-golfer-render-work",
+      "status": "pass",
+      "command": "unchanged scripts/perf-smoke.mjs sequential baseline/candidate",
+      "evidence": {
+        "baseline": "perf-baseline.json",
+        "candidate": "perf-candidate.json",
+        "budgetMilliseconds": 8
+      }
+    },
+    {
+      "id": "100-golfer-selected-playback",
+      "status": "pass",
+      "command": "Playwright e2e/shot-styles-performance.e2e.ts --workers=1 --retries=0",
+      "evidence": {
+        "report": "selected-shot-performance.json",
+        "samples": 66,
+        "airborne": 32,
+        "rollout": 12,
+        "rest": 12,
+        "meanReportedWorkMs": 0.6039478148876217,
+        "maxRollingReportedWorkMs": 0.6194444444444445,
+        "budgetMilliseconds": 8
+      }
+    },
+    {
+      "id": "obstacle-water-raised-ground-visuals",
+      "status": "pass",
+      "command": "Playwright e2e/shot-styles-conditions.e2e.ts bounded scenario and camera packets; --workers=1 --retries=0",
+      "evidence": {
+        "shotCasesPassed": 8,
+        "cameraPreflightsPassed": 2,
+        "record": "conditions/CONDITIONS.md"
+      }
+    },
+    {
+      "id": "calibrated-club-labels",
+      "status": "pass",
+      "command": "Vitest PlayerProPanel/plannerClubProjection/caddieGuidanceSelector; Playwright club labels and actual-input shot-style matrix",
+      "evidence": {
+        "focusedTestsPassed": 17,
+        "browserCasesPassed": 2,
+        "profileLabelRecord": "calibrated-club-labels.json",
+        "profileLabelImage": "calibrated-club-labels.png",
+        "boundedCorrection": "Initial new browser test expected sand wedge/chip on tee. Corrected to the five registry clubs available from that lie; full five-label assertions passed next attempt."
+      }
+    },
+    {
+      "id": "physical-hardware-human-authenticity",
+      "status": "not_run",
+      "command": "separate human/physical-device session",
+      "evidence": {}
+    },
+    {
+      "id": "hosted-ci-deployment-monitoring",
+      "status": "not_run",
+      "command": "await release scope decision",
+      "evidence": {
+        "main": "0371b431ee07047155ec40c9f7362650bb423925",
+        "develop": "387657c555111385c70da31df7713485be6a5e7d",
+        "checkpointHostedRuns": 0
+      }
+    }
+  ],
+  "limits": [
+    "Non-driver gapping and power-to-handicap projection are documented CourseCraft assumptions, not measured public carry fits.",
+    "Headless JS work and visible pixels do not certify physical GPU pacing or human comprehension.",
+    "No production promotion, deployment or milestone completion is claimed."
+  ],
+  "fullRegressionCommit": "46ede085e43506972996ed605b7236e8a3ceccb3",
+  "postRegressionChanges": [
+    "Setup-only obstacle/water/integer-slope fixtures and acceptance tests",
+    "HUD club labels project frozen actor carry values; no physics changes"
+  ]
+}

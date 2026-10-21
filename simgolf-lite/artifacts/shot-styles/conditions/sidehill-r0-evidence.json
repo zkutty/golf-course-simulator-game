@@ -1,0 +1,447 @@
+{
+  "scenario": {
+    "name": "sidehill-r0",
+    "target": {
+      "x": 13,
+      "y": 2
+    },
+    "rotation": 0
+  },
+  "motion": {
+    "version": 1,
+    "identity": {
+      "shotId": "shot-player-pro-hole-1-1",
+      "holeId": "player-pro-hole-1",
+      "shotNumber": 1,
+      "seed": 331899,
+      "club": "Pitching Wedge",
+      "style": "straight_run",
+      "modelVersion": "club_styles_v1"
+    },
+    "units": {
+      "horizontal": "tiles",
+      "height": "yards",
+      "time": "normalized",
+      "yardsPerTile": 10
+    },
+    "from": {
+      "point": {
+        "x": 4,
+        "y": 8
+      },
+      "heightYards": 10
+    },
+    "landing": {
+      "point": {
+        "x": 6.135,
+        "y": 5.461
+      },
+      "heightYards": 7.5
+    },
+    "physicalRest": {
+      "point": {
+        "x": 6.382322,
+        "y": 5.296119
+      },
+      "heightYards": 7.5
+    },
+    "reliefPosition": null,
+    "facts": {
+      "launchAngleDegrees": 27,
+      "landingAngleDegrees": 44,
+      "spin": "neutral"
+    },
+    "flight": {
+      "geometry": {
+        "version": 1,
+        "from": {
+          "x": 4,
+          "y": 8
+        },
+        "to": {
+          "x": 6.135,
+          "y": 5.461
+        },
+        "startHeightYards": 10,
+        "endHeightYards": 7.5,
+        "apexHeightYards": 11.5,
+        "curve": {
+          "kind": "lateral_quadratic_v1",
+          "lateralOffsetTiles": 0.23133936741512157
+        }
+      },
+      "sampleDivisions": 85,
+      "endSampleIndex": 85,
+      "collision": {
+        "kind": "none"
+      },
+      "endTime": 0.72
+    },
+    "postCollisionPath": [],
+    "groundPath": [
+      {
+        "point": {
+          "x": 6.135,
+          "y": 5.461
+        },
+        "heightYards": 7.5,
+        "time": 0.72
+      },
+      {
+        "point": {
+          "x": 6.200285,
+          "y": 5.417476
+        },
+        "heightYards": 7.5,
+        "time": 0.7939113280096471
+      },
+      {
+        "point": {
+          "x": 6.255586,
+          "y": 5.380609
+        },
+        "heightYards": 7.5,
+        "time": 0.8565189671017521
+      },
+      {
+        "point": {
+          "x": 6.300903,
+          "y": 5.350398
+        },
+        "heightYards": 7.5,
+        "time": 0.9078234397983729
+      },
+      {
+        "point": {
+          "x": 6.336234,
+          "y": 5.326844
+        },
+        "heightYards": 7.5,
+        "time": 0.9478226560161815
+      },
+      {
+        "point": {
+          "x": 6.361581,
+          "y": 5.309946
+        },
+        "heightYards": 7.5,
+        "time": 0.9765187058383864
+      },
+      {
+        "point": {
+          "x": 6.376944,
+          "y": 5.299704
+        },
+        "heightYards": 7.5,
+        "time": 0.993911589264987
+      },
+      {
+        "point": {
+          "x": 6.382322,
+          "y": 5.296119
+        },
+        "heightYards": 7.5,
+        "time": 1
+      }
+    ],
+    "events": [
+      {
+        "point": {
+          "x": 4,
+          "y": 8
+        },
+        "heightYards": 10,
+        "time": 0,
+        "kind": "launch",
+        "source": "flight",
+        "sourceIndex": 0
+      },
+      {
+        "point": {
+          "x": 6.135,
+          "y": 5.461
+        },
+        "heightYards": 7.5,
+        "time": 0.72,
+        "kind": "first_contact",
+        "source": "ground",
+        "sourceIndex": 0
+      },
+      {
+        "point": {
+          "x": 6.382322,
+          "y": 5.296119
+        },
+        "heightYards": 7.5,
+        "time": 1,
+        "kind": "rest",
+        "source": "ground",
+        "sourceIndex": 7
+      }
+    ]
+  },
+  "shotSlope": {
+    "version": 1,
+    "flatDistanceYards": 108.16653826391969,
+    "targetElevationDelta": 0,
+    "playsLikeDistanceYards": 108.16653826391969,
+    "localGradient": {
+      "alongTargetLine": 0.1386750490563073,
+      "crossTargetLine": 0.6933752452815363
+    },
+    "handedness": "right",
+    "sidehill": "ball_above_feet",
+    "naturalCurveBiasTiles": -0.5426813358485376
+  },
+  "first": {
+    "frozen": {
+      "shotId": "shot-player-pro-hole-1-1",
+      "progress": 0.3508331840172012,
+      "motionProgress": 0.20833315124048926,
+      "phase": "airborne",
+      "point": {
+        "x": 4.7634,
+        "y": 7.387797
+      },
+      "heightYards": 18.735475,
+      "ball": {
+        "x": -83.980704,
+        "y": 150.465632
+      },
+      "shadow": {
+        "x": -83.980704,
+        "y": 183.316776
+      },
+      "golferFrame": "golfer0_swing_2_6"
+    },
+    "expected": {
+      "point": {
+        "x": 4.7634,
+        "y": 7.387797
+      },
+      "heightYards": 18.735475,
+      "time": 0.20833315124048926,
+      "phase": "airborne",
+      "reliefPosition": null
+    },
+    "visible": {
+      "point": {
+        "x": 4.7634,
+        "y": 7.387797
+      },
+      "heightYards": 18.735475,
+      "iso": {
+        "x": -83.980704,
+        "y": 150.465632
+      },
+      "projection": {
+        "x": 351.55916173926937,
+        "y": 392.8840470677399
+      },
+      "visiblePixels": 7,
+      "camera": {
+        "center": {
+          "x": 9.994622529799292,
+          "y": 4.321150069060987
+        },
+        "zoom": 0.8450933330991117,
+        "rotation": 0,
+        "visibleEstateBounds": {
+          "minX": 0,
+          "minY": 0,
+          "maxX": 37.69126748399033,
+          "maxY": 31
+        },
+        "viewMode": "COZY",
+        "renderer": "pixi",
+        "regionalSurround": true,
+        "reference": null
+      },
+      "transform": {
+        "world": {
+          "position": {
+            "x": 576,
+            "y": 461
+          },
+          "pivot": {
+            "x": 181.55111874362575,
+            "y": 229.05236158176447
+          },
+          "scale": {
+            "x": 0.8452502451181945,
+            "y": 0.8452502451181945
+          }
+        },
+        "camera": {
+          "center": {
+            "x": 9.994622529799292,
+            "y": 4.321150069060987
+          },
+          "targetCenter": {
+            "x": 9.994622529799292,
+            "y": 4.321150069060987
+          },
+          "zoom": 0.8452502451181945,
+          "targetZoom": 0.8452502451181945
+        }
+      }
+    }
+  },
+  "second": {
+    "frozen": {
+      "shotId": "shot-player-pro-hole-1-1",
+      "progress": 0.6121214836050889,
+      "motionProgress": 0.5269774190305961,
+      "phase": "airborne",
+      "point": {
+        "x": 5.701603,
+        "y": 6.258529
+      },
+      "heightYards": 17.196168,
+      "ball": {
+        "x": -17.821631999999994,
+        "y": 152.33437440000003
+      },
+      "shadow": {
+        "x": -17.821631999999994,
+        "y": 183.36211200000002
+      },
+      "golferFrame": "golfer0_swing_2_7"
+    },
+    "expected": {
+      "point": {
+        "x": 5.701603,
+        "y": 6.258529
+      },
+      "heightYards": 17.196168,
+      "time": 0.5269774190305961,
+      "phase": "airborne",
+      "reliefPosition": null
+    },
+    "visible": {
+      "point": {
+        "x": 5.701603,
+        "y": 6.258529
+      },
+      "heightYards": 17.196168,
+      "iso": {
+        "x": -17.821631999999994,
+        "y": 152.33437440000003
+      },
+      "projection": {
+        "x": 407.48013356406165,
+        "y": 394.4636020394027
+      },
+      "visiblePixels": 9,
+      "camera": {
+        "center": {
+          "x": 9.994622529799292,
+          "y": 4.321150069060987
+        },
+        "zoom": 0.8450933330991117,
+        "rotation": 0,
+        "visibleEstateBounds": {
+          "minX": 0,
+          "minY": 0,
+          "maxX": 37.69126748399033,
+          "maxY": 31
+        },
+        "viewMode": "COZY",
+        "renderer": "pixi",
+        "regionalSurround": true,
+        "reference": null
+      },
+      "transform": {
+        "world": {
+          "position": {
+            "x": 576,
+            "y": 461
+          },
+          "pivot": {
+            "x": 181.55111874362575,
+            "y": 229.05236158176447
+          },
+          "scale": {
+            "x": 0.8452502451181945,
+            "y": 0.8452502451181945
+          }
+        },
+        "camera": {
+          "center": {
+            "x": 9.994622529799292,
+            "y": 4.321150069060987
+          },
+          "targetCenter": {
+            "x": 9.994622529799292,
+            "y": 4.321150069060987
+          },
+          "zoom": 0.8452502451181945,
+          "targetZoom": 0.8452502451181945
+        }
+      }
+    }
+  },
+  "rest": {
+    "point": {
+      "x": 6.382322,
+      "y": 5.296119
+    },
+    "heightYards": 7.5,
+    "iso": {
+      "x": 34.75849600000001,
+      "y": 178.855056
+    },
+    "projection": {
+      "x": 451.9234996444077,
+      "y": 416.8802146625042
+    },
+    "visiblePixels": 31,
+    "camera": {
+      "center": {
+        "x": 9.994622529799292,
+        "y": 4.321150069060987
+      },
+      "zoom": 0.8450933330991117,
+      "rotation": 0,
+      "visibleEstateBounds": {
+        "minX": 0,
+        "minY": 0,
+        "maxX": 37.69126748399033,
+        "maxY": 31
+      },
+      "viewMode": "COZY",
+      "renderer": "pixi",
+      "regionalSurround": true,
+      "reference": null
+    },
+    "transform": {
+      "world": {
+        "position": {
+          "x": 576,
+          "y": 461
+        },
+        "pivot": {
+          "x": 181.55111874362575,
+          "y": 229.05236158176447
+        },
+        "scale": {
+          "x": 0.8452502451181945,
+          "y": 0.8452502451181945
+        }
+      },
+      "camera": {
+        "center": {
+          "x": 9.994622529799292,
+          "y": 4.321150069060987
+        },
+        "targetCenter": {
+          "x": 9.994622529799292,
+          "y": 4.321150069060987
+        },
+        "zoom": 0.8452502451181945,
+        "targetZoom": 0.8452502451181945
+      }
+    }
+  },
+  "errors": []
+}

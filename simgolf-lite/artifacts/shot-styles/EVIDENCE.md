@@ -67,3 +67,22 @@ Three distinct airborne positions of the same actor and shot are sampled from ac
 Screenshots: [AI airborne 0](ai-airborne-0.png), [AI airborne 1](ai-airborne-1.png), [AI airborne 2](ai-airborne-2.png). Unlike the separate ordinary-live rollout screenshot above, these three are explicitly airborne. The same shared retained path, absolute-height convention and camera transform used for Player Pro are proven visible for an ordinary AI actor.
 
 AI capture details: actor `1` (Avery C.), run seed `12160`, retained shot seed `1158731082`, Driver/straight_run, viewport `1440×960`, rotation `0`, observed zoom approximately `.78055`. Airborne normalized times `.181/.381/.581` are all below flight end `.72`; absolute heights are `27.368/34.596/23.492` yards. Bright visible ball pixel counts are `2/2/1`, and the three screenshots were visually inspected. No corrections or failed traces were needed for this packet.
+
+
+## Selected-shot playback with 100 background golfers
+
+The independent performance case `selected retained shot stays within renderer work budget with 100 background golfers` passed on its first attempt in the coordinator's quiet window after full CI, production build and other benchmarks had exited. It uses the ordinary App `?perfFixture=1&perfMeasure=1`, `1440×900`, perf HUD enabled, and the existing eight-second warmup. Actual Operate → Player Pro → Play → Start round → Driver/Straight → Commit input starts the retained shot; power is read from the default UI and is not altered for measurement. No pending shot, result, course geometry or performance gate is injected.
+
+Exact per-sample renderer work, phase/progress, golfer counts, profile settings and headless frame statistics: [selected-shot-performance.json](selected-shot-performance.json). Final actual rest screenshot: [100-golfer rest](selected-shot-100-golfers-rest.png).
+
+Mean reported renderer work was **0.604ms**, maximum reported rolling work **0.619ms**, against the unchanged **8ms** ceiling. All 66 samples reported **100 golfers**. Airborne/rollout/rest samples: **32/12/12**; at least three distinct airborne progresses; one stroke added; zero console/page errors. Default selected power was 100%. The live clock can pause for Player Pro while all background golfer sprites remain in the renderer workload.
+
+Raw headless frame spacing/FPS is recorded only; it is not treated as hardware smoothness certification or an additional frame-time gate. The browser harness has exited; no concurrent heavy process was started by this packet.
+
+## Final conditions and calibrated club labels
+
+Source checkpoint `c39ac227b1ed5aa33dd28c985b782798c80c9e7b` adds setup-only hazard/slope fixtures, the conditions/performance browser tests, and HUD labels projected from the same frozen actor carry profile used by physics and AI planning. Legacy rounds retain historical labels. Physics, retained motion and actor ownership are unchanged from the full regression checkpoint `46ede085e43506972996ed605b7236e8a3ceccb3` (301 files / 2,556 tests passed, one skip, plus five audio tests).
+
+The eight condition shot cases and two independent native camera prerequisites passed; see [conditions/CONDITIONS.md](conditions/CONDITIONS.md) for exact commands, captures and bounded correction history. The final UI change passed 17 focused tests in three files, full lint/i18n (zero errors, four existing warnings), production build/typecheck/delivery audits, and the existing actual-input nine-style browser matrix. The new browser label test verifies all five tee clubs against the actual quick-saved profile and captures [calibrated-club-labels.png](calibrated-club-labels.png). Its initial test incorrectly expected sand wedge/chip on a tee; the next attempt asserted exactly the five eligible clubs and passed. No product availability or timeout changed.
+
+Production remains unchanged. The repository requires an exact-SHA accepted develop artifact, while develop includes four other unreleased commits. A user scope choice is pending before that broader batch can be assembled. Hosted CI/deployment and physical-device/human authenticity remain Not Run; no milestone completion is claimed.
