@@ -518,3 +518,36 @@ test("ordinary selected AI golfer displays three canonical airborne positions", 
   writeFileSync(info.outputPath("ai-airborne-evidence.json"), JSON.stringify({ actualSimulationStepMs: 20, viewport: page.viewportSize(), captures, errors }, null, 2));
   expect(errors).toEqual([]);
 });
+
+
+test("club labels use the actual round's frozen actor carries", async ({ page }, info) => {
+  const errors = watchErrors(page);
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto("/");
+  await enterRound(page);
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await page.keyboard.press("Control+KeyS");
+  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+  const profile = await page.evaluate(async () => {
+    const repository = await import("/src/utils/saveStore.ts");
+    for (const slot of await repository.listSlots()) {
+      const saved = await repository.loadSlot(slot.id);
+      const round = saved?.world.playerPro?.activeRound;
+      if (round?.phase === "awaiting_shot") return round.course.distanceProfile;
+    }
+    return null;
+  });
+  expect(profile).toBeTruthy();
+  const carries = profile!.clubCarryYards;
+  const clubIds = { Driver: "driver", "3 Wood": "three_wood", "5 Iron": "five_iron", "7 Iron": "seven_iron",
+    "Pitching Wedge": "pitching_wedge" } as const;
+  await expect(page.getByTestId("player-shot-club").locator("option")).toHaveCount(5);
+  for (const [label, id] of Object.entries(clubIds)) {
+    await expect(page.getByTestId("player-shot-club").locator(`option[value="${label}"]`)).toHaveText(`${label} · ${Math.round(carries[id])} yd`);
+  }
+  await page.getByTestId("player-shot-club").selectOption("Driver");
+  await page.screenshot({ path: info.outputPath("calibrated-club-labels.png"), fullPage: true });
+  writeFileSync(info.outputPath("calibrated-club-labels.json"), JSON.stringify({ profile,
+    labels: await page.getByTestId("player-shot-club").locator("option").allTextContents(), errors }, null, 2));
+  expect(errors).toEqual([]);
+});

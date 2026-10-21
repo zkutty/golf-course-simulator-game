@@ -3887,6 +3887,12 @@ export default function App() {
             return { ...hole, tee, green, teeBoxes: { member: tee }, pinPositions: { A: green },
               parMode: "MANUAL", parManual: 5, parByTee: { member: { mode: "MANUAL", par: 5 } } };
           });
+          if (options.scenario === "obstacle") fixtureCourse.obstacles = [{ type: "tree", x: 4.5, y: 8 }];
+          if (options.scenario === "water") {
+            for (let y = 5; y <= 11; y++) for (let x = 8; x <= 54; x++) fixtureCourse.tiles[y * 64 + x] = "water";
+          }
+          if (options.scenario === "slopes") fixtureCourse.elevations = fixtureCourse.elevations.map((_, index) =>
+            Math.max(0, Math.min(15, 4 + Math.floor((index % 64 - 4) / 4) + Math.floor((Math.floor(index / 64) - 8) / 4))));
         }
         const fixtureWorld = {
           ...gameSession.getState().world,

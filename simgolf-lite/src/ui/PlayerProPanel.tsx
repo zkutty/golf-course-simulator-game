@@ -40,6 +40,7 @@ import { authoredEquipmentModifiers, mentorTechniqueDefinition, mentorTechniqueE
 import { dispersionClubIdForLabel } from "../game/rules/dispersionRegistry";
 import { calculateShotStyleEffects, defaultShotStyle, SHOT_STYLES, shotStyleForTechnique, type ShotStyleId } from "../game/rules/shotStyles";
 import { usesClubShotModel } from "../game/rules/shotModelSnapshot";
+import { plannerDistanceProfile, projectPlannerClubCarries } from "../game/rules/plannerClubProjection";
 import type { ShotLie } from "../game/rules/contracts";
 import { appliedWindCues } from "../game/render/shotTruthCues";
 import type { EquipmentLoadout } from "../game/competition/types";
@@ -648,7 +649,9 @@ export function PlayerShotHud(props: {
   const { t, locale } = useI18n();
   const readCaddie = useMemo(() => createCaddieGuidanceSelector(), []);
   const caddie = readCaddie(props.round, props.career.skills);
-  const clubs = availablePlayerClubs(props.round.lie);
+  const baseClubs = availablePlayerClubs(props.round.lie);
+  const distanceProfile = plannerDistanceProfile(props.round.course);
+  const clubs = distanceProfile ? projectPlannerClubCarries(distanceProfile, baseClubs) : baseClubs;
   const [club, setClub] = useState(caddie.selection.club);
   const [power, setPower] = useState(caddie.selection.power);
   const [technique, setTechnique] = useState<PlayerShotTechnique>("normal");
@@ -745,7 +748,7 @@ export function PlayerShotHud(props: {
       </header>
 
       {props.round.phase === "awaiting_shot" && <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-        <label>{t("playerPro.shot.club")}<select data-testid="player-shot-club" value={selectedClub} onChange={(event) => chooseClub(event.target.value)} style={{ display: "block", width: "100%", maxWidth: "100%", minWidth: 0, padding: 8 }}>{clubs.map((candidate) => <option key={candidate.name} value={candidate.name}>{t("playerPro.shot.clubOption", { club: candidate.name, yards: candidate.carryYards })}</option>)}</select></label>
+        <label>{t("playerPro.shot.club")}<select data-testid="player-shot-club" value={selectedClub} onChange={(event) => chooseClub(event.target.value)} style={{ display: "block", width: "100%", maxWidth: "100%", minWidth: 0, padding: 8 }}>{clubs.map((candidate) => <option key={candidate.name} value={candidate.name}>{t("playerPro.shot.clubOption", { club: candidate.name, yards: Math.round(candidate.carryYards) })}</option>)}</select></label>
         <label>{t("playerPro.shot.power", { power: Math.round(power * 100) })}<input data-testid="player-shot-power" type="range" min={25} max={115} value={Math.round(power * 100)} onChange={(event) => setPower(Number(event.target.value) / 100)} style={{ width: "100%" }} /></label>
         {newModel ? <div data-testid="player-shot-style-controls" style={{ minWidth: 0 }}>
           <label>{t("playerPro.shot.style.label")}<select data-testid="player-shot-style" aria-describedby="player-shot-style-hint" value={selectedStyle} onChange={(event) => chooseStyle(event.target.value as ShotStyleId)} style={{ display: "block", width: "100%", minWidth: 0, padding: 8 }}>

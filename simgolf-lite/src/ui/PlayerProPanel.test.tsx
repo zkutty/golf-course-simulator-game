@@ -9,6 +9,7 @@ import type { SharedShotOutcome } from "../game/rules/contracts";
 import { dispersionClubIdForLabel } from "../game/rules/dispersionRegistry";
 import { defaultShotStyle, calculateShotStyleEffects } from "../game/rules/shotStyles";
 import { createShotModelSnapshotV1 } from "../game/rules/shotModelSnapshot";
+import { freezeProfileCalibration } from "../game/rules/profileCalibration";
 import { PlayerShotHud } from "./PlayerProPanel";
 import { DEFAULT_WORLD } from "../game/models/defaults";
 import { createDefaultPlayerPro } from "../game/playerPro/playerPro";
@@ -47,10 +48,11 @@ function hudRound(newModel = true): PlayerPlayableRound {
     shots: [], pendingShot: null, rngSeed: 45, rngCursor: 0, autoPlay: false, rewardsApplied: false, startedWeek: 1, startedDay: 0 };
 }
 
-function renderHud(options: { newModel?: boolean; club?: string; style?: PlayerShotSelection["style"]; locale?: Locale; locked?: boolean; phase?: PlayerPlayableRound["phase"]; skip?: boolean; blocked?: boolean } = {}) {
+function renderHud(options: { newModel?: boolean; club?: string; style?: PlayerShotSelection["style"]; locale?: Locale; locked?: boolean; phase?: PlayerPlayableRound["phase"]; skip?: boolean; blocked?: boolean; frozenPower?: number } = {}) {
   const career: PlayerProCareer = createDefaultPlayerPro({ seed: 332 });
   career.skills = { power: 80, driving: 80, irons: options.locked ? 20 : 80, shortGame: 80, putting: 80, recovery: 80 };
   const round = hudRound(options.newModel ?? true);
+  if (round.course.shotModel) round.course.distanceProfile = freezeProfileCalibration({ ...career.skills, power: options.frozenPower ?? career.skills.power });
   round.phase = options.phase ?? "awaiting_shot";
   const selection: PlayerShotSelection = { club: options.club ?? "7 Iron", aim: { x: 15, y: 5 }, power: 1, technique: "normal", ...(options.style ? { style: options.style } : {}) };
   const selectedClubId = dispersionClubIdForLabel(selection.club)!;
@@ -74,7 +76,7 @@ function renderHud(options: { newModel?: boolean; club?: string; style?: PlayerS
       onAdvance={() => undefined} onAutoFinish={() => undefined} onConcede={() => undefined} onReturnToDesign={() => undefined}
       {...(options.skip ? { onSkipShot: () => undefined } : {})} />
   </I18nContext.Provider>);
-  return { markup, previewSpy };
+  return { markup, previewSpy, round };
 }
 
 describe("Player shot styles and expected preview surface", () => {
@@ -100,6 +102,19 @@ describe("Player shot styles and expected preview surface", () => {
     expect(markup).toContain("SECRET_SEEDED_CONTACT");
     expect(markup).toContain('data-testid="player-shot-auto-putt-preview"');
     expect(previewSpy.mock.calls[0][2]).not.toHaveProperty("style");
+  });
+
+  it("labels full club carries from the frozen actor profile even when live career power differs", () => {
+    const shorter = renderHud({ frozenPower: 10 });
+    vi.restoreAllMocks();
+    const longer = renderHud({ frozenPower: 90 });
+    const driverLabel = (result: ReturnType<typeof renderHud>) => `Driver · ${Math.round(result.round.course.distanceProfile!.clubCarryYards.driver)} yd`;
+    expect(shorter.markup).toContain(driverLabel(shorter));
+    expect(longer.markup).toContain(driverLabel(longer));
+    expect(driverLabel(shorter)).not.toBe(driverLabel(longer));
+    expect(shorter.markup).not.toContain("Driver · 270 yd");
+    vi.restoreAllMocks();
+    expect(renderHud({ newModel: false }).markup).toContain("Driver · 270 yd");
   });
 
   it("uses canonical High Spin technique and high flight together", () => {
