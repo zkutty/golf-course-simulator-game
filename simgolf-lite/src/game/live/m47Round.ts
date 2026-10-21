@@ -100,6 +100,7 @@ export function buildStrategicGolferRound(args: {
   skipPreRoundPurchases?: boolean;
   weather?: PlayerRoundCourseSnapshot["weather"];
   drainageLevel?: number;
+  modernShotModel?: boolean;
 }): BuiltRound {
   const teeSet = args.teeSet ?? "member";
   const pinRotation = args.pinRotation ?? args.course.activePinRotation ?? "A";
@@ -111,6 +112,8 @@ export function buildStrategicGolferRound(args: {
     rulesSnapshot: args.rulesSnapshot,
     weather: args.weather,
     drainageLevel: args.drainageLevel,
+    modernShotModel: args.modernShotModel !== false,
+    capabilities: args.capabilities,
   });
   const summary = manualStrategicRoundHoleSummary(args.course, course, teeSet, pinRotation) ?? scoreCourseHoles(course);
   const itinerary = new TimedItineraryBuilder({ course, cursor: { ...args.entry }, personality: args.personality, rng: args.rng, route: args.route, wallet: args.wallet });
@@ -192,6 +195,7 @@ export function buildStrategicGolferRound(args: {
         holeIndex,
         putting ? "putt" : "swing",
         outcome.greenRollout ? { landing: outcome.greenRollout.landing, rollPath: outcome.greenRollout.path } : undefined,
+        outcome.sharedOutcome?.motion ? { motion: outcome.sharedOutcome.motion, contactTerrain: terrainAt(course, outcome.sharedOutcome.motion.landing.point) } : undefined,
       );
       if (distance(outcome.landing, outcome.rest) > .05) pushWalk(outcome.landing, outcome.rest, holeIndex);
       // Automatic putting remains visible and contributes its own bounded pace

@@ -3,6 +3,7 @@ import { planPurchase } from "../live/concessions";
 import { LIVE } from "../live/liveConfig";
 import type { Personality } from "../live/personality";
 import type { Segment } from "../live/types";
+import type { RetainedShotMotionV1 } from "../rules/shotMotion";
 import type { MobilityMode } from "./types";
 
 /**
@@ -78,13 +79,15 @@ export class TimedItineraryBuilder {
     holeIndex: number,
     shot: "swing" | "putt" = "swing",
     trajectory?: { landing: Point; rollPath: readonly Point[] },
+    retained?: { motion: RetainedShotMotionV1; contactTerrain: string },
   ): void {
-    const duration = Math.max(LIVE.pace.flightMin, Math.min(LIVE.pace.flightMax, distance(from, to) * LIVE.pace.flightPerTile));
+    const duration = Math.max(LIVE.pace.flightMin, Math.min(LIVE.pace.flightMax, distance(from, retained?.motion.physicalRest.point ?? to) * LIVE.pace.flightPerTile));
     this.segments.push({
       kind: "flight",
       from,
-      to,
+      to: retained?.motion.physicalRest.point ?? to,
       holeIndex,
+      ...(retained ? { holeId: retained.motion.identity.holeId, motion: retained.motion, shotId: retained.motion.identity.shotId, motionContactTerrain: retained.contactTerrain } : {}),
       dur: duration,
       shot,
       ...(trajectory ? {

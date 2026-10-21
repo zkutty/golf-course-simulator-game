@@ -15,7 +15,7 @@ import {
   normalizePlayerPro,
   previewPlayableShot,
   resolvePlayableShot,
-  startPlayableRound,
+  startPlayableRound as startCurrentPlayableRound,
 } from "./playerPro";
 import { playerTournamentEligibility } from "../tournaments/tournamentLifecycle";
 import { settlePlayerRound } from "./playerProSettlement";
@@ -39,6 +39,14 @@ import {
 import { calculateShotEffects } from "../rules/shotEffects";
 import { confidenceDispersionMultiplier } from "./confidence";
 import { resolveBivariateDispersion } from "../rules/dispersionModel";
+
+/** M36 compatibility fixtures retain their historical distance/style authority. */
+function startPlayableRound(args: Parameters<typeof startCurrentPlayableRound>[0]): ReturnType<typeof startCurrentPlayableRound> {
+  const result = startCurrentPlayableRound(args);
+  if (!result.ok) return result;
+  const { shotModel: _shotModel, distanceProfile: _distanceProfile, ...legacyCourse } = result.round.course;
+  return { ...result, round: { ...result.round, course: legacyCourse } };
+}
 
 function threeHoleCourse(): Course {
   const width = 64;

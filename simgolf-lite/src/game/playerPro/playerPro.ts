@@ -1,3 +1,5 @@
+import { isPlayerShotPresentation } from "./shotPlayback";
+import { freezeProfileCalibration, isProfileCalibrationV1 } from "../rules/profileCalibration";
 import type {
   Course,
   ObstacleType,
@@ -45,12 +47,15 @@ import {
   withNormalizedGreenContract,
 } from "../greens/greenSurface";
 import { createSharedShotOutcome, resolveSharedRules } from "../rules/sharedOutcome";
-import { prepareObstacleInput, type FlightObstacle } from "../rules/obstacleCollision";
+import { prepareObstacleInput, resolveObstacleCollision, type FlightObstacle, type ObstacleCollisionResolution } from "../rules/obstacleCollision";
 import {
   calculateShotEffects,
   type CalculatedShotEffects,
   type ShotClubId,
 } from "../rules/shotEffects";
+import { calculateShotStyleEffects, isShotStyleId, shotStyleForTechnique, SHOT_STYLES, type ShotStyleId, type ClubImpactV1 } from "../rules/shotStyles";
+import { createRetainedShotMotion, isValidRetainedShotMotionV1 } from "../rules/shotMotion";
+import { isValidShotModelSnapshot, usesClubShotModel } from "../rules/shotModelSnapshot";
 import { BIVARIATE_DISPERSION_MODEL_VERSION, DISPERSION_CLUBS, dispersionClubIdForLabel } from "../rules/dispersionRegistry";
 import {
   analyzeShotSlope,
@@ -62,6 +67,7 @@ import {
 } from "../models/shotSlope";
 import {
   isValidGreenRollout,
+  createGreenRolloutSurfaceSampler,
   resolveGreenRollout,
   type GreenRolloutV1,
   type GreenRolloutSpin,
@@ -100,7 +106,7 @@ import {
 } from "../competition/equipmentRuntime";
 import { normalizeShotEnvironmentV1, resolveAppliedShotWindV1 } from "../rules/shotEnvironment";
 import { decodeDispersionRoundSnapshotV1 } from "../rules/dispersionSnapshot";
-import { resolveBivariateDispersionShot } from "../rules/dispersionRuntime";
+import { resolveBivariateDispersionShot, resolveBivariateDispersionRuntime, BIVARIATE_DISPERSION_CENTRAL_68_RADIUS } from "../rules/dispersionRuntime";
 
 export { startPlayableRound } from "./playerProRoundStart";
 export type { StartPlayableRoundArgs } from "./playerProRoundStart";
@@ -173,6 +179,7 @@ function calculatePlayerShotEffects(args: {
   lie: string;
   recoverySkill: number;
   technique: PlayerShotTechnique;
+  style?: ShotStyleId;
   flightProfile?: ShotFlightProfile;
 }): { effects: CalculatedShotEffects; blocker: string | null } {
   const clubId = shotClubIdForLabel(args.club) ?? "pitching_wedge";
@@ -237,6 +244,7 @@ function validActiveShotTrace(value: unknown): value is PlayerShotTrace {
     || trace.shotNumber < 1
     || typeof trace.club !== "string"
     || !["normal", "draw", "fade", "punch", "flop", "backspin"].includes(trace.technique)
+    || (trace.shotStyle !== undefined && !isShotStyleId(trace.shotStyle))
     || (trace.flightProfile != null && !["low", "standard", "high"].includes(trace.flightProfile))
     || !Number.isFinite(trace.power)
     || !point(trace.from)
@@ -261,6 +269,11 @@ function validActiveShotTrace(value: unknown): value is PlayerShotTrace {
     (trace.seed >>> 0) !== trace.sharedOutcome.appliedDispersion.seed
     || dispersionClubIdForLabel(trace.club) !== trace.sharedOutcome.appliedDispersion.clubId
   )) return false;
+  const motion = trace.sharedOutcome?.motion;
+  if (motion && (!isValidRetainedShotMotionV1(motion) || motion.identity.shotId !== trace.id
+    || motion.identity.holeId !== trace.holeId || motion.identity.shotNumber !== trace.shotNumber
+    || motion.identity.seed !== (trace.seed >>> 0) || motion.identity.club !== trace.club
+    || motion.identity.style !== trace.shotStyle)) return false;
   if (trace.shotSlope != null && !normalizeShotSlopeContext(trace.shotSlope)) return false;
   if (trace.greenRollout != null && !isValidGreenRollout(trace.greenRollout)) return false;
   if (trace.greenPutting != null && !isValidGreenPutting(trace.greenPutting)) return false;
@@ -354,6 +367,8 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
   if (!point(round.ball) || !Array.isArray(round.scorecard) || !Array.isArray(round.shots) || round.shots.length > MAX_SHOTS) return null;
   if (!["awaiting_shot", "flight", "hole_complete", "round_complete", "conceded"].includes(round.phase)) return null;
   if (round.rulesSnapshot != null && !decodeControlledRoundSnapshotV2(round.rulesSnapshot).ok) return null;
+  if (round.course.shotModel !== undefined && !isValidShotModelSnapshot(round.course.shotModel)) return null;
+  if (usesClubShotModel(round.course.shotModel) && !isProfileCalibrationV1(round.course.distanceProfile)) return null;
   const dispersionSnapshot = decodeDispersionRoundSnapshotV1(round.course.dispersionSnapshot);
   if (!dispersionSnapshot.ok) return null;
   const greenSnapshot = round.course.greenSnapshot == null
@@ -362,6 +377,8 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
   if (greenSnapshot && !greenSnapshot.ok) return null;
   if (round.shots.some((trace) => !validActiveShotTrace(trace))) return null;
   if (round.phase === "flight" && (!round.pendingShot || !validActiveShotTrace(round.pendingShot))) return null;
+  if (round.shotPresentation !== undefined && (!round.pendingShot || round.phase !== "flight"
+    || !round.pendingShot.sharedOutcome?.motion || !isPlayerShotPresentation(round.shotPresentation, round.pendingShot.id))) return null;
   const theme = normalizeBiomeKey(round.course.theme);
   if (!theme) return null;
   const biomeCompatibility = validateBiomeCompatibilityMetadata(
@@ -616,7 +633,9 @@ function profileForPlayer(snapshot: PlayerRoundCourseSnapshot, skills: PlayerPro
     yardsPerTile: snapshot.yardsPerTile,
     clubs: [{
       ...club,
-      carryYards: club.carryYards * (0.82 + power / 500) * (snapshot.weather?.carryMultiplier ?? 1),
+      carryYards: (usesClubShotModel(snapshot.shotModel) && club.name !== "Putter"
+        ? (snapshot.distanceProfile ?? freezeProfileCalibration(skills)).clubCarryYards[shotClubIdForLabel(club.name)!]
+        : club.carryYards * (0.82 + power / 500)) * (snapshot.weather?.carryMultiplier ?? 1),
       dispersionTilesBase: club.dispersionTilesBase * (1.42 - value / 180) * (snapshot.weather?.dispersionMultiplier ?? 1),
     }],
     ratingMultipliers: {
@@ -647,6 +666,7 @@ export interface PlayerShotSelection {
   aim: PlayerProPoint;
   power: number;
   technique: PlayerShotTechnique;
+  style?: ShotStyleId;
   flightProfile?: ShotFlightProfile;
 }
 
@@ -662,6 +682,9 @@ export interface PlayerShotPreview {
   recommended: boolean;
   flightProfile: ShotFlightProfile;
   shotEffects?: CalculatedShotEffects;
+  impact?: ClubImpactV1;
+  /** Unseeded aiming geometry; the boundary represents the central 68% dispersion. */
+  expectedFlight?: { from: PlayerProPoint; landing: PlayerProPoint; apexHeightYards: number; curveOffsetTiles: number; envelope: PlayerProPoint[] };
   /**
    * The exact M50 outcome that the next committed shot will retain. It is
    * deliberately resolved with the round's next seed so the direct-play
@@ -679,22 +702,55 @@ export interface PlayerShotPreview {
   shotSlope: ShotSlopeContext | null;
 }
 
+function selectedShotEffects(snapshot: PlayerRoundCourseSnapshot, skills: PlayerProSkills, lie: string, selection: PlayerShotSelection, loadout?: PlayerPlayableRound["performanceLoadout"]) {
+  const clubId = shotClubIdForLabel(selection.club) ?? "pitching_wedge";
+  const styleId = selection.style ?? shotStyleForTechnique(clubId, selection.technique);
+  const initialFlight = usesClubShotModel(snapshot.shotModel)
+    ? SHOT_STYLES.find((style) => style.id === styleId)?.flightProfile ?? flightProfileForTechnique(selection.technique, selection.flightProfile)
+    : flightProfileForTechnique(selection.technique, selection.flightProfile);
+  const performance = resolvePerformanceModifiers(loadout, { clubId, lie, flightProfile: initialFlight });
+  const legacy = calculatePlayerShotEffects({ club: selection.club, lie, recoverySkill: skills.recovery * performance.recovery,
+    technique: selection.technique, flightProfile: initialFlight });
+  if (!usesClubShotModel(snapshot.shotModel)) return { ...legacy, selection, impact: undefined as ClubImpactV1 | undefined };
+  const styled = calculateShotStyleEffects({ clubId, lie: shotLieForTerrain(lie),
+    style: styleId, power: selection.power,
+    recoverySkill: clamp(skills.recovery * performance.recovery, 0, 100), shortGameSkill: skills.shortGame,
+    spinCapabilityMultiplier: 1 / performance.spin,
+    strikeQuality: .7 + skills[skillForClub(selection.club, lie)] / 333.333333,
+    flightProfile: initialFlight });
+  if (!styled.ok) return { ...legacy, blocker: styled.blocker.code, selection, impact: undefined as ClubImpactV1 | undefined };
+  const effective = styled.value.effectiveSelection;
+  const profile = snapshot.distanceProfile ?? freezeProfileCalibration(skills);
+  const registryCarry = DISPERSION_CLUBS.find((candidate) => candidate.id === clubId)!.carryYards;
+  const carry = clubId === "putter" ? styled.value.effects.carryYards
+    : styled.value.effects.carryYards * profile.clubCarryYards[clubId] / registryCarry;
+  return { effects: { ...styled.value.effects, carryYards: carry }, blocker: null,
+    selection: { ...selection, technique: effective.technique, flightProfile: effective.flightProfile, power: effective.power },
+    impact: styled.value.impact };
+}
+
 export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerProSkills, selection: PlayerShotSelection): PlayerShotPreview {
+  const inputSelection = selection;
+  const selected = selectedShotEffects(round.course, skills, round.lie, selection, round.performanceLoadout);
+  selection = selected.selection;
   const club = CLUBS.find((candidate) => candidate.name === selection.club);
   const flightProfile = flightProfileForTechnique(selection.technique, selection.flightProfile);
   const clubId = shotClubIdForLabel(selection.club) ?? "pitching_wedge";
   const performance = resolvePerformanceModifiers(round.performanceLoadout, { clubId, lie: round.lie, flightProfile });
-  const calculated = calculatePlayerShotEffects({
+  const legacyCalculated = calculatePlayerShotEffects({
     club: selection.club,
     lie: round.lie,
     recoverySkill: clamp(skills.recovery * performance.recovery, 0, 100),
     technique: selection.technique,
     flightProfile,
   });
-  const baseCarry = calculated.effects.carryYards * (0.82 + skills.power / 500) * (round.course.weather?.carryMultiplier ?? 1) * performance.carry;
-  if (!club) return {
+  const calculated = usesClubShotModel(round.course.shotModel) ? selected : legacyCalculated;
+  const baseCarry = calculated.effects.carryYards * (usesClubShotModel(round.course.shotModel) ? 1 : 0.82 + skills.power / 500) * (round.course.weather?.carryMultiplier ?? 1) * performance.carry;
+  const invalidAim = usesClubShotModel(round.course.shotModel) && (!point(selection.aim) || !Number.isFinite(selection.power)
+    || selection.aim.x < 0 || selection.aim.y < 0 || selection.aim.x >= round.course.width || selection.aim.y >= round.course.height);
+  if (!club || invalidAim) return {
     available: false,
-    blocker: "unknown_club",
+    blocker: invalidAim ? "invalid_aim" : "unknown_club",
     carryYards: 0,
     targetYards: 0,
     dispersionTiles: 0,
@@ -704,6 +760,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     recommended: false,
     flightProfile,
     shotEffects: calculated.effects,
+    ...(selected.impact ? { impact: selected.impact } : {}),
     sharedOutcome: null,
     greenRollout: null,
     automaticPuttingEstimate: null,
@@ -721,6 +778,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     recommended: false,
     flightProfile,
     shotEffects: calculated.effects,
+    ...(selected.impact ? { impact: selected.impact } : {}),
     sharedOutcome: null,
     greenRollout: null,
     automaticPuttingEstimate: null,
@@ -739,6 +797,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     recommended: false,
     flightProfile,
     shotEffects: calculated.effects,
+    ...(selected.impact ? { impact: selected.impact } : {}),
     sharedOutcome: null,
     greenRollout: null,
     automaticPuttingEstimate: null,
@@ -756,6 +815,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     recommended: false,
     flightProfile,
     shotEffects: calculated.effects,
+    ...(selected.impact ? { impact: selected.impact } : {}),
     sharedOutcome: null,
     greenRollout: null,
     automaticPuttingEstimate: null,
@@ -777,7 +837,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     handedness: round.handedness,
   });
   const obstacleClose = round.course.obstacles.some((obstacle) => Math.hypot(obstacle.x - round.ball.x, obstacle.y - round.ball.y) < 1.6);
-  const obstructionPenalty = obstacleClose && selection.technique !== "punch" && club.name !== "Sand Wedge" && club.name !== "Chip" ? 0.65 : 0;
+  const obstructionPenalty = !usesClubShotModel(round.course.shotModel) && obstacleClose && selection.technique !== "punch" && club.name !== "Sand Wedge" && club.name !== "Chip" ? 0.65 : 0;
   const expectedPenalty = Math.max(0, evaluation.expectedShotCost - 1) + obstructionPenalty;
   const legacyPreviewDispersionTiles = calculated.effects.dispersionTiles
     * (1.42 - skills[skillForClub(club.name, round.lie)] / 180)
@@ -793,6 +853,49 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
       * (obstructionPenalty > 0 ? 1.55 : 1)
       * performance.dispersion
     : legacyPreviewDispersionTiles;
+  if (usesClubShotModel(round.course.shotModel)) {
+    const shotSlope = analyzeShotSlope({ course: round.course, from: round.ball, to: selection.aim,
+      yardsPerTile: round.course.yardsPerTile, handedness: round.handedness });
+    const targetTiles = Math.hypot(selection.aim.x - round.ball.x, selection.aim.y - round.ball.y);
+    const available = point(selection.aim) && Number.isFinite(selection.power) && targetTiles > 1e-9;
+    const unweatheredCarry = calculated.effects.carryYards * selection.power * performance.carry;
+    const wind = resolveAppliedShotWindV1({ environment: normalizeShotEnvironmentV1(round.course.weather?.environment, round.course.weather?.windMph ?? 0),
+      from: round.ball, to: selection.aim, weatherCarryMultiplier: round.course.weather?.carryMultiplier ?? 1,
+      requestedCarryYards: unweatheredCarry, yardsPerTile: round.course.yardsPerTile, isPutter: club.name === "Putter" });
+    const carryYards = unweatheredCarry * (wind?.carryMultiplier ?? round.course.weather?.carryMultiplier ?? 1);
+    const distance = Math.min(targetTiles, elevationAdjustedCarryYards(carryYards, shotSlope) / round.course.yardsPerTile);
+    const ux = targetTiles > 1e-9 ? (selection.aim.x - round.ball.x) / targetTiles : 1;
+    const uy = targetTiles > 1e-9 ? (selection.aim.y - round.ball.y) / targetTiles : 0;
+    const curve = resolveShotCurve({ shotSlope, shotLengthTiles: distance, club: club.name, technique: selection.technique }).combinedCurveTiles;
+    const runtime = resolveBivariateDispersionRuntime({ clubId, effectiveDispersionTiles: Math.max(.05, dispersionTiles),
+      accuracy: skills[skillForClub(club.name, round.lie)], consistency: skills[skillForClub(club.name, round.lie)],
+      centerlineLateralTiles: curve, appliedWind: wind });
+    const lateral = runtime.ok ? runtime.value.centerline.lateralTiles : curve + (wind?.lateralCenterlineTiles ?? 0);
+    const landing = { x: round.ball.x + ux * distance - uy * lateral, y: round.ball.y + uy * distance + ux * lateral };
+    const envelope: PlayerProPoint[] = [];
+    if (runtime.ok) {
+      const covariance = runtime.value.covariance;
+      const a = Math.sqrt(covariance.longitudinalVariance);
+      const b = a > 1e-9 ? covariance.covariance / a : 0;
+      const c = Math.sqrt(Math.max(0, covariance.lateralVariance - b * b));
+      for (let i = 0; i <= 32; i++) {
+        const angle = i * Math.PI / 16;
+        const longitudinal = BIVARIATE_DISPERSION_CENTRAL_68_RADIUS * a * Math.cos(angle);
+        const side = BIVARIATE_DISPERSION_CENTRAL_68_RADIUS * (b * Math.cos(angle) + c * Math.sin(angle));
+        envelope.push({ x: landing.x + ux * longitudinal - uy * side, y: landing.y + uy * longitudinal + ux * side });
+      }
+    }
+    const expected = evalShotExpectedCost({ course, from: round.ball, to: landing, golfer: profile, club: adjustedClub, handedness: round.handedness });
+    const penalty = Number.isFinite(expected.expectedShotCost) ? Math.max(0, expected.expectedShotCost - 1) : 3;
+    return { available, blocker: available ? null : "invalid_aim", carryYards, targetYards: targetTiles * round.course.yardsPerTile,
+      dispersionTiles, expectedPenalty: penalty, landingTerrain: lieAt(round.course, landing),
+      risk: penalty > .75 ? "high" : penalty > .25 ? "medium" : "low",
+      recommended: available && Math.abs(carryYards - targetTiles * round.course.yardsPerTile) < 35 && penalty < .35,
+      flightProfile, shotEffects: calculated.effects, impact: selected.impact, sharedOutcome: null, greenRollout: null,
+      automaticPuttingEstimate: null, shotSlope,
+      ...(available ? { expectedFlight: { from: { ...round.ball }, landing, apexHeightYards: calculated.effects.flight.apexHeightYards,
+        curveOffsetTiles: clamp(-curve * .5, -8, 8), envelope } } : {}) };
+  }
   const resolved = evaluation.isValid
     ? resolvePlayableShot({
       snapshot: round.course,
@@ -802,7 +905,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
       from: round.ball,
       lie: round.lie,
       skills,
-      selection,
+      selection: inputSelection,
       handedness: round.handedness,
       confidenceSnapshot: round.confidenceSnapshot,
       performanceLoadout: round.performanceLoadout,
@@ -836,6 +939,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     recommended: Math.abs((sharedOutcome?.appliedWind ? sharedOutcome.requestedCarryYards : baseCarry * clamp(selection.power, 0.25, 1.15)) - evaluation.distanceYards) < 35 && expectedPenalty < 0.35,
     flightProfile,
     shotEffects: calculated.effects,
+    ...(selected.impact ? { impact: selected.impact } : {}),
     sharedOutcome,
     greenRollout: resolved?.greenRollout ?? null,
     automaticPuttingEstimate,
@@ -871,17 +975,26 @@ export function resolvePlayableShot(args: {
   dispersionConsistency?: number;
   seed: number;
 }): PlayerShotTrace {
+  if (usesClubShotModel(args.snapshot.shotModel) && (!CLUBS.some((club) => club.name === args.selection.club)
+    || !point(args.from) || !point(args.selection.aim) || !Number.isFinite(args.selection.power)
+    || args.selection.aim.x < 0 || args.selection.aim.y < 0 || args.selection.aim.x >= args.snapshot.width || args.selection.aim.y >= args.snapshot.height)) {
+    throw new Error("Invalid modern shot selection");
+  }
+  const selected = selectedShotEffects(args.snapshot, args.skills, args.lie, args.selection, args.performanceLoadout);
+  if (usesClubShotModel(args.snapshot.shotModel) && selected.blocker) throw new Error(`Unavailable shot style: ${selected.blocker}`);
+  args = { ...args, selection: selected.selection };
   const club = CLUBS.find((candidate) => candidate.name === args.selection.club) ?? CLUBS[4];
   const flightProfile = flightProfileForTechnique(args.selection.technique, args.selection.flightProfile);
   const clubId = shotClubIdForLabel(club.name) ?? "pitching_wedge";
   const performance = resolvePerformanceModifiers(args.performanceLoadout, { clubId, lie: args.lie, flightProfile });
-  const calculated = calculatePlayerShotEffects({
+  const legacyCalculated = calculatePlayerShotEffects({
     club: club.name,
     lie: args.lie,
     recoverySkill: clamp(args.skills.recovery * performance.recovery, 0, 100),
     technique: args.selection.technique,
     flightProfile,
   });
+  const calculated = usesClubShotModel(args.snapshot.shotModel) ? selected : legacyCalculated;
   const course = courseFromSnapshot(args.snapshot);
   const profile = profileForPlayer(args.snapshot, args.skills, club);
   const adjustedClub = profile.clubs[0];
@@ -892,9 +1005,9 @@ export function resolvePlayableShot(args: {
   const ux = dx / aimDistance;
   const uy = dy / aimDistance;
   const obstacleClose = args.snapshot.obstacles.some((obstacle) => Math.hypot(obstacle.x - args.from.x, obstacle.y - args.from.y) < 1.6);
-  const obstructionPenalty = obstacleClose && args.selection.technique !== "punch" && club.name !== "Sand Wedge" && club.name !== "Chip";
+  const obstructionPenalty = !usesClubShotModel(args.snapshot.shotModel) && obstacleClose && args.selection.technique !== "punch" && club.name !== "Sand Wedge" && club.name !== "Chip";
   const weatherCarry = args.snapshot.weather?.carryMultiplier ?? 1;
-  const powerScale = 0.82 + args.skills.power / 500;
+  const powerScale = usesClubShotModel(args.snapshot.shotModel) ? 1 : 0.82 + args.skills.power / 500;
   const unweatheredCarryYards = calculated.effects.carryYards * powerScale * power * performance.carry;
   const appliedWind = resolveAppliedShotWindV1({
     environment: normalizeShotEnvironmentV1(args.snapshot.weather?.environment, args.snapshot.weather?.windMph ?? 0),
@@ -1003,6 +1116,19 @@ export function resolvePlayableShot(args: {
       y: args.from.y + uy * (intendedTiles + longitudinal) + ux * (lateral + curve + (appliedWind?.lateralCenterlineTiles ?? 0)),
     };
   }
+  const newModel = usesClubShotModel(args.snapshot.shotModel);
+  if (newModel) landing = roundedPoint(landing);
+  const frozenSurface = createGreenRolloutSurfaceSampler(course, course.greenSurface);
+  const heightAt = (point: PlayerProPoint) => frozenSurface(point).height * 2.5;
+  const physicalFlight: ObstacleCollisionResolution | null = newModel && club.name !== "Putter"
+    ? resolveObstacleCollision({ from: args.from, to: landing,
+        flight: { profile: flightProfile, apexHeightYards: calculated.effects.flight.apexHeightYards,
+          curve: { kind: "lateral_quadratic_v1", lateralOffsetTiles: clamp(-curve * .5, -8, 8) || 0 } },
+        endpointHeightsYards: { from: heightAt(args.from), to: heightAt(landing) }, terrainHeightAtYards: heightAt,
+        width: args.snapshot.width, height: args.snapshot.height, yardsPerTile: args.snapshot.yardsPerTile,
+        elevations: args.snapshot.elevations, tiles: args.snapshot.tiles as Terrain[],
+        obstacles: obstacleInputFor(args.snapshot), obstaclesAreStable: true, retainGeometry: true }) : null;
+  if (physicalFlight && physicalFlight.collision.kind !== "none") landing = { ...physicalFlight.collision.point };
   const outside = landing.x < 0 || landing.y < 0 || landing.x >= args.snapshot.width || landing.y >= args.snapshot.height;
   const rawLanding = { ...landing };
   landing = {
@@ -1021,9 +1147,11 @@ export function resolvePlayableShot(args: {
   const rolloutDirection = rolloutLength > 1e-9
     ? { x: rolloutDx / rolloutLength, y: rolloutDy / rolloutLength }
     : { x: ux, y: uy };
-  const requestedRollYards = club.name === "Putter"
+  const stoppedAtContact = newModel && (physicalFlight?.collision.kind !== "none" && physicalFlight !== null
+    || ["water", "wetland", "out_of_play"].includes(landingTerrain));
+  const requestedRollYards = stoppedAtContact ? 0 : club.name === "Putter"
     ? Math.hypot(rawLanding.x - args.from.x, rawLanding.y - args.from.y) * args.snapshot.yardsPerTile
-    : calculated.effects.rolloutYards * performance.spin;
+    : calculated.effects.rolloutYards * (newModel ? 1 : performance.spin);
   const spin: GreenRolloutSpin = args.selection.technique === "backspin"
     ? "backspin"
     : args.selection.technique === "draw"
@@ -1044,7 +1172,8 @@ export function resolvePlayableShot(args: {
     club: club.name,
     sourceLie: args.lie,
     launchAngleDegrees: calculated.effects.flight.launchAngleDegrees,
-    landingAngleDegrees: club.name === "Putter" ? 0 : clamp(18 + calculated.effects.flight.launchAngleDegrees * 0.75, 0, 70),
+    landingAngleDegrees: selected.impact?.landingAngleDegrees ?? (club.name === "Putter" ? 0 : clamp(18 + calculated.effects.flight.launchAngleDegrees * 0.75, 0, 70)),
+    ...(selected.impact ? { impact: selected.impact } : {}),
     trajectory: flightProfile,
     spin,
     weather: args.snapshot.weather,
@@ -1104,12 +1233,13 @@ export function resolvePlayableShot(args: {
     shotNumber: args.shotNumber,
     club: club.name,
     technique: args.selection.technique,
+    ...(newModel ? { shotStyle: selected.impact!.style } : {}),
     flightProfile,
     power,
-    from: roundedPoint(args.from),
+    from: newModel ? { ...args.from } : roundedPoint(args.from),
     aim: roundedPoint(args.selection.aim),
-    landing: roundedPoint(rolloutLanding),
-    rest: roundedPoint(rest),
+    landing: newModel ? { ...greenRollout.landing } : roundedPoint(rolloutLanding),
+    rest: newModel ? { ...rest } : roundedPoint(rest),
     carryYards: Number((Math.hypot(landing.x - args.from.x, landing.y - args.from.y) * args.snapshot.yardsPerTile).toFixed(1)),
     rollYards: greenRollout.rollYards,
     lieBefore: args.lie,
@@ -1149,6 +1279,8 @@ export function resolvePlayableShot(args: {
     finalPosition,
     ...(appliedWind ? { appliedWind } : {}),
     ...(appliedDispersion ? { appliedDispersion } : {}),
+    ...(physicalFlight ? { resolvedObstacle: physicalFlight } : {}),
+    ...(selected.impact ? { impact: selected.impact } : {}),
     obstacleCollision: {
       width: args.snapshot.width,
       height: args.snapshot.height,
@@ -1159,6 +1291,26 @@ export function resolvePlayableShot(args: {
       obstaclesAreStable: true,
     },
   });
+  if (newModel) {
+    const at = (point: PlayerProPoint) => ({ point: { ...point }, heightYards: heightAt(point) });
+    const retainedFlight = physicalFlight?.retained ?? null;
+    const sourceImpact = physicalFlight && retainedFlight
+      ? physicalFlight.samples[retainedFlight.endSampleIndex] : null;
+    const contactPath = sourceImpact && retainedFlight?.collision.kind !== "none"
+      ? [{ point: { ...sourceImpact.point }, heightYards: sourceImpact.pathHeightYards }, at(greenRollout.landing)] : [];
+    const motion = createRetainedShotMotion({
+      identity: { shotId: trace.id, holeId: trace.holeId, shotNumber: trace.shotNumber, seed: trace.seed >>> 0,
+        club: trace.club, style: trace.shotStyle!, modelVersion: "club_styles_v1" },
+      yardsPerTile: args.snapshot.yardsPerTile, from: at(args.from), landing: at(greenRollout.landing),
+      physicalRest: at(rawRest), rollPath: greenRollout.path.map(at), flight: retainedFlight,
+      ...(contactPath.length ? { postCollisionPath: contactPath } : {}),
+      reliefPosition: rules.relief.status === "resolved" ? finalPosition : null, holed: physicalHoled,
+      facts: { launchAngleDegrees: calculated.effects.flight.launchAngleDegrees,
+        landingAngleDegrees: selected.impact?.landingAngleDegrees ?? null, spin },
+    });
+    if (!motion) throw new Error("Unable to retain coherent committed shot motion");
+    trace.sharedOutcome.motion = motion;
+  }
   return trace;
 }
 
@@ -1185,6 +1337,7 @@ export function commitPlayerShot(round: PlayerPlayableRound, skills: PlayerProSk
     ...round,
     phase: "flight",
     pendingShot: trace,
+    ...(trace.sharedOutcome?.motion ? { shotPresentation: { version: 1 as const, shotId: trace.id, progress: 0 } } : {}),
     rngCursor: round.rngCursor + 1,
   };
 }
@@ -1209,6 +1362,7 @@ export function finishPlayerShot(round: PlayerPlayableRound): PlayerPlayableRoun
     scorecard,
     shots: [...round.shots, trace].slice(-MAX_SHOTS),
     pendingShot: null,
+    ...(round.shotPresentation ? { shotPresentation: undefined } : {}),
   };
 }
 
@@ -1229,6 +1383,106 @@ export function advancePlayerRound(round: PlayerPlayableRound): PlayerPlayableRo
 
 function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkills): PlayerShotSelection {
   const hole = round.course.holes[round.currentHoleIndex];
+  if (usesClubShotModel(round.course.shotModel)) {
+    // Deliberately unseeded: compare expected centerlines, never resolve a
+    // committed shot or inspect the round's next random sample.
+    const clubs = availablePlayerClubs(round.lie);
+    const fallback: PlayerShotSelection = { club: clubs[0]?.name ?? "Pitching Wedge", aim: { ...hole.pin }, power: 1, technique: "normal" };
+    if (!clubs.length) return fallback;
+    const course = courseFromSnapshot(round.course);
+    const sampleSurface = createGreenRolloutSurfaceSampler(course, course.greenSurface);
+    const heightAt = (at: PlayerProPoint) => sampleSurface(at).height * 2.5;
+    const rules = round.rulesSnapshot ?? round.course.rulesSnapshot;
+    const decoded = rules ? decodeControlledRoundSnapshotV2(rules) : null;
+    const legal = (at: PlayerProPoint) => at.x >= 0 && at.y >= 0 && at.x < round.course.width && at.y < round.course.height
+      && (!decoded?.ok || decoded.value.inBounds[Math.floor(at.y) * round.course.width + Math.floor(at.x)]);
+    const fullCarry = new Map(clubs.map((club) => [club.name,
+      selectedShotEffects(round.course, skills, round.lie, { ...fallback, club: club.name }, round.performanceLoadout).effects.carryYards
+        * (round.course.weather?.carryMultiplier ?? 1)]));
+    const candidates: PlayerShotSelection[] = [];
+    const add = (club: string, aim: PlayerProPoint, technique: PlayerShotTechnique = "normal", flightProfile: ShotFlightProfile = "standard") => {
+      if (techniqueRequirement(technique, skills)) return;
+      const selection = { club, aim: { x: clamp(aim.x, 0, round.course.width - 1), y: clamp(aim.y, 0, round.course.height - 1) }, power: 1, technique, flightProfile };
+      const selected = selectedShotEffects(round.course, skills, round.lie, selection, round.performanceLoadout);
+      if (selected.blocker) return;
+      const slope = analyzeShotSlope({ course: round.course, from: round.ball, to: selection.aim, yardsPerTile: round.course.yardsPerTile, handedness: round.handedness });
+      selection.power = Number(clamp(slope.playsLikeDistanceYards / Math.max(1, selected.effects.carryYards * (round.course.weather?.carryMultiplier ?? 1)), .25, 1).toFixed(6));
+      candidates.push(selection);
+    };
+    const distanceToPin = Math.hypot(hole.pin.x - round.ball.x, hole.pin.y - round.ball.y);
+    const ordered = [...clubs].sort((a, b) => Math.abs(fullCarry.get(a.name)! - distanceToPin * round.course.yardsPerTile)
+      - Math.abs(fullCarry.get(b.name)! - distanceToPin * round.course.yardsPerTile));
+    for (const club of ordered) add(club.name, hole.pin);
+    const flightClubs = ordered.filter((club) => club.name !== "Putter" && club.name !== "Chip").slice(0, 2);
+    for (const club of flightClubs) {
+      add(club.name, hole.pin, "normal", "high");
+      add(club.name, hole.pin, "punch", "low");
+    }
+    const dx = hole.pin.x - round.ball.x;
+    const dy = hole.pin.y - round.ball.y;
+    const length = Math.max(.001, Math.hypot(dx, dy));
+    const ux = dx / length;
+    const uy = dy / length;
+    const nearby = round.course.obstacles.filter((obstacle) => {
+      const along = clamp(((obstacle.x - round.ball.x) * dx + (obstacle.y - round.ball.y) * dy) / Math.max(.001, length * length), 0, 1);
+      return Math.hypot(obstacle.x - round.ball.x - dx * along, obstacle.y - round.ball.y - dy * along) < 1.5;
+    }).sort((a, b) => Math.hypot(a.x - round.ball.x, a.y - round.ball.y) - Math.hypot(b.x - round.ball.x, b.y - round.ball.y)).slice(0, 2);
+    const recoveryClub = clubs.find((club) => club.name === "Chip") ?? clubs.find((club) => club.name === "Pitching Wedge") ?? ordered[0];
+    for (const obstacle of nearby) {
+      for (const side of [-1, 1]) add(recoveryClub.name, { x: obstacle.x + ux - uy * side * 2.5, y: obstacle.y + uy + ux * side * 2.5 });
+      const awayX = round.ball.x - obstacle.x;
+      const awayY = round.ball.y - obstacle.y;
+      const awayLength = Math.hypot(awayX, awayY);
+      if (awayLength < 1.2) {
+        const ax = awayLength > .001 ? awayX / awayLength : -ux;
+        const ay = awayLength > .001 ? awayY / awayLength : -uy;
+        const escapeTiles = Math.max(2, Math.min(4, length));
+        for (const angle of [0, -.8, .8]) add(recoveryClub.name,
+          { x: round.ball.x + (ax * Math.cos(angle) - ay * Math.sin(angle)) * escapeTiles,
+            y: round.ball.y + (ax * Math.sin(angle) + ay * Math.cos(angle)) * escapeTiles });
+      }
+    }
+    let best = fallback;
+    let bestScore = Infinity;
+    for (const selection of candidates) {
+      const preview = previewPlayableShot(round, skills, selection);
+      if (!preview.available || !preview.expectedFlight || !preview.impact || !preview.shotEffects) continue;
+      const expected = preview.expectedFlight;
+      const isPutter = selection.club === "Putter";
+      const flight = resolveObstacleCollision({ from: round.ball, to: expected.landing,
+        flight: { profile: preview.flightProfile, apexHeightYards: expected.apexHeightYards,
+          curve: { kind: "lateral_quadratic_v1", lateralOffsetTiles: expected.curveOffsetTiles } },
+        endpointHeightsYards: { from: heightAt(round.ball), to: heightAt(expected.landing) }, terrainHeightAtYards: heightAt,
+        width: round.course.width, height: round.course.height, yardsPerTile: round.course.yardsPerTile,
+        elevations: round.course.elevations, tiles: round.course.tiles as Terrain[], obstacles: obstacleInputFor(round.course),
+        obstaclesAreStable: true, retainGeometry: true });
+      const blocked = flight != null && flight.collision.kind !== "none";
+      const landing = blocked ? flight.collision.kind !== "none" ? flight.collision.point : expected.landing : expected.landing;
+      const travelX = expected.landing.x - round.ball.x;
+      const travelY = expected.landing.y - round.ball.y;
+      const travelLength = Math.max(.001, Math.hypot(travelX, travelY));
+      const rollout = resolveGreenRollout({ course, holeId: hole.id, landing: isPutter ? round.ball : landing,
+        direction: { x: travelX / travelLength, y: travelY / travelLength },
+        requestedRollYards: blocked ? 0 : isPutter ? travelLength * round.course.yardsPerTile : preview.impact.forwardRollPotentialYards,
+        yardsPerTile: round.course.yardsPerTile, club: selection.club, sourceLie: round.lie,
+        launchAngleDegrees: preview.impact.launchAngleDegrees, landingAngleDegrees: preview.impact.landingAngleDegrees,
+        trajectory: preview.flightProfile, spin: selection.technique === "backspin" ? "backspin" : "neutral", impact: preview.impact,
+        weather: round.course.weather, drainageLevel: round.course.greenDrainageLevel,
+        // This solver uses seed only as retained metadata, not for sampling.
+        seed: 0 });
+      const rest = rollout.rest;
+      const remaining = Math.hypot(rest.x - hole.pin.x, rest.y - hole.pin.y) * round.course.yardsPerTile;
+      const terrain = rollout.lieAfter;
+      const hazard = !legal(rest) || ["water", "wetland", "out_of_bounds"].includes(terrain);
+      const moved = Math.hypot(rest.x - round.ball.x, rest.y - round.ball.y);
+      const clearance = nearby.reduce((minimum, obstacle) => Math.min(minimum, Math.hypot(rest.x - obstacle.x, rest.y - obstacle.y)), Infinity);
+      const score = remaining + preview.dispersionTiles * round.course.yardsPerTile * .12 + preview.expectedPenalty * 40
+        + (blocked ? 500 : 0) + (hazard ? 2000 : 0) + (moved < .15 && length > 1 ? 300 : 0)
+        + (clearance < .8 ? (.8 - clearance) * 30 : 0);
+      if (score < bestScore) { best = selection; bestScore = score; }
+    }
+    return best;
+  }
   const shotSlope = analyzeShotSlope({
     course: round.course,
     from: round.ball,
@@ -1239,11 +1493,17 @@ function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkill
   const distance = shotSlope.playsLikeDistanceYards;
   const clubs = availablePlayerClubs(round.lie);
   const powerScale = 0.82 + skills.power / 500;
-  const club = [...clubs].sort((a, b) => Math.abs(a.carryYards * powerScale - distance) - Math.abs(b.carryYards * powerScale - distance))[0] ?? clubs[0];
+  const carry = (club: typeof clubs[number]) => usesClubShotModel(round.course.shotModel)
+    ? selectedShotEffects(round.course, skills, round.lie, { club: club.name, aim: hole.pin, power: 1, technique: "normal" }, round.performanceLoadout).effects.carryYards
+      * (round.course.weather?.carryMultiplier ?? 1)
+    : club.carryYards * powerScale;
+  const club = [...clubs].sort((a, b) => Math.abs(carry(a) - distance) - Math.abs(carry(b) - distance))[0] ?? clubs[0];
   return {
     club: club?.name ?? "Pitching Wedge",
     aim: { ...hole.pin },
-    power: clamp(distance / Math.max(1, (club?.carryYards ?? 115) * powerScale), 0.35, 1),
+    power: usesClubShotModel(round.course.shotModel)
+      ? Number(clamp(distance / Math.max(1, club ? carry(club) : 115), .25, 1).toFixed(6))
+      : clamp(distance / Math.max(1, (club?.carryYards ?? 115) * powerScale), 0.35, 1),
     technique: "normal",
   };
 }
@@ -1267,7 +1527,7 @@ export function autoFinishPlayerRound(round: PlayerPlayableRound, skills: Player
 
 export function concedePlayerRound(round: PlayerPlayableRound): PlayerPlayableRound {
   if (round.phase === "round_complete" || round.phase === "conceded") return round;
-  return { ...round, phase: "conceded", pendingShot: null };
+  return { ...round, phase: "conceded", pendingShot: null, ...(round.shotPresentation ? { shotPresentation: undefined } : {}) };
 }
 
 function scoreToPar(round: PlayerPlayableRound): number {

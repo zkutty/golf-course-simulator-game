@@ -6,6 +6,9 @@ import { lastItem } from "./utils/array";
 import "./ui/cozyLayout.css";
 import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
+import { usePlayerShotPlayback } from "./ui/playerPro/usePlayerShotPlayback";
+import { isValidRetainedShotMotionV1 } from "./game/rules/shotMotion";
+import type { SfxName } from "./audio/AudioManager";
 import { DesignDock } from "./ui/DesignDock";
 import {
   buildDesignCatalog,
@@ -239,6 +242,7 @@ import {
   normalizePlayerPro,
   type PlayerOpponent,
   type PlayerShotSelection,
+  type PlayerShotPreview,
   type PlayerTrainingOption,
 } from "./game/playerPro/playerPro";
 import type { TournamentEvent } from "./game/tournaments/types";
@@ -939,6 +943,10 @@ export default function App() {
   const [showProgression, setShowProgression] = useState(false);
   const [showPlayerPro, setShowPlayerPro] = useState(false);
   const [playerShotAim, setPlayerShotAim] = useState<PlayerProPoint | null>(null);
+  const [playerShotPreview, setPlayerShotPreview] = useState<PlayerShotPreview | null>(null);
+  const receivePlayerShotPreview = useCallback((preview: PlayerShotPreview) => {
+    setPlayerShotPreview((previous) => JSON.stringify(previous?.expectedFlight ?? null) === JSON.stringify(preview.expectedFlight ?? null) ? previous : preview);
+  }, []);
   const playerRoundResumeSpeedRef = useRef<SpeedName>("1x");
   const storyResumeSpeedRef = useRef<SpeedName>("1x");
   const majorStoryPausedRef = useRef(false);
@@ -1552,11 +1560,11 @@ export default function App() {
     if (round === career.activeRound) return;
     if (!career.activeChallengeRuntime) {
       updatePlayerPro(() => ({ ...career, activeRound: round }));
-      if (soundEnabled) void audio.playSfx(selection.club === "Putter" ? "putt" : selection.club === "Driver" ? "driver" : "iron");
+      if (soundEnabled && !round.pendingShot?.sharedOutcome?.motion) void audio.playSfx(selection.club === "Putter" ? "putt" : selection.club === "Driver" ? "driver" : "iron");
       return;
     }
     void commitChallengeRound(current, round).then((committed) => {
-      if (committed && soundEnabled) void audio.playSfx(selection.club === "Putter" ? "putt" : selection.club === "Driver" ? "driver" : "iron");
+      if (committed && soundEnabled && !round.pendingShot?.sharedOutcome?.motion) void audio.playSfx(selection.club === "Putter" ? "putt" : selection.club === "Driver" ? "driver" : "iron");
     });
   }, [audio, commitChallengeRound, gameSession, soundEnabled, updatePlayerPro]);
 
@@ -1594,9 +1602,42 @@ export default function App() {
       : career);
   }, [challengePlayerPro, gameSession, updatePlayerPro]);
 
+  const playerPlayback = usePlayerShotPlayback({
+    round: activePlayerRound,
+    paused: flow.paused || Boolean(flow.modal) || showPlayerPro || screen !== "game",
+    immediate: !effectiveAnimations,
+    onCheckpoint: (roundId, cursor) => updatePlayerPro((career) => {
+      const round = career.activeRound;
+      if (!round || round.id !== roundId || round.phase !== "flight" || round.pendingShot?.id !== cursor.shotId
+        || (round.shotPresentation?.progress ?? 0) >= cursor.progress) return career;
+      return { ...career, activeRound: { ...round, shotPresentation: cursor } };
+    }),
+    onComplete: (roundId, shotId) => updatePlayerPro((career) => {
+      const round = career.activeRound;
+      return round?.id === roundId && round.phase === "flight" && round.pendingShot?.id === shotId
+        ? { ...career, activeRound: finishPlayerShot(round) } : career;
+    }),
+    onEvent: (round, shot, event) => {
+      if (!soundEnabled) return;
+      let sound: SfxName | null = null;
+      if (event.kind === "contact") sound = shot.club === "Putter" ? "putt" : shot.club === "Driver" ? "driver" : "iron";
+      else if (event.kind === "hole_out") sound = "cup";
+      else if (event.kind === "collision" && shot.sharedOutcome?.collision.kind === "obstacle") sound = "tree";
+      else if (event.kind === "first_contact") {
+        const x = Math.max(0, Math.min(round.course.width - 1, Math.round(event.point.x)));
+        const y = Math.max(0, Math.min(round.course.height - 1, Math.round(event.point.y)));
+        const terrain = round.course.tiles[y * round.course.width + x];
+        sound = terrain === "water" || terrain === "wetland" ? "land-water" : terrain === "sand" || terrain === "waste_area" ? "land-sand"
+          : terrain === "green" ? "land-green" : terrain === "rough" || terrain === "deep_rough" ? "land-rough" : "land-fairway";
+      }
+      if (sound) void audio.playSfx(sound, { force: event.kind === "hole_out" });
+    },
+  });
+
   useEffect(() => {
     const round = activePlayerRound;
     if (!round || round.phase !== "flight" || !round.pendingShot) return;
+    if (isValidRetainedShotMotionV1(round.pendingShot.sharedOutcome?.motion)) return;
     const delay = appProfile.accessibility.reducedMotion ? 40 : 720;
     const timer = window.setTimeout(() => {
       updatePlayerPro((career) => career.activeRound?.id === round.id
@@ -3394,6 +3435,7 @@ export default function App() {
           performanceLoadout: activePlayerRound.performanceLoadout ?? null,
           rulesSnapshot: textRulesSnapshot(activePlayerRound.rulesSnapshot),
           pendingShot: textShotTrace(activePlayerRound.pendingShot),
+          presentation: playerPlayback.frameRef.current,
           recentTrace: textShotTrace(lastItem(activePlayerRound.shots)),
           editingLocked: playerRoundLocksEditing,
         } : null,
@@ -3478,7 +3520,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleAuthorityCourse.activePinRotation, activeHoleAuthorityCourse.holes, activeHoleIndex, activeHoleScore?.par, activeLayout.id, activeOperatingCourse, activePlayerRound, activeShotRoute, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, openingMarker, openingPlaybackUi.following, openingPlaybackUi.running, openingPlaybackUi.speed, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
+  }, [activeHoleAuthorityCourse.activePinRotation, activeHoleAuthorityCourse.holes, activeHoleIndex, activeHoleScore?.par, activeLayout.id, activeOperatingCourse, activePlayerRound, activeShotRoute, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, openingMarker, openingPlaybackUi.following, openingPlaybackUi.running, openingPlaybackUi.speed, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, playerPlayback.frameRef, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -6215,6 +6257,8 @@ export default function App() {
                 resortOperations={world.enterprise?.resort}
                 playerRound={activePlayerRound}
                 playerShotAim={playerShotAim}
+                playerShotPlaybackRef={playerPlayback.frameRef}
+                playerShotPreview={playerShotPreview}
                 openingMarker={openingMarker}
                 openingTargets={openingTargets}
                 openingFollow={openingPlaybackUi.following}
@@ -6358,6 +6402,8 @@ export default function App() {
               aim={playerShotAim}
               onAim={setPlayerShotAim}
               onCommit={commitControlledShot}
+              onSkipShot={activePlayerRound.pendingShot?.sharedOutcome?.motion ? playerPlayback.skip : undefined}
+              onPreview={receivePlayerShotPreview}
               onAdvance={advanceControlledRound}
               onAutoFinish={autoFinishControlledRound}
               onConcede={concedeControlledRound}

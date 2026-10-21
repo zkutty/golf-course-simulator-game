@@ -4,7 +4,13 @@ import { DEFAULT_COURSE } from "../../../game/models/defaults";
 import type { TerrainStrokePreview } from "../../../game/models/terrainStroke";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import { SceneSystemHost } from "../SceneSystemHost";
-import { createOverlaysDiagnosticsSceneSystem, type OverlayTickInput } from "./overlaysDiagnosticsScene";
+import { createOverlaysDiagnosticsSceneSystem, playerShotGolferPose, type OverlayTickInput } from "./overlaysDiagnosticsScene";
+import { createRetainedShotMotion } from "../../../game/rules/shotMotion";
+import { resolveObstacleCollision } from "../../../game/rules/obstacleCollision";
+import { playerShotPlaybackFrame } from "../../../game/playerPro/shotPlayback";
+import type { PlayerPlayableRound, PlayerShotTrace } from "../../../game/models/playerProTypes";
+import { worldToIso } from "../../../game/render/iso";
+import type { PlayerShotPreview } from "../../../game/playerPro/playerPro";
 
 function point(x = 0, y = 0) {
   return {
@@ -21,7 +27,22 @@ class FakeDisplay {
   parent: FakeContainer | null = null;
   label = "";
   position = point();
+  visible = true;
   destroy = vi.fn((_options?: { children?: boolean }) => {});
+}
+
+function playerShot() {
+  const flight = resolveObstacleCollision({ from: { x: 1, y: 5 }, to: { x: 11, y: 5 }, flight: { profile: "standard", apexHeightYards: 10,
+    curve: { kind: "lateral_quadratic_v1", lateralOffsetTiles: 2 } }, width: 16, height: 16, yardsPerTile: 10,
+    endpointHeightsYards: { from: 5, to: 5 }, obstacles: [], retainGeometry: true }).retained!;
+  const at = (x: number, y: number) => ({ point: { x, y }, heightYards: 5 });
+  const motion = createRetainedShotMotion({ identity: { shotId: "s1", holeId: "h1", shotNumber: 1, seed: 1, club: "7 Iron", style: "fade", modelVersion: "club_styles_v1" },
+    yardsPerTile: 10, from: at(1, 5), landing: at(11, 5), physicalRest: at(12, 6), flight,
+    rollPath: [at(11, 5), at(12, 5), at(12, 6)], holed: false, reliefPosition: { x: 2, y: 2 } })!;
+  const shot = { id: "s1", from: { x: 1, y: 5 }, aim: { x: 11, y: 5 }, rest: { x: 2, y: 2 }, club: "7 Iron", penaltyStrokes: 1,
+    sharedOutcome: { motion }, greenRollout: { landing: { x: 11, y: 5 }, path: [{ x: 11, y: 5 }, { x: 12, y: 6 }] } } as unknown as PlayerShotTrace;
+  const round = { id: "r1", phase: "flight", pendingShot: shot, shots: [], ball: shot.from } as unknown as PlayerPlayableRound;
+  return { shot, round, motion };
 }
 
 class FakeGraphics extends FakeDisplay {
@@ -239,5 +260,81 @@ describe("overlay and diagnostics scene ownership", () => {
     scene.system.destroy!();
     expect(scene.texts[0].destroy).toHaveBeenCalledOnce();
     expect(scene.screenOverlay.children).toEqual([]);
+  });
+
+  it("moves the light ball through frozen XYZ geometry while preserving pooled displays and hiding the future trace", () => {
+    const scene = fixture();
+    const { round } = playerShot();
+    scene.system.create!({ ...snapshot(), playerRound: round });
+    const staticTrace = scene.graphics.at(-1)!;
+    expect(staticTrace.lineTo).not.toHaveBeenCalled();
+    scene.system.tick(tickInput({ surfaceHeightAt: () => 2, playerShotPlayback: playerShotPlaybackFrame("s1", .1) }));
+    expect(scene.system.playerShotPlayback()).toMatchObject({ phase: "address", point: { x: 1, y: 5 }, heightYards: 5 });
+    const count = scene.graphics.length;
+    scene.system.tick(tickInput({ surfaceHeightAt: () => 2, playerShotPlayback: playerShotPlaybackFrame("s1", .18 + .82 * .36) }));
+    const frame = scene.system.playerShotPlayback()!;
+    expect(frame.point).toEqual({ x: 6, y: 7 });
+    expect(frame.heightYards).toBe(15);
+    expect(frame.ball).toEqual(worldToIso(6.5, 7.5, 6, 0));
+    expect(frame.shadow).toEqual(worldToIso(6.5, 7.5, 2, 0));
+    expect(frame.ball.y).toBeLessThan(frame.shadow.y);
+    for (let index = 0; index < 100; index += 1) scene.system.tick(tickInput({ playerShotPlayback: playerShotPlaybackFrame("s1", .2 + index * .005) }));
+    expect(scene.graphics).toHaveLength(count);
+    expect(staticTrace.lineTo).not.toHaveBeenCalled();
+    scene.system.tick(tickInput({ playerShotPlayback: playerShotPlaybackFrame("other-shot", .5) }));
+    expect(scene.system.playerShotPlayback()).toBeNull();
+    scene.system.destroy!();
+    expect(scene.fx.children).toHaveLength(0);
+  });
+
+  it("keeps settled physical rest and the legal relief marker separate", () => {
+    const scene = fixture();
+    const { round, shot } = playerShot();
+    scene.system.create!({ ...snapshot(), surfaceHeightAt: () => 2, playerRound: { ...round, phase: "awaiting_shot", pendingShot: null, shots: [shot], ball: { x: 2, y: 2 } } });
+    const graphics = scene.graphics.at(-1)!;
+    const rest = worldToIso(12.5, 6.5, 2, 0);
+    const relief = worldToIso(2.5, 2.5, 2, 0);
+    expect(graphics.circle).toHaveBeenCalledWith(rest.x, rest.y - 2, 3);
+    expect(graphics.circle).toHaveBeenCalledWith(relief.x, relief.y - 2, 9);
+    expect(graphics.lineTo).not.toHaveBeenCalledWith(relief.x, relief.y - 2);
+  });
+
+  it("reaches the existing swing/putt contact frames exactly when retained motion starts", () => {
+    for (const [club, contact] of [["Driver", 5], ["Putter", 2]] as const) {
+      expect(playerShotGolferPose(playerShotPlaybackFrame("s1", .17999), club, { x: 1, y: 0 }, 0).col).toBeLessThan(contact);
+      expect(playerShotGolferPose(playerShotPlaybackFrame("s1", .18), club, { x: 1, y: 0 }, 0).col).toBe(contact);
+      expect(playerShotGolferPose(playerShotPlaybackFrame("s1", .5), club, { x: 1, y: 0 }, 90).col).toBeGreaterThan(contact);
+    }
+  });
+
+  it("keeps the shadow on the frozen round surface when the editable course changes", () => {
+    const scene = fixture();
+    const { round } = playerShot();
+    round.course = { width: 16, height: 16, elevations: Array(256).fill(2), tiles: Array(256).fill("fairway"), holes: [] } as unknown as PlayerPlayableRound["course"];
+    scene.system.create!({ ...snapshot(), playerRound: round, surfaceHeightAt: () => 999 });
+    const input = tickInput({ surfaceHeightAt: () => 999, playerShotPlayback: playerShotPlaybackFrame("s1", .18 + .82 * .36) });
+    scene.system.tick(input);
+    const frame = scene.system.playerShotPlayback()!;
+    expect(frame.shadow).toEqual(worldToIso(frame.point.x + .5, frame.point.y + .5, 2));
+    scene.system.tick({ ...input, surfaceHeightAt: () => -999 });
+    expect(scene.system.playerShotPlayback()).toEqual(frame);
+  });
+
+  it("updates the unseeded expected arc and envelope only when its selection payload changes", () => {
+    const scene = fixture();
+    const { round } = playerShot();
+    scene.system.create!({ ...snapshot(), playerRound: { ...round, phase: "awaiting_shot", pendingShot: null } });
+    const preview = { available: true, expectedFlight: { from: { x: 1, y: 5 }, landing: { x: 11, y: 5 }, apexHeightYards: 10, curveOffsetTiles: 2,
+      envelope: [{ x: 10, y: 4 }, { x: 12, y: 4 }, { x: 12, y: 6 }, { x: 10, y: 6 }] } } as PlayerShotPreview;
+    scene.system.tick(tickInput({ playerShotPreview: preview }));
+    const arc = scene.graphics.at(-1)!;
+    expect(arc.poly).toHaveBeenCalledOnce();
+    expect(arc.lineTo).toHaveBeenCalledTimes(32);
+    scene.system.tick(tickInput({ playerShotPreview: preview }));
+    expect(arc.clear).toHaveBeenCalledOnce();
+    scene.system.tick(tickInput({ playerShotPreview: { ...preview, expectedFlight: { ...preview.expectedFlight!, curveOffsetTiles: -2 } } }));
+    expect(arc.clear).toHaveBeenCalledTimes(2);
+    expect(arc.lineTo).toHaveBeenCalledTimes(64);
+    expect(scene.system.playerShotPlayback()).toBeNull();
   });
 });

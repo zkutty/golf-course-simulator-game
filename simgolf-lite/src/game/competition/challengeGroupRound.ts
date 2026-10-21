@@ -29,6 +29,8 @@ import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import { decodeControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import type { HoleReaction } from "../live/m47Types";
 import type { PlayerConfidenceState } from "../playerPro/confidence";
+import { freezeProfileCalibration } from "../rules/profileCalibration";
+import { usesClubShotModel } from "../rules/shotModelSnapshot";
 import {
   caddieRecommendation,
   previewPlayableShot,
@@ -579,6 +581,13 @@ function participantCourse(round: ChallengeGroupRound, golfer: ChallengeGroupGol
   return {
     ...round.course,
     holes: golfer.setup.holes,
+    // A shared tournament property may carry the host's round-start profile.
+    // Each participant owns frozen skills; never inherit another golfer's power.
+    ...(usesClubShotModel(round.course.shotModel) ? {
+      distanceProfile: freezeProfileCalibration(golfer.skills, {
+        driverTotalOffsetYards: round.course.distanceProfile?.driverTotalOffsetYards ?? 0,
+      }),
+    } : {}),
   };
 }
 

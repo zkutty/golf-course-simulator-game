@@ -1,3 +1,4 @@
+import type { ClubImpactV1 } from "./shotStyles";
 import type { Point } from "../models/types";
 import type { PlayerShotTrace } from "../models/playerProTypes";
 import type { CalculatedShotEffects } from "./shotEffects";
@@ -238,12 +239,14 @@ export function createSharedShotOutcome(args: {
   obstacleCollision?: Omit<ObstacleCollisionInput, "from" | "to" | "flight">;
   appliedWind?: AppliedShotWindV1;
   appliedDispersion?: AppliedDispersionV1;
+  resolvedObstacle?: import("./obstacleCollision").ObstacleCollisionResolution;
+  impact?: ClubImpactV1;
 }): SharedShotOutcome {
   const { trace, effects } = args;
   const ruling = args.ruling ?? fallbackRuling({ holed: trace.holed, legacyPenaltyStrokes: trace.penaltyStrokes });
   const relief = args.relief ?? fallbackRelief({ ruling, physicalRest: trace.rest });
   const finalPosition = args.finalPosition ?? trace.rest;
-  const obstacleResolution = args.obstacleCollision
+  const obstacleResolution = args.resolvedObstacle ?? (args.obstacleCollision
     ? resolveObstacleCollision({
       ...args.obstacleCollision,
       from: trace.from,
@@ -253,7 +256,7 @@ export function createSharedShotOutcome(args: {
         apexHeightYards: effects.flight.apexHeightYards,
       },
     })
-    : null;
+    : null);
   return {
     rulesVersion: 1,
     lieEffect: effects.lieEffect,
@@ -274,6 +277,7 @@ export function createSharedShotOutcome(args: {
     ruling,
     relief,
     finalPosition: { ...finalPosition },
+    ...(args.impact ? { impact: args.impact } : {}),
     ...(args.appliedWind ? { appliedWind: args.appliedWind } : {}),
     ...(args.appliedDispersion ? { appliedDispersion: args.appliedDispersion } : {}),
   };

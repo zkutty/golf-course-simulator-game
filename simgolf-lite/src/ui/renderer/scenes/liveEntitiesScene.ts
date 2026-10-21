@@ -1,6 +1,7 @@
 import * as PIXI from "pixi.js";
 import type { GolferRenderData } from "../../../game/live/types";
 import type { Terrain } from "../../../game/models/types";
+import { ELEVATION_STEP_YARDS } from "../../../game/rules/obstacleCollision";
 import { ballFlightPose, landingBehavior } from "../../../game/render/ballFlight";
 import { forgetGolfer, recordEmote } from "../../../game/render/emoteFeed";
 import {
@@ -57,6 +58,10 @@ interface GolferEntry {
   lastBall: { x: number; y: number } | null;
   prevBallIso: { x: number; y: number } | null;
   ballLanded: boolean;
+  motionShotId: string | null;
+  motionEventCursor: number;
+  motionLastImpact: string | null;
+  reliefMarker: PIXI.Graphics | null;
   emote: {
     lastScored: number;
     prevMood: number;
@@ -250,7 +255,7 @@ export function createLiveEntitiesSceneSystem(
   const bubbles = new Map<number, PIXI.Container>();
   let scheduler = createEmoteScheduler();
   let simMovingAt = 0;
-  let ripples: Array<{ x: number; y: number; t0: number }> = [];
+  let ripples: Array<{ x: number; y: number; t0: number; e?: number }> = [];
   let impacts: Array<{ kind: "sand" | "grass" | "check"; x: number; y: number; e: number; t0: number }> = [];
   let effectGraphics: PIXI.Graphics | null = null;
 
@@ -270,6 +275,8 @@ export function createLiveEntitiesSceneSystem(
     entry.holder.destroy({ children: true });
     entry.ball.destroy();
     entry.ballShadow.destroy();
+    entry.reliefMarker?.parent?.removeChild(entry.reliefMarker);
+    entry.reliefMarker?.destroy();
     pool.delete(id);
     if (recordDeparture) forgetGolfer(id);
   };
@@ -307,7 +314,7 @@ export function createLiveEntitiesSceneSystem(
       ripples = ripples.filter((ripple) => nowMs - ripple.t0 < 750);
       for (const ripple of ripples) {
         const progress = animationsEnabled ? (nowMs - ripple.t0) / 750 : 0.45;
-        const center = tileCenterIso(ripple.x, ripple.y, 0, rotation);
+        const center = tileCenterIso(ripple.x, ripple.y, ripple.e ?? 0, rotation);
         const radius = 4 + progress * 12;
         graphic.ellipse(center.x, center.y, radius, radius / 2);
         graphic.stroke({ width: 1.5 * (1 - progress) + 0.5, color: 0xe9f4ff, alpha: 0.8 * (1 - progress) });
@@ -385,6 +392,7 @@ export function createLiveEntitiesSceneSystem(
           lastBall: null,
           prevBallIso: null,
           ballLanded: false,
+          motionShotId: null, motionEventCursor: 0, motionLastImpact: null, reliefMarker: null,
           emote: {
             lastScored: golfer.scoredHoles,
             prevMood: golfer.mood,
@@ -543,6 +551,49 @@ export function createLiveEntitiesSceneSystem(
         }
       }
 
+      const retainedMotion = golfer.ballMotion;
+      if (retainedMotion) {
+        if (entry.motionShotId !== retainedMotion.identity.shotId) {
+          entry.motionShotId = retainedMotion.identity.shotId;
+          entry.motionEventCursor = 0;
+          entry.motionLastImpact = null;
+        }
+        // Consume retained contact events exactly once even when a frame skips
+        // over contact or the simulation has just left its flight segment.
+        while (entry.motionEventCursor < retainedMotion.events.length
+          && retainedMotion.events[entry.motionEventCursor].time <= retainedMotion.pose.time) {
+          const event = retainedMotion.events[entry.motionEventCursor++];
+          if (event.kind !== "collision" && event.kind !== "first_contact") continue;
+          const terrain = event.kind === "collision" ? retainedMotion.collisionTerrain : retainedMotion.contactTerrain;
+          const fx = landingBehavior(terrain as Terrain | null).fx;
+          const key = `${event.point.x}:${event.point.y}:${fx}`;
+          if (!fx || entry.motionLastImpact === key) continue;
+          entry.motionLastImpact = key;
+          if (!animationsEnabled) continue;
+          if (fx === "splash") appendBoundedEffect(ripples, { x: event.point.x, y: event.point.y, e: event.heightYards / ELEVATION_STEP_YARDS, t0: nowMs }, MAX_ACTIVE_RIPPLES);
+          else appendBoundedEffect(impacts, { kind: fx, x: event.point.x, y: event.point.y, e: event.heightYards / ELEVATION_STEP_YARDS, t0: nowMs }, MAX_ACTIVE_IMPACTS);
+          showEmote(hazardEmote(fx));
+          startleAtmosphere(event.point, nowMs);
+        }
+        const relief = retainedMotion.pose.reliefPosition;
+        const contact = retainedMotion.events.find((event) => event.kind === "first_contact");
+        const showRelief = relief != null && contact != null && retainedMotion.pose.time >= contact.time;
+        if (showRelief && !entry.reliefMarker) {
+          entry.reliefMarker = createGraphics();
+          entry.reliefMarker.label = "live-shot-relief-marker";
+          entry.reliefMarker.poly([0, -5, 5, 0, 0, 5, -5, 0]);
+          entry.reliefMarker.stroke({ width: 1.5, color: 0xffffff, alpha: .9 });
+          layers.terrainDecals.addChild(entry.reliefMarker);
+        }
+        if (entry.reliefMarker) {
+          entry.reliefMarker.visible = showRelief;
+          if (showRelief) {
+            const marker = tileCenterIso(relief.x, relief.y, surfaceHeightAt(relief.x + .5, relief.y + .5), rotation);
+            entry.reliefMarker.position.set(marker.x, marker.y);
+          }
+        }
+      } else if (entry.reliefMarker) entry.reliefMarker.visible = false;
+
       if (golfer.ballX != null && golfer.ballY != null) {
         const from = { x: golfer.x, y: golfer.y };
         const to = golfer.ballToX != null && golfer.ballToY != null
@@ -564,7 +615,15 @@ export function createLiveEntitiesSceneSystem(
         let heightPx = 0;
         let shadowScale = 1;
         let hidden = false;
-        if (animationsEnabled && golfer.segKind === "flight") {
+        if (retainedMotion?.active) {
+          x = retainedMotion.pose.point.x;
+          y = retainedMotion.pose.point.y;
+          const sink = retainedMotion.events.find((event) => {
+            const terrain = event.kind === "collision" ? retainedMotion.collisionTerrain : event.kind === "first_contact" ? retainedMotion.contactTerrain : null;
+            return terrain === "water" || terrain === "wetland";
+          });
+          hidden = sink != null && retainedMotion.pose.time >= sink.time;
+        } else if (animationsEnabled && golfer.segKind === "flight") {
           const pose = ballFlightPose(golfer.segT, distanceTiles, shot, behavior);
           if (!golfer.ballUsesResolvedRollout) {
             x = from.x + (to.x - from.x) * pose.groundFrac;
@@ -589,7 +648,14 @@ export function createLiveEntitiesSceneSystem(
         }
         const elevation = surfaceHeightAt(x + 0.5, y + 0.5);
         const ground = tileCenterIso(x, y, elevation, rotation);
-        entry.ball.position.set(ground.x, ground.y - heightPx);
+        const ballPosition = retainedMotion?.active
+          ? tileCenterIso(x, y, retainedMotion.pose.heightYards / ELEVATION_STEP_YARDS, rotation)
+          : { x: ground.x, y: ground.y - heightPx };
+        if (retainedMotion?.active) {
+          heightPx = ground.y - ballPosition.y;
+          shadowScale = Math.max(.2, 1 - Math.max(0, heightPx) / 160);
+        }
+        entry.ball.position.set(ballPosition.x, ballPosition.y);
         const depth = Math.round(entityDepth(x, y, elevation, rotation) * 10) / 10;
         if (entry.ball.zIndex !== depth) entry.ball.zIndex = depth;
         entry.ball.visible = !hidden;
@@ -606,7 +672,7 @@ export function createLiveEntitiesSceneSystem(
         entry.lastBall = { x: golfer.ballX, y: golfer.ballY };
       } else {
         if (entry.lastBall) {
-          if (!animationsEnabled) {
+          if (!animationsEnabled && !retainedMotion) {
             const x = Math.floor(entry.lastBall.x + 0.5);
             const y = Math.floor(entry.lastBall.y + 0.5);
             if (

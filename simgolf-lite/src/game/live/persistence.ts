@@ -11,6 +11,8 @@ import { isValidGreenRollout } from "../greens/greenRollout";
 import { isValidGreenPutting } from "../greens/greenPutting";
 import { normalizeExperienceAxes } from "../balance/experience";
 import { normalizeShotEnvironmentV1 } from "../rules/shotEnvironment";
+import { isValidRetainedShotMotionV1 } from "../rules/shotMotion";
+import { isShotStyleId } from "../rules/shotStyles";
 import { dispersionClubIdForLabel } from "../rules/dispersionRegistry";
 
 const MAX_GOLFERS = 500;
@@ -49,6 +51,22 @@ function point(value: unknown, nullable = false): boolean {
   return isRecord(value) && finite(value.x) && finite(value.y);
 }
 
+function samePoint(a: unknown, b: unknown): boolean {
+  return isRecord(a) && isRecord(b) && a.x === b.x && a.y === b.y;
+}
+
+function motionMatchesOutcome(value: Record<string, unknown>): boolean {
+  if (value.shotStyle != null && !isShotStyleId(value.shotStyle)) return false;
+  const shared = value.sharedOutcome;
+  if (!isRecord(shared) || shared.motion == null) return true;
+  const motion = shared.motion;
+  return isValidRetainedShotMotionV1(motion)
+    && motion.identity.shotId === value.id && motion.identity.holeId === value.holeId
+    && motion.identity.shotNumber === value.shotNumber && motion.identity.seed === ((value.seed as number) >>> 0)
+    && motion.identity.club === value.club && motion.identity.style === value.shotStyle
+    && samePoint(motion.from.point, value.from) && samePoint(motion.physicalRest.point, shared.physicalRest);
+}
+
 function segment(value: unknown): value is Segment {
   if (!isRecord(value)) return false;
   return (
@@ -59,6 +77,10 @@ function segment(value: unknown): value is Segment {
     value.dur >= 0 &&
     Number.isInteger(value.holeIndex) &&
     (value.shot == null || value.shot === "swing" || value.shot === "putt") &&
+    (value.motion == null || (value.kind === "flight" && isValidRetainedShotMotionV1(value.motion)
+      && value.shotId === value.motion.identity.shotId && value.holeId === value.motion.identity.holeId
+      && samePoint(value.from, value.motion.from.point) && samePoint(value.to, value.motion.physicalRest.point)
+      && typeof value.motionContactTerrain === "string" && value.motionContactTerrain.length <= 40)) &&
     (value.landing == null || point(value.landing)) &&
     (value.rollPath == null || (Array.isArray(value.rollPath) && value.rollPath.length <= 98 && value.rollPath.every((entry) => point(entry)))) &&
     (value.rolloutStartT == null || (finite(value.rolloutStartT) && value.rolloutStartT >= 0 && value.rolloutStartT <= 1)) &&
@@ -102,7 +124,7 @@ function holePlan(value: unknown): boolean {
 }
 
 function shotOutcome(value: unknown): boolean {
-  return isRecord(value) && value.version === 1 && typeof value.id === "string" && typeof value.holeId === "string" &&
+  return isRecord(value) && motionMatchesOutcome(value) && value.version === 1 && typeof value.id === "string" && typeof value.holeId === "string" &&
     finite(value.shotNumber) && Number.isInteger(value.shotNumber) && value.shotNumber > 0 && intentKinds.has(value.intent as StrategicIntentKind) &&
     typeof value.intentId === "string" && typeof value.club === "string" && techniques.has(String(value.technique)) &&
     point(value.from) && point(value.aim) && point(value.landing) && point(value.rest) && typeof value.lieBefore === "string" &&
@@ -144,6 +166,22 @@ function golfer(value: unknown): value is Golfer {
   if (!Number.isInteger(value.id) || typeof value.name !== "string" || typeof value.archetype !== "string") return false;
   if (!isRecord(value.personality) || typeof value.color !== "string") return false;
   if (!Array.isArray(value.segments) || value.segments.length > MAX_SEGMENTS_PER_GOLFER || value.segments.some((s) => !segment(s))) return false;
+  if (value.lastMotionSegmentIndex != null && (!Number.isInteger(value.lastMotionSegmentIndex)
+    || (value.lastMotionSegmentIndex as number) < 0 || (value.lastMotionSegmentIndex as number) >= (value.segIndex as number)
+    || !(value.segments[value.lastMotionSegmentIndex as number] as Segment | undefined)?.motion)) return false;
+  for (const retained of value.segments as Segment[]) {
+    if (!retained.motion) continue;
+    const owners = Array.isArray(value.shotOutcomes) ? value.shotOutcomes.filter((shot) => isRecord(shot) && shot.id === retained.shotId) : [];
+    if (owners.length > 1) return false;
+    if (owners.length === 1) {
+      const owner = owners[0];
+      const identity = retained.motion.identity;
+      if (!motionMatchesOutcome(owner) || identity.holeId !== owner.holeId || identity.shotNumber !== owner.shotNumber
+        || identity.seed !== (owner.seed >>> 0) || identity.club !== owner.club || identity.style !== owner.shotStyle
+        || !samePoint(retained.motion.from.point, owner.from)
+        || (owner.sharedOutcome?.motion != null && JSON.stringify(owner.sharedOutcome.motion) !== JSON.stringify(retained.motion))) return false;
+    }
+  }
   if (!point(value.pos) || !point(value.ball, true)) return false;
   if (!Array.isArray(value.holePar) || value.holePar.some((n) => !finite(n))) return false;
   if (!Array.isArray(value.holeStrokes) || value.holeStrokes.some((n) => !finite(n))) return false;

@@ -9,6 +9,17 @@ import type { SurfaceCareDayReport } from "../conditions/surfaceCare";
 import type { GreenKeepingReport } from "../greens/greenMaintenance";
 import type { ShotEnvironmentV1 } from "../rules/shotEnvironment";
 
+import type { RetainedShotMotionV1, RetainedShotMotionPoseV1, ShotMotionEventV1, ShotMotionIdentityV1 } from "../rules/shotMotion";
+
+export interface LiveBallMotionV1 {
+  identity: ShotMotionIdentityV1;
+  pose: RetainedShotMotionPoseV1;
+  events: readonly ShotMotionEventV1[];
+  contactTerrain: string;
+  collisionTerrain: string | null;
+  active: boolean;
+}
+
 export type SegmentKind = "walk" | "flight" | "pause";
 
 // A single timed leg of a golfer's itinerary. During a "walk" the golfer moves
@@ -25,6 +36,9 @@ export interface Segment {
   // renderer can pick the swing vs putt animation. Never read by sim logic.
   shot?: "swing" | "putt";
   /** Exact M62 touchdown and ground path retained from the shot resolver. */
+  motion?: RetainedShotMotionV1;
+  motionContactTerrain?: string;
+  shotId?: string;
   landing?: Point;
   rollPath?: Point[];
   /** Fraction of this segment at which the retained ground path begins. */
@@ -68,6 +82,8 @@ export interface Golfer {
   color: string;
   // Itinerary
   segments: Segment[];
+  /** Last completed retained flight, for one-shot event delivery across frame boundaries. */
+  lastMotionSegmentIndex?: number;
   segIndex: number;
   segElapsed: number; // game-minutes elapsed within current segment
   // Live position (tile space, float)
@@ -284,6 +300,7 @@ export interface GolferRenderData {
   ballToY: number | null;
   ballLandingX?: number | null;
   ballLandingY?: number | null;
+  ballMotion?: LiveBallMotionV1 | null;
   ballUsesResolvedRollout?: boolean;
   ballRolloutStartT?: number | null;
   color: string;

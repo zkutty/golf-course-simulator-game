@@ -7,6 +7,36 @@ export const ELEVATION_STEP_YARDS = 2.5;
 /** A small fixed step makes narrow trunks deterministic without random casts. */
 export const FLIGHT_SAMPLE_STEP_TILES = 0.05;
 
+export const MAX_FLIGHT_CURVE_TILES = 8;
+export const MAX_RETAINED_FLIGHT_DIVISIONS = 32768;
+
+/** Signed displacement at the middle of the from → to chord, in tiles. */
+export interface FlightCurveV1 {
+  kind: "lateral_quadratic_v1";
+  lateralOffsetTiles: number;
+}
+
+/** Compact frozen geometry; heights are absolute yards above the course datum. */
+export interface AuthoritativeFlightGeometryV1 {
+  version: 1;
+  from: Point;
+  to: Point;
+  startHeightYards: number;
+  endHeightYards: number;
+  apexHeightYards: number;
+  curve?: FlightCurveV1;
+}
+
+export interface RetainedFlightResolutionV1 {
+  geometry: AuthoritativeFlightGeometryV1;
+  sampleDivisions: number;
+  /** Exact source sample, never a nearest-point match against a later path. */
+  endSampleIndex: number;
+  collision: ShotCollision;
+  /** x/y/type are the existing frozen obstacle identity. */
+  obstacle?: FlightObstacle;
+}
+
 type VolumeName = "trunk" | "canopy" | "body";
 
 interface ObstacleVolume {
@@ -37,15 +67,22 @@ export interface ObstacleCollisionInput {
   flight: {
     profile: ShotFlightProfile;
     apexHeightYards: number;
+    curve?: FlightCurveV1;
   };
   width: number;
   height: number;
   yardsPerTile: number;
+  /** Optional already sampled physical surface heights, frozen at shot resolve. */
+  endpointHeightsYards?: { from: number; to: number };
+  /** Frozen physical surface authority for modern shots; absent preserves legacy nearest-tile sampling. */
+  terrainHeightAtYards?: (point: Point) => number;
   elevations?: readonly number[];
   tiles?: readonly Terrain[];
   obstacles: readonly FlightObstacle[];
   /** Set when the caller supplies the output of prepareObstacleInput. */
   obstaclesAreStable?: boolean;
+  /** Versioned new-shot callers opt in; legacy result bytes remain unchanged. */
+  retainGeometry?: boolean;
 }
 
 export interface FlightPathSample {
@@ -59,6 +96,7 @@ export interface ObstacleCollisionResolution {
   samples: readonly FlightPathSample[];
   collision: ShotCollision;
   clearance: readonly ShotClearanceEvidence[];
+  retained?: RetainedFlightResolutionV1;
 }
 
 function rounded(value: number): number {
@@ -89,7 +127,7 @@ function segmentDistance(point: Point, from: Point, to: Point): number {
   );
 }
 
-function nearestSample(samples: readonly FlightPathSample[], obstacle: FlightObstacle): { sample: FlightPathSample; distance: number } {
+function nearestSample(samples: readonly FlightPathSample[], obstacle: FlightObstacle, curved: boolean): { sample: FlightPathSample; distance: number } {
   const lastIndex = Math.max(0, samples.length - 1);
   const first = samples[0]!;
   const last = samples[lastIndex]!;
@@ -100,8 +138,9 @@ function nearestSample(samples: readonly FlightPathSample[], obstacle: FlightObs
     ? 0
     : Math.max(0, Math.min(1, ((obstacle.x - first.point.x) * dx + (obstacle.y - first.point.y) * dy) / lengthSquared));
   const center = Math.round(projected * lastIndex);
-  const start = Math.max(0, center - 2);
-  const end = Math.min(lastIndex, center + 2);
+  // A chord projection is not a nearest-point proof for a curved trajectory.
+  const start = curved ? 0 : Math.max(0, center - 2);
+  const end = curved ? lastIndex : Math.min(lastIndex, center + 2);
   let closest = first;
   let closestDistance = Infinity;
   for (let index = start; index <= end; index += 1) {
@@ -113,6 +152,88 @@ function nearestSample(samples: readonly FlightPathSample[], obstacle: FlightObs
     }
   }
   return { sample: closest, distance: closestDistance };
+}
+
+function boundedNumber(value: unknown, minimum: number, maximum: number): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum;
+}
+
+function geometryRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+}
+
+function geometryPoint(value: unknown): value is Point {
+  if (!geometryRecord(value)) return false;
+  const point = value;
+  return Object.keys(point).every((key) => key === "x" || key === "y")
+    && boundedNumber(point.x, -1_000_000, 1_000_000) && boundedNumber(point.y, -1_000_000, 1_000_000);
+}
+
+export function isValidFlightCurveV1(value: unknown): value is FlightCurveV1 {
+  if (!geometryRecord(value)) return false;
+  const curve = value;
+  return Object.keys(curve).every((key) => key === "kind" || key === "lateralOffsetTiles")
+    && curve.kind === "lateral_quadratic_v1"
+    && boundedNumber(curve.lateralOffsetTiles, -MAX_FLIGHT_CURVE_TILES, MAX_FLIGHT_CURVE_TILES);
+}
+
+export function isValidAuthoritativeFlightGeometryV1(value: unknown): value is AuthoritativeFlightGeometryV1 {
+  if (!geometryRecord(value)) return false;
+  const geometry = value;
+  if (!Object.keys(geometry).every((key) => ["version", "from", "to", "startHeightYards", "endHeightYards", "apexHeightYards", "curve"].includes(key))
+    || geometry.version !== 1 || !geometryPoint(geometry.from) || !geometryPoint(geometry.to)
+    || !boundedNumber(geometry.startHeightYards, -1_000_000, 1_000_000)
+    || !boundedNumber(geometry.endHeightYards, -1_000_000, 1_000_000)
+    || !boundedNumber(geometry.apexHeightYards, 0, 10_000)
+    || (geometry.curve !== undefined && !isValidFlightCurveV1(geometry.curve))) return false;
+  const travelBound = Math.hypot(geometry.to.x - geometry.from.x, geometry.to.y - geometry.from.y)
+    + 4 * Math.abs((geometry.curve as FlightCurveV1 | undefined)?.lateralOffsetTiles ?? 0);
+  const lateralBound = Math.abs((geometry.curve as FlightCurveV1 | undefined)?.lateralOffsetTiles ?? 0);
+  return travelBound <= MAX_RETAINED_FLIGHT_DIVISIONS * FLIGHT_SAMPLE_STEP_TILES
+    && Math.max(Math.abs(geometry.from.x), Math.abs(geometry.to.x), Math.abs(geometry.from.y), Math.abs(geometry.to.y)) + lateralBound <= 1_000_000
+    && Math.max(geometry.startHeightYards, geometry.endHeightYards) + geometry.apexHeightYards <= 1_000_000;
+}
+
+export function createAuthoritativeFlightGeometry(args: ObstacleCollisionInput): AuthoritativeFlightGeometryV1 {
+  if (args.flight.curve !== undefined && !isValidFlightCurveV1(args.flight.curve)) {
+    throw new RangeError("Invalid authoritative flight curve");
+  }
+  if (args.endpointHeightsYards !== undefined
+    && (!geometryRecord(args.endpointHeightsYards)
+      || !boundedNumber(args.endpointHeightsYards.from, -1_000_000, 1_000_000)
+      || !boundedNumber(args.endpointHeightsYards.to, -1_000_000, 1_000_000))) {
+    throw new RangeError("Invalid authoritative flight endpoint heights");
+  }
+  return {
+    version: 1,
+    from: { ...args.from },
+    to: { ...args.to },
+    startHeightYards: args.endpointHeightsYards?.from ?? terrainAt(args, args.from).elevationYards,
+    endHeightYards: args.endpointHeightsYards?.to ?? terrainAt(args, args.to).elevationYards,
+    apexHeightYards: Math.max(0, args.flight.apexHeightYards),
+    ...(args.flight.curve ? { curve: { ...args.flight.curve } } : {}),
+  };
+}
+
+/** The sole airborne geometry function, shared by collision and retained playback. */
+export function sampleAuthoritativeFlightGeometry(geometry: AuthoritativeFlightGeometryV1, progress: number): Omit<FlightPathSample, "terrainHeightYards"> {
+  const t = Math.max(0, Math.min(1, typeof progress !== "number" || Number.isNaN(progress) ? 0 : progress));
+  const dx = geometry.to.x - geometry.from.x;
+  const dy = geometry.to.y - geometry.from.y;
+  const distance = Math.hypot(dx, dy);
+  const offset = (geometry.curve?.lateralOffsetTiles ?? 0) * 4 * t * (1 - t);
+  const x = geometry.from.x + dx * t;
+  const y = geometry.from.y + dy * t;
+  return {
+    point: {
+      x: rounded(x + (distance > 0 ? -dy / distance * offset : 0)),
+      y: rounded(y + (distance > 0 ? dx / distance * offset : 0)),
+    },
+    t: rounded(t),
+    pathHeightYards: rounded(geometry.startHeightYards + (geometry.endHeightYards - geometry.startHeightYards) * t
+      + geometry.apexHeightYards * 4 * t * (1 - t)),
+  };
 }
 
 function terrainAt(args: ObstacleCollisionInput, point: Point): { elevationYards: number; terrain: Terrain } {
@@ -133,23 +254,20 @@ function terrainAt(args: ObstacleCollisionInput, point: Point): { elevationYards
  */
 export function sampleAuthoritativeFlightPath(args: ObstacleCollisionInput): readonly FlightPathSample[] {
   const distance = Math.hypot(args.to.x - args.from.x, args.to.y - args.from.y);
-  const count = Math.max(1, Math.ceil(distance / FLIGHT_SAMPLE_STEP_TILES));
-  const startTerrain = terrainAt(args, args.from).elevationYards;
-  const endTerrain = terrainAt(args, args.to).elevationYards;
-  const apex = Math.max(0, args.flight.apexHeightYards);
+  const geometry = createAuthoritativeFlightGeometry(args);
+  if ((args.flight.curve || args.retainGeometry) && !isValidAuthoritativeFlightGeometryV1(geometry)) {
+    throw new RangeError("Authoritative flight exceeds retained geometry bounds");
+  }
+  // Integral of speed is at most chord length + integral of |offset'|;
+  // this conservative bound preserves the existing maximum sample spacing.
+  const travelBound = distance + 4 * Math.abs(args.flight.curve?.lateralOffsetTiles ?? 0);
+  const count = Math.max(1, Math.ceil(travelBound / FLIGHT_SAMPLE_STEP_TILES));
   const samples: FlightPathSample[] = [];
   for (let index = 0; index <= count; index += 1) {
-    const t = index / count;
-    const point = {
-      x: rounded(args.from.x + (args.to.x - args.from.x) * t),
-      y: rounded(args.from.y + (args.to.y - args.from.y) * t),
-    };
-    const terrain = terrainAt(args, point).elevationYards;
-    const baseHeight = startTerrain + (endTerrain - startTerrain) * t;
+    const sample = sampleAuthoritativeFlightGeometry(geometry, index / count);
+    const terrain = args.terrainHeightAtYards?.(sample.point) ?? terrainAt(args, sample.point).elevationYards;
     samples.push({
-      point,
-      t: rounded(t),
-      pathHeightYards: rounded(baseHeight + apex * 4 * t * (1 - t)),
+      ...sample,
       terrainHeightYards: rounded(terrain),
     });
   }
@@ -158,30 +276,55 @@ export function sampleAuthoritativeFlightPath(args: ObstacleCollisionInput): rea
 
 interface CandidateCollision {
   t: number;
+  sampleIndex: number;
   priority: number;
   collision: ShotCollision;
+  obstacle?: FlightObstacle;
 }
 
 function obstacleEvidence(args: {
   obstacle: FlightObstacle;
   samples: readonly FlightPathSample[];
   input: ObstacleCollisionInput;
+  pathDistancesYards?: readonly number[];
 }): { evidence: ShotClearanceEvidence; collision: CandidateCollision | null } {
   const volumes = VOLUMES[args.obstacle.type];
-  const baseHeight = terrainAt(args.input, args.obstacle).elevationYards;
-  const nearest = nearestSample(args.samples, args.obstacle);
+  const baseHeight = args.input.terrainHeightAtYards?.(args.obstacle) ?? terrainAt(args.input, args.obstacle).elevationYards;
+  const nearest = nearestSample(args.samples, args.obstacle, !!args.input.flight.curve);
   const closest = nearest.sample;
   const closestDistance = nearest.distance;
-  let hit: { sample: FlightPathSample; volume: ObstacleVolume } | null = null;
+  let hit: { sample: FlightPathSample; volume: ObstacleVolume; index: number } | null = null;
+  // A prior contact can leave the ball one sampling step inside a volume.
+  // Permit an outward departure from that overlap, but never an inward shot
+  // through the trunk. Re-entry later in the same curved flight still collides.
+  const departing = new Set<ObstacleVolume>();
+  if (args.input.retainGeometry && args.samples.length > 1) {
+    const first = args.samples[0]!;
+    const second = args.samples[1]!;
+    const radial = { x: first.point.x - args.obstacle.x, y: first.point.y - args.obstacle.y };
+    const outward = Math.hypot(second.point.x - args.obstacle.x, second.point.y - args.obstacle.y)
+      > Math.hypot(radial.x, radial.y) + 1e-9;
+    if (outward) for (const volume of volumes) {
+      if (Math.hypot(radial.x, radial.y) <= volume.radiusTiles
+        && first.pathHeightYards >= baseHeight + volume.minHeightYards
+        && first.pathHeightYards <= baseHeight + volume.maxHeightYards) departing.add(volume);
+    }
+  }
   const maxRadius = Math.max(...volumes.map((volume) => volume.radiusTiles));
-  if (segmentDistance(args.obstacle, args.input.from, args.input.to) <= maxRadius) {
-    for (const sample of args.samples) {
+  const curveBound = Math.abs(args.input.flight.curve?.lateralOffsetTiles ?? 0);
+  if (segmentDistance(args.obstacle, args.input.from, args.input.to) <= maxRadius + curveBound) {
+    for (const [index, sample] of args.samples.entries()) {
       const distance = Math.hypot(sample.point.x - args.obstacle.x, sample.point.y - args.obstacle.y);
       for (const volume of volumes) {
         const lower = baseHeight + volume.minHeightYards;
         const upper = baseHeight + volume.maxHeightYards;
-        if (distance <= volume.radiusTiles && sample.pathHeightYards >= lower && sample.pathHeightYards <= upper) {
-          hit ??= { sample, volume };
+        const inside = distance <= volume.radiusTiles && sample.pathHeightYards >= lower && sample.pathHeightYards <= upper;
+        if (departing.has(volume)) {
+          if (!inside) departing.delete(volume);
+          continue;
+        }
+        if (inside) {
+          hit ??= { sample, volume, index };
         }
       }
     }
@@ -215,12 +358,15 @@ function obstacleEvidence(args: {
     evidence,
     collision: hit ? {
       t: hit.sample.t,
+      sampleIndex: hit.index,
       priority: 0,
+      obstacle: { ...args.obstacle },
       collision: {
         kind: "obstacle",
         point: { ...hit.sample.point },
         obstacleType: args.obstacle.type,
-        distanceFromStartYards: rounded(hit.sample.t * Math.hypot(args.input.to.x - args.input.from.x, args.input.to.y - args.input.from.y) * args.input.yardsPerTile),
+        distanceFromStartYards: args.pathDistancesYards?.[hit.index]
+          ?? rounded(hit.sample.t * Math.hypot(args.input.to.x - args.input.from.x, args.input.to.y - args.input.from.y) * args.input.yardsPerTile),
         clearance: evidence,
       },
     } : null,
@@ -234,18 +380,30 @@ function obstacleEvidence(args: {
  */
 export function resolveObstacleCollision(args: ObstacleCollisionInput): ObstacleCollisionResolution {
   const samples = sampleAuthoritativeFlightPath(args);
+  let pathDistancesYards: number[] | undefined;
+  if (args.flight.curve) {
+    let distance = 0;
+    pathDistancesYards = samples.map((sample, index) => {
+      if (index > 0) distance += Math.hypot(sample.point.x - samples[index - 1]!.point.x,
+        sample.point.y - samples[index - 1]!.point.y) * args.yardsPerTile;
+      return rounded(distance);
+    });
+  }
   const candidates: CandidateCollision[] = [];
-  for (const sample of samples.slice(1, -1)) {
+  for (let sampleIndex = 1; sampleIndex < samples.length - 1; sampleIndex += 1) {
+    const sample = samples[sampleIndex]!;
     if (sample.pathHeightYards < sample.terrainHeightYards) {
       const terrain = terrainAt(args, sample.point).terrain;
       candidates.push({
         t: sample.t,
+        sampleIndex,
         priority: 0,
         collision: {
           kind: "terrain",
           point: { ...sample.point },
           terrain,
-          distanceFromStartYards: rounded(sample.t * Math.hypot(args.to.x - args.from.x, args.to.y - args.from.y) * args.yardsPerTile),
+          distanceFromStartYards: pathDistancesYards?.[sampleIndex]
+            ?? rounded(sample.t * Math.hypot(args.to.x - args.from.x, args.to.y - args.from.y) * args.yardsPerTile),
         },
       });
       break;
@@ -254,14 +412,24 @@ export function resolveObstacleCollision(args: ObstacleCollisionInput): Obstacle
   const evidence: ShotClearanceEvidence[] = [];
   const orderedObstacles = args.obstaclesAreStable ? args.obstacles : prepareObstacleInput(args.obstacles);
   for (const [index, obstacle] of orderedObstacles.entries()) {
-    const resolved = obstacleEvidence({ obstacle, samples, input: args });
+    const resolved = obstacleEvidence({ obstacle, samples, input: args, pathDistancesYards });
     evidence.push(resolved.evidence);
     if (resolved.collision) candidates.push({ ...resolved.collision, priority: index + 1 });
   }
   candidates.sort((a, b) => a.t - b.t || a.priority - b.priority);
+  const first = candidates[0];
   return {
     samples,
-    collision: candidates[0]?.collision ?? { kind: "none" },
+    collision: first?.collision ?? { kind: "none" },
     clearance: evidence,
+    ...(args.retainGeometry ? {
+      retained: {
+        geometry: createAuthoritativeFlightGeometry(args),
+        sampleDivisions: samples.length - 1,
+        endSampleIndex: first?.sampleIndex ?? samples.length - 1,
+        collision: first?.collision ?? { kind: "none" },
+        ...(first?.obstacle ? { obstacle: { ...first.obstacle } } : {}),
+      },
+    } : {}),
   };
 }

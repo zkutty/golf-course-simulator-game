@@ -4,6 +4,8 @@ import type { ShotSlopeContext } from "../models/shotSlope";
 import type { GreenRolloutV1 } from "../greens/greenRollout";
 import type { GreenPuttingV1 } from "../greens/greenPutting";
 
+import type { ShotStyleId } from "../rules/shotStyles";
+
 export const M47_CAPABILITY_VERSION = 1 as const;
 export const M47_MAX_PLANS = 36 as const;
 export const M47_MAX_OUTCOMES = 240 as const;
@@ -88,6 +90,7 @@ export interface LiveShotOutcome {
   intent: StrategicIntentKind;
   club: string;
   technique: ShotIntent["technique"];
+  shotStyle?: ShotStyleId;
   flightProfile?: ShotFlightProfile;
   from: Point;
   aim: Point;

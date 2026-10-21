@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { createRetainedShotMotion, sampleRetainedShotMotion } from "../rules/shotMotion";
+import { liveRenderData } from "./simulation";
 import { describe, it, expect } from "vitest";
 import type { Course, World, Terrain } from "../models/types";
 import { DEFAULT_WORLD } from "../models/defaults";
@@ -728,5 +731,46 @@ describe("M29 grouped pace operations", () => {
     stepLive(live, course, 1);
     expect(live.groups.find((group) => group.id === "b")?.blocked).toBe(true);
     expect(live.groups.find((group) => group.id === "b")?.waitMinutes).toBeGreaterThan(0);
+  });
+});
+
+
+describe("live retained motion adoption", () => {
+  it("samples retained ground geometry and leaves physical results unchanged across time steps", () => {
+    const at = (x: number, y: number) => ({ point: { x, y }, heightYards: 7.5 });
+    const motion = createRetainedShotMotion({ identity: { shotId: "retained-1", holeId: "one", shotNumber: 1, seed: 11, club: "Putter", style: "putt", modelVersion: "club_styles_v1" },
+      yardsPerTile: 10, from: at(1, 5), landing: at(1, 5), physicalRest: at(12, 6), flight: null,
+      rollPath: [at(1, 5), at(8, 9), at(12, 6)], reliefPosition: { x: 2, y: 2 }, holed: false })!;
+    const originalHash = createHash("sha256").update(JSON.stringify(motion)).digest("hex");
+    for (const count of [1, 2, 4]) {
+      const course = makeTestCourse();
+      const g = freshGolfer(course);
+      g.segments = [{ kind: "flight", from: motion.from.point, to: motion.physicalRest.point, dur: 10, holeIndex: 0, holeId: "one", shot: "putt", shotId: motion.identity.shotId, motion, motionContactTerrain: "green" },
+        { kind: "walk", from: motion.physicalRest.point, to: { x: 14, y: 6 }, dur: 10, holeIndex: 0 }];
+      for (let step = 0; step < count; step++) advanceGolfer(g, 5 / count, .8);
+      expect(g.ball).toEqual(sampleRetainedShotMotion(motion, .5)!.point);
+      expect(g.ball).not.toEqual(motion.reliefPosition);
+      const state = createLiveState(course, DEFAULT_WORLD, 1);
+      state.golfers = [g];
+      const render = liveRenderData(state)[0];
+      expect(render.ballMotion).toMatchObject({ active: true, identity: motion.identity, pose: { time: .5, heightYards: 7.5 } });
+      advanceGolfer(g, 5.1, .8);
+      expect(g.ball).toBeNull();
+      expect(g.lastMotionSegmentIndex).toBe(0);
+      expect(liveRenderData(state)[0].ballMotion).toMatchObject({ active: false, pose: { time: 1, point: motion.physicalRest.point } });
+      expect(g.strokes).toBe(0);
+      expect(createHash("sha256").update(JSON.stringify(motion)).digest("hex")).toBe(originalHash);
+    }
+    const course = makeTestCourse();
+    const state = createLiveState(course, DEFAULT_WORLD, 1);
+    const base = freshGolfer(course);
+    state.golfers = Array.from({ length: 100 }, (_, index) => ({ ...base, id: index + 1, segIndex: 0, segElapsed: 5,
+      ball: sampleRetainedShotMotion(motion, .5)!.point, segments: [{ kind: "flight" as const, from: motion.from.point, to: motion.physicalRest.point,
+        dur: 10, holeIndex: 0, holeId: "one", motion: { ...motion, identity: { ...motion.identity, shotId: `retained-${index}` } }, motionContactTerrain: "green" }] }));
+    const out = liveRenderData(state);
+    const started = performance.now();
+    for (let frame = 0; frame < 100; frame++) expect(liveRenderData(state, out)).toHaveLength(100);
+    console.info(`retained liveRenderData: 100 golfers, 100 frames, ${((performance.now() - started) / 100).toFixed(3)} ms/frame`);
+    expect(out.every((golfer) => golfer.ballMotion?.pose.heightYards === 7.5)).toBe(true);
   });
 });

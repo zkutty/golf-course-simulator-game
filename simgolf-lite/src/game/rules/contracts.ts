@@ -1,3 +1,5 @@
+import { isValidRetainedShotMotionV1, type RetainedShotMotionV1 } from "./shotMotion";
+import { isClubImpactV1, type ClubImpactV1 } from "./shotStyles";
 import type { ObstacleType, Point, Terrain } from "../models/types";
 import type { AppliedShotWindV1 } from "./shotEnvironment";
 import { BIVARIATE_DISPERSION_MODEL_VERSION, dispersionClub, type ShotClubId } from "./dispersionRegistry";
@@ -131,6 +133,8 @@ export interface ShotOutcome {
   appliedWind?: AppliedShotWindV1;
   /** Additive ZK-772 bivariate audit evidence; absent on historical shots. */
   appliedDispersion?: AppliedDispersionV1;
+  impact?: ClubImpactV1;
+  motion?: RetainedShotMotionV1;
 }
 
 export type SharedShotOutcome = ShotOutcome;
@@ -374,6 +378,15 @@ export function isValidSharedShotOutcome(value: unknown): value is SharedShotOut
     || !validPoint(value.finalPosition)
   ) {
     return false;
+  }
+  if (value.impact !== undefined && !isClubImpactV1(value.impact)) return false;
+  if (value.motion !== undefined) {
+    if (!isValidRetainedShotMotionV1(value.motion)) return false;
+    const rest = value.motion.physicalRest.point;
+    if (rest.x !== value.physicalRest.x || rest.y !== value.physicalRest.y
+      || value.motion.landing.point.x !== value.flight.carryEnd.x || value.motion.landing.point.y !== value.flight.carryEnd.y
+      || value.motion.reliefPosition !== null && (value.motion.reliefPosition.x !== value.finalPosition.x
+        || value.motion.reliefPosition.y !== value.finalPosition.y)) return false;
   }
   const appliedWind = value.appliedWind;
   if (appliedWind === null) return false;

@@ -1,3 +1,8 @@
+import { calculateShotStyleEffects, defaultShotStyle, shotStyleForTechnique, SHOT_STYLES } from "../rules/shotStyles";
+import { dispersionClub, dispersionClubIdForLabel } from "../rules/dispersionRegistry";
+import type { ShotLie } from "../rules/contracts";
+import { createShotModelSnapshotV1, usesClubShotModel } from "../rules/shotModelSnapshot";
+import { freezeProfileCalibration } from "../rules/profileCalibration";
 import type { Course, Point, TeeSet, PinRotation, Terrain } from "../models/types";
 import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
 import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
@@ -63,6 +68,8 @@ export function liveCourseSnapshot(args: {
   weather?: PlayerRoundCourseSnapshot["weather"];
   drainageLevel?: number;
   rulesSnapshot?: ControlledRoundSnapshotV2;
+  modernShotModel?: boolean;
+  capabilities?: GolferCapabilities;
 }): PlayerRoundCourseSnapshot {
   const holes = args.course.holes.map((hole, index) => {
     const setup = resolveCourseSetup(hole, args.teeSet, args.pinRotation);
@@ -93,6 +100,8 @@ export function liveCourseSnapshot(args: {
     greenDrainageLevel: Math.max(0, Math.min(3, Math.round(args.drainageLevel ?? 0))),
     rulesSnapshot: args.rulesSnapshot ?? deriveRulesSnapshot(args.course, holes),
     dispersionSnapshot: createBivariateDispersionRoundSnapshotV1(),
+    ...(args.modernShotModel && args.capabilities ? { shotModel: createShotModelSnapshotV1(),
+      distanceProfile: freezeProfileCalibration(capabilitiesToPlayerSkills(args.capabilities)) } : {}),
     weather: args.weather,
   };
 }
@@ -107,13 +116,36 @@ export function resolveLiveShot(args: {
   intent: ShotIntent;
   seed: number;
 }): LiveShotOutcome {
-  const selection: PlayerShotSelection = {
+  let selection: PlayerShotSelection = {
     club: args.intent.club,
     aim: args.intent.target,
     power: args.intent.power,
     technique: args.intent.technique,
     flightProfile: args.intent.flightProfile,
   };
+  let compatibilityFallback: string | null = null;
+  if (usesClubShotModel(args.snapshot.shotModel)) {
+    const clubId = dispersionClubIdForLabel(selection.club);
+    const club = clubId ? dispersionClub(clubId) : null;
+    if (!club || !["normal", "draw", "fade", "punch", "flop", "backspin"].includes(selection.technique)) {
+      throw new Error(`Invalid live shot selection: ${selection.club}/${selection.technique}.`);
+    }
+    const requestedStyle = shotStyleForTechnique(club.id, selection.technique);
+    const definition = SHOT_STYLES.find((style) => style.id === requestedStyle)!;
+    const input = { clubId: club.id, lie: args.lie as ShotLie, power: selection.power,
+      recoverySkill: args.capabilities.recovery, shortGameSkill: args.capabilities.shortGame };
+    let styled = calculateShotStyleEffects({ ...input, style: requestedStyle,
+      ...(definition.flightProfile === null ? { flightProfile: selection.flightProfile } : {}) });
+    if (!styled.ok && (styled.blocker.code === "unsupported_technique"
+      || (styled.blocker.code === "style_club_mismatch" && !club.allowedTechniques.includes(selection.technique)))) {
+      const requested = `${selection.club}/${selection.technique}/${selection.flightProfile ?? "standard"}`;
+      styled = calculateShotStyleEffects({ ...input, style: defaultShotStyle(club.id) });
+      compatibilityFallback = `style-compatibility:requested=${requested};effective=${selection.club}/normal/${styled.ok ? styled.value.effectiveSelection.flightProfile : "unavailable"}`;
+    }
+    if (!styled.ok) throw new Error(`Unavailable live shot selection ${selection.club}/${selection.technique} from ${args.lie}: ${styled.blocker.code}.`);
+    selection = { ...selection, style: styled.value.style,
+      technique: styled.value.effectiveSelection.technique, flightProfile: styled.value.effectiveSelection.flightProfile };
+  }
   const trace = resolvePlayableShot({
     snapshot: args.snapshot,
     holeId: args.holeId,
@@ -126,7 +158,8 @@ export function resolveLiveShot(args: {
     dispersionConsistency: args.capabilities.consistency,
     seed: args.seed,
   });
-  const facts = args.intent.facts.slice();
+  const facts = compatibilityFallback ? args.intent.facts.slice(0, 11) : args.intent.facts.slice();
+  if (compatibilityFallback) facts.push({ code: "context", detail: compatibilityFallback });
   for (const fact of shotSlopeEvidenceFacts(trace.shotSlope)) {
     if (facts.length < 12 && !facts.some((candidate) => candidate.detail === fact.detail)) facts.push(fact);
   }
@@ -148,6 +181,7 @@ export function resolveLiveShot(args: {
     intent: args.intent.kind,
     club: trace.club,
     technique: trace.technique,
+    ...(trace.shotStyle ? { shotStyle: trace.shotStyle } : {}),
     flightProfile: trace.flightProfile,
     from: { ...trace.from },
     aim: { ...trace.aim },

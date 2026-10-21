@@ -1,3 +1,4 @@
+import type { ClubImpactV1 } from "../rules/shotStyles";
 import type { Hole, Point, Terrain } from "../models/types";
 import {
   GREEN_SURFACE_FIXED_POINT_SCALE,
@@ -87,6 +88,8 @@ export interface ResolveGreenRolloutInput {
   landingAngleDegrees: number;
   trajectory: "low" | "standard" | "high";
   spin: GreenRolloutSpin;
+  /** Complete club/style impact budget; replaces historical strike multipliers once. */
+  impact?: ClubImpactV1;
   weather?: { kind?: string; rainInches?: number };
   drainageLevel?: number;
   seed: number;
@@ -210,6 +213,8 @@ function preparedSurfaceSampler(
     };
   };
 }
+
+export const createGreenRolloutSurfaceSampler = preparedSurfaceSampler;
 
 export function sampleGreenRolloutSurface(
   course: FrozenGreenRolloutCourse,
@@ -375,7 +380,7 @@ export function resolveGreenRollout(input: ResolveGreenRolloutInput): GreenRollo
   let rest = landing;
   let steps = 0;
   let workloadCapped = false;
-  const fineInteraction = initialTerrain === "green"
+  const fineInteraction = Boolean(input.impact) || initialTerrain === "green"
     || lineTouchesGreen(input.course, landing, direction, legacyRequestedTiles);
   // Preserve the established non-green physical line exactly when a shot
   // never interacts with a green. The same resolver still owns the result;
@@ -404,7 +409,7 @@ export function resolveGreenRollout(input: ResolveGreenRolloutInput): GreenRollo
       : input.sourceLie === "rough" ? 0.94 : input.sourceLie === "sand" || input.sourceLie === "deep_rough" ? 0.82 : 0.9;
     const trajectoryEnergy = input.trajectory === "low" ? 1.04 : input.trajectory === "high" ? 0.94 : 1;
     let speed = Math.sqrt(Math.max(0, 2 * Math.max(0.08, initialFriction) * requestedTiles))
-      * spinEnergy(input.spin) * angleEnergy * lieEnergy * trajectoryEnergy;
+      * (input.impact ? 1 : spinEnergy(input.spin) * angleEnergy * lieEnergy * trajectoryEnergy);
     let velocity = { x: direction.x * speed, y: direction.y * speed };
     let position = { ...landing };
     let terrain = initialTerrain;

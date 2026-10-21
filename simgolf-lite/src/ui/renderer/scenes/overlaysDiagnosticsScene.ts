@@ -16,6 +16,14 @@ import type {
 import type { SeasonalVisualState } from "../../../game/presentation/seasonalVisualState";
 import { buildBunkerVisualRings, classifyBunkerVisualType } from "../../../game/render/bunkerShapes";
 import { TILE_H, TILE_W, worldToIso, type IsoRotation } from "../../../game/render/iso";
+import { ELEVATION_STEP_YARDS, sampleAuthoritativeFlightGeometry } from "../../../game/rules/obstacleCollision";
+import { isValidRetainedShotMotionV1, sampleRetainedShotMotion } from "../../../game/rules/shotMotion";
+import { PLAYER_SHOT_CONTACT_FRACTION, type PlayerShotPlaybackFrame } from "../../../game/playerPro/shotPlayback";
+import type { PlayerShotPreview } from "../../../game/playerPro/playerPro";
+import type { PlayerRoundCourseSnapshot } from "../../../game/models/playerProTypes";
+import { createGreenRolloutSurfaceSampler } from "../../../game/greens/greenRollout";
+import { GOLFER_DISPLAY_W, GOLFER_FEET_Y, GOLFER_FRAME_H, GOLFER_FRAME_W, PUTT_CONTACT_FRAME, SWING_CONTACT_FRAME, facingOctant, golferFrameName, golferPose } from "../../../game/render/golferSprites";
+import { getGolferFrame, golfersAtlasReady } from "../../../render/atlas";
 import { buildLandscapeComponents } from "../../../game/render/landscapeGeometry";
 import { PerfWindow } from "../../../game/render/perfStats";
 import { seasonalTerrainTreatment } from "../../../game/render/seasonalTerrainPresentation";
@@ -64,6 +72,30 @@ export interface OverlayTickInput {
   readonly selectedDecorationKind?: DecorationKind;
   readonly decorationRotation?: DecorationRotation;
   readonly decorationSpan?: number;
+  readonly playerShotPlayback?: PlayerShotPlaybackFrame | null;
+  readonly playerShotPreview?: PlayerShotPreview | null;
+}
+
+export interface PlayerShotRenderDiagnostics {
+  shotId: string;
+  progress: number;
+  motionProgress: number;
+  phase: string;
+  point: Point;
+  heightYards: number;
+  ball: Point;
+  shadow: Point;
+  golferFrame: string | null;
+}
+
+export function playerShotGolferPose(frame: PlayerShotPlaybackFrame, club: string, direction: Point, rotation: IsoRotation) {
+  const contactFrame = club === "Putter" ? PUTT_CONTACT_FRAME : SWING_CONTACT_FRAME;
+  const atContact = !frame.addressing && frame.motionProgress < .03;
+  const segment = frame.addressing || atContact ? "pause" : "flight";
+  const progress = frame.addressing ? frame.progress / PLAYER_SHOT_CONTACT_FRACTION * contactFrame / (contactFrame + 1) * .999999
+    : atContact ? 1 : frame.motionProgress;
+  return golferPose({ segKind: segment, segT: progress, shot: club === "Putter" ? "putt" : "swing",
+    facingOct: facingOctant(direction.x, direction.y, rotation), walkPhase: 0, timeSec: 0, reaction: null });
 }
 
 export interface PerfHudFrameDiagnostics {
@@ -86,6 +118,7 @@ export interface OverlaysDiagnosticsSceneSystem extends RenderSceneSystem {
   markPerf(name: string): void;
   finishFrame(nowMs: number, dtMs: number, diagnostics: () => PerfHudFrameDiagnostics): void;
   terrainPreview(): TerrainPreviewRenderDiagnostics | null;
+  playerShotPlayback(): PlayerShotRenderDiagnostics | null;
 }
 
 export interface OverlaysDiagnosticsLayers {
@@ -101,6 +134,9 @@ export interface OverlaysDiagnosticsDependencies {
   readonly readPerfEnabled?: () => boolean;
   readonly now?: () => number;
   readonly publishPerf?: (diagnostics: object) => void;
+  readonly createSprite?: () => PIXI.Sprite;
+  readonly atlasReady?: () => boolean;
+  readonly golferFrame?: typeof getGolferFrame;
 }
 
 /** Owns the player-shot, editor-hover, wizard-line, preview, and perf diagnostic displays. */
@@ -118,6 +154,20 @@ export function createOverlaysDiagnosticsSceneSystem(
     ?? ((diagnostics) => { (window as unknown as { __ccPerf?: object }).__ccPerf = diagnostics; });
 
   let playerShotOverlay: PIXI.Container | null = null;
+  let authority: RenderSnapshot | null = null;
+  let frozenCourse: PlayerRoundCourseSnapshot | null = null;
+  let frozenHeightAt: ((point: Point) => number) | null = null;
+  let movingOverlay: PIXI.Container | null = null;
+  let movingBall: PIXI.Graphics | null = null;
+  let movingShadow: PIXI.Graphics | null = null;
+  let contactEffect: PIXI.Graphics | null = null;
+  let expectedOverlay: PIXI.Graphics | null = null;
+  let golferBase: PIXI.Sprite | null = null;
+  let golferTint: PIXI.Sprite | null = null;
+  let lastGolferFrame = "";
+  let lastExpected: PlayerShotPreview | null | undefined;
+  let lastExpectedRotation: IsoRotation | null = null;
+  let playerDiagnostics: PlayerShotRenderDiagnostics | null = null;
   let hoverHighlight: PIXI.Graphics | null = null;
   let hoverLine: PIXI.Graphics | null = null;
   let hover: Point | null = null;
@@ -140,20 +190,45 @@ export function createOverlaysDiagnosticsSceneSystem(
   };
 
   const renderPlayerShot = (snapshot: RenderSnapshot) => {
+    authority = snapshot;
     clearPlayerShot();
     const round = snapshot.playerRound;
     if (!round) return;
+    if (round.course && frozenCourse !== round.course) {
+      frozenCourse = round.course;
+      const course = { width: round.course.width, height: round.course.height, tiles: round.course.tiles as Terrain[],
+        elevations: round.course.elevations, greenSurface: round.course.greenSnapshot?.surface,
+        holes: round.course.holes.map((hole) => ({ id: hole.id, green: hole.pin })) };
+      const sample = createGreenRolloutSurfaceSampler(course, course.greenSurface);
+      frozenHeightAt = (point) => sample(point).height;
+    }
 
     const next = createContainer();
     next.label = "player-pro-shot-overlay";
     const graphics = createGraphics();
-    const ballElevation = snapshot.surfaceHeightAt(round.ball.x + 0.5, round.ball.y + 0.5);
-    const ball = worldToIso(round.ball.x + 0.5, round.ball.y + 0.5, ballElevation, snapshot.rotation);
-    graphics.circle(ball.x, ball.y - 7, 7);
-    graphics.fill({ color: 0xffd25b, alpha: 0.95 });
+    const trace = round.pendingShot ?? round.shots[round.shots.length - 1];
+    const retained = isValidRetainedShotMotionV1(trace?.sharedOutcome?.motion) ? trace.sharedOutcome.motion : null;
+    const moving = round.phase === "flight" && retained;
+    const settled = retained && round.phase !== "flight" ? retained.physicalRest : null;
+    const ballPoint = settled?.point ?? round.ball;
+    const ballElevation = settled ? settled.heightYards / ELEVATION_STEP_YARDS : snapshot.surfaceHeightAt(ballPoint.x + 0.5, ballPoint.y + 0.5);
+    const ball = worldToIso(ballPoint.x + 0.5, ballPoint.y + 0.5, ballElevation, snapshot.rotation);
+    if (!moving) {
+    graphics.circle(ball.x, ball.y - 2, retained ? 3 : 7);
+    graphics.fill({ color: retained ? 0xffffff : 0xffd25b, alpha: 0.95 });
     graphics.stroke({ width: 2.5, color: 0x253c2b, alpha: 1 });
-    graphics.circle(ball.x, ball.y - 7, 11);
+    graphics.circle(ball.x, ball.y - 2, retained ? 7 : 11);
     graphics.stroke({ width: 2, color: 0xfff0a0, alpha: 0.75 });
+    }
+
+    if (retained?.reliefPosition && round.phase !== "flight") {
+      const p = retained.reliefPosition;
+      const relief = worldToIso(p.x + .5, p.y + .5, frozenHeightAt?.(p) ?? snapshot.surfaceHeightAt(p.x + .5, p.y + .5), snapshot.rotation);
+      graphics.circle(relief.x, relief.y - 2, 9);
+      graphics.stroke({ color: 0xffcf67, width: 2, alpha: .9 });
+      graphics.moveTo(relief.x - 4, relief.y - 2); graphics.lineTo(relief.x + 4, relief.y - 2);
+      graphics.stroke({ color: 0xffcf67, width: 1.5, alpha: .9 });
+    }
 
     if (snapshot.playerShotAim && round.phase === "awaiting_shot") {
       const aimElevation = snapshot.surfaceHeightAt(snapshot.playerShotAim.x + 0.5, snapshot.playerShotAim.y + 0.5);
@@ -168,12 +243,23 @@ export function createOverlaysDiagnosticsSceneSystem(
       graphics.fill({ color: 0xffffff, alpha: 0.95 });
     }
 
-    const trace = round.pendingShot ?? round.shots[round.shots.length - 1];
-    if (trace) {
+    if (trace && !moving) {
       const from = worldToIso(trace.from.x + 0.5, trace.from.y + 0.5, snapshot.surfaceHeightAt(trace.from.x + 0.5, trace.from.y + 0.5), snapshot.rotation);
-      const rest = worldToIso(trace.rest.x + 0.5, trace.rest.y + 0.5, snapshot.surfaceHeightAt(trace.rest.x + 0.5, trace.rest.y + 0.5), snapshot.rotation);
+      const restPoint = retained?.physicalRest.point ?? trace.rest;
+      const rest = worldToIso(restPoint.x + 0.5, restPoint.y + 0.5, retained ? retained.physicalRest.heightYards / ELEVATION_STEP_YARDS
+        : snapshot.surfaceHeightAt(restPoint.x + 0.5, restPoint.y + 0.5), snapshot.rotation);
       graphics.moveTo(from.x, from.y - 5);
-      if (trace.greenRollout?.path.length) {
+      if (retained) {
+        const append = (point: Point, heightYards: number) => {
+          const projected = worldToIso(point.x + .5, point.y + .5, heightYards / ELEVATION_STEP_YARDS, snapshot.rotation);
+          graphics.lineTo(projected.x, projected.y - 5);
+        };
+        if (retained.flight) for (let index = 1; index <= 24; index += 1) {
+          const sample = sampleAuthoritativeFlightGeometry(retained.flight.geometry, index / 24 * retained.flight.endSampleIndex / retained.flight.sampleDivisions);
+          append(sample.point, sample.pathHeightYards);
+        }
+        for (const vertex of [...retained.postCollisionPath, ...retained.groundPath]) append(vertex.point, vertex.heightYards);
+      } else if (trace.greenRollout?.path.length) {
         const landing = worldToIso(
           trace.greenRollout.landing.x + 0.5,
           trace.greenRollout.landing.y + 0.5,
@@ -205,6 +291,107 @@ export function createOverlaysDiagnosticsSceneSystem(
     playerShotOverlay = next;
   };
 
+  const ensurePlayerMotionDisplays = () => {
+    if (movingOverlay) return;
+    movingOverlay = createContainer(); movingOverlay.label = "player-pro-retained-motion";
+    movingShadow = createGraphics(); movingShadow.label = "player-pro-ball-shadow";
+    movingShadow.ellipse(0, 0, 3.4, 1.5); movingShadow.fill({ color: 0x101b13, alpha: .45 });
+    contactEffect = createGraphics(); contactEffect.label = "player-pro-contact-effect";
+    movingBall = createGraphics(); movingBall.label = "player-pro-moving-ball";
+    movingBall.circle(0, -2, 2.8); movingBall.fill({ color: 0xffffff, alpha: 1 });
+    movingBall.stroke({ color: 0x283d2e, width: 1.1, alpha: 1 });
+    movingOverlay.addChild(movingShadow, contactEffect);
+    if ((dependencies.atlasReady ?? golfersAtlasReady)()) {
+      const makeSprite = dependencies.createSprite ?? (() => new PIXI.Sprite());
+      golferBase = makeSprite(); golferTint = makeSprite(); golferTint.tint = 0x467449;
+      for (const sprite of [golferBase, golferTint]) {
+        sprite.anchor.set(.5, GOLFER_FEET_Y / GOLFER_FRAME_H);
+        sprite.scale.set(GOLFER_DISPLAY_W / GOLFER_FRAME_W);
+        movingOverlay.addChild(sprite);
+      }
+    }
+    movingOverlay.addChild(movingBall);
+    layers.fx.addChild(movingOverlay);
+    expectedOverlay = createGraphics(); expectedOverlay.label = "player-pro-expected-envelope";
+    layers.fx.addChild(expectedOverlay);
+  };
+
+  const tickPlayerMotion = (input: OverlayTickInput) => {
+    const round = authority?.playerRound;
+    const pending = round?.phase === "flight" ? round.pendingShot : null;
+    const motion = pending?.sharedOutcome?.motion;
+    const frame = input.playerShotPlayback;
+    const active = pending && frame?.shotId === pending.id && isValidRetainedShotMotionV1(motion);
+    const expected = round?.phase === "awaiting_shot" ? input.playerShotPreview : null;
+    const physicalHeightAt = (point: Point) => frozenHeightAt?.(point) ?? input.surfaceHeightAt(point.x + .5, point.y + .5);
+    if (!active && !expected?.expectedFlight && !movingOverlay) return;
+    ensurePlayerMotionDisplays();
+    if (expectedOverlay && (expected !== lastExpected || input.rotation !== lastExpectedRotation)) {
+      lastExpected = expected; lastExpectedRotation = input.rotation;
+      expectedOverlay.clear();
+      const path = expected?.expectedFlight;
+      if (path) {
+        const envelope = path.envelope.map((point) => worldToIso(point.x + .5, point.y + .5, physicalHeightAt(point), input.rotation));
+        if (envelope.length >= 3) {
+          expectedOverlay.poly(envelope.flatMap((point) => [point.x, point.y]));
+          expectedOverlay.fill({ color: 0xffdc74, alpha: .1 }); expectedOverlay.stroke({ color: 0xffdc74, width: 1.3, alpha: .7 });
+        }
+        const startHeight = physicalHeightAt(path.from);
+        const endHeight = physicalHeightAt(path.landing);
+        const geometry = { version: 1 as const, from: path.from, to: path.landing,
+          startHeightYards: startHeight * ELEVATION_STEP_YARDS, endHeightYards: endHeight * ELEVATION_STEP_YARDS,
+          apexHeightYards: path.apexHeightYards, curve: { kind: "lateral_quadratic_v1" as const, lateralOffsetTiles: path.curveOffsetTiles } };
+        for (let index = 0; index <= 32; index += 1) {
+          const source = sampleAuthoritativeFlightGeometry(geometry, index / 32);
+          const iso = worldToIso(source.point.x + .5, source.point.y + .5, source.pathHeightYards / ELEVATION_STEP_YARDS, input.rotation);
+          if (index === 0) expectedOverlay.moveTo(iso.x, iso.y - 2); else expectedOverlay.lineTo(iso.x, iso.y - 2);
+        }
+        expectedOverlay.stroke({ color: 0xffedaa, width: 1.6, alpha: .78 });
+      }
+    }
+    if (!movingOverlay || !movingBall || !movingShadow || !contactEffect) return;
+    movingOverlay.visible = Boolean(active);
+    if (!active || !motion || !frame || !pending) { playerDiagnostics = null; return; }
+    const pose = sampleRetainedShotMotion(motion, frame.motionProgress);
+    if (!pose) return;
+    const groundHeight = physicalHeightAt(pose.point);
+    const shadow = worldToIso(pose.point.x + .5, pose.point.y + .5, groundHeight, input.rotation);
+    const ball = worldToIso(pose.point.x + .5, pose.point.y + .5, pose.heightYards / ELEVATION_STEP_YARDS, input.rotation);
+    movingBall.position.set(ball.x, ball.y); movingShadow.position.set(shadow.x, shadow.y);
+    let golferFrame: string | null = null;
+    if (golferBase && golferTint) {
+      const origin = worldToIso(motion.from.point.x + .5, motion.from.point.y + .5, motion.from.heightYards / ELEVATION_STEP_YARDS, input.rotation);
+      const spritePose = playerShotGolferPose(frame, pending.club, { x: pending.aim.x - pending.from.x, y: pending.aim.y - pending.from.y }, input.rotation);
+      const frameName = golferFrameName(0, spritePose, false);
+      golferFrame = frameName;
+      if (golferFrame !== lastGolferFrame) {
+        lastGolferFrame = golferFrame;
+        const getFrame = dependencies.golferFrame ?? getGolferFrame;
+        const texture = getFrame(frameName), tint = getFrame(golferFrameName(0, spritePose, true));
+        if (texture) golferBase.texture = texture;
+        if (tint) golferTint.texture = tint;
+      }
+      for (const sprite of [golferBase, golferTint]) {
+        sprite.position.set(origin.x - 5, origin.y);
+        sprite.scale.x = Math.abs(sprite.scale.x) * (spritePose.mirror ? -1 : 1);
+      }
+    }
+    contactEffect.clear();
+    let contact: typeof motion.events[number] | undefined;
+    for (let index = motion.events.length - 1; index >= 0; index -= 1) {
+      const event = motion.events[index]!;
+      if ((event.kind === "first_contact" || event.kind === "collision") && event.time <= frame.motionProgress) { contact = event; break; }
+    }
+    if (contact && frame.motionProgress - contact.time < .08 && !input.reducedMotion) {
+      const at = worldToIso(contact.point.x + .5, contact.point.y + .5, contact.heightYards / ELEVATION_STEP_YARDS, input.rotation);
+      const fade = 1 - (frame.motionProgress - contact.time) / .08;
+      contactEffect.ellipse(at.x, at.y, 5 + (1 - fade) * 8, 2 + (1 - fade) * 3);
+      contactEffect.stroke({ color: 0xfff2bf, width: 1.5, alpha: fade * .7 });
+    }
+    playerDiagnostics = { shotId: pending.id, progress: frame.progress, motionProgress: frame.motionProgress, phase: frame.addressing ? "address" : pose.phase,
+      point: { ...pose.point }, heightYards: pose.heightYards, ball, shadow, golferFrame };
+  };
+
   const ensureDynamicDisplays = () => {
     if (!hoverHighlight) {
       hoverHighlight = createGraphics();
@@ -219,6 +406,7 @@ export function createOverlaysDiagnosticsSceneSystem(
   };
 
   const tick = (input: OverlayTickInput) => {
+    tickPlayerMotion(input);
     ensureDynamicDisplays();
     if (!dirty || !hoverHighlight || !hoverLine) return;
     dirty = false;
@@ -525,6 +713,12 @@ export function createOverlaysDiagnosticsSceneSystem(
 
   const destroy = () => {
     clearPlayerShot();
+    movingOverlay?.parent?.removeChild(movingOverlay); movingOverlay?.destroy({ children: true });
+    expectedOverlay?.parent?.removeChild(expectedOverlay); expectedOverlay?.destroy();
+    movingOverlay = null; movingBall = null; movingShadow = null; contactEffect = null;
+    golferBase = null; golferTint = null; expectedOverlay = null; authority = null;
+    frozenCourse = null; frozenHeightAt = null;
+    lastGolferFrame = ""; lastExpected = undefined; lastExpectedRotation = null; playerDiagnostics = null;
     hoverHighlight?.parent?.removeChild(hoverHighlight);
     hoverHighlight?.destroy();
     hoverHighlight = null;
@@ -564,6 +758,7 @@ export function createOverlaysDiagnosticsSceneSystem(
     beginFrame,
     markPerf,
     finishFrame,
+    playerShotPlayback: () => playerDiagnostics ? { ...playerDiagnostics, point: { ...playerDiagnostics.point }, ball: { ...playerDiagnostics.ball }, shadow: { ...playerDiagnostics.shadow } } : null,
     terrainPreview: () => previewDiagnostics
       ? {
         ...previewDiagnostics,

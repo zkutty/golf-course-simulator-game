@@ -15,6 +15,7 @@ import { LIVE } from "./liveConfig";
 import type { Arrival, Golfer, GolferRenderData, LiveState, RoundReactions } from "./types";
 import { rollDiscretionaryWallet } from "./concessions";
 import type { CompletedRound } from "../retention/types";
+import { sampleRetainedShotMotion } from "../rules/shotMotion";
 import type { LiveShotOutcome } from "./m47Types";
 import { createLiveTournament, planTournamentDay, tournamentForDate, updateTournamentStanding } from "../tournaments/tournaments";
 import { getTeeBox, preferredTeeForArchetype } from "../models/courseSetup";
@@ -931,6 +932,11 @@ export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): 
         }
       }
     }
+    const motionSegment = seg?.kind === "flight" && seg.motion ? seg
+      : g.lastMotionSegmentIndex != null ? g.segments[g.lastMotionSegmentIndex] : undefined;
+    const activeMotion = motionSegment === seg && seg?.kind === "flight";
+    const motion = motionSegment?.motion;
+    const motionPose = motion ? sampleRetainedShotMotion(motion, activeMotion ? segT : 1) : null;
     const mobility = mobilityRiders.get(g.id);
     const next: GolferRenderData = {
       id: g.id,
@@ -939,6 +945,10 @@ export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): 
       y: g.pos.y,
       ballX: g.ball ? g.ball.x : null,
       ballY: g.ball ? g.ball.y : null,
+      ballMotion: motion && motionPose ? { identity: motion.identity, pose: motionPose, events: motion.events,
+        contactTerrain: motionSegment!.motionContactTerrain ?? "unknown",
+        collisionTerrain: motion.flight?.collision.kind === "terrain" ? motion.flight.collision.terrain : null,
+        active: activeMotion } : null,
       ballToX: g.ball && seg?.kind === "flight" ? seg.to.x : null,
       ballToY: g.ball && seg?.kind === "flight" ? seg.to.y : null,
       ballLandingX: g.ball && seg?.kind === "flight" ? seg.landing?.x ?? null : null,
@@ -1080,6 +1090,7 @@ export function reconcileGolfers(state: LiveState, course: Course): void {
       g.currentIntent = replanned.holePlans?.[0]?.chosen;
     }
     g.segments = replanned.segments;
+    g.lastMotionSegmentIndex = undefined;
     g.segIndex = 0;
     g.segElapsed = 0;
     g.ball = null;

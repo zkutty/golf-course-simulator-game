@@ -1,3 +1,6 @@
+import { createRetainedShotMotion, sampleRetainedShotMotion } from "../../../game/rules/shotMotion";
+import { resolveObstacleCollision } from "../../../game/rules/obstacleCollision";
+import { tileCenterIso, type IsoRotation } from "../../../game/render/iso";
 import { describe, expect, it, vi } from "vitest";
 import type * as PIXI from "pixi.js";
 import type { GolferRenderData } from "../../../game/live/types";
@@ -279,5 +282,95 @@ describe("live golfer, ball, emote, and transient scene ownership", () => {
 
     expect(followCamera).toHaveBeenCalledWith(11, 12);
     expect(mobility).toHaveBeenCalledOnce();
+  });
+});
+
+
+function retainedGolfer(progress: number, terrain = "fairway", active = true): GolferRenderData {
+  const at = (x: number, y: number) => ({ point: { x, y }, heightYards: 5 });
+  const flight = resolveObstacleCollision({ from: { x: 1, y: 5 }, to: { x: 11, y: 5 },
+    flight: { profile: "standard", apexHeightYards: 4, curve: { kind: "lateral_quadratic_v1", lateralOffsetTiles: 2 } },
+    width: 16, height: 16, yardsPerTile: 10, elevations: Array(256).fill(2), obstacles: [], retainGeometry: true }).retained!;
+  const motion = createRetainedShotMotion({ identity: { shotId: "retained", holeId: "one", shotNumber: 1, seed: 42, club: "7 Iron", style: "straight_run", modelVersion: "club_styles_v1" },
+    yardsPerTile: 10, from: at(1, 5), landing: at(11, 5), physicalRest: at(12, 6), flight,
+    rollPath: [at(11, 5), at(12, 6)], reliefPosition: { x: 2, y: 3 }, holed: false })!;
+  const pose = sampleRetainedShotMotion(motion, progress)!;
+  return golfer(7, { x: 1, y: 5, ballX: active ? pose.point.x : null, ballY: active ? pose.point.y : null,
+    ballToX: 12, ballToY: 6, segKind: active ? "flight" : "walk", shot: "swing", segT: progress,
+    ballMotion: { identity: motion.identity, pose, events: motion.events, contactTerrain: terrain, collisionTerrain: null, active } });
+}
+
+describe("retained live ball rendering", () => {
+  it.each([0, 90, 180, 270] as IsoRotation[])("projects absolute committed heights and curved points at rotation %s without generated bounces", (rotation) => {
+    const scene = fixture();
+    const host = new SceneSystemHost([scene.system]);
+    host.sync(snapshot(1, { rotation }));
+    for (const progress of [.36, .8, .92]) {
+      const value = retainedGolfer(progress);
+      tick(scene, [value]);
+      const pose = value.ballMotion!.pose;
+      const ball = scene.objects.children[1];
+      expect(ball.position).toMatchObject(tileCenterIso(pose.point.x, pose.point.y, pose.heightYards / 2.5, rotation));
+      expect(scene.terrainDecals.children[0].position).toMatchObject(tileCenterIso(pose.point.x, pose.point.y, 2, rotation));
+    }
+    const value = retainedGolfer(.36);
+    host.sync(snapshot(2, { rotation, surfaceHeightAt: () => 17 }));
+    tick(scene, [value]);
+    expect(scene.objects.children[1].position).toMatchObject(tileCenterIso(value.ballX!, value.ballY!, value.ballMotion!.pose.heightYards / 2.5, rotation));
+    host.dispose();
+  });
+
+  it("emits one contact splash across skipped frames and keeps relief a bounded static marker", () => {
+    const scene = fixture();
+    const host = new SceneSystemHost([scene.system]);
+    host.sync(snapshot());
+    const startle = vi.fn();
+    const value = retainedGolfer(.9, "water");
+    const input = { nowMs: 1000, animationsEnabled: true, golfers: [value], cullBounds: unbounded,
+      worldPointToScreen: (x: number, y: number) => ({ x, y }), followCamera: vi.fn(), startleAtmosphere: startle, tickMobilityEntities: vi.fn() };
+    scene.system.tickEntities(input);
+    expect(scene.system.diagnostics().ripples).toBe(1);
+    expect(startle).toHaveBeenCalledTimes(1);
+    expect(scene.objects.children[1].visible).toBe(false);
+    const marker = scene.terrainDecals.children.find((child) => child.label === "live-shot-relief-marker")!;
+    expect(marker.position).toMatchObject(tileCenterIso(2, 3, 2, 0));
+    const graphicsCount = scene.graphics.length;
+    for (let i = 0; i < 20; i++) scene.system.tickEntities({ ...input, golfers: [retainedGolfer(1, "water", false)] });
+    expect(startle).toHaveBeenCalledTimes(1);
+    expect(scene.graphics).toHaveLength(graphicsCount);
+    expect(scene.system.diagnostics().ripples).toBe(1);
+    expect(marker.position).toMatchObject(tileCenterIso(2, 3, 2, 0));
+    host.dispose();
+    expect(marker.destroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("100-golfer retained scene budget", () => {
+  it("keeps display pools stable across all rotations and offscreen culling", () => {
+    const scene = fixture();
+    const host = new SceneSystemHost([scene.system]);
+    const golfers = Array.from({ length: 100 }, (_, index) => {
+      const value = retainedGolfer(.36);
+      value.id = index + 1;
+      value.ballMotion!.identity = { ...value.ballMotion!.identity, shotId: `retained-${index}` };
+      return value;
+    });
+    host.sync(snapshot());
+    tick(scene, golfers);
+    const owned = [...scene.objects.children];
+    const graphics = scene.graphics.length;
+    for (const rotation of [0, 90, 180, 270] as const) {
+      host.sync(snapshot(rotation + 2, { rotation }));
+      scene.system.tickEntities({ nowMs: 1200, animationsEnabled: true, golfers,
+        cullBounds: { left: 10000, right: 11000, top: 10000, bottom: 11000 },
+        worldPointToScreen: (x, y) => ({ x, y }), followCamera: vi.fn(), startleAtmosphere: vi.fn(), tickMobilityEntities: vi.fn() });
+      expect(scene.system.diagnostics().golfers).toBe(100);
+      expect(scene.objects.children).toEqual(owned);
+      expect(scene.graphics).toHaveLength(graphics);
+    }
+    host.dispose();
+    expect(scene.objects.children).toHaveLength(0);
+    expect(scene.terrainDecals.children).toHaveLength(0);
   });
 });

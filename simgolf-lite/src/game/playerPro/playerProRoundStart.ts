@@ -1,3 +1,5 @@
+import { createShotModelSnapshotV1 } from "../rules/shotModelSnapshot";
+import { freezeProfileCalibration } from "../rules/profileCalibration";
 import type { Course, PinRotation, TeeSet, World } from "../models/types";
 import type { PlayerPlayableRound, PlayerProSkills, PlayerRoundCourseSnapshot, PlayerRoundKind } from "../models/playerProTypes";
 import { biomeCompatibilityMetadataFor, getBiomeDefinition } from "../models/biomes";
@@ -170,6 +172,8 @@ export function startPlayableRound(args: StartPlayableRoundArgs): { ok: true; ro
   const frozenCourse = {
     ...(rulesSnapshot ? { ...snapshot, rulesSnapshot } : snapshot),
     dispersionSnapshot: createBivariateDispersionRoundSnapshotV1(),
+    shotModel: createShotModelSnapshotV1(),
+    distanceProfile: freezeProfileCalibration(args.world.playerPro?.skills ?? ARCHITECT_SKILLS),
   };
   const handicapProfile = args.world.playerPro?.handicapProfile ?? createHandicapProfile(args.world.playerPro?.skills ?? ARCHITECT_SKILLS);
   const confidence = confidenceAtDay(args.world.playerPro?.confidence ?? createPlayerConfidence(), absoluteDayFor(args.world.week, args.day ?? 0));

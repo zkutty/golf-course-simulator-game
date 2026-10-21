@@ -306,3 +306,29 @@ describe("live simulation persistence", () => {
     }
   });
 });
+
+
+describe("retained live motion persistence", () => {
+  it("retains exact motion and rejects changed shot, segment and seed ownership", () => {
+    const { state } = midRound();
+    const source = snapshotLiveSimulation({ state, pendingCash: 0, speed: "2x", selectedGolferId: null });
+    const retained = source.state.golfers[0].segments.find((segment) => segment.motion);
+    expect(retained?.motion).toBeDefined();
+    const restored = restoreLiveSimulation(structuredClone(source));
+    expect(restored?.state.golfers[0].segments.find((segment) => segment.shotId === retained?.shotId)?.motion).toEqual(retained!.motion);
+    for (const mutate of [
+      (segment: typeof retained) => { segment!.motion!.identity.shotId = "wrong-owner"; },
+      (segment: typeof retained) => { segment!.motion!.identity.seed++; segment!.shotId = segment!.motion!.identity.shotId; },
+      (segment: typeof retained) => { segment!.motion!.groundPath[0].heightYards = Number.NaN; },
+      (segment: typeof retained) => { segment!.to = { x: 999, y: 999 }; },
+    ]) {
+      const altered = structuredClone(source);
+      mutate(altered.state.golfers[0].segments.find((segment) => segment.motion));
+      expect(restoreLiveSimulation(altered)).toBeNull();
+    }
+    const altered = structuredClone(source);
+    const outcome = altered.state.golfers[0].shotOutcomes!.find((shot) => shot.sharedOutcome?.motion)!;
+    outcome.sharedOutcome!.motion!.identity.style = "fade";
+    expect(restoreLiveSimulation(altered)).toBeNull();
+  });
+});

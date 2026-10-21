@@ -7,6 +7,7 @@ import { mishitChance, puttOutcome, type Personality } from "./personality";
 import type { Golfer, Segment } from "./types";
 import { courseForRoundSetup } from "../models/courseSetup";
 import type { GolferCapabilities, HoleReaction, LiveShotOutcome, StrategicHolePlan } from "./m47Types";
+import { sampleRetainedShotMotion } from "../rules/shotMotion";
 import { buildStrategicGolferRound } from "./m47Round";
 import { TimedItineraryBuilder, type TimedItineraryRouter } from "../m51/timedItinerary";
 import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
@@ -193,6 +194,7 @@ function retainedPathPoint(path: readonly Point[], t: number): Point {
 }
 
 function ballArc(segment: Segment, t: number): Point {
+  if (segment.motion) return sampleRetainedShotMotion(segment.motion, t)?.point ?? segment.from;
   const path = segment.rollPath;
   const landing = segment.landing;
   if (!path?.length || !landing) return lerp(segment.from, segment.to, t);
@@ -227,6 +229,7 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
     } else {
       remaining -= left;
       g.segElapsed = 0;
+      if (seg.kind === "flight" && seg.motion) g.lastMotionSegmentIndex = g.segIndex;
       g.segIndex++;
       // Detect hole completion: we just left a real hole for a different one.
       // Each boundary scores exactly the next unscored hole, so the fold stays

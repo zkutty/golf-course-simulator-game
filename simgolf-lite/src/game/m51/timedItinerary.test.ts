@@ -1,3 +1,4 @@
+import { createRetainedShotMotion } from "../rules/shotMotion";
 import { describe, expect, it } from "vitest";
 import type { Course, Terrain } from "../models/types";
 import { LIVE } from "../live/liveConfig";
@@ -57,5 +58,21 @@ describe("M51 shared timed itinerary", () => {
     expect(builder.cursor).toEqual({ x: 11, y: 7 });
     expect(builder.segments.filter((segment) => segment.concession)).toHaveLength(1);
     expect(builder.segments.find((segment) => segment.concession)?.concession).toMatchObject({ amount: 18, buildingType: "cart_rental" });
+  });
+});
+
+
+describe("retained motion itinerary ownership", () => {
+  it("keeps physical rest and shot association while relief remains outside the moving path", () => {
+    const at = (x: number, y: number) => ({ point: { x, y }, heightYards: 0 });
+    const motion = createRetainedShotMotion({ identity: { shotId: "putt-one", holeId: "one", shotNumber: 1, seed: 7, club: "Putter", style: "putt", modelVersion: "club_styles_v1" },
+      yardsPerTile: 10, from: at(1, 1), landing: at(1, 1), physicalRest: at(3, 4), flight: null,
+      rollPath: [at(1, 1), at(2, 3), at(3, 4)], reliefPosition: { x: 8, y: 8 }, holed: false })!;
+    const builder = new TimedItineraryBuilder({ course: course(), cursor: { x: 1, y: 1 }, personality, rng: () => .5 });
+    builder.appendFlight(motion.from.point, motion.reliefPosition!, 0, "putt", undefined, { motion, contactTerrain: "green" });
+    expect(builder.segments[0]).toMatchObject({ shotId: "putt-one", holeId: "one", motion, to: { x: 3, y: 4 }, motionContactTerrain: "green" });
+    expect(builder.segments[0].to).not.toEqual(motion.reliefPosition);
+    builder.appendFlight({ x: 1, y: 1 }, { x: 2, y: 2 }, 0, "putt");
+    expect(builder.segments[1]).not.toHaveProperty("motion");
   });
 });

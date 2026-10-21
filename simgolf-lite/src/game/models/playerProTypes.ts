@@ -1,3 +1,5 @@
+import type { PlayerShotPresentationV1 } from "../playerPro/shotPlayback";
+import type { ProfileCalibrationV1 } from "../rules/profileCalibration";
 import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import type { ReliefResolution, ShotRuling, SharedShotOutcome } from "../rules/contracts";
 import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
@@ -12,6 +14,8 @@ import type { ChallengeSettlementRecord } from "../competition/challengeSettleme
 import type { FrozenPerformanceLoadout, LearnedTechnique, MentorTechniqueChallenge } from "../competition/types";
 import type { ShotEnvironmentV1 } from "../rules/shotEnvironment";
 import type { DispersionRoundSnapshotV1 } from "../rules/dispersionSnapshot";
+import type { ShotModelSnapshotV1 } from "../rules/shotModelSnapshot";
+import type { ShotStyleId } from "../rules/shotStyles";
 
 export const PLAYER_PRO_SKILLS = [
   "power",
@@ -90,6 +94,9 @@ export interface PlayerRoundCourseSnapshot {
   rulesSnapshot?: ControlledRoundSnapshotV2;
   /** Immutable ZK-772 dispersion authority. Missing means legacy scalar. */
   dispersionSnapshot?: DispersionRoundSnapshotV1;
+  /** Frozen club/style/calibration authority. Absent historical rounds remain legacy. */
+  shotModel?: ShotModelSnapshotV1;
+  distanceProfile?: ProfileCalibrationV1;
   weather?: {
     kind: string;
     temperatureF: number;
@@ -109,6 +116,7 @@ export interface PlayerShotTrace {
   shotNumber: number;
   club: string;
   technique: PlayerShotTechnique;
+  shotStyle?: ShotStyleId;
   flightProfile?: "low" | "standard" | "high";
   power: number;
   from: PlayerProPoint;
@@ -179,6 +187,8 @@ export interface PlayerPlayableRound {
   scorecard: PlayerRoundScorecardHole[];
   shots: PlayerShotTrace[];
   pendingShot: PlayerShotTrace | null;
+  /** Display clock only; never used to resolve or score a shot. */
+  shotPresentation?: PlayerShotPresentationV1;
   rngSeed: number;
   rngCursor: number;
   autoPlay: boolean;

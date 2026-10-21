@@ -1,0 +1,120 @@
+import { useCallback, useEffect, useRef } from "react";
+import type { PlayerPlayableRound, PlayerShotTrace } from "../../game/models/playerProTypes";
+import {
+  PLAYER_SHOT_CONTACT_FRACTION,
+  advancePlayerShotPresentation,
+  isPlayerShotPresentation,
+  playerShotDurationMs,
+  playerShotPlaybackFrame,
+  type PlayerShotPlaybackFrame,
+  type PlayerShotPresentationV1,
+} from "../../game/playerPro/shotPlayback";
+import { isValidRetainedShotMotionV1, type ShotMotionEventV1 } from "../../game/rules/shotMotion";
+
+export type PlayerPlaybackEvent = { kind: "contact" } | ShotMotionEventV1;
+
+/** Presentation clock only. Completion is claimed once for this exact shot. */
+export function createPlayerShotPlaybackDriver(shot: PlayerShotTrace, saved?: PlayerShotPresentationV1) {
+  let cursor: PlayerShotPresentationV1 = isPlayerShotPresentation(saved, shot.id)
+    ? { ...saved } : { version: 1, shotId: shot.id, progress: 0 };
+  let completed = false;
+  const motion = shot.sharedOutcome?.motion;
+  const events = [
+    { at: PLAYER_SHOT_CONTACT_FRACTION, event: { kind: "contact" } as PlayerPlaybackEvent },
+    ...(motion?.events ?? []).filter((event) => event.kind !== "launch" && event.kind !== "rest").map((event) => ({
+      at: PLAYER_SHOT_CONTACT_FRACTION + event.time * (1 - PLAYER_SHOT_CONTACT_FRACTION), event,
+    })),
+  ];
+  let eventIndex = events.findIndex((event) => event.at > cursor.progress);
+  if (eventIndex < 0) eventIndex = events.length;
+  return {
+    cursor: () => ({ ...cursor }),
+    advance(elapsedMs: number, paused = false, skip = false) {
+      cursor = skip ? { ...cursor, progress: 1 }
+        : advancePlayerShotPresentation(cursor, elapsedMs, playerShotDurationMs(shot.club, shot.carryYards), paused);
+      const crossed: PlayerPlaybackEvent[] = [];
+      while (eventIndex < events.length && events[eventIndex]!.at <= cursor.progress) {
+        if (!skip) crossed.push(events[eventIndex]!.event);
+        eventIndex += 1;
+      }
+      const complete = cursor.progress === 1 && !completed;
+      if (complete) completed = true;
+      return { frame: playerShotPlaybackFrame(shot.id, cursor.progress), events: crossed, complete };
+    },
+  };
+}
+
+interface PlaybackOptions {
+  round: PlayerPlayableRound | null;
+  paused: boolean;
+  immediate: boolean;
+  onCheckpoint: (roundId: string, cursor: PlayerShotPresentationV1) => void;
+  onComplete: (roundId: string, shotId: string) => void;
+  onEvent: (round: PlayerPlayableRound, shot: PlayerShotTrace, event: PlayerPlaybackEvent) => void;
+}
+
+/** A ref cursor keeps React/session updates at coarse checkpoints, not frames. */
+export function usePlayerShotPlayback(options: PlaybackOptions) {
+  const frameRef = useRef<PlayerShotPlaybackFrame | null>(null);
+  const optionsRef = useRef(options);
+  const skipRef = useRef<(() => void) | null>(null);
+  useEffect(() => { optionsRef.current = options; });
+  const shot = options.round?.phase === "flight" ? options.round.pendingShot : null;
+  const retained = isValidRetainedShotMotionV1(shot?.sharedOutcome?.motion);
+  const key = retained && options.round && shot ? `${options.round.id}:${shot.id}` : null;
+  useEffect(() => {
+    const initial = optionsRef.current;
+    const round = initial.round;
+    const pending = round?.phase === "flight" ? round.pendingShot : null;
+    if (!key || !round || !pending || !isValidRetainedShotMotionV1(pending.sharedOutcome?.motion)) {
+      frameRef.current = null;
+      skipRef.current = null;
+      return;
+    }
+    const driver = createPlayerShotPlaybackDriver(pending, round.shotPresentation);
+    frameRef.current = playerShotPlaybackFrame(pending.id, driver.cursor().progress);
+    let lastTime: number | null = null;
+    let request = 0;
+    let checkpoint = Math.floor(driver.cursor().progress * 10);
+    let finished = false;
+    const publish = (elapsed: number, skip = false) => {
+      if (finished) return;
+      const current = optionsRef.current;
+      const paused = current.paused || document.hidden;
+      const result = driver.advance(elapsed, paused, skip || current.immediate && !paused);
+      frameRef.current = result.frame;
+      const bucket = Math.floor(result.frame.progress * 10);
+      if (bucket !== checkpoint || result.events.length || result.complete) {
+        checkpoint = bucket;
+        current.onCheckpoint(round.id, driver.cursor());
+      }
+      for (const event of result.events) current.onEvent(round, pending, event);
+      if (result.complete) {
+        finished = true;
+        current.onComplete(round.id, pending.id);
+      }
+    };
+    const tick = (now: number) => {
+      publish(lastTime === null ? 0 : now - lastTime);
+      lastTime = now;
+      if (!finished) request = requestAnimationFrame(tick);
+    };
+    const checkpointVisibility = () => {
+      lastTime = null;
+      optionsRef.current.onCheckpoint(round.id, driver.cursor());
+    };
+    skipRef.current = () => publish(0, true);
+    document.addEventListener("visibilitychange", checkpointVisibility);
+    window.addEventListener("pagehide", checkpointVisibility);
+    request = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(request);
+      document.removeEventListener("visibilitychange", checkpointVisibility);
+      window.removeEventListener("pagehide", checkpointVisibility);
+      if (!finished) optionsRef.current.onCheckpoint(round.id, driver.cursor());
+      skipRef.current = null;
+    };
+  }, [key]);
+  const skip = useCallback(() => skipRef.current?.(), []);
+  return { frameRef, skip };
+}

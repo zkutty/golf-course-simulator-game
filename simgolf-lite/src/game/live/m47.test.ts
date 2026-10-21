@@ -55,8 +55,7 @@ function course(): Course {
   };
 }
 
-describe("M47 live golfer contracts", () => {
-  it("ZK-1156 targets the cup and converges instead of alternating greenside recoveries", () => {
+function greensideRecoveryFixture() {
     const width = 30;
     const height = 20;
     const tiles: Terrain[] = Array.from({ length: width * height }, () => "rough");
@@ -72,7 +71,13 @@ describe("M47 live golfer contracts", () => {
     };
     const personality = testPersonality({ skill: .55, consistency: .5, prefs: { difficulty: -.5, scenery: 0, price: 0 } });
     const golfer = createGolferCapabilities({ personality, seed: 491648 });
-    const build = () => buildStrategicGolferRound({ course: c, entry: tee, exit: tee, rng: mulberry32(491648), personality, capabilities: golfer, skipPreRoundPurchases: true });
+  return { c, tee, green, personality, golfer };
+}
+
+describe("M47 live golfer contracts", () => {
+  it("ZK-1156 targets the cup and converges instead of alternating greenside recoveries", () => {
+    const { c, tee, green, personality, golfer } = greensideRecoveryFixture();
+    const build = () => buildStrategicGolferRound({ course: c, entry: tee, exit: tee, rng: mulberry32(491648), personality, capabilities: golfer, skipPreRoundPurchases: true, modernShotModel: false });
     const first = build();
     const replay = build();
     const trace = first.shotOutcomes!.map((shot) => ({
@@ -453,5 +458,20 @@ describe("M47 live golfer contracts", () => {
       seed: 1_337,
     });
     expect(nextOutcome.lieBefore).not.toMatch(/^(water|wetland|out_of_bounds)$/);
+  });
+});
+
+
+describe("modern live recovery motion", () => {
+  it("converges monotonically with bounded retained attempts while preserving replay", () => {
+    const { c, tee, green, personality, golfer } = greensideRecoveryFixture();
+    const build = () => buildStrategicGolferRound({ course: c, entry: tee, exit: tee, rng: mulberry32(491648), personality, capabilities: golfer, skipPreRoundPurchases: true });
+    const first = build();
+    const distances = first.shotOutcomes!.map((shot) => Math.hypot(shot.rest.x - green.x, shot.rest.y - green.y));
+    expect(distances.length).toBeGreaterThan(0);
+    expect(distances.length).toBeLessThan(9);
+    distances.forEach((distance, index) => expect(distance).toBeLessThan(index === 0 ? 9 : distances[index - 1]));
+    expect(first.shotOutcomes!.every((shot) => shot.sharedOutcome?.motion && shot.shotStyle)).toBe(true);
+    expect(first.shotOutcomes).toEqual(build().shotOutcomes);
   });
 });
