@@ -100,6 +100,20 @@ export interface ObstacleCollisionResolution {
 }
 
 function rounded(value: number): number {
+  if (Number.isInteger(value)) return value === 0 ? 0 : value;
+  // Only primitive Numbers may enter this branch; forged runtime carriers must
+  // preserve the original toFixed call (including its errors/custom behavior).
+  // |value| < 1e6 bounds multiplication error by 2^-14. The .499 guard,
+  // including <=2^-54 subtraction error, proves the exact decimal integer is
+  // uniquely nearest. Integer/1e6 division and parsing its <=13-digit decimal
+  // both round the same rational; near-half/large/nonfinite values fall back.
+  // ECMA-262: #sec-number.prototype.tofixed, #sec-math.round,
+  // #sec-roundmvresult, #sec-numeric-types-number-divide (https://tc39.es/ecma262/).
+  if (typeof value === "number" && Math.abs(value) < 1_000_000) {
+    const scaled = value * 1_000_000;
+    const nearest = Math.round(scaled);
+    if (Math.abs(scaled - nearest) < 0.499) return nearest / 1_000_000;
+  }
   return Number(value.toFixed(6));
 }
 
@@ -127,7 +141,22 @@ function segmentDistance(point: Point, from: Point, to: Point): number {
   );
 }
 
-function nearestSample(samples: readonly FlightPathSample[], obstacle: FlightObstacle, curved: boolean): { sample: FlightPathSample; distance: number } {
+function flightSampleBounds(samples: readonly FlightPathSample[]): number[][] {
+  const bounds: number[][] = [];
+  for (let start = 0; start < samples.length; start += 16) {
+    const box = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let index = start; index < Math.min(start + 16, samples.length); index++) {
+      const { x, y } = samples[index]!.point;
+      box[0] = Math.min(box[0]!, x); box[1] = Math.min(box[1]!, y);
+      box[2] = Math.max(box[2]!, x); box[3] = Math.max(box[3]!, y);
+    }
+    box.push(Number.EPSILON * 16 * Math.max(1, ...box.map(Math.abs)));
+    bounds.push(box);
+  }
+  return bounds;
+}
+
+function nearestSample(samples: readonly FlightPathSample[], obstacle: FlightObstacle, curved: boolean, bounds?: readonly number[][]): { sample: FlightPathSample; distance: number } {
   const lastIndex = Math.max(0, samples.length - 1);
   const first = samples[0]!;
   const last = samples[lastIndex]!;
@@ -141,9 +170,17 @@ function nearestSample(samples: readonly FlightPathSample[], obstacle: FlightObs
   // A chord projection is not a nearest-point proof for a curved trajectory.
   const start = curved ? 0 : Math.max(0, center - 2);
   const end = curved ? lastIndex : Math.min(lastIndex, center + 2);
+  const seed = samples[center]!.point;
+  const seedDistance = bounds ? Math.hypot(seed.x - obstacle.x, seed.y - obstacle.y) : Infinity;
+  const margin = Number.EPSILON * 16 * Math.max(1, Math.abs(obstacle.x), Math.abs(obstacle.y));
   let closest = first;
   let closestDistance = Infinity;
   for (let index = start; index <= end; index += 1) {
+    if (bounds && index % 16 === 0) {
+      const box = bounds[index / 16]!;
+      const lower = Math.hypot(Math.max(box[0]! - obstacle.x, 0, obstacle.x - box[2]!), Math.max(box[1]! - obstacle.y, 0, obstacle.y - box[3]!));
+      if (lower > Math.min(seedDistance, closestDistance) + Math.max(margin, box[4]!)) { index += 15; continue; }
+    }
     const sample = samples[index]!;
     const distance = Math.hypot(sample.point.x - obstacle.x, sample.point.y - obstacle.y);
     if (distance < closestDistance) {
@@ -286,11 +323,12 @@ function obstacleEvidence(args: {
   obstacle: FlightObstacle;
   samples: readonly FlightPathSample[];
   input: ObstacleCollisionInput;
-  pathDistancesYards?: readonly number[];
+  distanceAt?: (index: number) => number;
+  bounds?: readonly number[][];
 }): { evidence: ShotClearanceEvidence; collision: CandidateCollision | null } {
   const volumes = VOLUMES[args.obstacle.type];
   const baseHeight = args.input.terrainHeightAtYards?.(args.obstacle) ?? terrainAt(args.input, args.obstacle).elevationYards;
-  const nearest = nearestSample(args.samples, args.obstacle, !!args.input.flight.curve);
+  const nearest = nearestSample(args.samples, args.obstacle, !!args.input.flight.curve, args.bounds);
   const closest = nearest.sample;
   const closestDistance = nearest.distance;
   let hit: { sample: FlightPathSample; volume: ObstacleVolume; index: number } | null = null;
@@ -312,8 +350,9 @@ function obstacleEvidence(args: {
   }
   const maxRadius = Math.max(...volumes.map((volume) => volume.radiusTiles));
   const curveBound = Math.abs(args.input.flight.curve?.lateralOffsetTiles ?? 0);
-  if (segmentDistance(args.obstacle, args.input.from, args.input.to) <= maxRadius + curveBound) {
-    for (const [index, sample] of args.samples.entries()) {
+  if ((!args.input.flight.curve || closestDistance <= maxRadius)
+    && segmentDistance(args.obstacle, args.input.from, args.input.to) <= maxRadius + curveBound) {
+    scan: for (const [index, sample] of args.samples.entries()) {
       const distance = Math.hypot(sample.point.x - args.obstacle.x, sample.point.y - args.obstacle.y);
       for (const volume of volumes) {
         const lower = baseHeight + volume.minHeightYards;
@@ -324,7 +363,8 @@ function obstacleEvidence(args: {
           continue;
         }
         if (inside) {
-          hit ??= { sample, volume, index };
+          hit = { sample, volume, index };
+          break scan;
         }
       }
     }
@@ -347,7 +387,7 @@ function obstacleEvidence(args: {
     : sample.pathHeightYards - requiredHeightYards;
   const evidence: ShotClearanceEvidence = {
     point: { ...sample.point },
-    pathHeightYards: rounded(sample.pathHeightYards),
+    pathHeightYards: sample.pathHeightYards + 0,
     requiredHeightYards: rounded(requiredHeightYards),
     clearanceYards: rounded(clearanceYards),
     obstacleType: args.obstacle.type,
@@ -365,7 +405,7 @@ function obstacleEvidence(args: {
         kind: "obstacle",
         point: { ...hit.sample.point },
         obstacleType: args.obstacle.type,
-        distanceFromStartYards: args.pathDistancesYards?.[hit.index]
+        distanceFromStartYards: args.distanceAt?.(hit.index)
           ?? rounded(hit.sample.t * Math.hypot(args.input.to.x - args.input.from.x, args.input.to.y - args.input.from.y) * args.input.yardsPerTile),
         clearance: evidence,
       },
@@ -380,14 +420,16 @@ function obstacleEvidence(args: {
  */
 export function resolveObstacleCollision(args: ObstacleCollisionInput): ObstacleCollisionResolution {
   const samples = sampleAuthoritativeFlightPath(args);
-  let pathDistancesYards: number[] | undefined;
+  const bounds = args.flight.curve && args.obstacles.length ? flightSampleBounds(samples) : undefined;
+  let distanceAt: ((index: number) => number) | undefined;
   if (args.flight.curve) {
-    let distance = 0;
-    pathDistancesYards = samples.map((sample, index) => {
-      if (index > 0) distance += Math.hypot(sample.point.x - samples[index - 1]!.point.x,
-        sample.point.y - samples[index - 1]!.point.y) * args.yardsPerTile;
-      return rounded(distance);
-    });
+    const distances = [0];
+    distanceAt = (index) => {
+      for (let next = distances.length; next <= index; next++) distances.push(distances[next - 1]!
+        + Math.hypot(samples[next]!.point.x - samples[next - 1]!.point.x,
+          samples[next]!.point.y - samples[next - 1]!.point.y) * args.yardsPerTile);
+      return rounded(distances[index]!);
+    };
   }
   const candidates: CandidateCollision[] = [];
   for (let sampleIndex = 1; sampleIndex < samples.length - 1; sampleIndex += 1) {
@@ -402,7 +444,7 @@ export function resolveObstacleCollision(args: ObstacleCollisionInput): Obstacle
           kind: "terrain",
           point: { ...sample.point },
           terrain,
-          distanceFromStartYards: pathDistancesYards?.[sampleIndex]
+          distanceFromStartYards: distanceAt?.(sampleIndex)
             ?? rounded(sample.t * Math.hypot(args.to.x - args.from.x, args.to.y - args.from.y) * args.yardsPerTile),
         },
       });
@@ -412,7 +454,7 @@ export function resolveObstacleCollision(args: ObstacleCollisionInput): Obstacle
   const evidence: ShotClearanceEvidence[] = [];
   const orderedObstacles = args.obstaclesAreStable ? args.obstacles : prepareObstacleInput(args.obstacles);
   for (const [index, obstacle] of orderedObstacles.entries()) {
-    const resolved = obstacleEvidence({ obstacle, samples, input: args, pathDistancesYards });
+    const resolved = obstacleEvidence({ obstacle, samples, input: args, distanceAt, bounds });
     evidence.push(resolved.evidence);
     if (resolved.collision) candidates.push({ ...resolved.collision, priority: index + 1 });
   }

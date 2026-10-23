@@ -64,6 +64,22 @@ function solveReferenceCarry(totalYards: number): number {
 }
 
 describe("ZK1396 bounded source-grounded profile template", () => {
+  it("reuses only owned deeply frozen profiles and rechecks mutable or forged carriers", () => {
+    const profile = freezeProfileCalibration(skills(61));
+    expect(Object.isFrozen(profile)).toBe(true);
+    expect(Object.isFrozen(profile.skills)).toBe(true);
+    expect(Object.isFrozen(profile.clubCarryYards)).toBe(true);
+    expect(isProfileCalibrationV1(profile)).toBe(true);
+    expect(isProfileCalibrationV1(profile)).toBe(true);
+    const persisted = JSON.parse(JSON.stringify(profile));
+    expect(isProfileCalibrationV1(persisted)).toBe(true);
+    persisted.clubCarryYards.driver += 1;
+    expect(isProfileCalibrationV1(persisted)).toBe(false);
+    const forged = Object.freeze({ ...profile, clubCarryYards: Object.freeze({ ...profile.clubCarryYards, driver: 999 }) });
+    expect(isProfileCalibrationV1(forged)).toBe(false);
+    expect(isProfileCalibrationV1({ ...profile, skills: { ...profile.skills, power: 62 } })).toBe(false);
+  });
+
   it.each([[0, 265.32], [10, 235.12], [20, 204.92]])("preserves USGA total regression at HI %s", (handicap, total) => {
     expect(Math.abs(referenceDriverTotalYards(handicap) - total))
       .toBeLessThanOrEqual(PROFILE_CALIBRATION_TOLERANCES.sourceRegressionYards);

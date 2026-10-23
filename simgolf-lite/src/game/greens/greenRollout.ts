@@ -10,6 +10,7 @@ import {
   type GreenCourseCarrier,
   type GreenHoleConditionV1,
   type GreenProgram,
+  type GreenLocalStateV1,
   type GreenSurfaceV1,
   type GreenZoneConditionV1,
 } from "./greenSurface";
@@ -193,10 +194,19 @@ function preparedSurfaceSampler(
   course: FrozenGreenRolloutCourse,
   surfaceValue: GreenSurfaceV1 | undefined,
 ): (point: Point) => SurfaceSample {
-  const surface = normalizeGreenSurfaceV1(surfaceValue, course);
+  return normalizedSurfaceSampler(course, normalizeGreenSurfaceV1(surfaceValue, course));
+}
+
+function normalizedHeightSampler(course: FrozenGreenRolloutCourse, surface: GreenSurfaceV1): (point: Point) => number {
   const surfaceTiles = new Map(surface.tiles.map((tile) => [tile.y * course.width + tile.x, tile.offsets] as const));
-  const height = (candidate: Point) => fineHeight(course, surfaceTiles, candidate)
-    ?? coarseHeight(course, candidate.x, candidate.y);
+  return (point) => fineHeight(course, surfaceTiles, point) ?? coarseHeight(course, point.x, point.y);
+}
+
+function normalizedSurfaceSampler(
+  course: FrozenGreenRolloutCourse,
+  surface: GreenSurfaceV1,
+): (point: Point) => SurfaceSample {
+  const height = normalizedHeightSampler(course, surface);
   return (point: Point): SurfaceSample => {
     const epsilon = 1 / 24;
     const left = height({ x: point.x - epsilon, y: point.y });
@@ -215,6 +225,15 @@ function preparedSurfaceSampler(
 }
 
 export const createGreenRolloutSurfaceSampler = preparedSurfaceSampler;
+
+/** Same rounded physical height, without computing unused surface gradients. */
+export function createGreenRolloutHeightSampler(
+  course: FrozenGreenRolloutCourse,
+  surfaceValue: GreenSurfaceV1 | undefined,
+): (point: Point) => number {
+  const height = normalizedHeightSampler(course, normalizeGreenSurfaceV1(surfaceValue, course));
+  return (point) => round(height(point), 6);
+}
 
 export function sampleGreenRolloutSurface(
   course: FrozenGreenRolloutCourse,
@@ -346,14 +365,64 @@ export function isValidGreenRollout(value: unknown): value is GreenRolloutV1 {
       && typeof transition.from === "string" && typeof transition.to === "string" && validPoint(transition.at));
 }
 
+interface PreparedGreenRollout {
+  program: GreenProgram;
+  local: GreenLocalStateV1;
+  geometryHash: string;
+  sampleSurface: (point: Point) => SurfaceSample;
+}
+
+function prepareGreenRollout(course: FrozenGreenRolloutCourse): PreparedGreenRollout {
+  const surface = normalizeGreenSurfaceV1(course.greenSurface, course);
+  let sampler: ((point: Point) => SurfaceSample) | undefined;
+  return {
+    program: normalizeGreenProgram(course.greenProgram),
+    local: normalizeGreenLocalState(course.greenLocalState, course),
+    geometryHash: greenSurfaceHash(surface),
+    sampleSurface: (point) => {
+      sampler ??= normalizedSurfaceSampler(course, surface);
+      return sampler(point);
+    },
+  };
+}
+
+/**
+ * Reuse preparation within one bounded planning call. Copy every physical input
+ * into the closure so caller edits cannot invalidate a previously prepared
+ * candidate batch. Results still come from the same ground resolver below.
+ */
+export function createGreenRolloutContext(course: FrozenGreenRolloutCourse): {
+  sampleSurface: (point: Point) => SurfaceSample;
+  resolve: (input: Omit<ResolveGreenRolloutInput, "course">) => GreenRolloutV1;
+} {
+  const captured: FrozenGreenRolloutCourse = {
+    width: course.width,
+    height: course.height,
+    tiles: course.tiles.slice(),
+    elevations: course.elevations?.slice(),
+    holes: course.holes.map((hole) => ({ id: hole.id, green: hole.green ? { ...hole.green } : null })),
+  };
+  const prepared = prepareGreenRollout({ ...captured,
+    greenSurface: course.greenSurface,
+    greenProgram: course.greenProgram,
+    greenLocalState: course.greenLocalState,
+  });
+  return Object.freeze({
+    sampleSurface: prepared.sampleSurface,
+    resolve: (input: Omit<ResolveGreenRolloutInput, "course">) => resolvePreparedGreenRollout({ ...input, course: captured }, prepared),
+  });
+}
+
 /**
  * One deterministic ground-path resolver for every shot consumer. The fixed
  * step and bounded retained path make pathological tiers/false fronts safe.
  */
 export function resolveGreenRollout(input: ResolveGreenRolloutInput): GreenRolloutV1 {
-  const surface = normalizeGreenSurfaceV1(input.course.greenSurface, input.course);
-  const program = normalizeGreenProgram(input.course.greenProgram);
-  const local = normalizeGreenLocalState(input.course.greenLocalState, input.course);
+  return resolvePreparedGreenRollout(input, prepareGreenRollout(input.course));
+}
+
+function resolvePreparedGreenRollout(input: ResolveGreenRolloutInput, prepared: PreparedGreenRollout): GreenRolloutV1 {
+  const { program, local } = prepared;
   const hole = input.course.holes.find((candidate) => candidate.id === input.holeId);
   const conditionHole = local.holes.find((candidate) => candidate.holeId === input.holeId);
   const pin = hole && "green" in hole && hole.green && typeof hole.green === "object" ? hole.green as Point : undefined;
@@ -397,7 +466,7 @@ export function resolveGreenRollout(input: ResolveGreenRolloutInput): GreenRollo
       : [];
     steps = legacyRequestedTiles > 0 ? 1 : 0;
   } else {
-    const sampleSurface = preparedSurfaceSampler(input.course, surface);
+    const sampleSurface = prepared.sampleSurface;
     // Club/strike energy is independent of maintenance condition. Surface
     // speed, moisture, and firmness act through deceleration after impact.
     const initialFriction = initialTerrain === "green" ? BASE_GREEN_FRICTION : frictionFor(initialTerrain, condition);
@@ -468,7 +537,7 @@ export function resolveGreenRollout(input: ResolveGreenRolloutInput): GreenRollo
     pace,
     transitions,
     evidence: {
-      geometryHash: greenSurfaceHash(surface),
+      geometryHash: prepared.geometryHash,
       program: program.preset,
       realizedSpeedFeet: condition.speed,
       realizedFirmness: condition.firmness,

@@ -381,7 +381,6 @@ import { CampaignSceneModal } from "./ui/CampaignSceneModal";
 import { CampaignPanel } from "./ui/CampaignPanel";
 import { WorkspaceNav, type WorkspaceActionId, type WorkspaceId } from "./ui/WorkspaceNav";
 import { DeferredSurface } from "./app/DeferredSurface";
-import { WeekCloseReport } from "./ui/WeekCloseReport";
 import { DeferredHudSurface } from "./app/DeferredHudSurface";
 import { applyManualOperationsCommand } from "./game/operations/commands";
 import { ContentLibraryPanel } from "./ui/ContentLibraryPanel";
@@ -418,6 +417,7 @@ const TournamentPanel = lazy(() => import("./ui/TournamentPanel").then(({ Tourna
 // These management surfaces are never needed for the frame loop. Defer their
 // UI code until the player explicitly opens the corresponding workspace.
 const ContextualInspectorPanel = lazy(() => import("./ui/ContextualInspectorPanel").then(({ ContextualInspectorPanel }) => ({ default: ContextualInspectorPanel })));
+const WeekCloseReport = lazy(() => import("./ui/WeekCloseReport").then(({ WeekCloseReport }) => ({ default: WeekCloseReport })));
 const LiveOverview = lazy(() => import("./ui/LiveOverview").then(({ LiveOverview }) => ({ default: LiveOverview })));
 const PropertyManagementPanel = lazy(() => import("./ui/PropertyManagementPanel").then(({ PropertyManagementPanel }) => ({ default: PropertyManagementPanel })));
 const LivingClubPanel = lazy(() => import("./ui/LivingClubPanel").then(({ LivingClubPanel }) => ({ default: LivingClubPanel })));

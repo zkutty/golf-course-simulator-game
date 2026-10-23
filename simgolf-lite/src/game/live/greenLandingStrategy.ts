@@ -2,7 +2,7 @@ import type { Course, Hole, Point, Terrain } from "../models/types";
 import { plannerDistanceProfile } from "../rules/plannerClubProjection";
 import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
 import { estimateAutomaticPutts } from "../greens/greenPutting";
-import { resolveGreenRollout, sampleGreenRolloutSurface } from "../greens/greenRollout";
+import { createGreenRolloutContext } from "../greens/greenRollout";
 import { analyzeShotSlope } from "../models/shotSlope";
 import { capabilitiesToPlayerSkills } from "./capabilities";
 import type { GolferCapabilities, StrategyFact } from "./m47Types";
@@ -173,7 +173,7 @@ export function planGreenLandingZones(args: {
   const center = (greenZones.length ? greenZones : zones).reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
   center.x /= Math.max(1, greenZones.length || zones.length);
   center.y /= Math.max(1, greenZones.length || zones.length);
-  const pinSample = sampleGreenRolloutSurface({
+  const rolloutContext = createGreenRolloutContext({
     width: args.snapshot.width,
     height: args.snapshot.height,
     tiles: args.snapshot.tiles,
@@ -182,7 +182,8 @@ export function planGreenLandingZones(args: {
     greenSurface: args.snapshot.greenSnapshot?.surface,
     greenProgram: args.snapshot.greenSnapshot?.program,
     greenLocalState: args.snapshot.greenSnapshot?.localState,
-  }, args.snapshot.greenSnapshot?.surface, pin);
+  });
+  const pinSample = rolloutContext.sampleSurface(pin);
   const approachLength = Math.max(.001, distance(args.from, pin));
   const approach = { x: (pin.x - args.from.x) / approachLength, y: (pin.y - args.from.y) / approachLength };
   const skill = capabilitiesToPlayerSkills(args.capabilities);
@@ -190,30 +191,11 @@ export function planGreenLandingZones(args: {
   const dispersion = clamp(3.4 - args.capabilities.accuracy / 42 - args.capabilities.irons / 130, .55, 3.5);
 
   return zones.map((target) => {
-    const surface = sampleGreenRolloutSurface({
-      width: args.snapshot.width,
-      height: args.snapshot.height,
-      tiles: args.snapshot.tiles,
-      elevations: args.snapshot.elevations,
-      holes: args.snapshot.holes.map((hole) => ({ id: hole.id, green: hole.pin })),
-      greenSurface: args.snapshot.greenSnapshot?.surface,
-      greenProgram: args.snapshot.greenSnapshot?.program,
-      greenLocalState: args.snapshot.greenSnapshot?.localState,
-    }, args.snapshot.greenSnapshot?.surface, target);
+    const surface = rolloutContext.sampleSurface(target);
     const uphill = pinSample.height - surface.height;
     const role = roleFor({ snapshot: args.snapshot, pin, target, center, uphill });
     const requestedRollYards = role === "run-up" ? 20 : role === "attack" ? 7 : 11;
-    const rollout = resolveGreenRollout({
-      course: {
-        width: args.snapshot.width,
-        height: args.snapshot.height,
-        tiles: args.snapshot.tiles,
-        elevations: args.snapshot.elevations,
-        holes: args.snapshot.holes.map((hole) => ({ id: hole.id, green: hole.pin })),
-        greenSurface: args.snapshot.greenSnapshot?.surface,
-        greenProgram: args.snapshot.greenSnapshot?.program,
-        greenLocalState: args.snapshot.greenSnapshot?.localState,
-      },
+    const rollout = rolloutContext.resolve({
       holeId: snapshotHole?.id ?? args.hole.id ?? "hole-1",
       landing: target,
       direction: approach,

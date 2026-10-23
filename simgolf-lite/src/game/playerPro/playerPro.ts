@@ -68,6 +68,7 @@ import {
 import {
   isValidGreenRollout,
   createGreenRolloutSurfaceSampler,
+  createGreenRolloutHeightSampler,
   resolveGreenRollout,
   type GreenRolloutV1,
   type GreenRolloutSpin,
@@ -1122,8 +1123,8 @@ export function resolvePlayableShot(args: {
   }
   const newModel = usesClubShotModel(args.snapshot.shotModel);
   if (newModel) landing = roundedPoint(landing);
-  const frozenSurface = createGreenRolloutSurfaceSampler(course, course.greenSurface);
-  const heightAt = (point: PlayerProPoint) => frozenSurface(point).height * 2.5;
+  const frozenHeight = createGreenRolloutHeightSampler(course, course.greenSurface);
+  const heightAt = (point: PlayerProPoint) => frozenHeight(point) * 2.5;
   const physicalFlight: ObstacleCollisionResolution | null = newModel && club.name !== "Putter"
     ? resolveObstacleCollision({ from: args.from, to: landing,
         flight: { profile: flightProfile, apexHeightYards: calculated.effects.flight.apexHeightYards,

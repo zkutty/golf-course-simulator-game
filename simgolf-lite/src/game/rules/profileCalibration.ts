@@ -8,6 +8,11 @@ export const PROFILE_CALIBRATION_CLUBS = [
 ] as const satisfies readonly ShotClubId[];
 const SKILL_KEYS = ["power", "driving", "irons", "shortGame", "putting", "recovery"] as const;
 
+// Factory results and both nested records are frozen before registration. Only
+// these owned immutable values can reuse validation; persisted carriers still
+// execute the complete structural and calibration-coherence reader.
+const ownedProfiles = new WeakSet<object>();
+
 export type ProfileCalibrationSkills = Record<typeof SKILL_KEYS[number], number>;
 export interface ProfileCalibrationOptions {
   /** Explicit scenario adjustment; never inferred from identity or handicap. */
@@ -138,7 +143,7 @@ export function freezeProfileCalibration(
   const carries = Object.fromEntries(PROFILE_CALIBRATION_CLUBS.map((clubId) => [
     clubId, calibratedClubCarryYards({ ...bounded, clubId }, { driverTotalOffsetYards: offset }),
   ])) as Record<ShotClubId, number>;
-  return Object.freeze({
+  const profile = Object.freeze({
     version: PROFILE_CALIBRATION_VERSION,
     model: PROFILE_CALIBRATION_MODEL,
     skills: Object.freeze(bounded),
@@ -147,6 +152,8 @@ export function freezeProfileCalibration(
     driverTotalOffsetYards: offset,
     clubCarryYards: Object.freeze(carries),
   });
+  ownedProfiles.add(profile);
+  return profile;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -162,6 +169,7 @@ function finiteRange(value: unknown, minimum: number, maximum: number): value is
 
 /** Strict persisted reader: no coercion, missing clubs, unsupported versions or repairs. */
 export function isProfileCalibrationV1(value: unknown): value is ProfileCalibrationV1 {
+  if (value !== null && typeof value === "object" && ownedProfiles.has(value)) return true;
   if (!record(value) || !exactKeys(value, ["version", "model", "skills", "abilityHandicapAnchor",
     "powerHandicapAnchor", "driverTotalOffsetYards", "clubCarryYards"])
     || value.version !== PROFILE_CALIBRATION_VERSION || value.model !== PROFILE_CALIBRATION_MODEL

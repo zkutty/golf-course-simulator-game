@@ -10,6 +10,9 @@ import {
 import {
   GREEN_ROLLOUT_MAX_PATH_POINTS,
   GREEN_ROLLOUT_MAX_STEPS,
+  createGreenRolloutContext,
+  createGreenRolloutHeightSampler,
+  createGreenRolloutSurfaceSampler,
   isValidGreenRollout,
   resolveGreenRollout,
   sampleGreenRolloutSurface,
@@ -82,6 +85,86 @@ function resolve(value: Course, overrides: Partial<Parameters<typeof resolveGree
 }
 
 describe("ZK-639 authoritative green rollout", () => {
+  it("samples exactly the same rounded height without discarded gradient work", () => {
+    for (const value of [course(), sloped(course(), .24, -.11), course([
+      ["fairway", "rough", "green", "water"],
+      ["green", "green", "sand", "fairway"],
+    ])]) {
+      value.elevations = value.elevations.map((height, index) => height + index / 17);
+      const height = createGreenRolloutHeightSampler(value, value.greenSurface);
+      const surface = createGreenRolloutSurfaceSampler(value, value.greenSurface);
+      for (const point of [{ x: -1, y: -1 }, { x: 0, y: 0 }, { x: 1.25, y: 1.5 },
+        { x: 2.999999, y: .7 }, { x: value.width, y: value.height }]) {
+        expect(height(point)).toBe(surface(point).height);
+      }
+    }
+    const coarse = course([["fairway", "fairway"], ["fairway", "fairway"]]);
+    let reads = 0;
+    coarse.elevations = new Proxy([0, .2, .3, .7], { get: (array, key, receiver) => {
+      if (typeof key === "string" && /^\d+$/.test(key)) reads++;
+      return Reflect.get(array, key, receiver);
+    } });
+    const height = createGreenRolloutHeightSampler(coarse, coarse.greenSurface);
+    const surface = createGreenRolloutSurfaceSampler(coarse, coarse.greenSurface);
+    const point = { x: .4, y: .6 };
+    reads = 0;
+    const physicalHeight = height(point);
+    const heightReads = reads;
+    reads = 0;
+    expect(surface(point).height).toBe(physicalHeight);
+    expect(heightReads).toBeLessThan(reads);
+  });
+
+  it("keeps prepared candidate batches identical across fine surfaces, care and weather", () => {
+    for (const gradient of [0, .24, -.24]) {
+      for (const preset of ["receptive", "championship"] as const) {
+        const value = sloped(course(), gradient, .11);
+        value.greenProgram = createGreenProgram(preset);
+        value.greenLocalState!.holes[0].zones![0].moisture = .83;
+        const prepared = createGreenRolloutContext(value);
+        for (const kind of ["clear", "heavy_rain", "drought"]) {
+          for (const landing of [{ x: 1.25, y: 1.5 }, { x: 6.9, y: 1.2 }]) {
+            const input: Parameters<typeof resolveGreenRollout>[0] = {
+              course: value, holeId: "roll-hole", landing, direction: { x: 1, y: -.1 },
+              requestedRollYards: 68, yardsPerTile: 10, club: "7 Iron", sourceLie: "fairway",
+              launchAngleDegrees: 28, landingAngleDegrees: 43, trajectory: "standard", spin: "backspin",
+              weather: { kind, rainInches: kind === "heavy_rain" ? 1.2 : 0 }, drainageLevel: 2, seed: 813,
+            };
+            const { course: _course, ...candidate } = input;
+            expect(prepared.resolve(candidate)).toEqual(resolveGreenRollout(input));
+            expect(prepared.sampleSurface(landing)).toEqual(sampleGreenRolloutSurface(value, value.greenSurface, landing));
+          }
+        }
+      }
+    }
+  });
+
+  it("protects a prepared batch from source edits and returned-result mutation", () => {
+    const value = sloped(course(), .24, .11);
+    const prepared = createGreenRolloutContext(value);
+    const input = {
+      holeId: "roll-hole", landing: { x: 1.25, y: 1.5 }, direction: { x: 1, y: 0 },
+      requestedRollYards: 38, yardsPerTile: 10, club: "Putter", sourceLie: "green",
+      launchAngleDegrees: 0, landingAngleDegrees: 0, trajectory: "standard" as const, spin: "neutral" as const,
+      weather: { kind: "clear", rainInches: 0 }, drainageLevel: 1, seed: 639,
+    };
+    const expected = prepared.resolve(input);
+    const sample = prepared.sampleSurface(input.landing);
+    value.tiles.fill("water");
+    value.elevations.fill(20);
+    value.holes[0].green!.x = 0;
+    value.greenSurface!.tiles[0].offsets.fill(-2048);
+    value.greenProgram!.targetSpeedFeet = 15;
+    value.greenLocalState!.holes[0].zones![0].moisture = 0;
+    expect(prepared.resolve(input)).toEqual(expected);
+    expect(prepared.sampleSurface(input.landing)).toEqual(sample);
+    const result = prepared.resolve(input);
+    result.path[0].x = 999;
+    result.evidence.geometryHash = "changed";
+    expect(prepared.resolve(input)).toEqual(expected);
+    expect(createGreenRolloutContext(value).resolve(input)).not.toEqual(expected);
+  });
+
   it("bilinearly samples the fine 4x4 surface and resolves byte-stable level paths", () => {
     const value = course();
     value.greenSurface = normalizeGreenSurfaceV1({ tiles: [{
