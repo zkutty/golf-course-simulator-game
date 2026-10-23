@@ -1,4 +1,5 @@
 import type { Course, Point, World } from "../models/types";
+import { bookedPinRotations, frozenCompletedPin, requestedPinForHole } from "./pinSetup";
 import { mulberry32 } from "../../utils/rng";
 import { getGolferProfile } from "../sim/golferProfiles";
 import { scoreCourseHoles } from "../sim/holes";
@@ -351,6 +352,7 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     archetype: arch.name,
     teeSet,
     pinRotation,
+    pinRotationsByHole: bookedPinRotations(holeIds, pinRotation),
     courseId,
     courseName: layout.name,
     holeIds,
@@ -439,6 +441,7 @@ export function createRenderPerfLiveState(course: Course, world: World): LiveSta
       courseId: active.id,
       courseName: active.name,
       holeIds: active.publishedHoleIds,
+      pinRotationsByHole: bookedPinRotations(active.publishedHoleIds, template.pinRotation ?? "A"),
       holePar: new Array(18).fill(5),
       holeStrokes: new Array(18).fill(5),
       mood: 0.2 + (index % 8) * 0.1,
@@ -797,7 +800,8 @@ export function stepLive(
         tournamentId: g.tournamentId,
         tournamentEntrantId: g.tournamentEntrantId,
         teeSet: g.teeSet,
-        pinRotation: g.pinRotation,
+        pinRotation: frozenCompletedPin(g.pinRotationsByHole, g.pinRotation),
+        pinRotationsByHole: g.pinRotationsByHole ? { ...g.pinRotationsByHole } : undefined,
         waitMinutes: g.waitMinutes ?? 0,
         capabilities: g.capabilities,
         holePlans: g.holePlans?.slice(),
@@ -1028,7 +1032,7 @@ function nthValidHoleIndex(course: Course, n: number): number {
 // on the new terrain, walking from wherever they stand to that hole's tee. This
 // freezes committed history but stops golfers from walking a stale itinerary
 // (e.g. flying over freshly-painted water) for the rest of the round.
-export function reconcileGolfers(state: LiveState, course: Course): void {
+export function reconcileGolfers(state: LiveState, course: Course, reason: "geometry" | "daily-pin" = "geometry"): void {
   state.reconcileEpoch++;
   state.walkCache.clear(); // terrain changed → cached routes are stale
   const exit = entryPoint(course);
@@ -1038,6 +1042,21 @@ export function reconcileGolfers(state: LiveState, course: Course): void {
     const routing = g.holeIds?.length ? courseForHoleIds(course, g.holeIds, g.courseId) : course;
     const startHole = nthValidHoleIndex(routing, g.scoredHoles);
     if (startHole < 0) continue; // nothing left to play; let them walk off
+
+    if (reason === "daily-pin" && !g.tournamentId && !g.tournamentEntrantId) {
+      // Legacy absence means the prior requested setup was uniform. Preserve
+      // all scored keys and use the existing restart policy for the tail.
+      const holeIds = g.holeIds?.length ? g.holeIds : routing.holes.map((hole, index) => hole.id ?? `hole-${index + 1}`);
+      const booked = new Set(holeIds);
+      const rotations = Object.fromEntries(holeIds.map((id) => [id, requestedPinForHole(g.pinRotationsByHole, id) ?? g.pinRotation ?? "A"]));
+      for (let index = startHole; index < routing.holes.length; index++) {
+        const id = routing.holes[index].id ?? `hole-${index + 1}`;
+        if (booked.has(id)) rotations[id] = course.activePinRotation ?? "A";
+      }
+      if (!g.holeIds?.length) g.holeIds = holeIds;
+      g.pinRotationsByHole = rotations;
+      g.pinRotation = course.activePinRotation ?? "A";
+    }
 
     const rng = mulberry32(state.seed + g.id * 911 + state.reconcileEpoch * 17);
     const from: Point = { x: g.pos.x, y: g.pos.y };

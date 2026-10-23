@@ -1,3 +1,4 @@
+import type { Point, TeeSet, PinRotation } from "../models/types";
 import type { MobilityMode } from "../m51/types";
 import type { AppliedShotWindV1 } from "../rules/shotEnvironment";
 
@@ -10,6 +11,7 @@ export type GreenStrategyOverlayKind =
   | "green-risk";
 
 export type ArchitectureOverlayKind =
+  | "routing"
   | "reference"
   | "traces"
   | "dispersion"
@@ -66,6 +68,9 @@ export interface ArchitectureOverlayPoint {
 
 export interface ArchitectureOverlayRender {
   kind: ArchitectureOverlayKind;
+  /** Visual identity only: these spines never supply shot destinations. */
+  routing?: ArchitectureRoutingHole[];
+  selectedRoutingHoleId?: string;
   traces: ArchitectureOverlayTrace[];
   cells: ArchitectureOverlayCell[];
   points: ArchitectureOverlayPoint[];
@@ -133,4 +138,19 @@ export interface ArchitectureRulesReview {
   recoveryAttemptCount: number;
   reliefResolvedCount: number;
   feedback: ArchitectureRulesFeedback[];
+}
+
+export interface ArchitectureRoutingHole {
+  holeId: string;
+  number: number;
+  name: string;
+  tee: Point | null;
+  pin: Point | null;
+  teeSet: TeeSet;
+  pinRotation: PinRotation;
+  usedTeeFallback: boolean;
+  usedPinFallback: boolean;
+  spine: Point[];
+  anchor: Point;
+  status: "complete" | "missing-tee" | "missing-green" | "missing-both";
 }

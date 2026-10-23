@@ -7,7 +7,7 @@ import { translateCurrent } from "../i18n/core";
 import type { ReactNode } from "react";
 import type { MessageKey } from "../i18n/catalog";
 import "./HoleInspector.css";
-import { getParSetting, getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS, validateHoleCourseSetup } from "../game/models/courseSetup";
+import { dailyPinFallbacks, getParSetting, getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS, validateHoleCourseSetup } from "../game/models/courseSetup";
 import { analyzePinFairness } from "../game/greens/pinFairness";
 
 interface HoleInspectorProps {
@@ -81,6 +81,7 @@ export function HoleInspector({
 
   const terrainStats = computeHoleTerrainStats(course, hole, holeIndex);
   const setupIssues = validateHoleCourseSetup(course, hole);
+  const pinFallback = dailyPinFallbacks([hole], course.activePinRotation ?? "A")[0];
   
   // Get straight distance (for display)
   const straightDistYards = hole.tee && hole.green
@@ -213,6 +214,9 @@ export function HoleInspector({
           <strong>{translateCurrent("courseSetup.title")}</strong>
           <label style={{ fontSize: "0.6875rem" }}>{translateCurrent("courseSetup.dailyPin")}{" "}<select aria-label={translateCurrent("courseSetup.activePin")} value={course.activePinRotation ?? "A"} onChange={(event) => onSetActivePinRotation?.(event.target.value as PinRotation)}>{PIN_ROTATIONS.map((rotation) => <option key={rotation}>{rotation}</option>)}</select></label>
         </div>
+        {pinFallback && <p data-testid="pin-fallback-status" role="status" style={{ margin: "6px 0", fontSize: "0.6875rem", color: "#714c19" }}>
+          {translateCurrent("courseSetup.pinFallback", {requested: pinFallback.requestedPinRotation, resolved: pinFallback.pinRotation})}
+        </p>}
         <div style={{ display: "grid", gap: 5 }}>
           {TEE_SETS.map((teeSet) => {
             const point = getTeeBox(hole, teeSet);

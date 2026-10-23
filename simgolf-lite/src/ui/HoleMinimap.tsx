@@ -6,7 +6,7 @@ import { TILE_H, TILE_W, worldToIso } from "../game/render/iso";
 import { getElevation } from "../game/models/elevation";
 import { translateCurrent } from "../i18n/core";
 import { MINIMAP_SIZE as SIZE, makeMinimapTransform, minimapCanvasPoint, minimapPointToWorld, type MinimapTransform } from "../game/render/minimap";
-import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
+import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS, resolveCourseSetup } from "../game/models/courseSetup";
 import { decodeParcelMap } from "../game/estate/estate";
 
 const COLORS: Record<string, string> = {
@@ -138,11 +138,12 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
           ctx.fillStyle = teeSet === "forward" ? "#efcf6a" : teeSet === "championship" ? "#202722" : "#f7f4e8";
           ctx.fillRect(point.x - 1.5, point.y - 1.5, 3, 3);
         }
+        const resolvedPin = resolveCourseSetup(markerHole, "member", activePin).pinRotation;
         for (const rotation of PIN_ROTATIONS) {
           const marker = getPinPosition(markerHole, rotation);
           if (!marker) continue;
           const point = minimapCanvasPoint(worldToIso(marker.x + .5, marker.y + .5, getElevation(course, marker.x, marker.y)), transform);
-          ctx.globalAlpha = rotation === activePin ? 1 : .35;
+          ctx.globalAlpha = rotation === resolvedPin ? 1 : .35;
           ctx.fillStyle = "#e44842";
           ctx.beginPath(); ctx.arc(point.x, point.y, 1.8, 0, Math.PI * 2); ctx.fill();
         }

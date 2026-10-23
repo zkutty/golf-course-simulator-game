@@ -55,7 +55,7 @@ describe("ZK-769 illustration preview panel", () => {
     expect(transitionIllustrationRouteSource({ ...settings, layoutId: "a" }, [{ ...layouts[0], draftHoleIds: [] }], "draft").holeId).toBe("");
   });
 
-  it("keeps landing shot text accessible without visual labels and renders a clamped figure caption when enabled", () => {
+  it("keeps landing shot text accessible without visual labels and renders a scalable figure caption when enabled", () => {
     const course = dogleg(), settings = defaultHoleIllustrationPreviewSettings(course)!;
     const provider = (initialSettings: typeof settings) => renderToStaticMarkup(createElement(I18nContext.Provider, { value: { locale: "en", setLocale: () => {}, t: (key, params) => translate("en", key, params) } }, createElement(HoleIllustrationPreviewPanel, { course, evidence: { status: "ready", layoutId: settings.layoutId, holeId: settings.holeId, teeSet: settings.teeSet, pinRotation: settings.pinRotation }, initialSettings, onClose: () => {} })));
     const labelsOff = provider({ ...settings, showLandingDistances: true, showLabels: false });
@@ -67,7 +67,7 @@ describe("ZK-769 illustration preview panel", () => {
     const labelsOn = provider({ ...settings, showLabels: true });
     expect(labelsOn).toContain("<figcaption");
     expect(labelsOn).toContain("position:absolute");
-    expect(labelsOn).toContain("font-size:clamp(12px,3vw,16px)");
+    expect(labelsOn).toContain('class="cc-hole-illustration__caption"');
   });
 
   it.each([

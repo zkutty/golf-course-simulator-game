@@ -74,6 +74,8 @@ export interface Golfer {
   archetype: GolferArchetypeName;
   teeSet?: TeeSet;
   pinRotation?: PinRotation;
+  /** Requested rotation per booked hole; scored entries are immutable. */
+  pinRotationsByHole?: Record<string, PinRotation>;
   courseId?: string;
   courseName?: string;
   /** Immutable published routing booked at arrival. */

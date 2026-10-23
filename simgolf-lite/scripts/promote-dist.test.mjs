@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
   GOLDEN_CASES, VISION_CASES, sha256, verifyCases, verifyReports, safeExtract,
   inventory, verifyInventory, verifyRun, selectRun, verifyJobs, artifactSet,
-  verifyDigest, GitHub, verifyReceipt, debugBindings, verifySentryLog, sourcePins, PIN_PATHS, m65Binding, initialBuild,
+  verifyDigest, GitHub, verifyReceipt, debugBindings, verifySentryLog, sourcePins, PIN_PATHS, m65Binding, initialBuild, verifyExecutionContract, verifyRunIdentity, verifyBuildProofShape, BUILD_SCRIPT, BUILD_COMMAND, QUALIFIER, verifyPromotion, parsedLog,
 } from './promote-dist.mjs';
 const copy = value => structuredClone(value);
 const ctx = { sha: 'a'.repeat(40), repository: 'owner/game', runID: 17 };
@@ -63,10 +63,12 @@ test('selection has no latest or stale fallback and rejects ambiguity', () => {
   assert.equal(selectRun([run], ctx).id, run.id);
   for (const runs of [[], [run, { ...run, id: 18 }], [{ ...run, head_sha: 'b'.repeat(40) }], [{ ...run, run_attempt: 2 }], [{ ...run, status: 'in_progress' }]]) assert.throws(() => selectRun(runs, ctx));
 });
-const build = { name: 'Build', status: 'completed', conclusion: 'success', started_at: '2026-10-12T19:33:00.000Z', completed_at: '2026-10-12T19:34:00.000Z' };
+const build = { number: 19, name: 'Build', status: 'completed', conclusion: 'success', started_at: '2026-10-12T19:33:00.000Z', completed_at: '2026-10-12T19:34:00.000Z' };
+const jobBase = { run_attempt: 1, started_at: '2026-10-12T19:32:00.000Z', completed_at: '2026-10-12T19:35:00.000Z' };
 const jobs = [
-  { id: 31, name: 'Typecheck, lint, test, build', run_id: 17, head_sha: ctx.sha, status: 'completed', conclusion: 'success', steps: [build] },
-  { id: 32, name: 'Deploy tested artifact to Cloudflare playtest', run_id: 17, head_sha: ctx.sha, status: 'completed', conclusion: 'success', steps: [] },
+  { ...jobBase, html_url: 'https://github.com/owner/game/actions/runs/17/job/31', id: 31, name: 'Typecheck, lint, test, build', run_id: 17, head_sha: ctx.sha, status: 'completed', conclusion: 'success', steps: [build] },
+  { ...jobBase, html_url: 'https://github.com/owner/game/actions/runs/17/job/32', id: 32, name: 'Deploy tested artifact to Cloudflare playtest', run_id: 17, head_sha: ctx.sha, status: 'completed', conclusion: 'success', steps: [] },
+  { ...jobBase, html_url: 'https://github.com/owner/game/actions/runs/17/job/33', id: 33, name: QUALIFIER, run_id: 17, head_sha: ctx.sha, status: 'completed', conclusion: 'success', steps: [] },
 ];
 test('CI and completed development deployment plus Build step are mandatory', () => {
   assert.equal(verifyJobs(jobs, run).id, 31);
@@ -119,7 +121,7 @@ test('only known Vite audit manifest may be unpublished', t => {
 });
 test('receipt recomputes source, M65, reports, raw files and artifact IDs instead of trusting booleans', () => {
   const pins = { source: 'a'.repeat(64) }, reports = { passed: true, hash: 'b'.repeat(64) }, m65 = { rawSHA256: 'c'.repeat(64) }, files = [{ path: 'index.html', bytes: 1, sha256: 'd'.repeat(64) }], artifacts = { dist: { id: 41, digest: artifact.digest } };
-  const receipt = { schema: 1, ...ctx, workflow: '.github/workflows/ci.yml', attempt: 1, branch: 'develop', event: 'push', sourcePins: pins, reports, m65, files, artifacts };
+  const receipt = { schema: 2, authenticatedBuild: qualifiedProof(), ...ctx, workflow: '.github/workflows/ci.yml', attempt: 1, branch: 'develop', event: 'push', sourcePins: pins, reports, m65, files, artifacts };
   verifyReceipt(receipt, ctx, pins, reports, m65, files, artifacts);
   for (const key of ['sha', 'runID', 'attempt', 'sourcePins', 'reports', 'm65', 'files', 'artifacts']) {
     const r = copy(receipt); r[key] = null; assert.throws(() => verifyReceipt(r, ctx, pins, reports, m65, files, artifacts));
@@ -175,7 +177,7 @@ test('mandatory report CLI fails before the workflow deploy gate on retried resu
   assert.equal(result.status, 1); assert.match(result.stderr, /deployment is blocked/);
   const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const production = workflow.slice(workflow.indexOf('  deploy-production:'));
-  assert.match(production, /needs: ci/); assert.match(workflow, /run: node scripts\/promote-dist.mjs verify-reports/);
+  assert.match(production, /needs: \[ci, qualify-release\]/); assert.match(workflow, /run: node scripts\/promote-dist.mjs verify-reports/);
   assert(production.indexOf('promote-dist.mjs recheck') < production.indexOf('uses: cloudflare/wrangler-action'));
   assert(!production.includes('continue-on-error')); assert(!production.includes('if: always()'));
 });
@@ -205,8 +207,8 @@ test('changing pagination totals cannot silently choose one eligible run', async
   await assert.rejects(api.pages('/items', 'items'));
 });
 
-test('initial receipt binds authenticated successful Build metadata even while CI job is running', () => {
-  const j = copy(jobs); j[0].status = 'in_progress'; j[0].conclusion = null; assert.equal(initialBuild(j, ctx).jobID, 31);
+test('initial receipt requires completed successful producer even with positive Build metadata', () => {
+  const j = copy(jobs); j[0].status = 'in_progress'; j[0].conclusion = null; assert.throws(() => initialBuild(j, ctx));
   j[0].steps[0].conclusion = 'failure'; assert.throws(() => initialBuild(j, ctx));
 });
 
@@ -275,4 +277,267 @@ test('deployment policy directory and symlink cannot qualify as unpublished meta
   assert.throws(() => inventory(root, true), /deployment policy must be regular/); rmSync(join(root, '.assetsignore'), { recursive: true });
   writeFileSync(join(root, 'policy'), readFileSync(new URL('../public/.assetsignore', import.meta.url))); symlinkSync(join(root, 'policy'), join(root, '.assetsignore'));
   assert.throws(() => inventory(root, true), /symlink in dist/);
+});
+
+
+function stalledSteps(missingBuild = false) {
+  const names = ['Set up job', 'Run actions/checkout@v4', 'Run actions/setup-node@v4', 'Install dependencies', 'Typecheck', 'Lint (zero errors)', 'Test', 'Install Playwright Chromium', 'Pixi renderer ownership regression', 'Upload Pixi renderer ownership report', 'M65 machine certification', 'Upload verified M65 report', 'Golden-path E2E', 'Upload Golden-path E2E report', 'Vision Player Pro narrative regression', 'Upload Vision Player Pro narrative report', 'Verify exact first-attempt Golden and Vision reports', 'Artifact promotion contract tests', 'Build', 'Upload build artifact'];
+  return names.map((name, i) => ({ name, number: i + 1, status: i < 6 ? 'completed' : i === 6 ? 'in_progress' : 'pending', conclusion: i < 6 ? 'success' : null, started_at: i < 7 ? '2026-10-12T19:32:00.000Z' : null, completed_at: i < 6 ? '2026-10-12T19:32:01.000Z' : null })).filter(s => !missingBuild || s.name !== 'Build');
+}
+function proofFixture(stalled = false, missingBuild = false) {
+  const fixtureJobs = copy(jobs);
+  if (stalled) fixtureJobs[0].steps = stalledSteps(missingBuild);
+  const zipBytes = Buffer.from('independent fixture ZIP bytes'), dist = { id: 41, digest: `sha256:${sha256(zipBytes)}`, size: zipBytes.length };
+  const texts = [
+    "Current runner version: 'fixture'", `##[group]Run ${BUILD_SCRIPT.split('\n')[0]}`, BUILD_SCRIPT.split('\n')[0], 'npm run build', BUILD_SCRIPT.split('\n')[2], 'shell: /usr/bin/bash -e {0}', '##[endgroup]',
+    `ZK1359_BUILD_V1 BEGIN sha=${ctx.sha} run=17 attempt=1 job=ci`, '> simgolf-lite@1.0.0 build', `> ${BUILD_COMMAND}`,
+    `> Release: ${release}`, '> Upload type: artifact bundle', 'Source Map Upload Report', '  Scripts', `    ~/one.js (sourcemap at one.js.map, debug id ${debugID})`, '  Source Maps', `    ~/one.js.map (debug id ${debugID})`, '[sentry-vite-plugin] Info: Successfully uploaded source maps to Sentry',
+    `ZK1359_BUILD_V1 END sha=${ctx.sha} run=17 attempt=1 job=ci`, '##[group]Run actions/upload-artifact@v4', 'with:', '  name: dist', '  path: simgolf-lite/dist', '  retention-days: 7', '  overwrite: false', '  include-hidden-files: false', '##[endgroup]', 'Finished uploading artifact content to blob storage!', `SHA256 digest of uploaded artifact zip is ${sha256(zipBytes)}`, 'Finalizing artifact upload', 'Artifact dist.zip successfully finalized. Artifact ID 41', `Artifact dist has been successfully uploaded! Final size is ${zipBytes.length} bytes. Artifact ID is 41`, 'Artifact download URL: https://github.com/owner/game/actions/runs/17/artifacts/41', 'Post job cleanup.', 'Cleaning up orphan processes',
+  ];
+  const logBytes = Buffer.from(texts.map((text, i) => `${new Date(Date.parse('2026-10-12T19:33:01.000Z') + i).toISOString()} ${text}\n`).join(''));
+  const options = { direct: copy(fixtureJobs[0]), log: logBytes, repoRoot: fileURLToPath(new URL('../../', import.meta.url)), dist, distZIP: zipBytes, release, bindings: [{ path: 'assets/a.js', debugID }] };
+  return { jobs: fixtureJobs, options, dist, zipBytes, logBytes, texts };
+}
+function qualifiedProof(stalled = false, missingBuild = false) { const f = proofFixture(stalled, missingBuild); return initialBuild(f.jobs, ctx, f.options); }
+test('qualification identity permits active enclosing run and requires exact push/source/attempt', () => {
+  const active = { ...run, status: 'in_progress', conclusion: null }; assert.equal(verifyRunIdentity(active, { ...ctx, branch: 'develop' }).id, 17);
+  assert.throws(() => verifyRun(active, ctx));
+  for (const mutate of [r => { r.head_branch = 'main'; }, r => { r.repository.full_name = 'foreign/repo'; }, r => { r.event = 'pull_request'; }, r => { r.run_attempt = 2; }, r => { r.path = '.github/workflows/wrong.yml'; }, r => { r.status = 'completed'; r.conclusion = 'failure'; }]) { const bad = copy(active); mutate(bad); assert.throws(() => verifyRunIdentity(bad, { ...ctx, branch: 'develop' })); }
+});
+test('Q is after P and before both actual push deployment branches with no dependency cycle', () => {
+  const text = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const heads = [...text.matchAll(/^  ([a-z][a-z-]*):\n/gm)], nodes = {};
+  for (let i = 0; i < heads.length; i++) { const source = text.slice(heads[i].index, heads[i + 1]?.index ?? text.length), needs = source.match(/^    needs: (.+)$/m)?.[1]; nodes[heads[i][1]] = { source, needs: needs ? needs.replace(/[\[\]]/g, '').split(',').map(n => n.trim()) : [] }; }
+  assert.deepEqual(nodes.ci.needs, []); assert.deepEqual(nodes['qualify-release'].needs, ['ci']);
+  for (const name of ['deploy-playtest', 'deploy-production']) assert.deepEqual(nodes[name].needs, ['ci', 'qualify-release']);
+  const visiting = new Set(), visited = new Set(); function visit(id) { assert(!visiting.has(id), 'acyclic release job graph'); if (visited.has(id)) return; assert(nodes[id]); visiting.add(id); for (const dep of nodes[id].needs) visit(dep); visiting.delete(id); visited.add(id); } Object.keys(nodes).forEach(visit);
+  assert.match(nodes['qualify-release'].source, /^    if: github.event_name == 'push'$/m); assert.match(nodes['qualify-release'].source, /ref: \$\{\{ github.sha \}\}/);
+  assert(!nodes['qualify-release'].source.includes('npm run build')); assert(!nodes['qualify-release'].source.includes('name: dist'));
+  assert(!nodes.ci.source.includes('promote-dist.mjs receipt')); assert(!nodes.ci.source.includes('release-receipt'));
+  assert.match(nodes['deploy-playtest'].source, /artifact-ids: \$\{\{ needs.qualify-release.outputs.dist-id \}\}/);
+  for (const node of Object.values(nodes)) assert(!node.source.includes('continue-on-error'));
+  assert.match(nodes['deploy-production'].source, /github.ref == 'refs\/heads\/main'/); assert.match(nodes['deploy-playtest'].source, /github.ref == 'refs\/heads\/develop'/);
+});
+test('exact unconditional Build, chain, dist upload and all original workflow limits are source guarded', () => {
+  const contract = verifyExecutionContract(fileURLToPath(new URL('../../', import.meta.url))); assert.equal(contract.buildScript, BUILD_SCRIPT); assert.equal(contract.buildCommand, BUILD_COMMAND);
+});
+for (const [label, mutate] of [
+  ['suppressed build', s => s.replace('          npm run build\n', '          npm run build || true\n')], ['conditional Build', s => s.replace('      - name: Build\n', "      - name: Build\n        if: always()\n")], ['continue error', s => s.replace('      - name: Build\n', '      - name: Build\n        continue-on-error: true\n')], ['changed timeout', s => s.replace('timeout-minutes: 60', 'timeout-minutes: 65')], ['changed worker cap', s => s.replace('--workers=1', '--workers=2')], ['changed retry', s => s.replace('--retries=0', '--retries=1')], ['main skipped Q', s => s.replace("if: github.event_name == 'push'\n", "if: github.ref == 'refs/heads/develop'\n")], ['cyclic Q', s => s.replace('    needs: ci\n', '    needs: deploy-playtest\n')], ['artifact overwrite', s => s.replace('          retention-days: 7\n', '          retention-days: 7\n          overwrite: true\n')], ['changed DSN', s => s.replace('vars.VITE_SENTRY_DSN', 'vars.OTHER_DSN')], ['extra dist upload', s => s.replace('  qualify-release:', '      - uses: actions/upload-artifact@v4\n        with:\n          name: dist\n          path: simgolf-lite/dist\n\n  qualify-release:')],
+]) test(`execution contract rejects ${label}`, t => {
+  const root = temporary(t); mkdirSync(join(root, '.github/workflows'), { recursive: true }); mkdirSync(join(root, 'simgolf-lite'));
+  writeFileSync(join(root, '.github/workflows/ci.yml'), mutate(readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8')));
+  writeFileSync(join(root, 'simgolf-lite/package.json'), readFileSync(new URL('../package.json', import.meta.url)));
+  assert.throws(() => verifyExecutionContract(root));
+});
+test('execution contract rejects changed chained package commands', t => {
+  const root = temporary(t); mkdirSync(join(root, '.github/workflows'), { recursive: true }); mkdirSync(join(root, 'simgolf-lite'));
+  writeFileSync(join(root, '.github/workflows/ci.yml'), readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url)));
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))); pkg.scripts.build += ' || true'; writeFileSync(join(root, 'simgolf-lite/package.json'), JSON.stringify(pkg)); assert.throws(() => verifyExecutionContract(root));
+});
+test('preferred genuine API metadata and narrow completed-log routes retain provider records unchanged', () => {
+  for (const stalled of [false, true]) {
+    const f = proofFixture(stalled), before = copy(f.jobs); const proof = initialBuild(f.jobs, ctx, f.options);
+    assert.equal(proof.kind, stalled ? 'completed-producer-log-v1' : 'github-completed-build-step-v1'); assert.deepEqual(f.jobs, before);
+    assert.deepEqual(proof.step, before[0].steps.find(s => s.name === 'Build')); assert.deepEqual(proof.apiObservations.attemptSteps, before[0].steps); assert.deepEqual(proof.apiObservations.directSteps, before[0].steps);
+    assert.equal(proof.completedLog.rawSHA256, sha256(f.logBytes)); assert.equal(proof.completedLog.upload.artifact.size, f.zipBytes.length); verifyBuildProofShape(proof); assert.equal(verifyJobs(f.jobs, run, proof).id, 31);
+  }
+  const proof = qualifiedProof(true, true); assert.equal(proof.step, null); assert(!proof.apiObservations.attemptSteps.some(s => s.name === 'Build'));
+});
+test('pending metadata cannot certify without full log, source and independent dist ZIP', () => {
+  const f = proofFixture(true); assert.throws(() => initialBuild(f.jobs, ctx));
+  for (const key of ['direct', 'log', 'repoRoot', 'dist', 'distZIP', 'bindings', 'release']) { const options = { ...f.options }; delete options[key]; assert.throws(() => initialBuild(f.jobs, ctx, options)); }
+});
+for (const [label, mutate] of [
+  ['failed producer', f => { f.jobs[0].conclusion = 'failure'; f.options.direct.conclusion = 'failure'; }], ['cancelled producer', f => { f.jobs[0].conclusion = 'cancelled'; f.options.direct.conclusion = 'cancelled'; }], ['skipped producer', f => { f.jobs[0].conclusion = 'skipped'; f.options.direct.conclusion = 'skipped'; }], ['active producer', f => { f.jobs[0].status = 'in_progress'; f.options.direct.status = 'in_progress'; }], ['attempt two', f => { f.jobs[0].run_attempt = 2; f.options.direct.run_attempt = 2; }], ['wrong source', f => { f.jobs[0].head_sha = 'b'.repeat(40); }], ['wrong job URL', f => { f.jobs[0].html_url = 'https://github.com/other/job/31'; }], ['duplicate producer', f => f.jobs.push(copy(f.jobs[0]))], ['direct identity disagreement', f => { f.options.direct.id = 99; }], ['direct steps disagreement', f => { f.options.direct.steps[6].started_at = null; }], ['contradictory failed Build', f => { Object.assign(f.jobs[0].steps[18], { status: 'completed', conclusion: 'failure' }); f.options.direct = copy(f.jobs[0]); }], ['in-progress Build', f => { f.jobs[0].steps[18].status = 'in_progress'; f.options.direct = copy(f.jobs[0]); }], ['unknown missing step frontier', f => { f.jobs[0].steps[6].status = 'pending'; f.options.direct = copy(f.jobs[0]); }], ['duplicate Build', f => { f.jobs[0].steps.push(copy(f.jobs[0].steps[18])); f.options.direct = copy(f.jobs[0]); }], ['fake Build timestamp', f => { f.jobs[0].steps[18].completed_at = '2026-10-12T19:34:00Z'; f.options.direct = copy(f.jobs[0]); }], ['contradictory other failed step', f => { Object.assign(f.jobs[0].steps[8], { status: 'completed', conclusion: 'failure' }); f.options.direct = copy(f.jobs[0]); }],
+]) test(`completed producer proof rejects ${label}`, () => { const f = proofFixture(true); mutate(f); assert.throws(() => initialBuild(f.jobs, ctx, f.options)); });
+for (const name of [QUALIFIER, 'Deploy tested artifact to Cloudflare playtest']) for (const conclusion of ['failure', 'skipped', 'cancelled', null]) test(`terminal acceptance rejects ${name} ${conclusion}`, () => {
+  const f = proofFixture(); f.jobs.find(j => j.name === name).conclusion = conclusion; assert.throws(() => verifyJobs(f.jobs, run, qualifiedProof()));
+});
+for (const [label, mutate] of [
+  ['missing BEGIN', s => s.replace(/ZK1359_BUILD_V1 BEGIN sha=[^\n]+/, 'removed BEGIN')], ['missing END', s => s.replace(/ZK1359_BUILD_V1 END sha=[^\n]+/, 'removed END')], ['duplicate BEGIN', s => s.replace(/(\d[^\n]+ ZK1359_BUILD_V1 BEGIN sha=[^\n]+\n)/, '$1$1')], ['spoof marker', s => s.replace('> simgolf-lite@', 'ZK1359_BUILD_V1 spoof\n2026-10-12T19:33:01.008Z > simgolf-lite@')], ['wrong SHA marker', s => s.replace(`BEGIN sha=${ctx.sha}`, `BEGIN sha=${'b'.repeat(40)}`)], ['wrong run marker', s => s.replace('run=17 attempt=1', 'run=18 attempt=1')], ['wrong attempt marker', s => s.replace('attempt=1 job=ci', 'attempt=2 job=ci')], ['wrong job marker', s => s.replace('job=ci', 'job=other')], ['nested build group', s => s.replace('> simgolf-lite@1.0.0 build', '##[group]Run spoof')], ['suppressed command echo', s => s.replace(' npm run build\n', ' npm run build || true\n')], ['changed actual chain', s => s.replace(`> ${BUILD_COMMAND}`, '> vite build')], ['bad chronology', s => s.replace('2026-10-12T19:33:01.015Z', '2026-10-12T19:32:00.000Z')], ['missing finalized ID', s => s.replace('Artifact dist.zip successfully finalized. Artifact ID 41', 'missing finalization')], ['wrong finalized ID', s => s.replace('Artifact ID 41', 'Artifact ID 42')], ['wrong upload digest', s => s.replace('SHA256 digest of uploaded artifact zip is ', `SHA256 digest of uploaded artifact zip is ${'b'.repeat(64)}`)], ['wrong upload size', s => s.replace(/Final size is \d+ bytes/, 'Final size is 1 bytes')], ['wrong artifact URL', s => s.replace('/artifacts/41', '/artifacts/42')], ['wrong upload path', s => s.replace('path: simgolf-lite/dist', 'path: simgolf-lite/other')], ['overwrite', s => s.replace('overwrite: false', 'overwrite: true')], ['hidden maps upload', s => s.replace('include-hidden-files: false', 'include-hidden-files: true')], ['wrong release', s => s.replace(`> Release: ${release}`, '> Release: other')], ['missing debug ID', s => s.replace(`one.js.map (debug id ${debugID})`, 'one.js.map (debug id other)')], ['missing bundle', s => s.replace('> Upload type: artifact bundle', '> Upload type: other')], ['Sentry success outside Build', s => s.replace('[sentry-vite-plugin] Info: Successfully uploaded source maps to Sentry', 'removed success') + '2026-10-12T19:33:01.040Z [sentry-vite-plugin] Info: Successfully uploaded source maps to Sentry\n'], ['duplicate release', s => s.replace('> Upload type:', `> Release: ${release}\n2026-10-12T19:33:01.011Z > Upload type:`)], ['duplicate debug ID', s => s.replace('  Source Maps', `    ~/extra.js (sourcemap at extra.js.map, debug id ${debugID})\n2026-10-12T19:33:01.015Z   Source Maps`)], ['truncated cleanup', s => s.slice(0, s.indexOf('2026-10-12T19:33:01.034Z'))], ['truncated newline', s => s.slice(0, -1)], ['missing setup prefix', s => s.slice(s.indexOf('\n') + 1)], ['explicit error', s => s.replace('Finished uploading artifact content to blob storage!', '##[error]Build failed')], ['malformed timestamp', s => s.replace('2026-10-12T19:33:01.009Z', 'not-a-time')],
+]) test(`authentic completed log rejects ${label}`, () => { const f = proofFixture(true); f.options.log = Buffer.from(mutate(f.logBytes.toString())); assert.throws(() => initialBuild(f.jobs, ctx, f.options)); });
+test('strict UTF8, raw size/digest and actual API window inverses reject', () => {
+  for (const mutate of [f => { f.options.log = Buffer.from([0xff, 0xfe]); }, f => { f.options.log = Buffer.alloc(32 * 1024 * 1024 + 1); }, f => { f.options.distZIP = Buffer.from('changed ZIP'); }, f => { f.options.dist = { ...f.dist, size: 1 }; }, f => { f.options.dist = { ...f.dist, digest: `sha256:${'b'.repeat(64)}` }; }, f => { f.jobs[0].steps[0].completed_at = '2026-10-12T19:33:00.000Z'; f.options.direct = copy(f.jobs[0]); }]) { const f = proofFixture(); mutate(f); assert.throws(() => initialBuild(f.jobs, ctx, f.options)); }
+  const f = proofFixture(); f.options.log = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), f.logBytes]); const proof = initialBuild(f.jobs, ctx, f.options); assert.equal(proof.completedLog.rawSHA256, sha256(f.options.log)); assert(proof.completedLog.build.begin.byteOffset > 3);
+});
+test('proof schema, discriminator, provider record and raw log mutation are fail closed', () => {
+  for (const mutate of [p => { p.schema = 2; }, p => { p.kind = 'fake-api-success'; }, p => { p.step.status = 'completed'; }, p => { p.step.started_at = '2026-10-12T19:33:00Z'; }, p => { p.apiObservations.directSteps = []; }, p => { p.completedLog.rawSHA256 = 'fake'; }, p => { p.producer.conclusion = 'failure'; }, p => { p.execution.workflowSHA256 = 'b'.repeat(64); }]) { const proof = qualifiedProof(true); mutate(proof); assert.throws(() => verifyBuildProofShape(proof)); }
+  const f = proofFixture(true), proof = initialBuild(f.jobs, ctx, f.options); assert.throws(() => verifySentryLog(Buffer.concat([f.logBytes, Buffer.from('changed')]), f.jobs[0], release, f.options.bindings, proof));
+});
+test('native provider second precision stays unchanged and fine log timestamp reordering rejects', () => {
+  const f = proofFixture(); f.jobs[0].steps[0].started_at = '2026-10-12T19:33:01Z'; f.jobs[0].steps[0].completed_at = '2026-10-12T19:33:01Z'; f.options.direct = copy(f.jobs[0]);
+  const proof = initialBuild(f.jobs, ctx, f.options); assert.equal(proof.step.completed_at, '2026-10-12T19:33:01Z'); assert.equal(proof.kind, 'github-completed-build-step-v1');
+  f.options.log = Buffer.from(f.logBytes.toString().replace('19:33:01.014Z', '19:33:01.015999999Z').replace('19:33:01.015Z', '19:33:01.015000001Z'));
+  assert.throws(() => initialBuild(f.jobs, ctx, f.options), /ordered log chronology/);
+});
+test('unauthenticated API error does not fall back to log evidence', async () => {
+  const api = new GitHub('owner/game', 'ephemeral', async () => ({ ok: false, status: 503 }));
+  await assert.rejects(api.request('/actions/jobs/31')); await assert.rejects(api.pages('/actions/runs/17/attempts/1/jobs', 'jobs'));
+});
+test('completed job log endpoint authenticates exact job and never forwards credentials to storage', async () => {
+  const requests = [], f = proofFixture(), api = new GitHub('owner/game', 'ephemeral-test-token', async (url, options) => { requests.push({ url, options }); return requests.length === 1 ? { status: 302, headers: new Headers({ location: 'https://storage.example/log' }) } : new Response(f.logBytes); });
+  assert.equal(sha256(await api.signedBytes('/actions/jobs/31/logs', 32 * 1024 * 1024)), sha256(f.logBytes)); assert.equal(requests[0].url, 'https://api.github.com/repos/owner/game/actions/jobs/31/logs'); assert(requests[0].options.headers.Authorization); assert.equal(requests[1].options.headers, undefined);
+});
+
+
+test('promotion and repeated recheck recompute complete frozen synthetic artifact/proof tuple and reject every changed input', async t => {
+  const root = temporary(t), repo = join(root, 'repo'), evidence = join(root, 'evidence'); mkdirSync(evidence);
+  const sourceRepo = fileURLToPath(new URL('../../', import.meta.url));
+  const canonicalM65 = JSON.parse(readFileSync(join(sourceRepo, 'simgolf-lite/artifacts/m65/certification-report.json')));
+  for (const path of new Set([...PIN_PATHS, 'simgolf-lite/artifacts/m65/certification-report.json', ...Object.keys(canonicalM65.sourceBindings).map(p => `simgolf-lite/${p}`)])) {
+    const destination = join(repo, path); mkdirSync(join(destination, '..'), { recursive: true }); writeFileSync(destination, readFileSync(join(sourceRepo, path)));
+  }
+  const reportPaths = reports(root);
+  const entries = {
+    dist: [{ name: 'index.html', data: 'fixture published index' }, { name: 'assets/a.js', data: `sentry-dbid-${debugID}` }],
+    'golden-path-e2e-report': [{ name: 'playwright-report/index.html', data: readFileSync(reportPaths.golden, 'utf8') }, { name: 'test-results/.last-run.json', data: '{}' }],
+    'vision-player-career-e2e-report': [{ name: 'vision-player-career-report/results.json', data: readFileSync(reportPaths.visionPath, 'utf8') }],
+    'm65-machine-certification': [{ name: 'certification-report.json', data: JSON.stringify(canonicalM65) }],
+  };
+  // Preserve the actual canonical JSON bytes (including its whitespace).
+  entries['m65-machine-certification'][0].data = readFileSync(join(repo, 'simgolf-lite/artifacts/m65/certification-report.json'), 'utf8');
+  const providerArtifacts = [];
+  function install(name, files) {
+    const source = zip(root, files, `${name}.zip`), bytes = readFileSync(source), id = 41 + providerArtifacts.length;
+    writeFileSync(join(evidence, `${name}.zip`), bytes); safeExtract(source, join(evidence, name));
+    providerArtifacts.push({ ...copy(artifact), id, name, digest: `sha256:${sha256(bytes)}`, size_in_bytes: bytes.length });
+  }
+  for (const [name, files] of Object.entries(entries)) install(name, files);
+  const tuple = artifactSet(providerArtifacts, Object.keys(entries), run), f = proofFixture(true);
+  const actualRelease = `coursecraft@${JSON.parse(readFileSync(join(repo, 'simgolf-lite/package.json'))).version}+${ctx.sha.slice(0, 12)}`;
+  const distBytes = readFileSync(join(evidence, 'dist.zip'));
+  f.options.log = Buffer.from(f.logBytes.toString().replaceAll(release, actualRelease).replace(sha256(f.zipBytes), sha256(distBytes)).replace(`Final size is ${f.zipBytes.length} bytes`, `Final size is ${distBytes.length} bytes`));
+  Object.assign(f.options, { repoRoot: repo, dist: tuple.dist, distZIP: distBytes, release: actualRelease });
+  const proof = initialBuild(f.jobs, ctx, f.options), files = inventory(join(evidence, 'dist'));
+  const receipt = { schema: 2, ...ctx, workflow: '.github/workflows/ci.yml', attempt: 1, branch: 'develop', event: 'push', release: actualRelease, sourcePins: sourcePins(repo), authenticatedBuild: proof, reports: verifyReports(join(evidence, 'golden-path-e2e-report/playwright-report/index.html'), join(evidence, 'vision-player-career-e2e-report/vision-player-career-report/results.json')), m65: m65Binding(repo, join(evidence, 'm65-machine-certification/certification-report.json')), files, artifacts: tuple, sentry: { scope: 'qualified-completed-producer-upload; no remote Sentry retrieval', uninstrumentedWorker: { type: 'Vite separate analysis worker', source: 'src/game/analysis/analysis.worker.ts', published: [] }, debugBindings: f.options.bindings, upload: proof.sentry } };
+  install('release-receipt', [{ name: 'release-receipt.json', data: `${JSON.stringify(receipt, null, 2)}\n` }]);
+  safeExtract(join(evidence, 'dist.zip'), join(repo, 'simgolf-lite/dist'));
+  const production = { ...ctx, workflow: '.github/workflows/ci.yml', attempt: 1, branch: 'main', event: 'push' };
+  const promotion = { schema: 2, production, selectedRunID: 17, artifacts: artifactSet(providerArtifacts, [...Object.keys(entries), 'release-receipt'], run), receiptSHA256: sha256(readFileSync(join(evidence, 'release-receipt/release-receipt.json'))) };
+  const api = {
+    pages: async (path, key) => copy(key === 'workflow_runs' ? [run] : key === 'jobs' ? f.jobs : providerArtifacts),
+    request: async path => copy(path.includes('/jobs/') ? f.options.direct : run),
+    signedBytes: async () => Buffer.from(f.options.log),
+  };
+  await verifyPromotion(api, production, repo, evidence, promotion);
+  await verifyPromotion(api, production, repo, evidence, promotion); // repeated unchanged recheck
+  const badSchema = copy(promotion); badSchema.schema = 1; await assert.rejects(verifyPromotion(api, production, repo, evidence, badSchema));
+  const originalLog = f.options.log; f.options.log = Buffer.concat([originalLog, Buffer.from('2026-10-12T19:33:01.040Z changed full job log\n')]); await assert.rejects(verifyPromotion(api, production, repo, evidence, promotion)); f.options.log = originalLog;
+  const zipPath = join(evidence, 'dist.zip'); writeFileSync(zipPath, Buffer.concat([distBytes, Buffer.from('changed ZIP')])); await assert.rejects(verifyPromotion(api, production, repo, evidence, promotion)); writeFileSync(zipPath, distBytes);
+  const receiptPath = join(evidence, 'release-receipt/release-receipt.json'), receiptBytes = readFileSync(receiptPath); writeFileSync(receiptPath, Buffer.concat([receiptBytes, Buffer.from(' ')])); await assert.rejects(verifyPromotion(api, production, repo, evidence, promotion)); writeFileSync(receiptPath, receiptBytes);
+  const published = join(repo, 'simgolf-lite/dist/assets/a.js'), originalPublished = readFileSync(published); writeFileSync(published, 'changed deployed file'); await assert.rejects(verifyPromotion(api, production, repo, evidence, promotion)); writeFileSync(published, originalPublished);
+  const extra = join(evidence, 'golden-path-e2e-report/test-results/extra'); mkdirSync(extra); await assert.rejects(verifyPromotion(api, production, repo, evidence, promotion)); rmSync(extra, { recursive: true });
+  const shaPath = join(repo, '.github/workflows/ci.yml'), originalSource = readFileSync(shaPath); writeFileSync(shaPath, Buffer.concat([originalSource, Buffer.from('\n')])); await assert.rejects(verifyPromotion(api, production, repo, evidence, promotion)); writeFileSync(shaPath, originalSource);
+  providerArtifacts[0].digest = `sha256:${'b'.repeat(64)}`; await assert.rejects(verifyPromotion(api, production, repo, evidence, promotion)); providerArtifacts[0].digest = tuple.dist.digest;
+  f.jobs.find(j => j.name === QUALIFIER).conclusion = 'skipped'; await assert.rejects(verifyPromotion(api, production, repo, evidence, promotion));
+});
+
+// Exact nonsecret action-echo bytes from the retained authenticated failed log.
+// These parser fixtures do not assert successful producer or release status.
+const capturedSourceEchoes = [
+  {
+    "name": "pixi",
+    "startLine": 1230,
+    "endLine": 1241,
+    "fullLogByteOffset": 130976,
+    "sha256": "39faf856dd72302b022fa6afc72f3a30c45c1a02d3eb8ac06dfb08b94753523f",
+    "bytes": 604,
+    "text": "2026-10-13T21:23:16.2028827Z ##[group]Run actions/upload-artifact@v4\n2026-10-13T21:23:16.2029148Z with:\n2026-10-13T21:23:16.2029379Z   name: pixi-peer-ownership-e2e-report\n2026-10-13T21:23:16.2029889Z   path: simgolf-lite/pixi-peer-ownership-report\nsimgolf-lite/pixi-peer-ownership-test-results\n\n2026-10-13T21:23:16.2030406Z   if-no-files-found: ignore\n2026-10-13T21:23:16.2030647Z   retention-days: 14\n2026-10-13T21:23:16.2030865Z   compression-level: 6\n2026-10-13T21:23:16.2031088Z   overwrite: false\n2026-10-13T21:23:16.2031309Z   include-hidden-files: false\n2026-10-13T21:23:16.2031755Z ##[endgroup]\n"
+  },
+  {
+    "name": "golden",
+    "startLine": 1347,
+    "endLine": 1358,
+    "fullLogByteOffset": 139466,
+    "sha256": "785bacd824d5d2db845d5ba1306813219b0ffe291fe5c37c0115c21dd22ab8a0",
+    "bytes": 567,
+    "text": "2026-10-13T21:34:17.5536222Z ##[group]Run actions/upload-artifact@v4\n2026-10-13T21:34:17.5536548Z with:\n2026-10-13T21:34:17.5536772Z   name: golden-path-e2e-report\n2026-10-13T21:34:17.5537437Z   path: simgolf-lite/playwright-report\nsimgolf-lite/test-results\n\n2026-10-13T21:34:17.5538075Z   if-no-files-found: ignore\n2026-10-13T21:34:17.5538341Z   retention-days: 14\n2026-10-13T21:34:17.5538580Z   compression-level: 6\n2026-10-13T21:34:17.5538817Z   overwrite: false\n2026-10-13T21:34:17.5539051Z   include-hidden-files: false\n2026-10-13T21:34:17.5539305Z ##[endgroup]\n"
+  },
+  {
+    "name": "vision",
+    "startLine": 1388,
+    "endLine": 1400,
+    "fullLogByteOffset": 142904,
+    "sha256": "dacacf89edb63632264668738b6ab11a3c83851a45ad772efcb87b374d2446cd",
+    "bytes": 650,
+    "text": "2026-10-13T21:35:39.2671172Z ##[group]Run actions/upload-artifact@v4\n2026-10-13T21:35:39.2671505Z with:\n2026-10-13T21:35:39.2671747Z   name: vision-player-career-e2e-report\n2026-10-13T21:35:39.2672452Z   path: simgolf-lite/vision-player-career-report\nsimgolf-lite/vision-player-career-test-results\nsimgolf-lite/vision-player-career-evidence\n\n2026-10-13T21:35:39.2673150Z   if-no-files-found: ignore\n2026-10-13T21:35:39.2673409Z   retention-days: 14\n2026-10-13T21:35:39.2673649Z   compression-level: 6\n2026-10-13T21:35:39.2673889Z   overwrite: false\n2026-10-13T21:35:39.2674124Z   include-hidden-files: false\n2026-10-13T21:35:39.2674394Z ##[endgroup]\n"
+  }
+];
+
+for (const captured of capturedSourceEchoes) test(`source-bound continuation accepts exact captured ${captured.name} echo with truthful physical rows`, () => {
+  const bytes = Buffer.from(captured.text); assert.equal(sha256(bytes), captured.sha256);
+  const physical = captured.text.slice(0, -1).split('\n'), lines = parsedLog(bytes), echoes = lines.filter(l => l.sourceEcho);
+  assert.equal(echoes.length, 1); const echo = echoes[0], continuations = echo.continuations;
+  assert.equal(continuations.length, captured.name === 'vision' ? 3 : 2); assert.equal(lines.length + continuations.length, physical.length);
+  assert.equal(echo.sourceEcho.completed.line, physical.length); assert.equal(echo.sourceEcho.workflow, '.github/workflows/ci.yml');
+  for (const row of continuations) {
+    assert.equal(row.timestamp, null); assert.equal(bytes.subarray(row.byteOffset, row.byteOffset + row.byteLength).toString(), `${row.text}\n`);
+    assert.equal(row.line, physical.findIndex((s, i) => i > 3 && s === row.text) + 1); assert.equal(row.source.pathLine, echo.line); assert.equal(row.source.groupLine, 1);
+    assert.equal(row.source.artifact, echo.sourceEcho.artifact);
+  }
+  for (const row of lines) {
+    assert.equal(row.timestamp, physical[row.line - 1].split(' ')[0]); assert.equal(row.byteOffset, Buffer.byteLength(physical.slice(0, row.line - 1).join('\n') + (row.line > 1 ? '\n' : '')));
+  }
+  const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  assert(workflow.includes(`          path: |\n${echo.sourceEcho.paths.map(p => `            ${p}`).join('\n')}`), 'continuation paths match frozen source declaration');
+});
+const capturedPixiEcho = capturedSourceEchoes[0].text;
+for (const [label, mutate] of [
+  ['untimed BEGIN', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', `ZK1359_BUILD_V1 BEGIN sha=${ctx.sha} run=17 attempt=1 job=ci`)],
+  ['untimed END', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', `ZK1359_BUILD_V1 END sha=${ctx.sha} run=17 attempt=1 job=ci`)],
+  ['untimed Sentry success', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', '[sentry-vite-plugin] Info: Successfully uploaded source maps to Sentry')],
+  ['untimed release', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', `> Release: ${release}`)],
+  ['untimed bundle', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', '> Upload type: artifact bundle')],
+  ['untimed debug ID', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', `    ~/fake.js.map (debug id ${debugID})`)],
+  ['untimed finalization', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', 'Artifact dist.zip successfully finalized. Artifact ID 41')],
+  ['untimed digest', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', `SHA256 digest of uploaded artifact zip is ${'a'.repeat(64)}`)],
+  ['untimed artifact URL', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', 'Artifact download URL: https://github.com/owner/game/actions/runs/17/artifacts/41')],
+  ['untimed error', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', '##[error]failure')],
+  ['arbitrary untimed output', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', 'unknown ordinary output')],
+  ['malformed timestamp', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', '2026-10-13T21:23:16.203 malformed')],
+  ['wrong continuation path', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', 'simgolf-lite/other-test-results')],
+  ['ANSI continuation path', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results', '\x1b[36msimgolf-lite/pixi-peer-ownership-test-results\x1b[0m')],
+  ['wrong action context', s => s.replace('Run actions/upload-artifact@v4', 'Run npm run build')],
+  ['missing action context', s => s.slice(s.indexOf('\n') + 1)],
+  ['wrong with context', s => s.replace(' with:\n', ' other:\n')],
+  ['wrong artifact name', s => s.replace('name: pixi-peer-ownership-e2e-report', 'name: dist')],
+  ['wrong first path', s => s.replace('path: simgolf-lite/pixi-peer-ownership-report', 'path: simgolf-lite/other-report')],
+  ['missing continuation', s => s.replace('simgolf-lite/pixi-peer-ownership-test-results\n', '')],
+  ['missing blank terminator', s => s.replace('test-results\n\n', 'test-results\n')],
+  ['extra blank', s => s.replace('test-results\n\n', 'test-results\n\n\n')],
+  ['duplicate continuation', s => s.replace('test-results\n', 'test-results\nsimgolf-lite/pixi-peer-ownership-test-results\n')],
+  ['truncated following input', s => s.slice(0, s.indexOf('2026-10-13T21:23:16.2030406Z'))],
+  ['truncated action completion', s => s.slice(0, s.indexOf('2026-10-13T21:23:16.2031755Z'))],
+  ['wrong following input', s => s.replace('if-no-files-found: ignore', 'if-no-files-found: error')],
+  ['wrong tail source retention', s => s.replace('retention-days: 14', 'retention-days: 7')],
+  ['wrong tail overwrite', s => s.replace('overwrite: false', 'overwrite: true')],
+  ['wrong tail hidden publication', s => s.replace('include-hidden-files: false', 'include-hidden-files: true')],
+  ['missing echo group closure', s => s.replace('##[endgroup]', 'not closed')],
+  ['chronology after untimed rows', s => s.replace('21:23:16.2030406Z', '21:23:16.2020000Z')],
+  ['extra untimed content after closure', s => s + 'simgolf-lite/pixi-peer-ownership-test-results\n'],
+]) test(`source-bound continuation rejects ${label}`, () => assert.throws(() => parsedLog(Buffer.from(mutate(capturedPixiEcho)))));
+test('source-bound continuation rejects reordered Vision paths, timed path substitution and bad raw encoding', () => {
+  const vision = capturedSourceEchoes[2].text;
+  assert.throws(() => parsedLog(Buffer.from(vision.replace('simgolf-lite/vision-player-career-test-results\nsimgolf-lite/vision-player-career-evidence', 'simgolf-lite/vision-player-career-evidence\nsimgolf-lite/vision-player-career-test-results'))));
+  assert.throws(() => parsedLog(Buffer.from(capturedPixiEcho.replace('\nsimgolf-lite/pixi-peer-ownership-test-results', '\n2026-10-13T21:23:16.2030000Z simgolf-lite/pixi-peer-ownership-test-results'))));
+  for (const bytes of [Buffer.concat([Buffer.from(capturedPixiEcho), Buffer.from([0xff])]), Buffer.from(capturedPixiEcho.replace('test-results\n', 'test-results\r\n')), Buffer.from(capturedPixiEcho.slice(0, -1))]) assert.throws(() => parsedLog(bytes));
+});
+function sourceBoundEchoProofFixture(stalled) {
+  const f = proofFixture(stalled), rows = [{ text: f.texts[0], timed: true }];
+  for (const captured of capturedSourceEchoes) for (const raw of captured.text.slice(0, -1).split('\n')) { const match = raw.match(/^\d{4}-\d{2}-\d{2}T\S+ (.*)$/); rows.push({ text: match?.[1] ?? raw, timed: Boolean(match) }); }
+  rows.push(...f.texts.slice(1).map(text => ({ text, timed: true })));
+  f.options.log = Buffer.from(rows.map((row, i) => `${row.timed ? new Date(Date.parse('2026-10-12T19:33:01.000Z') + i).toISOString() + ' ' : ''}${row.text}\n`).join(''));
+  return f;
+}
+test('source-bound continuation keeps both typed proof routes and terminal upload physical bound correct', () => {
+  for (const stalled of [false, true]) {
+    const f = sourceBoundEchoProofFixture(stalled), rows = parsedLog(f.options.log), proof = initialBuild(f.jobs, ctx, f.options);
+    assert.equal(proof.kind, stalled ? 'completed-producer-log-v1' : 'github-completed-build-step-v1'); assert.equal(proof.completedLog.rawSHA256, sha256(f.options.log));
+    assert.equal(rows.flatMap(l => l.continuations ?? []).length, 7);
+    assert(proof.completedLog.upload.end.line >= rows.length + 1, 'old timed-entry-count fallback would incorrectly exclude actual finalization evidence');
+    assert(proof.completedLog.upload.end.line < rows.at(-1).line + 1, 'new bound uses actual terminal physical row');
+    const rawBuild = f.options.log.subarray(proof.completedLog.build.begin.byteOffset).toString().split('\n')[0];
+    assert.equal(rawBuild, `${proof.completedLog.build.begin.timestamp} ZK1359_BUILD_V1 BEGIN sha=${ctx.sha} run=17 attempt=1 job=ci`);
+    assert.deepEqual(proof.step, f.jobs[0].steps.find(s => s.name === 'Build')); verifyBuildProofShape(proof);
+  }
 });

@@ -3,6 +3,7 @@
 import { PNG } from "pngjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { M22_DECOR_REGIONS, M22_SOURCE_SIZE } from "./m22-decor-regions.mjs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,10 +26,14 @@ const themes = {
 function cell(index) {
   const col = index % 4;
   const row = Math.floor(index / 4);
-  const x0 = Math.round(col * source.width / 4);
-  const x1 = Math.round((col + 1) * source.width / 4);
-  const y0 = Math.round(row * source.height / 4);
-  const y1 = Math.round((row + 1) * source.height / 4);
+  const region = M22_DECOR_REGIONS[cells[index]];
+  if (region && (source.width !== M22_SOURCE_SIZE || source.height !== M22_SOURCE_SIZE)) {
+    throw new Error("M22 authored regions must be reviewed for a changed source sheet");
+  }
+  const [x0, y0, x1, y1] = region ?? [
+    Math.round(col * source.width / 4), Math.round(row * source.height / 4),
+    Math.round((col + 1) * source.width / 4), Math.round((row + 1) * source.height / 4),
+  ];
   const png = new PNG({ width: x1 - x0, height: y1 - y0 });
   PNG.bitblt(source, png, x0, y0, png.width, png.height, 0, 0);
   for (let i = 0; i < png.data.length; i += 4) {
@@ -44,20 +49,27 @@ function cell(index) {
       png.data[i + 2] = Math.max(0, Math.round(b - key[2] * .2 * strength));
     }
   }
-  return trim(png, 8);
+  return trim(png, 8, Boolean(region));
 }
 
-function trim(png, pad) {
+function trim(png, pad, decor) {
   let minX = png.width; let minY = png.height; let maxX = -1; let maxY = -1;
   for (let y = 0; y < png.height; y++) for (let x = 0; x < png.width; x++) {
     if (png.data[(y * png.width + x) * 4 + 3] < 8) continue;
     minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
   }
   if (maxX < 0) return png;
-  minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
-  maxX = Math.min(png.width - 1, maxX + pad); maxY = Math.min(png.height - 1, maxY + pad);
-  const out = new PNG({ width: maxX - minX + 1, height: maxY - minY + 1 });
-  PNG.bitblt(png, out, minX, minY, out.width, out.height, 0, 0);
+  if (!decor) {
+    minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
+    maxX = Math.min(png.width - 1, maxX + pad); maxY = Math.min(png.height - 1, maxY + pad);
+    const out = new PNG({ width: maxX - minX + 1, height: maxY - minY + 1 });
+    PNG.bitblt(png, out, minX, minY, out.width, out.height, 0, 0);
+    return out;
+  }
+  // Buildings retain their original extraction contract. Decor always gets
+  // transparent padding on all sides, including source-region edge contacts.
+  const out = new PNG({ width: maxX - minX + 1 + pad * 2, height: maxY - minY + 1 + pad * 2 });
+  PNG.bitblt(png, out, minX, minY, maxX - minX + 1, maxY - minY + 1, pad, pad);
   return out;
 }
 
@@ -87,12 +99,34 @@ function grade(input, theme, tier = 1) {
   return out;
 }
 
-function resizeToFit(input, maxWidth, maxHeight) {
+function resizeToFit(input, maxWidth, maxHeight, decor = false) {
   const scale = Math.min(1, maxWidth / input.width, maxHeight / input.height);
   if (scale === 1) return input;
   const width = Math.max(1, Math.round(input.width * scale));
   const height = Math.max(1, Math.round(input.height * scale));
   const out = new PNG({ width, height });
+  if (decor) {
+    // Area filtering preserves thin authored contours when reducing the art.
+    // Nearest sampling skips connecting edge pixels and creates new islands.
+    const ratioX = input.width / width, ratioY = input.height / height;
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const left = x * ratioX, right = (x + 1) * ratioX;
+      const top = y * ratioY, bottom = (y + 1) * ratioY;
+      let area = 0, alpha = 0, red = 0, green = 0, blue = 0;
+      for (let sy = Math.floor(top); sy < Math.ceil(bottom); sy++) for (let sx = Math.floor(left); sx < Math.ceil(right); sx++) {
+        const weight = (Math.min(right, sx + 1) - Math.max(left, sx)) * (Math.min(bottom, sy + 1) - Math.max(top, sy));
+        const from = (sy * input.width + sx) * 4, a = input.data[from + 3] * weight;
+        area += weight; alpha += a;
+        red += input.data[from] * a; green += input.data[from + 1] * a; blue += input.data[from + 2] * a;
+      }
+      const to = (y * width + x) * 4;
+      out.data[to] = alpha ? Math.round(red / alpha) : 0;
+      out.data[to + 1] = alpha ? Math.round(green / alpha) : 0;
+      out.data[to + 2] = alpha ? Math.round(blue / alpha) : 0;
+      out.data[to + 3] = Math.round(alpha / area);
+    }
+    return out;
+  }
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const sourceX = Math.min(input.width - 1, Math.floor(x / scale));
     const sourceY = Math.min(input.height - 1, Math.floor(y / scale));
@@ -116,7 +150,7 @@ for (let i = 0; i < cells.length; i++) {
       const suffix = isBuilding ? `_t${tier}` : "";
       const maxWidth = isBuilding ? (name === "clubhouse" ? 256 : 192) : 128;
       const maxHeight = isBuilding ? 256 : 192;
-      const frame = resizeToFit(grade(base, theme, tier), maxWidth, maxHeight);
+      const frame = resizeToFit(grade(base, theme, tier), maxWidth, maxHeight, Boolean(M22_DECOR_REGIONS[name]));
       writeFileSync(path.join(OUT, `${theme}_${name}${suffix}.png`), PNG.sync.write(frame));
     }
   }

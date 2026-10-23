@@ -1,3 +1,4 @@
+import { requestedPinForHole } from "../live/pinSetup";
 import type {
   Course,
   StaffMember,
@@ -613,7 +614,7 @@ export function recordLivingClubRound(world: World, course: Course, round: Compl
     courseName,
     holeId: shot.holeId,
     teeSet: round.teeSet ?? "member",
-    pinRotation: round.pinRotation,
+    pinRotation: requestedPinForHole(round.pinRotationsByHole, shot.holeId) ?? round.pinRotation,
     geometryVersion,
     shotType: shot.shotType,
     shotNumber: shot.shotNumber,

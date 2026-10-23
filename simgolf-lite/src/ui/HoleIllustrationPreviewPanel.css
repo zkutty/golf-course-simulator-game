@@ -1,0 +1,78 @@
+.cc-hole-illustration,
+.cc-hole-illustration__export {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cc-hole-illustration__header {
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.cc-hole-illustration__heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cc-hole-illustration__close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cc-hole-illustration__details,
+.cc-hole-illustration__metadata,
+.cc-hole-illustration__text {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.cc-hole-illustration__caption {
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 34rem) {
+  .cc-hole-illustration__caption {
+    font-size: 1rem;
+  }
+}
+
+.cc-hole-illustration__details {
+  padding-inline: 0.5rem;
+}
+
+.cc-hole-illustration__details label {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.cc-hole-illustration__actions button {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 auto;
+  font-size: 0.833333rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cc-hole-illustration :is(button, select) {
+  max-width: 100%;
+  min-width: 0;
+  font-size: 0.833333rem;
+}
+
+.cc-hole-illustration__export > strong,
+.cc-hole-illustration__export > small {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}

@@ -313,10 +313,11 @@ export function useLiveSimulation(args: {
   // golfers already on the course so they don't walk a stale itinerary. The
   // reducer replaces these arrays on every edit, while daily condition updates
   // keep the same references — so identity comparison isolates real edits.
-  const geomRef = useRef({ tiles: course.tiles, holes: course.holes, obstacles: course.obstacles, buildings: course.buildings });
+  const geomRef = useRef({ tiles: course.tiles, holes: course.holes, obstacles: course.obstacles, buildings: course.buildings, activePinRotation: course.activePinRotation ?? "A" });
   useEffect(() => {
     const prev = geomRef.current;
-    const changed =
+    const pinChanged = prev.activePinRotation !== (course.activePinRotation ?? "A");
+    const changed = pinChanged ||
       prev.tiles !== course.tiles ||
       prev.holes !== course.holes ||
       prev.obstacles !== course.obstacles ||
@@ -325,12 +326,12 @@ export function useLiveSimulation(args: {
     courseCanReceiveArrivalsRef.current = courseCanReceiveLiveArrivals(course, operationPolicyRef.current);
     if (enabled && live) ensureOpeningDayArrivals(live, course, worldRef.current, operationPolicyRef.current);
     if (!changed) return;
-    geomRef.current = { tiles: course.tiles, holes: course.holes, obstacles: course.obstacles, buildings: course.buildings };
+    geomRef.current = { tiles: course.tiles, holes: course.holes, obstacles: course.obstacles, buildings: course.buildings, activePinRotation: course.activePinRotation ?? "A" };
     const skipGolferReconcile = skipNextReconcileRef.current;
     skipNextReconcileRef.current = false;
     if (skipGolferReconcile) return;
     if (enabled && live && live.golfers.length > 0) {
-      reconcileGolfers(live, course);
+      reconcileGolfers(live, course, pinChanged ? "daily-pin" : "geometry");
       golfersRef.current = buildRenderData(live);
     }
   }, [buildRenderData, enabled, course, publicThreeHoleOperation]);

@@ -41,8 +41,10 @@ export interface CompletedRound {
   tournamentId?: string;
   tournamentEntrantId?: string;
   teeSet?: "forward" | "member" | "championship";
-  /** Frozen round setup; absent on historical completed rounds. */
+  /** Uniform frozen requested setup; absent on historical or mixed rounds. */
   pinRotation?: "A" | "B" | "C";
+  /** Requested setup retained by stable hole ID, including mixed daily rotations. */
+  pinRotationsByHole?: Record<string, "A" | "B" | "C">;
   waitMinutes?: number;
   /** M47 evidence is retained with completed rounds for later review and club history. */
   capabilities?: GolferCapabilities;

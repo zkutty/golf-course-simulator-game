@@ -31,7 +31,8 @@ test("ZK-382 inspector tabs support keyboard roving focus and preserve actions",
   await expect(page.getByTestId("callback-log")).toHaveJSProperty("value", "view-cozy,view-architect");
   await tabs.nth(1).click();
   for (const preset of ["Relaxed", "Balanced", "Brisk"]) {
-    await inspector.getByRole("button", { name: preset }).click();
+    await inspector.getByRole("button", { name: preset, exact: true }).click();
+    await inspector.getByRole("button", { name: "Apply preset", exact: true }).click();
   }
   await expect(page.getByTestId("callback-log")).toHaveJSProperty("value", "view-cozy,view-architect,pace-relaxed,pace-balanced,pace-brisk");
 

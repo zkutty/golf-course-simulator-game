@@ -25,7 +25,7 @@
         "x": 196,
         "y": 2,
         "w": 128,
-        "h": 164
+        "h": 113
       },
       "rotated": false,
       "trimmed": false,
@@ -33,39 +33,39 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 164
+        "h": 113
       },
       "sourceSize": {
         "w": 128,
-        "h": 164
+        "h": 113
       }
     },
     "desert_bin": {
       "frame": {
         "x": 326,
         "y": 2,
-        "w": 128,
-        "h": 190
+        "w": 113,
+        "h": 192
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
-        "h": 190
+        "w": 113,
+        "h": 192
       },
       "sourceSize": {
-        "w": 128,
-        "h": 190
+        "w": 113,
+        "h": 192
       }
     },
     "desert_boardwalk": {
       "frame": {
-        "x": 456,
+        "x": 441,
         "y": 2,
         "w": 128,
-        "h": 105
+        "h": 102
       },
       "rotated": false,
       "trimmed": false,
@@ -73,16 +73,16 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 105
+        "h": 102
       },
       "sourceSize": {
         "w": 128,
-        "h": 105
+        "h": 102
       }
     },
     "desert_bridge": {
       "frame": {
-        "x": 586,
+        "x": 571,
         "y": 2,
         "w": 128,
         "h": 102
@@ -102,7 +102,7 @@
     },
     "desert_bridge_approach": {
       "frame": {
-        "x": 716,
+        "x": 701,
         "y": 2,
         "w": 128,
         "h": 106
@@ -123,7 +123,7 @@
     "desert_cart_rental_t1": {
       "frame": {
         "x": 2,
-        "y": 194,
+        "y": 196,
         "w": 192,
         "h": 160
       },
@@ -143,7 +143,7 @@
     "desert_cart_rental_t2": {
       "frame": {
         "x": 196,
-        "y": 194,
+        "y": 196,
         "w": 192,
         "h": 160
       },
@@ -163,7 +163,7 @@
     "desert_cart_rental_t3": {
       "frame": {
         "x": 390,
-        "y": 194,
+        "y": 196,
         "w": 192,
         "h": 160
       },
@@ -183,7 +183,7 @@
     "desert_clubhouse_t1": {
       "frame": {
         "x": 584,
-        "y": 194,
+        "y": 196,
         "w": 256,
         "h": 256
       },
@@ -203,9 +203,9 @@
     "desert_fence": {
       "frame": {
         "x": 842,
-        "y": 194,
+        "y": 196,
         "w": 128,
-        "h": 140
+        "h": 97
       },
       "rotated": false,
       "trimmed": false,
@@ -213,19 +213,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 140
+        "h": 97
       },
       "sourceSize": {
         "w": 128,
-        "h": 140
+        "h": 97
       }
     },
     "desert_flower_bed": {
       "frame": {
         "x": 2,
-        "y": 452,
+        "y": 454,
         "w": 128,
-        "h": 128
+        "h": 100
       },
       "rotated": false,
       "trimmed": false,
@@ -233,18 +233,18 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 128
+        "h": 100
       },
       "sourceSize": {
         "w": 128,
-        "h": 128
+        "h": 100
       }
     },
     "desert_lamp": {
       "frame": {
         "x": 132,
-        "y": 452,
-        "w": 98,
+        "y": 454,
+        "w": 64,
         "h": 192
       },
       "rotated": false,
@@ -252,20 +252,20 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 98,
+        "w": 64,
         "h": 192
       },
       "sourceSize": {
-        "w": 98,
+        "w": 64,
         "h": 192
       }
     },
     "desert_ornamental_feature": {
       "frame": {
-        "x": 232,
-        "y": 452,
+        "x": 198,
+        "y": 454,
         "w": 128,
-        "h": 141
+        "h": 131
       },
       "rotated": false,
       "trimmed": false,
@@ -273,19 +273,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 141
+        "h": 131
       },
       "sourceSize": {
         "w": 128,
-        "h": 141
+        "h": 131
       }
     },
     "desert_parked_cart": {
       "frame": {
-        "x": 362,
-        "y": 452,
+        "x": 328,
+        "y": 454,
         "w": 128,
-        "h": 143
+        "h": 129
       },
       "rotated": false,
       "trimmed": false,
@@ -293,19 +293,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 143
+        "h": 129
       },
       "sourceSize": {
         "w": 128,
-        "h": 143
+        "h": 129
       }
     },
     "desert_planter": {
       "frame": {
-        "x": 492,
-        "y": 452,
+        "x": 458,
+        "y": 454,
         "w": 128,
-        "h": 158
+        "h": 137
       },
       "rotated": false,
       "trimmed": false,
@@ -313,17 +313,17 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 158
+        "h": 137
       },
       "sourceSize": {
         "w": 128,
-        "h": 158
+        "h": 137
       }
     },
     "desert_pro_shop_t1": {
       "frame": {
-        "x": 622,
-        "y": 452,
+        "x": 588,
+        "y": 454,
         "w": 192,
         "h": 150
       },
@@ -342,8 +342,8 @@
     },
     "desert_pro_shop_t2": {
       "frame": {
-        "x": 816,
-        "y": 452,
+        "x": 782,
+        "y": 454,
         "w": 192,
         "h": 150
       },
@@ -363,7 +363,7 @@
     "desert_pro_shop_t3": {
       "frame": {
         "x": 2,
-        "y": 646,
+        "y": 648,
         "w": 192,
         "h": 150
       },
@@ -383,7 +383,7 @@
     "desert_snack_bar_t1": {
       "frame": {
         "x": 196,
-        "y": 646,
+        "y": 648,
         "w": 192,
         "h": 146
       },
@@ -403,7 +403,7 @@
     "desert_snack_bar_t2": {
       "frame": {
         "x": 390,
-        "y": 646,
+        "y": 648,
         "w": 192,
         "h": 146
       },
@@ -423,7 +423,7 @@
     "desert_snack_bar_t3": {
       "frame": {
         "x": 584,
-        "y": 646,
+        "y": 648,
         "w": 192,
         "h": 146
       },
@@ -443,29 +443,29 @@
     "desert_tee_sign": {
       "frame": {
         "x": 778,
-        "y": 646,
-        "w": 120,
-        "h": 192
+        "y": 648,
+        "w": 128,
+        "h": 173
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 120,
-        "h": 192
+        "w": 128,
+        "h": 173
       },
       "sourceSize": {
-        "w": 120,
-        "h": 192
+        "w": 128,
+        "h": 173
       }
     },
     "links_bench": {
       "frame": {
         "x": 2,
-        "y": 840,
+        "y": 823,
         "w": 128,
-        "h": 164
+        "h": 113
       },
       "rotated": false,
       "trimmed": false,
@@ -473,39 +473,39 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 164
+        "h": 113
       },
       "sourceSize": {
         "w": 128,
-        "h": 164
+        "h": 113
       }
     },
     "links_bin": {
       "frame": {
         "x": 132,
-        "y": 840,
-        "w": 128,
-        "h": 190
+        "y": 823,
+        "w": 113,
+        "h": 192
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
-        "h": 190
+        "w": 113,
+        "h": 192
       },
       "sourceSize": {
-        "w": 128,
-        "h": 190
+        "w": 113,
+        "h": 192
       }
     },
     "links_boardwalk": {
       "frame": {
-        "x": 262,
-        "y": 840,
+        "x": 247,
+        "y": 823,
         "w": 128,
-        "h": 105
+        "h": 102
       },
       "rotated": false,
       "trimmed": false,
@@ -513,17 +513,17 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 105
+        "h": 102
       },
       "sourceSize": {
         "w": 128,
-        "h": 105
+        "h": 102
       }
     },
     "links_bridge": {
       "frame": {
-        "x": 392,
-        "y": 840,
+        "x": 377,
+        "y": 823,
         "w": 128,
         "h": 102
       },
@@ -542,8 +542,8 @@
     },
     "links_bridge_approach": {
       "frame": {
-        "x": 522,
-        "y": 840,
+        "x": 507,
+        "y": 823,
         "w": 128,
         "h": 106
       },
@@ -562,8 +562,8 @@
     },
     "links_cart_rental_t1": {
       "frame": {
-        "x": 652,
-        "y": 840,
+        "x": 637,
+        "y": 823,
         "w": 192,
         "h": 160
       },
@@ -583,7 +583,7 @@
     "links_cart_rental_t2": {
       "frame": {
         "x": 2,
-        "y": 1032,
+        "y": 1017,
         "w": 192,
         "h": 160
       },
@@ -603,7 +603,7 @@
     "links_cart_rental_t3": {
       "frame": {
         "x": 196,
-        "y": 1032,
+        "y": 1017,
         "w": 192,
         "h": 160
       },
@@ -623,7 +623,7 @@
     "links_clubhouse_t1": {
       "frame": {
         "x": 390,
-        "y": 1032,
+        "y": 1017,
         "w": 256,
         "h": 256
       },
@@ -643,9 +643,9 @@
     "links_fence": {
       "frame": {
         "x": 648,
-        "y": 1032,
+        "y": 1017,
         "w": 128,
-        "h": 140
+        "h": 97
       },
       "rotated": false,
       "trimmed": false,
@@ -653,19 +653,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 140
+        "h": 97
       },
       "sourceSize": {
         "w": 128,
-        "h": 140
+        "h": 97
       }
     },
     "links_flower_bed": {
       "frame": {
         "x": 778,
-        "y": 1032,
+        "y": 1017,
         "w": 128,
-        "h": 128
+        "h": 100
       },
       "rotated": false,
       "trimmed": false,
@@ -673,18 +673,18 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 128
+        "h": 100
       },
       "sourceSize": {
         "w": 128,
-        "h": 128
+        "h": 100
       }
     },
     "links_lamp": {
       "frame": {
         "x": 908,
-        "y": 1032,
-        "w": 98,
+        "y": 1017,
+        "w": 64,
         "h": 192
       },
       "rotated": false,
@@ -692,20 +692,20 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 98,
+        "w": 64,
         "h": 192
       },
       "sourceSize": {
-        "w": 98,
+        "w": 64,
         "h": 192
       }
     },
     "links_ornamental_feature": {
       "frame": {
         "x": 2,
-        "y": 1290,
+        "y": 1275,
         "w": 128,
-        "h": 141
+        "h": 131
       },
       "rotated": false,
       "trimmed": false,
@@ -713,19 +713,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 141
+        "h": 131
       },
       "sourceSize": {
         "w": 128,
-        "h": 141
+        "h": 131
       }
     },
     "links_parked_cart": {
       "frame": {
         "x": 132,
-        "y": 1290,
+        "y": 1275,
         "w": 128,
-        "h": 143
+        "h": 129
       },
       "rotated": false,
       "trimmed": false,
@@ -733,19 +733,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 143
+        "h": 129
       },
       "sourceSize": {
         "w": 128,
-        "h": 143
+        "h": 129
       }
     },
     "links_planter": {
       "frame": {
         "x": 262,
-        "y": 1290,
+        "y": 1275,
         "w": 128,
-        "h": 158
+        "h": 137
       },
       "rotated": false,
       "trimmed": false,
@@ -753,17 +753,17 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 158
+        "h": 137
       },
       "sourceSize": {
         "w": 128,
-        "h": 158
+        "h": 137
       }
     },
     "links_pro_shop_t1": {
       "frame": {
         "x": 392,
-        "y": 1290,
+        "y": 1275,
         "w": 192,
         "h": 150
       },
@@ -783,7 +783,7 @@
     "links_pro_shop_t2": {
       "frame": {
         "x": 586,
-        "y": 1290,
+        "y": 1275,
         "w": 192,
         "h": 150
       },
@@ -803,7 +803,7 @@
     "links_pro_shop_t3": {
       "frame": {
         "x": 780,
-        "y": 1290,
+        "y": 1275,
         "w": 192,
         "h": 150
       },
@@ -823,7 +823,7 @@
     "links_snack_bar_t1": {
       "frame": {
         "x": 2,
-        "y": 1450,
+        "y": 1427,
         "w": 192,
         "h": 146
       },
@@ -843,7 +843,7 @@
     "links_snack_bar_t2": {
       "frame": {
         "x": 196,
-        "y": 1450,
+        "y": 1427,
         "w": 192,
         "h": 146
       },
@@ -863,7 +863,7 @@
     "links_snack_bar_t3": {
       "frame": {
         "x": 390,
-        "y": 1450,
+        "y": 1427,
         "w": 192,
         "h": 146
       },
@@ -883,29 +883,29 @@
     "links_tee_sign": {
       "frame": {
         "x": 584,
-        "y": 1450,
-        "w": 120,
-        "h": 192
+        "y": 1427,
+        "w": 128,
+        "h": 173
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 120,
-        "h": 192
+        "w": 128,
+        "h": 173
       },
       "sourceSize": {
-        "w": 120,
-        "h": 192
+        "w": 128,
+        "h": 173
       }
     },
     "parkland_bench": {
       "frame": {
-        "x": 706,
-        "y": 1450,
+        "x": 714,
+        "y": 1427,
         "w": 128,
-        "h": 164
+        "h": 113
       },
       "rotated": false,
       "trimmed": false,
@@ -913,39 +913,39 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 164
+        "h": 113
       },
       "sourceSize": {
         "w": 128,
-        "h": 164
+        "h": 113
       }
     },
     "parkland_bin": {
       "frame": {
-        "x": 836,
-        "y": 1450,
-        "w": 128,
-        "h": 190
+        "x": 844,
+        "y": 1427,
+        "w": 113,
+        "h": 192
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 128,
-        "h": 190
+        "w": 113,
+        "h": 192
       },
       "sourceSize": {
-        "w": 128,
-        "h": 190
+        "w": 113,
+        "h": 192
       }
     },
     "parkland_boardwalk": {
       "frame": {
         "x": 2,
-        "y": 1644,
+        "y": 1621,
         "w": 128,
-        "h": 105
+        "h": 102
       },
       "rotated": false,
       "trimmed": false,
@@ -953,17 +953,17 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 105
+        "h": 102
       },
       "sourceSize": {
         "w": 128,
-        "h": 105
+        "h": 102
       }
     },
     "parkland_bridge": {
       "frame": {
         "x": 132,
-        "y": 1644,
+        "y": 1621,
         "w": 128,
         "h": 102
       },
@@ -983,7 +983,7 @@
     "parkland_bridge_approach": {
       "frame": {
         "x": 262,
-        "y": 1644,
+        "y": 1621,
         "w": 128,
         "h": 106
       },
@@ -1003,7 +1003,7 @@
     "parkland_cart_rental_t1": {
       "frame": {
         "x": 392,
-        "y": 1644,
+        "y": 1621,
         "w": 192,
         "h": 160
       },
@@ -1023,7 +1023,7 @@
     "parkland_cart_rental_t2": {
       "frame": {
         "x": 586,
-        "y": 1644,
+        "y": 1621,
         "w": 192,
         "h": 160
       },
@@ -1043,7 +1043,7 @@
     "parkland_cart_rental_t3": {
       "frame": {
         "x": 780,
-        "y": 1644,
+        "y": 1621,
         "w": 192,
         "h": 160
       },
@@ -1063,7 +1063,7 @@
     "parkland_clubhouse_t1": {
       "frame": {
         "x": 2,
-        "y": 1806,
+        "y": 1783,
         "w": 256,
         "h": 256
       },
@@ -1083,9 +1083,9 @@
     "parkland_fence": {
       "frame": {
         "x": 260,
-        "y": 1806,
+        "y": 1783,
         "w": 128,
-        "h": 140
+        "h": 97
       },
       "rotated": false,
       "trimmed": false,
@@ -1093,19 +1093,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 140
+        "h": 97
       },
       "sourceSize": {
         "w": 128,
-        "h": 140
+        "h": 97
       }
     },
     "parkland_flower_bed": {
       "frame": {
         "x": 390,
-        "y": 1806,
+        "y": 1783,
         "w": 128,
-        "h": 128
+        "h": 100
       },
       "rotated": false,
       "trimmed": false,
@@ -1113,18 +1113,18 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 128
+        "h": 100
       },
       "sourceSize": {
         "w": 128,
-        "h": 128
+        "h": 100
       }
     },
     "parkland_lamp": {
       "frame": {
         "x": 520,
-        "y": 1806,
-        "w": 98,
+        "y": 1783,
+        "w": 64,
         "h": 192
       },
       "rotated": false,
@@ -1132,20 +1132,20 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 98,
+        "w": 64,
         "h": 192
       },
       "sourceSize": {
-        "w": 98,
+        "w": 64,
         "h": 192
       }
     },
     "parkland_ornamental_feature": {
       "frame": {
-        "x": 620,
-        "y": 1806,
+        "x": 586,
+        "y": 1783,
         "w": 128,
-        "h": 141
+        "h": 131
       },
       "rotated": false,
       "trimmed": false,
@@ -1153,19 +1153,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 141
+        "h": 131
       },
       "sourceSize": {
         "w": 128,
-        "h": 141
+        "h": 131
       }
     },
     "parkland_parked_cart": {
       "frame": {
-        "x": 750,
-        "y": 1806,
+        "x": 716,
+        "y": 1783,
         "w": 128,
-        "h": 143
+        "h": 129
       },
       "rotated": false,
       "trimmed": false,
@@ -1173,19 +1173,19 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 143
+        "h": 129
       },
       "sourceSize": {
         "w": 128,
-        "h": 143
+        "h": 129
       }
     },
     "parkland_planter": {
       "frame": {
-        "x": 880,
-        "y": 1806,
+        "x": 846,
+        "y": 1783,
         "w": 128,
-        "h": 158
+        "h": 137
       },
       "rotated": false,
       "trimmed": false,
@@ -1193,17 +1193,17 @@
         "x": 0,
         "y": 0,
         "w": 128,
-        "h": 158
+        "h": 137
       },
       "sourceSize": {
         "w": 128,
-        "h": 158
+        "h": 137
       }
     },
     "parkland_pro_shop_t1": {
       "frame": {
         "x": 2,
-        "y": 2064,
+        "y": 2041,
         "w": 192,
         "h": 150
       },
@@ -1223,7 +1223,7 @@
     "parkland_pro_shop_t2": {
       "frame": {
         "x": 196,
-        "y": 2064,
+        "y": 2041,
         "w": 192,
         "h": 150
       },
@@ -1243,7 +1243,7 @@
     "parkland_pro_shop_t3": {
       "frame": {
         "x": 390,
-        "y": 2064,
+        "y": 2041,
         "w": 192,
         "h": 150
       },
@@ -1263,7 +1263,7 @@
     "parkland_snack_bar_t1": {
       "frame": {
         "x": 584,
-        "y": 2064,
+        "y": 2041,
         "w": 192,
         "h": 146
       },
@@ -1283,7 +1283,7 @@
     "parkland_snack_bar_t2": {
       "frame": {
         "x": 778,
-        "y": 2064,
+        "y": 2041,
         "w": 192,
         "h": 146
       },
@@ -1303,7 +1303,7 @@
     "parkland_snack_bar_t3": {
       "frame": {
         "x": 2,
-        "y": 2216,
+        "y": 2193,
         "w": 192,
         "h": 146
       },
@@ -1323,21 +1323,21 @@
     "parkland_tee_sign": {
       "frame": {
         "x": 196,
-        "y": 2216,
-        "w": 120,
-        "h": 192
+        "y": 2193,
+        "w": 128,
+        "h": 173
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 120,
-        "h": 192
+        "w": 128,
+        "h": 173
       },
       "sourceSize": {
-        "w": 120,
-        "h": 192
+        "w": 128,
+        "h": 173
       }
     }
   },
@@ -1346,8 +1346,8 @@
     "image": "buildings-decor.png",
     "format": "RGBA8888",
     "size": {
-      "w": 1010,
-      "h": 2410
+      "w": 976,
+      "h": 2368
     },
     "scale": "1"
   }

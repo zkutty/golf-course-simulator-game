@@ -110,7 +110,10 @@ jobs:
         run: node --test scripts/promote-dist.test.mjs
 
       - name: Build
-        run: npm run build
+        run: |
+          printf 'ZK1359_BUILD_V1 %s sha=%s run=%s attempt=%s job=%s\n' BEGIN "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_JOB"
+          npm run build
+          printf 'ZK1359_BUILD_V1 %s sha=%s run=%s attempt=%s job=%s\n' END "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_JOB"
         env:
           # Accepted development assets are promoted unchanged to production.
           # Resolve the environment tag from hostname at runtime.
@@ -127,14 +130,33 @@ jobs:
           path: simgolf-lite/dist
           retention-days: 7
 
+  qualify-release:
+    name: Qualify completed producer artifacts
+    needs: ci
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      dist-id: ${{ steps.receipt.outputs.dist-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Bind release receipt to immutable CI artifacts
-        if: github.event_name == 'push'
+        id: receipt
         run: node scripts/promote-dist.mjs receipt
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Upload release receipt
-        if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: release-receipt
@@ -144,7 +166,7 @@ jobs:
 
   deploy-playtest:
     name: Deploy tested artifact to Cloudflare playtest
-    needs: ci
+    needs: [ci, qualify-release]
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -162,7 +184,8 @@ jobs:
       - name: Download tested build
         uses: actions/download-artifact@v4
         with:
-          name: dist
+          artifact-ids: ${{ needs.qualify-release.outputs.dist-id }}
+          merge-multiple: true
           path: simgolf-lite/dist
 
       - name: Deploy static assets
@@ -176,7 +199,7 @@ jobs:
 
   deploy-production:
     name: Deploy tested artifact to Cloudflare production
-    needs: ci
+    needs: [ci, qualify-release]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -20,6 +20,8 @@ import {
   type HoleIllustrationDeliveryResult,
 } from "../game/holeIllustration/exportRuntime";
 import type { Translator } from "../i18n/context";
+import { IconUi } from "../assets/icons/IconUi";
+import "./HoleIllustrationPreviewPanel.css";
 
 const TEES: readonly TeeSet[] = ["forward", "member", "championship"];
 const PINS: readonly PinRotation[] = ["A", "B", "C"];
@@ -90,19 +92,19 @@ export function HoleIllustrationExportControls(props: {
 }) {
   const { t } = useI18n();
   const atlasExplanationId = "hole-illustration-atlas-unavailable";
-  return <section aria-labelledby="hole-illustration-export-title" style={{ marginTop: 10, padding: 8, border: "1px solid #8ca092", borderRadius: 7, background: "#f7fbf5" }}>
+  return <section className="cc-hole-illustration__export" aria-labelledby="hole-illustration-export-title" style={{ marginTop: 10, padding: 8, border: "1px solid #8ca092", borderRadius: 7, background: "#f7fbf5" }}>
     <strong id="hole-illustration-export-title">{t("architecture.illustration.export.title")}</strong>
     <small style={{ display: "block" }}>{t("architecture.illustration.export.dimensions")}</small>
     <label style={{ display: "block", margin: "6px 0" }}><input type="checkbox" checked={props.includeMap} disabled={props.busy} onChange={(event) => props.onIncludeMapChange(event.target.checked)} /> {t("architecture.illustration.export.includeMap")}</label>
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+    <div className="cc-hole-illustration__actions" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
       <button disabled={props.busy} onClick={() => props.onExport("single", "svg")}>{t("architecture.illustration.export.singleSvg")}</button>
       <button disabled={props.busy} onClick={() => props.onExport("single", "png")}>{t("architecture.illustration.export.singlePng")}</button>
       <button disabled={props.busy} onClick={() => props.onExport("single", "png", true)}>{t("architecture.illustration.export.sharePng")}</button>
       <button disabled={props.busy || !props.atlasAvailable} aria-describedby={props.atlasAvailable ? undefined : atlasExplanationId} onClick={() => props.onExport("atlas", "svg")}>{t("architecture.illustration.export.atlasSvg")}</button>
       <button disabled={props.busy || !props.atlasAvailable} aria-describedby={props.atlasAvailable ? undefined : atlasExplanationId} onClick={() => props.onExport("atlas", "png")}>{t("architecture.illustration.export.atlasPng")}</button>
     </div>
-    {!props.atlasAvailable && <p id={atlasExplanationId} style={{ fontSize: 12, margin: "6px 0 0" }}>{t("architecture.illustration.export.atlasUnavailable")}</p>}
-    <p role="status" aria-live="polite" data-testid="hole-illustration-export-status" style={{ minHeight: 18, margin: "6px 0 0", fontSize: 12 }}>{props.status}</p>
+    {!props.atlasAvailable && <p id={atlasExplanationId} className="cc-hole-illustration__text" style={{ margin: "6px 0 0" }}>{t("architecture.illustration.export.atlasUnavailable")}</p>}
+    <p role="status" aria-live="polite" data-testid="hole-illustration-export-status" className="cc-hole-illustration__text" style={{ minHeight: "1.125rem", margin: "6px 0 0" }}>{props.status}</p>
   </section>;
 }
 
@@ -138,10 +140,10 @@ export function HoleIllustrationPreviewPanel(props: { course: Course; evidence: 
     });
   };
 
-  return <section id="hole-illustration-preview" aria-labelledby="hole-illustration-preview-title" data-testid="hole-illustration-preview" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#e6f0e8", border: "1px solid #71917c" }}>
-    <header style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-      <div><strong id="hole-illustration-preview-title">{t("architecture.illustration.title")}</strong><small style={{ display: "block" }}>{t("architecture.illustration.readOnly")}</small></div>
-      <button aria-label={t("architecture.illustration.close")} onClick={props.onClose}>✕</button>
+  return <section id="hole-illustration-preview" className="cc-hole-illustration" aria-labelledby="hole-illustration-preview-title" data-testid="hole-illustration-preview" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#e6f0e8", border: "1px solid #71917c" }}>
+    <header className="cc-hole-illustration__header" style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+      <div className="cc-hole-illustration__heading"><strong id="hole-illustration-preview-title">{t("architecture.illustration.title")}</strong><small style={{ display: "block" }}>{t("architecture.illustration.readOnly")}</small></div>
+      <button type="button" className="cc-hole-illustration__close" aria-label={t("architecture.illustration.close")} onClick={props.onClose}><IconUi name="close" /></button>
     </header>
     {!settings || !preview ? <p role="status">{t("architecture.illustration.none")}</p> : <>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 7, marginTop: 9 }}>
@@ -155,24 +157,24 @@ export function HoleIllustrationPreviewPanel(props: { course: Course; evidence: 
         <label>{t("architecture.illustration.season")}<select aria-label={t("architecture.illustration.season")} value={settings.season} onChange={(event) => set("season", event.target.value as HoleIllustrationPreviewSettings["season"])}>{SEASONS.map((season) => <option key={season}>{season}</option>)}</select></label>
         <label>{t("architecture.illustration.contrast")}<select aria-label={t("architecture.illustration.contrast")} value={settings.contrast} onChange={(event) => set("contrast", event.target.value as HoleIllustrationPreviewSettings["contrast"])}>{HOLE_ILLUSTRATION_CONTRASTS.map((contrast) => <option key={contrast}>{contrast}</option>)}</select></label>
       </div>
-      <fieldset style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "10px 0 0", fontSize: 12 }}>
+      <fieldset className="cc-hole-illustration__details" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "10px 0 0" }}>
         <legend>{t("architecture.illustration.details")}</legend>
         {([['showContours', 'architecture.illustration.contours'], ['showVegetation', 'architecture.illustration.vegetation'], ['showHazards', 'architecture.illustration.hazards'], ['showShotLine', 'architecture.illustration.shotLine'], ['showLabels', 'architecture.illustration.labels'], ['showLandingDistances', 'architecture.illustration.landingDistances']] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={settings[key]} onChange={(event) => set(key, event.target.checked)} /> {t(label)}</label>)}
       </fieldset>
       {!preview.complete ? <p role="status" data-testid="hole-illustration-incomplete">{t("architecture.illustration.incomplete", { message: preview.message ?? "" })}</p> : <>
-        <div role="status" aria-live="polite" data-testid="hole-illustration-metadata" style={{ fontSize: 12, marginTop: 8 }}>
+        <div role="status" aria-live="polite" data-testid="hole-illustration-metadata" className="cc-hole-illustration__metadata" style={{ marginTop: 8 }}>
           {t("architecture.illustration.metadata", { hole: preview.metadata!.holeNumber, name: preview.metadata!.holeName, tee: preview.metadata!.tee, pin: preview.metadata!.pin, par: preview.metadata!.par, yardage: preview.metadata!.yardage, route: preview.metadata!.routeSource })}<br />
           {t("architecture.illustration.hashes", { snapshot: preview.metadata!.snapshotHash, plan: preview.metadata!.planHash })}
         </div>
-        {preview.warning && <p role="status" data-testid="hole-illustration-evidence-warning" style={{ fontSize: 12, background: "#fff1c8", padding: 6 }}>{preview.warning}</p>}
-        {settings.showLabels && <p style={{ fontSize: 12, margin: "7px 0" }}>{t("architecture.illustration.labelsValue", { tee: preview.metadata!.tee, pin: preview.metadata!.pin, landings: "" })}</p>}
-        {settings.showLandingDistances && preview.landings.length > 0 && <p role="status" style={{ fontSize: 12, margin: "7px 0" }}>{preview.landings.map((landing) => t("architecture.illustration.landingShot", { landing: landing.name, yards: landing.yards })).join(" · ")}</p>}
+        {preview.warning && <p role="status" data-testid="hole-illustration-evidence-warning" className="cc-hole-illustration__text" style={{ background: "#fff1c8", padding: 6 }}>{preview.warning}</p>}
+        {settings.showLabels && <p className="cc-hole-illustration__text" style={{ margin: "7px 0" }}>{t("architecture.illustration.labelsValue", { tee: preview.metadata!.tee, pin: preview.metadata!.pin, landings: "" })}</p>}
+        {settings.showLandingDistances && preview.landings.length > 0 && <p role="status" className="cc-hole-illustration__text" style={{ margin: "7px 0" }}>{preview.landings.map((landing) => t("architecture.illustration.landingShot", { landing: landing.name, yards: landing.yards })).join(" · ")}</p>}
         <figure style={{ position: "relative", margin: 0 }}><img alt={t("architecture.illustration.alt", { hole: preview.metadata!.holeName })} src={`data:image/svg+xml,${encodeURIComponent(preview.svg!)}`} style={{ display: "block", width: "100%", height: "auto", boxSizing: "border-box", border: "1px solid #718674", background: "white" }} />
-          {settings.showLabels && <figcaption style={{ position: "absolute", top: 8, left: 8, maxWidth: "calc(100% - 16px)", boxSizing: "border-box", padding: "5px 7px", background: "rgba(255,255,255,.9)", borderRadius: 4, fontSize: "clamp(12px,3vw,16px)", fontWeight: 700 }}>{t("architecture.illustration.metadata", { hole: preview.metadata!.holeNumber, name: preview.metadata!.holeName, tee: preview.metadata!.tee, pin: preview.metadata!.pin, par: preview.metadata!.par, yardage: preview.metadata!.yardage, route: preview.metadata!.routeSource })}</figcaption>}
+          {settings.showLabels && <figcaption className="cc-hole-illustration__caption" style={{ position: "absolute", top: 8, left: 8, maxWidth: "calc(100% - 16px)", boxSizing: "border-box", padding: "5px 7px", background: "rgba(255,255,255,.9)", borderRadius: 4, fontWeight: 700 }}>{t("architecture.illustration.metadata", { hole: preview.metadata!.holeNumber, name: preview.metadata!.holeName, tee: preview.metadata!.tee, pin: preview.metadata!.pin, par: preview.metadata!.par, yardage: preview.metadata!.yardage, route: preview.metadata!.routeSource })}</figcaption>}
         </figure>
         <HoleIllustrationExportControls busy={exportBusy} atlasAvailable={atlasAvailable} includeMap={includeMap} status={exportStatus} onIncludeMapChange={setIncludeMap} onExport={(kind, format, share) => void exportIllustration(kind, format, share)} />
       </>}
     </>}
-    <div style={{ marginTop: 9 }}><button data-testid="hole-illustration-cancel" onClick={props.onClose}>{t("architecture.illustration.cancel")}</button></div>
+    <div style={{ marginTop: 9 }}><button type="button" data-testid="hole-illustration-cancel" onClick={props.onClose}>{t("architecture.illustration.cancel")}</button></div>
   </section>;
 }

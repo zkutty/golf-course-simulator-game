@@ -1,5 +1,5 @@
+import { buildArchitectureRouting, courseForRoutingReview } from "./routingLabels";
 import type { Course, Terrain, World } from "../models/types";
-import { courseForLayout } from "../models/courseLayouts";
 import { analyzeArchitecture } from "./architecture";
 import type {
   ArchitectureOverlayCell,
@@ -27,6 +27,7 @@ import type { ArchitectureReferencePlan, ReferenceConsumerSummary } from "./refe
 
 export interface ArchitectureReviewFilters {
   kind: ArchitectureOverlayKind;
+  routingOrder?: "published" | "draft";
   courseId: string;
   holeId: string | "all";
   teeSet: "all" | "forward" | "member" | "championship";
@@ -234,7 +235,7 @@ export function defaultArchitectureFilters(course: Course): ArchitectureReviewFi
     teeSet: "all",
     sourceSegment: "all",
     recency: "current",
-    pinRotation: "A",
+    pinRotation: course.activePinRotation ?? "A",
     cohortId: "all",
     mobilityMode: "all",
   };
@@ -246,12 +247,14 @@ export function buildArchitectureReview(
   filters: ArchitectureReviewFilters,
 ): ArchitectureReviewData {
   const living = normalizeLivingClub(world.livingClub);
-  const selectedCourse = courseForLayout(course, filters.courseId);
+  const selectedCourse = courseForRoutingReview(course, filters);
   const effectiveSelectedCourse = courseWithEffectiveSurfaces(selectedCourse);
   const currentGeometryVersion = courseGeometryVersion(selectedCourse);
   const strategic = buildStrategicPortfolio(selectedCourse, { courseId: filters.courseId });
-  const selectedTee = filters.teeSet === "all" ? "member" : filters.teeSet;
-  const selectedPin = filters.pinRotation === "all" ? "A" : filters.pinRotation;
+  const routing = filters.kind === "routing" ? buildArchitectureRouting(course, filters) : undefined;
+  const selectedRouting = routing?.find(hole => hole.holeId === filters.holeId);
+  const selectedTee = selectedRouting?.teeSet ?? (filters.teeSet === "all" ? "member" : filters.teeSet);
+  const selectedPin = selectedRouting?.pinRotation ?? (filters.pinRotation === "all" ? (filters.kind === "routing" ? course.activePinRotation ?? "A" : "A") : filters.pinRotation);
   const selectedStrategicHole = filters.holeId === "all"
     ? null
     : strategic.evaluation.holes.find((hole) => hole.holeId === filters.holeId && hole.setup.teeSet === selectedTee && hole.setup.pinRotation === selectedPin) ?? null;
@@ -284,7 +287,11 @@ export function buildArchitectureReview(
         ? "Available evidence belongs to an older geometry revision and is never labeled current."
         : "The overlay is backed by retained round evidence for the selected filters.";
   const overlay: ArchitectureOverlayRender = { kind: filters.kind, traces: [], cells: [], points: [] };
-  if (filters.kind === "traces") overlay.traces = traces(evidence, currentGeometryVersion, selectedTraceId);
+  if (filters.kind === "routing") {
+    overlay.routing = routing!;
+    overlay.selectedRoutingHoleId = overlay.routing.some(hole => hole.holeId === filters.holeId) ? filters.holeId : "all";
+  }
+  else if (filters.kind === "traces") overlay.traces = traces(evidence, currentGeometryVersion, selectedTraceId);
   else if (filters.kind === "dispersion") overlay.points = dispersionPoints(evidence, currentGeometryVersion);
   else if (filters.kind === "heatmap") overlay.cells = landingCells(evidence, currentGeometryVersion);
   else if (filters.kind === "recovery") overlay.traces = traces(evidence, currentGeometryVersion, selectedTraceId, true);
