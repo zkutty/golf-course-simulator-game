@@ -2,6 +2,7 @@ import * as PIXI from "pixi.js";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_STATE } from "../../../game/gameState";
 import type { Point } from "../../../game/models/types";
+import { tileCenterIso } from "../../../game/render/iso";
 import type { RenderSnapshot } from "../../../game/render/renderSnapshot";
 import { SceneSystemHost } from "../SceneSystemHost";
 import { createArchitectureOverlaySceneSystem, routeDestinationHierarchy } from "./architectureOverlayScene";
@@ -177,4 +178,66 @@ describe("Architecture overlay scene ownership", () => {
     expect(testWindow.__ccSetArchitectureOverlayTestLayer).toBeUndefined();
     vi.unstubAllGlobals();
   });
+
+  it("reprojects reference diagnostics through current parent transforms and clears each lifecycle", () => {
+    const testWindow: Record<string, unknown> = {};
+    vi.stubGlobal("window", testWindow);
+    const parent = new PIXI.Container();
+    const layer = new PIXI.Container();
+    parent.addChild(layer);
+    parent.position.set(30, 50);
+    parent.pivot.set(10, 20);
+    parent.scale.set(.8);
+    const scene = createArchitectureOverlaySceneSystem(layer);
+    const firstPoint = { id: "first-point", x: 2, y: 3, value: 1, current: true };
+    const reference = (point: typeof firstPoint) => ({
+      kind: "reference" as const, cells: [],
+      traces: [{ id: "trace", from: { x: 1, y: 1 }, to: { x: point.x, y: point.y }, current: true }],
+      points: [point],
+    });
+    const projection = () => testWindow.__ccArchitectureOverlayProjection as {
+      traces: Array<{ id: string; from: Point; to: Point }>;
+      points: Array<{ id: string; center: Point; radius: number }>;
+    };
+    const screen = (point: Point) => {
+      const projected = layer.toGlobal(tileCenterIso(point.x, point.y));
+      return { x: projected.x, y: projected.y };
+    };
+    try {
+      scene.render?.(snapshot(1, { architectureOverlay: reference(firstPoint) }));
+      const initialGraphics = [...layer.children];
+      const initial = projection();
+      expect(initial.points[0].center).toEqual(screen(firstPoint));
+      expect(initial.traces[0].to).toEqual(screen(firstPoint));
+
+      // Camera smoothing mutates the world parent without a geometry revision.
+      parent.position.set(130, 75);
+      parent.pivot.set(40, 15);
+      parent.scale.set(1.2, 1.1);
+      const moved = projection();
+      expect(moved.points[0].center).not.toEqual(initial.points[0].center);
+      expect(moved.points[0].center).toEqual(screen(firstPoint));
+      expect(moved.traces[0].from).toEqual(screen({ x: 1, y: 1 }));
+      expect(moved.traces[0].to).toEqual(screen(firstPoint));
+      expect(layer.children).toEqual(initialGraphics);
+
+      const replacement = { ...firstPoint, id: "replacement", x: 4, y: 5 };
+      scene.render?.(snapshot(2, { architectureOverlay: reference(replacement) }));
+      expect(initialGraphics.every((graphic) => graphic.destroyed)).toBe(true);
+      expect(projection().points[0]).toMatchObject({ id: "replacement", center: screen(replacement), radius: 4.35 });
+      expect(projection().traces[0].to).toEqual(screen(replacement));
+
+      scene.render?.(snapshot(3, { showMarkers: false, architectureOverlay: reference(replacement) }));
+      expect(testWindow.__ccArchitectureOverlayProjection).toBeUndefined();
+      scene.render?.(snapshot(4, { architectureOverlay: reference(firstPoint) }));
+      expect(projection().points[0].id).toBe("first-point");
+      scene.dispose?.();
+      expect(testWindow.__ccArchitectureOverlayProjection).toBeUndefined();
+    } finally {
+      scene.dispose?.();
+      parent.destroy();
+      vi.unstubAllGlobals();
+    }
+  });
+
 });

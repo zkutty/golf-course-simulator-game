@@ -125,6 +125,15 @@ for (const fixture of VISUAL_FIXTURES) {
       const after = await page.evaluate(() => (window as unknown as { __ccReferencePlanDiagnostics?: { requests: number; solves: number } }).__ccReferencePlanDiagnostics);
       expect(after).toEqual(before);
     }
+    // Projection and pixel captures must share the settled camera transform.
+    await expect.poll(() => page.evaluate(() => {
+      const input = window.__coursecraftPixiTest?.viewportInputState();
+      const camera = input?.camera;
+      return !!(input?.attached && camera?.initialized && !input.rotation.tweening
+        && Math.abs(camera.center.x - camera.targetCenter.x) < .0001
+        && Math.abs(camera.center.y - camera.targetCenter.y) < .0001
+        && Math.abs(camera.zoom - camera.targetZoom) < .0001);
+    })).toBe(true);
     const projection = await expect.poll(() => page.evaluate(() =>
       (window as unknown as { __ccArchitectureOverlayProjection?: OverlayProjection }).__ccArchitectureOverlayProjection,
     ), { timeout: 30_000 }).toMatchObject({ traces: expect.any(Array), points: expect.any(Array) }).then(() => page.evaluate(() =>

@@ -105,6 +105,9 @@ async function setup(page: Page, scenario: "obstacle" | "water" | "slopes", rota
   await expect(page.getByTestId("player-shot-hud")).toBeVisible();
   await expect.poll(async () => (await round(page)).phase).toBe("awaiting_shot");
   await expect.poll(() => page.evaluate(() => Boolean(window.__coursecraftPixiTest))).toBe(true);
+  // The diagnostic API can mount before the asynchronous Pixi input controller.
+  // Require native listeners before fitting the camera or sending rotation keys.
+  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.viewportInputState()?.attached)).toBe(true);
   await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
   if (rotation >= 180) {
     await cameraPreflight(page, rotation);

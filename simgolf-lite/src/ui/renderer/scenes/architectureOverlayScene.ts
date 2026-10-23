@@ -168,10 +168,17 @@ export function createArchitectureOverlaySceneSystem(
             const global = traces.toGlobal(local);
             return { x: global.x, y: global.y };
           };
-          (window as TestWindow).__ccArchitectureOverlayProjection = {
-            traces: snapshot.architectureOverlay.traces.map((trace) => ({ id: trace.id, from: screenPoint(trace.from), to: screenPoint(trace.to) })),
-            points: snapshot.architectureOverlay.points.map((point) => ({ id: point.id, center: screenPoint(point), radius: Math.min(13, Math.max(4, 4 + Math.abs(point.value) * 0.35)) })),
-          };
+          const overlay = snapshot.architectureOverlay;
+          // Camera smoothing changes the parent transform without rebuilding
+          // this geometry. Reproject diagnostics only when the DEV hook is read.
+          Object.defineProperty(window as TestWindow, "__ccArchitectureOverlayProjection", {
+            configurable: true,
+            enumerable: true,
+            get: () => ({
+              traces: overlay.traces.map((trace) => ({ id: trace.id, from: screenPoint(trace.from), to: screenPoint(trace.to) })),
+              points: overlay.points.map((point) => ({ id: point.id, center: screenPoint(point), radius: Math.min(13, Math.max(4, 4 + Math.abs(point.value) * 0.35)) })),
+            }),
+          });
         }
       }
 
