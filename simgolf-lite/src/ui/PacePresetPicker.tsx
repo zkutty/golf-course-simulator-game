@@ -6,6 +6,9 @@ import { translateCurrent } from "../i18n/core";
 import { formatCurrency } from "../i18n/format";
 import { formatStaffShiftMinute } from "./liveOverviewPresentation";
 import "./PacePresetPicker.css";
+import { registerPacePreviewCatalog } from "../i18n/pacePreviewCatalog";
+
+registerPacePreviewCatalog();
 
 const PRESETS: PacePreset[] = ["relaxed", "balanced", "brisk"];
 const TIME_PAR: Record<CourseOperations["timeParStyle"], MessageKey> = {

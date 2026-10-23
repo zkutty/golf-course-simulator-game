@@ -2,6 +2,7 @@ import { generatedEn } from "./generatedCatalog";
 import type { setupEn } from "./setupCatalog";
 import type { visionIntroEn } from "./visionIntroCatalog";
 import type { playerProSocialEn } from "./playerProSocialCatalog";
+import type { pacePreviewEn } from "./pacePreviewCatalog";
 
 export const en = {
   ...generatedEn,
@@ -39,31 +40,6 @@ export const en = {
   "live.pace.preset.relaxed": "Relaxed",
   "live.pace.preset.balanced": "Balanced",
   "live.pace.preset.brisk": "Brisk",
-  "pacePreview.preset": "Preset",
-  "pacePreview.choose": "Preview a pace preset",
-  "pacePreview.title": "Preview {preset}",
-  "pacePreview.warning": "Applying this preset replaces all pace and beverage settings, including any manual overrides. Previewing or canceling keeps your current settings.",
-  "pacePreview.apply": "Apply preset",
-  "pacePreview.cancel": "Cancel preview",
-  "pacePreview.starterGap": "Starter gap",
-  "pacePreview.noStarterGap": "No extra gap",
-  "pacePreview.everyGroups": "Every {groups} groups",
-  "pacePreview.timePar": "Time par style",
-  "pacePreview.timePar.relaxed": "Relaxed",
-  "pacePreview.timePar.standard": "Standard",
-  "pacePreview.timePar.brisk": "Brisk",
-  "pacePreview.teeGuidance": "Tee guidance",
-  "pacePreview.teeGuidance.open": "Open choice",
-  "pacePreview.teeGuidance.recommended": "Recommended tees",
-  "pacePreview.teeGuidance.required": "Required tees",
-  "pacePreview.enforcement": "Pace enforcement",
-  "pacePreview.enforcement.advisory": "Advisory",
-  "pacePreview.enforcement.active": "Active",
-  "pacePreview.enforcement.strict": "Strict",
-  "pacePreview.lastTee": "Last tee time",
-  "pacePreview.beveragePasses": "Beverage service passes",
-  "pacePreview.alcoholLimit": "Alcohol limit per guest",
-  "pacePreview.beveragePrice": "Beverage price",
 
   "season.weather.kind.heavy_rain": "Heavy rain",
   "season.weather.kind.heat": "Heat",
@@ -2422,5 +2398,5 @@ export const en = {
   "property.community.previewValueClassic": "{low}–{high} projected value",
 } as const;
 
-export type MessageKey = keyof typeof en | keyof typeof setupEn | keyof typeof visionIntroEn | keyof typeof playerProSocialEn;
+export type MessageKey = keyof typeof en | keyof typeof setupEn | keyof typeof visionIntroEn | keyof typeof playerProSocialEn | keyof typeof pacePreviewEn;
 export type MessageParams = Record<string, string | number>;

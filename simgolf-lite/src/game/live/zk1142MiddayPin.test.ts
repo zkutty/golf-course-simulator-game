@@ -9,6 +9,7 @@ import {canonicalJson} from "../../utils/canonical";
 import type {Golfer,LiveState} from "./types";
 import type {CompletedRound} from "../retention/types";
 import {frozenCompletedPin,requestedPinForHole} from "./pinSetup";
+import {M47_MAX_OUTCOMES} from "./m47Types";
 
 function course():Course {
   const width=60,height=24,tiles:Terrain[]=Array(width*height).fill("fairway");
@@ -36,6 +37,46 @@ function scoredBytes(golfer:Golfer) {
 }
 function snapshot(live:LiveState) {return snapshotLiveSimulation({state:live,pendingCash:0,speed:"paused",selectedGolferId:null});}
 describe("ZK1142 midday daily-pin reconciliation",()=>{
+  it.each(["geometry","daily-pin"] as const)("retains modern scored motion without replay or archive growth through repeated %s replans",(reason)=>{
+    for(const tournament of [false,true]){
+      const {initial,live,golfer}=spawned();
+      if(tournament){golfer.tournamentId="frozen-event";golfer.tournamentEntrantId="frozen-entrant";}
+      advanceToScored(golfer,1,initial.condition);
+      // Enter an actual partial flight on the unscored hole before restarting.
+      let guard=0;while(!(golfer.segments[golfer.segIndex]?.motion&&golfer.segElapsed>0)&&guard++<10000)advanceGolfer(golfer,.05,initial.condition);
+      expect(golfer.scoredHoles).toBe(1);expect(golfer.segElapsed).toBeGreaterThan(0);
+      const history=scoredBytes(golfer),strokes=golfer.strokes,score=golfer.scoreToPar;
+      const completedIds=new Set(golfer.holePlans!.slice(0,1).map(plan=>plan.holeId));
+      const historical=golfer.shotOutcomes!.filter(outcome=>completedIds.has(outcome.holeId)&&outcome.sharedOutcome?.motion);
+      expect(historical.length).toBeGreaterThan(0);
+      for(let repeat=0;repeat<6;repeat++){
+        const edited={...initial,activePinRotation:(repeat%2?"C":"B") as "B"|"C"};
+        reconcileGolfers(live,edited,reason);
+        expect(scoredBytes(golfer)).toBe(history);expect(golfer.strokes).toBe(strokes);expect(golfer.scoreToPar).toBe(score);
+        expect(golfer.segIndex).toBe(historical.length);expect(golfer.segElapsed).toBe(0);expect(golfer.lastMotionSegmentIndex).toBeUndefined();
+        expect(golfer.segments.slice(0,golfer.segIndex).map(segment=>segment.shotId)).toEqual(historical.map(outcome=>outcome.id));
+        expect(golfer.shotOutcomes!.length).toBeLessThanOrEqual(M47_MAX_OUTCOMES);
+        for(const owner of golfer.shotOutcomes!.filter(outcome=>outcome.sharedOutcome?.motion)){
+          const associations=golfer.segments.filter(segment=>segment.shotId===owner.id);
+          expect(associations).toHaveLength(1);expect(associations[0].motion).toEqual(owner.sharedOutcome!.motion);
+        }
+        const immediate=restoreLiveSimulation(JSON.parse(JSON.stringify(snapshot(live))));expect(immediate).not.toBeNull();
+        const restoredGolfer=immediate!.state.golfers[0];
+        advanceGolfer(restoredGolfer,.01,initial.condition);
+        advanceGolfer(golfer,.01,initial.condition);
+        expect(restoredGolfer.segIndex).toBe(golfer.segIndex);expect(restoredGolfer.segElapsed).toBe(golfer.segElapsed);
+        expect(restoredGolfer.pos).toEqual(golfer.pos);expect(restoredGolfer.ball).toEqual(golfer.ball);
+        expect(scoredBytes(restoredGolfer)).toBe(history);
+        expect(golfer.segIndex).toBeGreaterThanOrEqual(historical.length);expect(golfer.scoredHoles).toBe(1);expect(scoredBytes(golfer)).toBe(history);
+        expect(restoreLiveSimulation(JSON.parse(JSON.stringify(snapshot(live))))).not.toBeNull();
+      }
+      let finishGuard=0;while(!golfer.finished&&finishGuard++<10000)advanceGolfer(golfer,2,initial.condition);
+      expect(golfer.finished).toBe(true);expect(golfer.scoredHoles).toBe(3);
+      expect(golfer.strokes).toBe(golfer.holeStrokes.reduce((sum,value)=>sum+value,0));
+      expect(golfer.scoreToPar).toBe(golfer.strokes-golfer.holePar.reduce((sum,value)=>sum+value,0));
+      expect(restoreLiveSimulation(JSON.parse(JSON.stringify(snapshot(live))))).not.toBeNull();
+    }
+  });
   it("preserves exact scored evidence through A→B→save/reload→C and records mixed setup truthfully",()=>{
     const {initial,live,golfer}=spawned();expect(golfer.pinRotation).toBe("A");
     advanceToScored(golfer,1,initial.condition);const first=scoredBytes(golfer);

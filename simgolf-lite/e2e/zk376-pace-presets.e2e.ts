@@ -4,6 +4,11 @@ import { formatCurrency } from "../src/i18n/format";
 import { PACE_PRESETS } from "../src/game/models/courseOperations";
 import type { PacePreset } from "../src/game/models/types";
 import { translate, type Locale } from "../src/i18n/core";
+import { registerPacePreviewCatalog } from "../src/i18n/pacePreviewCatalog";
+
+// The browser picker registers its deferred copy when loaded; initialize the
+// same catalog in the Node assertion context before computing expected labels.
+registerPacePreviewCatalog();
 
 const hosts = ["inspector", "live"] as const;
 type Host = typeof hosts[number];

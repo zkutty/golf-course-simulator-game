@@ -18,6 +18,7 @@ import { rollDiscretionaryWallet } from "./concessions";
 import type { CompletedRound } from "../retention/types";
 import { sampleRetainedShotMotion } from "../rules/shotMotion";
 import type { LiveShotOutcome } from "./m47Types";
+import { M47_MAX_OUTCOMES } from "./m47Types";
 import { createLiveTournament, planTournamentDay, tournamentForDate, updateTournamentStanding } from "../tournaments/tournaments";
 import { getTeeBox, preferredTeeForArchetype } from "../models/courseSetup";
 import { activeCourseLayout, courseForHoleIds, courseForLayout, layoutById, operatingCourseViews } from "../models/courseLayouts";
@@ -1104,10 +1105,16 @@ export function reconcileGolfers(state: LiveState, course: Course, reason: "geom
     // Splice: keep scored holes, replace the unplayed tail with the new plan.
     g.holePar = g.holePar.slice(0, g.scoredHoles).concat(replanned.holePar);
     g.holeStrokes = g.holeStrokes.slice(0, g.scoredHoles).concat(replanned.holeStrokes);
+    let retainedMotionHistory: typeof g.segments = [];
     if (g.capabilities) {
       const completedHoleIds = new Set((g.holePlans ?? []).slice(0, g.scoredHoles).map((plan) => plan.holeId));
       g.holePlans = (g.holePlans ?? []).slice(0, g.scoredHoles).concat(replanned.holePlans ?? []);
-      g.shotOutcomes = (g.shotOutcomes ?? []).filter((outcome) => completedHoleIds.has(outcome.holeId)).concat(replanned.shotOutcomes ?? []);
+      g.shotOutcomes = (g.shotOutcomes ?? []).filter((outcome) => completedHoleIds.has(outcome.holeId)).concat(replanned.shotOutcomes ?? []).slice(-M47_MAX_OUTCOMES);
+      const retainedShotIds = new Set(g.shotOutcomes.filter((outcome) => completedHoleIds.has(outcome.holeId)
+        && outcome.sharedOutcome?.motion).map((outcome) => outcome.id));
+      // Scored outcomes retain their canonical segment association. Keep only
+      // those physical records, never obsolete walks or the restarted hole.
+      retainedMotionHistory = g.segments.filter((segment) => segment.motion && segment.shotId != null && retainedShotIds.has(segment.shotId));
       g.holeReactions = (g.holeReactions ?? []).slice(0, g.scoredHoles).concat(replanned.holeReactions ?? []);
       g.currentIntent = replanned.holePlans?.[0]?.chosen;
     }
@@ -1118,5 +1125,11 @@ export function reconcileGolfers(state: LiveState, course: Course, reason: "geom
     g.ball = null;
     g.currentHole = startHole;
     reapplyGroupMobility(state, routing, g);
+    // Mobility and concessions apply only to the new itinerary. The prefix is
+    // already consumed, so no historical flight, score or charge plays again.
+    if (retainedMotionHistory.length) {
+      g.segments = retainedMotionHistory.concat(g.segments);
+      g.segIndex = retainedMotionHistory.length;
+    }
   }
 }

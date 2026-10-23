@@ -4,6 +4,7 @@ import { formatCurrency, formatDayLabel, formatNumber, formatWeekLabel } from ".
 import { registerSetupCatalog } from "./setupCatalog";
 import { registerVisionIntroCatalog } from "./visionIntroCatalog";
 import { registerPlayerProSocialCatalog } from "./playerProSocialCatalog";
+import { registerPacePreviewCatalog } from "./pacePreviewCatalog";
 
 describe("i18n", () => {
   it("interpolates typed parameters and ICU-style plurals", () => {
@@ -40,6 +41,15 @@ describe("i18n", () => {
     expect(translate("en", "playerPro.social.people.holdings", { count: 2 })).toBe("Known holdings (2)");
     expect(translate("pseudo", "playerPro.social.transfer.default")).toMatch(/^⟦Tráñs/);
     unregister();
+  });
+
+  it("localizes deferred pace confirmation copy without losing pseudo or parameter interpolation", () => {
+    expect(translate("en", "pacePreview.title")).toBe("pacePreview.title");
+    const unregister = registerPacePreviewCatalog();
+    expect(translate("en", "pacePreview.title", { preset: "Brisk" })).toBe("Preview Brisk");
+    expect(translate("pseudo", "pacePreview.warning")).toMatch(/^⟦Ápplÿïñg/);
+    unregister();
+    expect(translate("en", "pacePreview.title")).toBe("pacePreview.title");
   });
 
   it("loads only supported persisted locale values", () => {
