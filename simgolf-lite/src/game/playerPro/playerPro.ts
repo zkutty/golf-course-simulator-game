@@ -1,3 +1,4 @@
+import { completedPlayerShotCount, isValidTerminalCompletedShotCount, MAX_RETAINED_PLAYER_SHOTS } from "./completedShotCount";
 import { isPlayerShotPresentation } from "./shotPlayback";
 import { freezeProfileCalibration, isProfileCalibrationV1 } from "../rules/profileCalibration";
 import type {
@@ -115,7 +116,7 @@ export type { StartPlayableRoundArgs } from "./playerProRoundStart";
 const DEFAULT_SKILL = 40;
 const XP_PER_LEVEL = 12;
 const MAX_HISTORY = 40;
-const MAX_SHOTS = 240;
+const MAX_SHOTS = MAX_RETAINED_PLAYER_SHOTS;
 const MAX_TRAINING = 80;
 
 const preparedObstacleInputs = new WeakMap<PlayerRoundCourseSnapshot, readonly FlightObstacle[]>();
@@ -380,6 +381,7 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
     : decodeGreenRoundSnapshot(round.course.greenSnapshot, round.course);
   if (greenSnapshot && !greenSnapshot.ok) return null;
   if (round.shots.some((trace) => !validActiveShotTrace(trace))) return null;
+  if (round.completedShotCount !== undefined && !isValidTerminalCompletedShotCount(round)) return null;
   if (round.phase === "flight" && (!round.pendingShot || !validActiveShotTrace(round.pendingShot))) return null;
   if (round.shotPresentation !== undefined && (!round.pendingShot || round.phase !== "flight"
     || !round.pendingShot.sharedOutcome?.motion || !isPlayerShotPresentation(round.shotPresentation, round.pendingShot.id))) return null;
@@ -1530,8 +1532,13 @@ function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkill
   };
 }
 
-export function autoFinishPlayerRound(round: PlayerPlayableRound, skills: PlayerProSkills): PlayerPlayableRound {
+export function autoFinishPlayerRound(
+  round: PlayerPlayableRound,
+  skills: PlayerProSkills,
+  onCompletedShot?: (roundAfterFinish: PlayerPlayableRound) => void,
+): PlayerPlayableRound {
   let next = round.phase === "flight" ? finishPlayerShot(round) : round;
+  if (next !== round) onCompletedShot?.(next);
   let guard = 0;
   while (next.phase !== "round_complete" && next.phase !== "conceded" && guard++ < 260) {
     if (next.phase === "hole_complete") {
@@ -1542,6 +1549,7 @@ export function autoFinishPlayerRound(round: PlayerPlayableRound, skills: Player
       next = commitPlayerShot(next, skills, recommendedSelection(next, skills));
       if (next.phase !== "flight") break;
       next = finishPlayerShot(next);
+      onCompletedShot?.(next);
     }
   }
   return next;
@@ -1549,7 +1557,10 @@ export function autoFinishPlayerRound(round: PlayerPlayableRound, skills: Player
 
 export function concedePlayerRound(round: PlayerPlayableRound): PlayerPlayableRound {
   if (round.phase === "round_complete" || round.phase === "conceded") return round;
-  return { ...round, phase: "conceded", pendingShot: null, ...(round.shotPresentation ? { shotPresentation: undefined } : {}) };
+  const completedShotCount = completedPlayerShotCount(round);
+  return { ...round, phase: "conceded", pendingShot: null,
+    ...(completedShotCount === null ? {} : { completedShotCount }),
+    ...(round.shotPresentation ? { shotPresentation: undefined } : {}) };
 }
 
 function scoreToPar(round: PlayerPlayableRound): number {

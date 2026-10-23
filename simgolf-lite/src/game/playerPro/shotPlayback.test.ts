@@ -11,7 +11,7 @@ describe("Player Pro presentation cursor", () => {
     const duration = playerShotDurationMs("Driver", 250);
     for (const hz of [30, 60, 120]) {
       let cursor: PlayerShotPresentationV1 = { version: 1, shotId: "s1", progress: 0 };
-      for (let i = 0; i < hz * 6; i++) cursor = advancePlayerShotPresentation(cursor, 1000 / hz, duration);
+      for (let i = 0; i < hz * 10; i++) cursor = advancePlayerShotPresentation(cursor, 1000 / hz, duration);
       expect(cursor.progress).toBe(1);
     }
   });

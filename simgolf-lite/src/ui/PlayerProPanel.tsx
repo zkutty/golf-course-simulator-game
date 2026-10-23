@@ -45,6 +45,7 @@ import type { ShotLie } from "../game/rules/contracts";
 import { appliedWindCues } from "../game/render/shotTruthCues";
 import type { EquipmentLoadout } from "../game/competition/types";
 import type { ChallengeGroupRound } from "../game/competition/challengeGroupRound";
+import { challengeGroupFeaturedShot } from "../game/competition/challengeGroupPresentation";
 import {
   applyGroupAction,
   groupView,
@@ -847,10 +848,26 @@ export function ChallengeGroupHud(props: {
   aim: PlayerProPoint;
   onAim: (point: PlayerProPoint) => void;
   onWorld: (source: World, next: World) => void;
+  onSkipShot?: () => void;
+  onSkipGroup?: () => void;
 }) {
+  const { t } = useI18n();
   const group = props.career.activeChallengeGroupRound;
   if (!group) return null;
-  const act = (action: ChallengeGroupAction) => props.onWorld(props.world, applyGroupAction(props.world, props.day, action));
+  const featured = challengeGroupFeaturedShot(group);
+  const act = (action: ChallengeGroupAction) => {
+    if (featured) return;
+    props.onWorld(props.world, applyGroupAction(props.world, props.day, action, { deferSettlement: true }));
+  };
+  if (featured) return <section role="status" data-testid="challenge-group-playback" style={{ position: "absolute", zIndex: 215, right: 14, bottom: 78, width: "min(370px,calc(100% - 28px))", border: "2px solid #755824", borderRadius: 13, background: "#fff9e7", color: "#302819", padding: 12 }}>
+    <strong>{t("shotPacing.groupFeatured", { golfer: featured.golfer.name, current: featured.carrier.index + 1, total: featured.carrier.entries.length })}</strong>
+    {featured.carrier.throughTurn - featured.carrier.startTurn > featured.carrier.entries.length && <p>{t("shotPacing.groupLatest", { turns: featured.carrier.throughTurn - featured.carrier.startTurn })}</p>}
+    <p>{t("shotPacing.dayHeld")}</p>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <button type="button" data-testid="skip-challenge-shot" onClick={props.onSkipShot}>{t("shotPacing.skip")}</button>
+      <button type="button" data-testid="skip-challenge-group" onClick={props.onSkipGroup}>{t("shotPacing.skipGroup")}</button>
+    </div>
+  </section>;
   if (group.phase === "awaiting_ball_choice") return <ChallengeScrambleChoiceHud round={group} onChoose={(playerId) => act({ kind: "choose", playerId })} />;
   const view = groupView(props.career);
   if (!view) return null;

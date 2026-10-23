@@ -6,10 +6,12 @@ import { normalizeLivingClub } from "../livingClub/livingClub";
 import type { RegularGolfer } from "../livingClub/types";
 import { assignPersonProfile } from "../competition/characters";
 import { caddieRecommendation, createDefaultPlayerPro, normalizePlayerPro } from "./playerPro";
+import { challengeGroupFeaturedShot, createChallengeGroupPresentation, skipChallengeGroupPresentation } from "../competition/challengeGroupPresentation";
 import { withdrawChallengeGroupGolfer } from "../competition/challengeGroupRound";
 import { createZk725BrowserFixture } from "../testing/zk725BrowserFixture";
 import {
   autoGroup,
+  applyGroupAction,
   cancelPlayerChallengeContract,
   commitGroup,
   concedeGroup,
@@ -158,6 +160,24 @@ describe("ZK-725 deferred Player Pro challenge adapter", () => {
     expect(record.challengeSettlement?.contract.terms.format.scoring).toBe("net-match");
     expect(record.challengeSettlement?.evidence.components.find((component) => component.componentId.includes("skins"))?.evidenceIds.every((id) => id.startsWith("group:"))).toBe(true);
     expect(record.challengeSettlement?.runtime.phase).toBe("shot_locked");
+  });
+
+  it("defers the same authoritative settlement until retained group playback or skip completes", () => {
+    const f = fixture();
+    const started = startPlayerChallengeContract({ course: f.course, world: f.world, day: 2, draft: f.draft });
+    const immediate = applyGroupAction(started.world, 2, { kind: "auto" });
+    const deferred = applyGroupAction(started.world, 2, { kind: "auto" }, { deferSettlement: true });
+    const group = deferred.playerPro!.activeChallengeGroupRound!;
+    expect(group.phase).toBe("complete");
+    expect(deferred.playerPro!.activeChallengeRuntime!.phase).toBe("shot_locked");
+    const display = createChallengeGroupPresentation(started.career.activeChallengeGroupRound!, group);
+    expect(challengeGroupFeaturedShot(display)).not.toBeNull();
+    const restored = normalizePlayerPro(JSON.parse(JSON.stringify({ ...deferred.playerPro!, activeChallengeGroupRound: skipChallengeGroupPresentation(display) })), { seed: deferred.runSeed });
+    const afterPlayback = settleGroup({ ...deferred, playerPro: restored }, 2);
+    expect(afterPlayback.cash).toBe(immediate.cash);
+    expect(afterPlayback.playerPro!.challenges).toEqual(immediate.playerPro!.challenges);
+    expect(afterPlayback.playerPro!.settlementLedger).toEqual(immediate.playerPro!.settlementLedger);
+    expect(afterPlayback.playerPro!.activeChallengeGroupRound).toBeNull();
   });
 
   it("plays an authored no-stakes rematch and atomically recovers the exact rival-custody item on a verified win", () => {

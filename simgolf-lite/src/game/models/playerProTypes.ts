@@ -191,6 +191,8 @@ export interface PlayerPlayableRound {
   shotPresentation?: PlayerShotPresentationV1;
   rngSeed: number;
   rngCursor: number;
+  /** Exact terminal trace count when concession discarded a committed attempt. */
+  completedShotCount?: number;
   autoPlay: boolean;
   rewardsApplied: boolean;
   startedWeek: number;
