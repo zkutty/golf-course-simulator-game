@@ -82,6 +82,46 @@
       "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
       "upstreamSource": "https://github.com/pixijs/pixijs/blob/v8.21.0/src/scene/text/AbstractText.ts#L621-L626",
       "upstreamFix": "Detach only this Text update listener before destruction; upstream issue #12049 / PR #12159."
+    },
+    {
+      "relativePath": "lib/rendering/renderers/shared/system/AbstractRenderer.mjs",
+      "originalSha256": "2680b73b8423b81157a60f3e81ac231366ecfdfba29c2eede24b5e04c2b46a70",
+      "patchedSha256": "94a29ad2b655a36c8d94e8ab9d3f6814926d43d853491e8b2c8b4c2cb4d19002",
+      "originalBytes": 12354,
+      "patchedBytes": 12321,
+      "edits": [
+        {
+          "before": "    this.uid = uid(\"renderer\");",
+          "after": "    this.uid = 4294967296 + uid(\"renderer\");"
+        },
+        {
+          "before": "//# sourceMappingURL=AbstractRenderer.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
+      "purpose": "Keep positive unique renderer identities outside JavaScript array-index range so one-owner numeric-key caches do not allocate holes proportional to mount count."
+    },
+    {
+      "relativePath": "lib/rendering/renderers/shared/system/AbstractRenderer.js",
+      "originalSha256": "54528b97cd06e00375eedb229cb22ad745be7448fad815ab86bdf25cdbbc80f0",
+      "patchedSha256": "ddaa293ee24b3c9a8594ebf859b9bd7fdd97b0f5626c964c46a337f4d32228b9",
+      "originalBytes": 12500,
+      "patchedBytes": 12468,
+      "edits": [
+        {
+          "before": "    this.uid = uid.uid(\"renderer\");",
+          "after": "    this.uid = 4294967296 + uid.uid(\"renderer\");"
+        },
+        {
+          "before": "//# sourceMappingURL=AbstractRenderer.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
+      "purpose": "Keep positive unique renderer identities outside JavaScript array-index range so one-owner numeric-key caches do not allocate holes proportional to mount count."
     }
   ]
 }
