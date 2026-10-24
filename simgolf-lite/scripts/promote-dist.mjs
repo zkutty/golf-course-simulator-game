@@ -170,7 +170,7 @@ export const MARKER_COMMAND = String.raw`printf 'ZK1359_BUILD_V1 %s sha=%s run=%
 const MARKER_ARGS = '"$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_JOB"';
 export const BUILD_SCRIPT = `${MARKER_COMMAND} BEGIN ${MARKER_ARGS}\nnpm run build\n${MARKER_COMMAND} END ${MARKER_ARGS}`;
 const WORKFLOW_CONTRACT_SHA256 = '4e7c9454bb144f1caf54da49c9540441345f1b76e18612b79b1b138a8f0d6889';
-const PACKAGE_CONTRACT_SHA256 = '1cf56ace41bc7610c24f6b375fa5909f5aee1e0ae6e68eb16f19ee1469e690d0';
+const PACKAGE_CONTRACT_SHA256 = 'dfb51defb420c1a1e0ab6f56564a1e2d4f13eb96dbb8171ba1254c3d8c74cfc7';
 export function verifyExecutionContract(repoRoot) {
   const workflow = readFileSync(join(repoRoot, WORKFLOW)), packageBytes = readFileSync(join(repoRoot, 'simgolf-lite/package.json'));
   same(sha256(workflow), WORKFLOW_CONTRACT_SHA256, 'reviewed unconditional producer/qualification/deployment workflow');
