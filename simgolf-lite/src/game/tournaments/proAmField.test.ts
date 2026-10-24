@@ -1,5 +1,6 @@
 import { performance } from "node:perf_hooks";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as group from "../competition/challengeGroupRound";
 import { DEFAULT_WORLD } from "../models/defaults";
 import {
   challengeGroupPlayerRound,
@@ -307,4 +308,21 @@ describe("ZK-734A deterministic four-person Pro-Am field core", () => {
     ];
     for (const drifted of cases) expect(simulateProAmFieldRound({ snapshot, course: drifted, roundNumber: 1, seed: 1 })).toMatchObject({ ok: false });
   }, 120_000);
+  it("retains every team completion check even when visible cards cover the failed team", () => {
+    const { event, snapshot, roundCourse } = fixture();
+    const visible = cards(event);
+    const original = group.simulateChallengeGroupOwnBallScores;
+    const failedTeam = snapshot.teams[snapshot.teams.length - 1].id;
+    const simulation = vi.spyOn(group, "simulateChallengeGroupOwnBallScores").mockImplementation((input) =>
+      input.id.endsWith(`:${failedTeam}`) ? null : original(input));
+    try {
+      expect(simulateProAmFieldRound({ snapshot, course: roundCourse, roundNumber: 1, seed: 734_413, visibleScorecards: visible })).toEqual({
+        ok: false, reason: "The shared shot authority could not complete the Pro-Am field.",
+      });
+      expect(simulation.mock.calls.map(([input]) => input.id.split(":").at(-1))).toEqual(snapshot.teams.map(team => team.id));
+    } finally {
+      simulation.mockRestore();
+    }
+  }, 60_000);
+
 });

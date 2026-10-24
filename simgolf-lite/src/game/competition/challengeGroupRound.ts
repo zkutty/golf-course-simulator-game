@@ -45,6 +45,7 @@ export const CHALLENGE_GROUP_MIN_GOLFERS = 2;
 export const CHALLENGE_GROUP_MAX_GOLFERS = 4;
 const MAX_GROUP_SHOTS = 960;
 const MAX_AI_TURNS = 960;
+const MAX_SCORE_ONLY_PLAYER_TURNS = 480;
 const SIDE_BET_KINDS = ["skins", "nassau", "closest-to-pin", "longest-drive"] as const;
 const isNassauFormat = (format: ChallengeGroupScoringMode) => format === "gross-match" || format === "net-match";
 const INVALID_SETUP = "Bad setup";
@@ -1241,6 +1242,55 @@ export function startChallengeGroupRound(args: StartChallengeGroupRoundArgs): Ch
   const error = validateChallengeGroupRound(started);
   if (error) throw new Error(error);
   return started;
+}
+
+/**
+ * Owns an automatic own-ball simulation from canonical startup to score-only
+ * output. No caller round, shot callback, or unfrozen working state crosses
+ * this boundary; public commit/replay keep their full transcript contract.
+ */
+export function simulateChallengeGroupOwnBallScores(
+  args: StartChallengeGroupRoundArgs,
+): readonly Pick<ChallengeGroupGolfer, "id" | "handicap" | "scorecard">[] | null {
+  let round = startChallengeGroupRound(args);
+  // Startup JSON-cloned, validated and recursively froze this course. Own-ball
+  // turns only replace golfer/match state; this local immutable root is static.
+  const ownedCourse = round.course;
+  if (round.teamAuthority || round.individualAuthority?.format !== "net-stroke"
+    || round.individualAuthority.contests.length || round.sideBets.length) {
+    throw new Error("Only an own-ball score-only group can use private simulation.");
+  }
+  let guard = 0;
+  while (round.phase !== "complete" && guard++ < MAX_SCORE_ONLY_PLAYER_TURNS) {
+    const view = challengeGroupPlayerRound(round);
+    if (!view || round.phase !== "awaiting_player") return null;
+    const selection = caddieRecommendation(view, challengeGroupPlayerSkills(round));
+    if (round.activeGolferId !== round.playerGolferId) {
+      throw new Error("The player-controlled golfer does not own the current turn.");
+    }
+    const committed = commitTurn(round, round.playerGolferId, selection);
+    const next = committed === round ? round : runAiUntilPlayer(committed, false);
+    if ((next.phase !== "awaiting_player" && next.phase !== "complete")
+      || next.teamAuthority || next.individualAuthority?.contests.length) {
+      throw new Error("Only a settled own-ball Pro-Am simulation burst can be compacted.");
+    }
+    // Preserve the complete JSON normalization boundary for every retained field.
+    // Traces are discarded only after the entire player/AI authority burst.
+    const compacted = {
+      ...next,
+      golfers: next.golfers.map((golfer) => ({ ...golfer, shots: [] })),
+      turnEvidence: [],
+    };
+    // Keep every changing retained field at its original JSON boundary. The
+    // placeholder retains property order while avoiding another static-course
+    // copy. Preserve the existing complete-round normalization as well.
+    round = next.phase === "complete" ? freeze(compacted) : deepFreeze({
+      ...clone({ ...compacted, course: null }),
+      course: ownedCourse,
+    });
+  }
+  if (round.phase !== "complete") return null;
+  return freeze(round.golfers.map(({ id, handicap, scorecard }) => ({ id, handicap, scorecard })));
 }
 
 export function previewChallengeGroupPlayerShot(round: ChallengeGroupRound, golferId: string, selection: PlayerShotSelection): PlayerShotPreview | null {

@@ -1,12 +1,8 @@
 import {
-  challengeGroupPlayerRound,
-  challengeGroupPlayerSkills,
-  commitChallengeGroupPlayerShot,
-  startChallengeGroupRound,
+  simulateChallengeGroupOwnBallScores,
   type ChallengeGroupParticipantInput,
 } from "../competition/challengeGroupRound";
 import type { PlayerProSkills, PlayerRoundCourseSnapshot } from "../models/playerProTypes";
-import { caddieRecommendation } from "../playerPro/playerPro";
 import {
   canonicalProAmCard,
   scoreProAmRoundEvidence,
@@ -20,7 +16,6 @@ import type {
   TournamentRoundScorecard,
 } from "./types";
 
-const MAX_PLAYER_TURNS = 480;
 const json = JSON.stringify;
 const integer = Number.isInteger;
 
@@ -72,25 +67,12 @@ function participant(
   };
 }
 
-/** Private score-only state; never returned, validated as a group round, or persisted. */
-function compactProAmSimulationBurst(round: ReturnType<typeof startChallengeGroupRound>): ReturnType<typeof startChallengeGroupRound> {
-  if ((round.phase !== "awaiting_player" && round.phase !== "complete")
-    || round.teamAuthority || round.individualAuthority?.contests.length) {
-    throw new Error("Only a settled own-ball Pro-Am simulation burst can be compacted.");
-  }
-  return {
-    ...round,
-    golfers: round.golfers.map((golfer) => ({ ...golfer, shots: [] })),
-    turnEvidence: [],
-  };
-}
-
 function simulateTeam(snapshot: TournamentActivationSnapshot, course: PlayerRoundCourseSnapshot, teamId: string, roundNumber: number, seed: number): TournamentRoundScorecard[] | null {
   const team = snapshot.teams.find((candidate) => candidate.id === teamId)!;
   const entrants = team.entrantIds.map((id) => snapshot.entrants.find((entrant) => entrant.entrantId === id)!);
-  let round;
+  let golfers;
   try {
-    round = startChallengeGroupRound({
+    golfers = simulateChallengeGroupOwnBallScores({
       id: `${snapshot.activationId}:pro-am:${roundNumber}:${teamId}`,
       course,
       rulesSnapshot: course.rulesSnapshot,
@@ -102,20 +84,13 @@ function simulateTeam(snapshot: TournamentActivationSnapshot, course: PlayerRoun
       startedWeek: snapshot.activatedWeek,
       startedDay: snapshot.activatedDay + roundNumber - 1,
     });
-    let guard = 0;
-    while (round.phase !== "complete" && guard++ < MAX_PLAYER_TURNS) {
-      const view = challengeGroupPlayerRound(round);
-      if (!view || round.phase !== "awaiting_player") return null;
-      round = commitChallengeGroupPlayerShot(round, round.playerGolferId, caddieRecommendation(view, challengeGroupPlayerSkills(round)));
-      round = compactProAmSimulationBurst(round);
-    }
-    if (round.phase !== "complete") return null;
+    if (!golfers) return null;
   } catch {
     return null;
   }
   const scorecards: TournamentRoundScorecard[] = [];
   for (const entrant of entrants) {
-    const golfer = round.golfers.find((candidate) => candidate.id === entrant.entrantId)!;
+    const golfer = golfers.find((candidate) => candidate.id === entrant.entrantId)!;
     if (golfer.handicap.playingHandicap !== entrant.playingHandicap || json(golfer.handicap.strokesByHole) !== json(entrant.strokesByHole)
       || golfer.scorecard.some((hole) => hole.status !== "played" || !integer(hole.gross) || hole.gross! <= 0)) return null;
     const grossByHole = golfer.scorecard.map((hole) => hole.gross!);
