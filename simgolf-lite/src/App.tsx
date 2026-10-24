@@ -67,6 +67,7 @@ import {
 import { GameBackground } from "./ui/gameui";
 import { useAudio } from "./audio/audioContext";
 import { audioManager } from "./audio/AudioManager";
+const dequeueAchievement = (queue: AchievementDefinition[]) => queue.slice(1);
 const HoleInspector = lazy(() => import("./ui/HoleInspector").then((module) => ({ default: module.HoleInspector })));
 const HUD = lazy(() => import("./ui/HUD").then((module) => ({ default: module.HUD })));
 const HoleMinimap = lazy(() => import("./ui/HoleMinimap").then((module) => ({ default: module.HoleMinimap })));
@@ -5791,7 +5792,7 @@ export default function App() {
 
   useEffect(() => {
     if (!achievementQueue.length) return;
-    const timer = window.setTimeout(() => setAchievementQueue((queue) => queue.slice(1)), 4200);
+    const timer = window.setTimeout(setAchievementQueue, 4200, dequeueAchievement);
     return () => window.clearTimeout(timer);
   }, [achievementQueue]);
 
@@ -5858,7 +5859,7 @@ export default function App() {
             if (applied) setPaintError(t("save.loaded"));
           }, 0);
         });
-        window.setTimeout(() => setPaintError(null), 2000);
+        window.setTimeout(setPaintError, 2000, null);
       }}
     />
     </DeferredSurface>
