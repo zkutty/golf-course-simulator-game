@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as PIXI from "pixi.js";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import { createTerrainWaterSceneSystem } from "./terrainWaterScene";
@@ -75,5 +75,38 @@ describe("TerrainWaterSceneSystem", () => {
     expect(hiddenCover.visible).toBe(false);
     expect(scene.diagnostics().chunkRebuilds).toBe(0);
     scene.destroy();
+  });
+});
+
+
+describe("terrain/water Graphics ownership", () => {
+  it("releases populated owned contexts once while a borrowed-context peer stays usable", () => {
+    const ownedLayers = layers();
+    const scene = createTerrainWaterSceneSystem(ownedLayers);
+    const holder = ownedLayers.smoothSurfaces.addChild(new PIXI.Container());
+    const graphics = holder.addChild(new PIXI.Graphics().rect(0, 0, 20, 30).fill(0x123456));
+    const context = graphics.context;
+    const contextDestroy = vi.spyOn(context, "destroy");
+    const shared = new PIXI.GraphicsContext().circle(5, 5, 4).fill(0xabcdef);
+    holder.addChild(new PIXI.Graphics({ context: shared }));
+    const peer = new PIXI.Graphics({ context: shared });
+    const sharedDestroy = vi.spyOn(shared, "destroy");
+    try {
+      expect(context.instructions.length).toBeGreaterThan(0);
+      scene.destroy();
+      scene.destroy();
+      expect(context.instructions).toBeNull();
+      expect(contextDestroy).toHaveBeenCalledExactlyOnceWith(undefined);
+      expect(sharedDestroy).not.toHaveBeenCalled();
+      expect(shared.instructions.length).toBeGreaterThan(0);
+      expect(peer.containsPoint(new PIXI.Point(5, 5))).toBe(true);
+      peer.rect(10, 10, 2, 3).fill(0xff0000);
+      expect(peer.getBounds().width).toBeGreaterThan(8);
+      expect(ownedLayers.smoothSurfaces.children).toEqual([]);
+    } finally {
+      peer.destroy();
+      shared.destroy();
+      if (contextDestroy.mock.calls.length === 0) context.destroy();
+    }
   });
 });

@@ -1,3 +1,4 @@
+import { destroySceneSubtree } from "../../../game/render/destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import { visibleGroundCoverTier } from "../../../game/render/groundCover";
 import type { RenderSnapshot } from "../RenderSnapshot";
@@ -256,7 +257,7 @@ export class TerrainWaterSceneSystem {
     this.phaseCleanups.clear();
     this.renderers.clear();
     for (const layer of Object.values(this.layers)) {
-      layer.removeChildren().forEach((child: { destroy(options?: { children?: boolean }): void }) => child.destroy({ children: true }));
+      layer.removeChildren().forEach(destroySceneSubtree);
     }
     this.chunks = [];
     this.surfaceWaterSprites = [];

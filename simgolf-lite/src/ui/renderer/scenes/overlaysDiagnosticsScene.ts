@@ -1,3 +1,4 @@
+import { destroySceneSubtree } from "../../../game/render/destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import { TERRAIN_PALETTES, terrainPattern } from "../../../accessibility/terrainPalettes";
 import type { ColorVisionMode } from "../../../game/onboarding/profile";
@@ -185,7 +186,7 @@ export function createOverlaysDiagnosticsSceneSystem(
 
   const clearPlayerShot = () => {
     playerShotOverlay?.parent?.removeChild(playerShotOverlay);
-    playerShotOverlay?.destroy({ children: true });
+    destroySceneSubtree(playerShotOverlay);
     playerShotOverlay = null;
   };
 
@@ -717,7 +718,7 @@ export function createOverlaysDiagnosticsSceneSystem(
 
   const destroy = () => {
     clearPlayerShot();
-    movingOverlay?.parent?.removeChild(movingOverlay); movingOverlay?.destroy({ children: true });
+    movingOverlay?.parent?.removeChild(movingOverlay); destroySceneSubtree(movingOverlay);
     expectedOverlay?.parent?.removeChild(expectedOverlay); expectedOverlay?.destroy();
     movingOverlay = null; movingBall = null; movingShadow = null; contactEffect = null;
     golferBase = null; golferTint = null; expectedOverlay = null; authority = null;

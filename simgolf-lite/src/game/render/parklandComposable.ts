@@ -1,3 +1,4 @@
+import { destroySceneSubtree } from "./destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import type { Building, LandTheme, Point, Terrain } from "../models/types";
 export {
@@ -308,7 +309,7 @@ export function isParklandComposableTransition(owner: Terrain, outside: Terrain)
 
 export function destroyParklandPresentationLayer(layer: PIXI.Container | null): null {
   layer?.removeFromParent();
-  layer?.destroy({ children: true });
+  destroySceneSubtree(layer);
   return null;
 }
 

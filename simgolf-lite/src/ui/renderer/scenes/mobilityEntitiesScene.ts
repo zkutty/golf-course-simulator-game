@@ -1,3 +1,4 @@
+import { destroySceneSubtree } from "../../../game/render/destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import type { GolferRenderData } from "../../../game/live/types";
 import { mobilityRenderUnits, type MobilityRenderUnit } from "../../../game/m51/mobilityRender";
@@ -91,7 +92,7 @@ export function createMobilityEntitiesSceneSystem(
 
   const retire = (id: string, entry: MobilityUnitEntry) => {
     entry.holder.parent?.removeChild(entry.holder);
-    entry.holder.destroy({ children: true });
+    destroySceneSubtree(entry.holder);
     entries.delete(id);
   };
 

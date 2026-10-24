@@ -1,3 +1,4 @@
+import { destroySceneSubtree } from "../../../game/render/destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import {
   surfaceCareVisualCommands,
@@ -20,7 +21,7 @@ export function createSurfaceCareSceneSystem(
   return {
     id: "surfaceCare",
     render(snapshot) {
-      layer.removeChildren().forEach((child) => child.destroy({ children: true }));
+      layer.removeChildren().forEach(destroySceneSubtree);
       const workers: SurfaceCareWorkerSprite[] = [];
       setWorkers(workers);
 

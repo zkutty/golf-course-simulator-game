@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // functions with static implementations. Keep this before renderer startup so
 // Workers deployments can retain a script-src policy without 'unsafe-eval'.
 import "pixi.js/unsafe-eval";
+import { destroySceneSubtree } from "../game/render/destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../game/models/types";
 import type { ShotRoutePresentation } from "../game/presentation/shotRoutePresentation";
@@ -1940,6 +1941,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       });
 
       if (cancelled) {
+        app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
         return;
       }
@@ -1951,6 +1953,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         import("./renderer/viewportInputController"),
       ]);
       if (cancelled) {
+        app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
         return;
       }
@@ -1961,6 +1964,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         initialRendererConfigRef.current.season,
       );
       if (cancelled) {
+        app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
         return;
       }
@@ -2042,7 +2046,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (cancelled) {
         terrainWaterSceneRef.current?.destroy();
         terrainWaterSceneRef.current = null;
-        try { app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); } catch { /* partial initialization */ }
+        try { app.stage.removeChildren().forEach(destroySceneSubtree); app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); } catch { /* partial initialization */ }
         return;
       }
       console.error("[PixiStage] Course renderer initialization failed", error);
@@ -2052,7 +2056,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       setRendererError(true);
       terrainWaterSceneRef.current?.destroy();
       terrainWaterSceneRef.current = null;
-      try { app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); } catch { /* partially initialized */ }
+      try { app.stage.removeChildren().forEach(destroySceneSubtree); app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); } catch { /* partially initialized */ }
     });
 
     return () => {
@@ -2084,6 +2088,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         // Scene systems release generated textures explicitly. Atlas textures
         // are borrowed residency resources and must never be recursively
         // destroyed by the Pixi application.
+        appRef.current.stage.removeChildren().forEach(destroySceneSubtree);
         appRef.current.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false });
         appRef.current = null;
       }
@@ -2228,8 +2233,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const terrainScene = terrainWaterSceneRef.current;
     if (!layers || !terrainScene) return;
     terrainScene.setRenderer("surround", () => {
-    layers.surround.removeChildren().forEach((child) => child.destroy({ children: true }));
-    layers.estateSeam.removeChildren().forEach((child) => child.destroy({ children: true }));
+    layers.surround.removeChildren().forEach(destroySceneSubtree);
+    layers.estateSeam.removeChildren().forEach(destroySceneSubtree);
 
     const model = generateScenicSurround(course, props.worldSeed);
     const palette = SCENIC_COLORS[getBiomeDefinition(model.theme).content.materials.terrain];
@@ -2554,7 +2559,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const x1 = Math.min(w, x0 + CHUNK_TILES);
       const y1 = Math.min(h, y0 + CHUNK_TILES);
 
-      chunk.container.removeChildren().forEach((c) => c.destroy());
+      chunk.container.removeChildren().forEach(destroySceneSubtree);
       chunk.waterSprites = [];
       chunk.foamSprites = [];
       chunk.groundCoverSprites = [];
@@ -2892,7 +2897,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
     if (fullRebuild) {
       layers.terrain.removeChildren();
-      terrainScene.chunks.forEach((c) => c.container.destroy({ children: true }));
+      terrainScene.chunks.forEach((c) => destroySceneSubtree(c.container));
       terrainScene.chunks = [];
       terrainScene.builtRotation = rotation;
       terrainScene.builtAtlasGeneration = atlasRevision;
@@ -2983,7 +2988,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const layer = rendererLayers?.smoothSurfaces;
     if (!layer || !rendererLayers || !terrainScene) return;
     terrainScene.setRenderer("connected", () => {
-    layer.removeChildren().forEach((child) => child.destroy({ children: true }));
+    layer.removeChildren().forEach(destroySceneSubtree);
     terrainScene.surfaceWaterSprites = [];
     const quality = props.graphicsQuality;
     landformDepthDiagnosticsRef.current = emptyLandformDepthDiagnostics(quality);

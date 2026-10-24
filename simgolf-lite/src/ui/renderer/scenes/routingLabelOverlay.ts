@@ -1,3 +1,4 @@
+import { destroySceneSubtree } from "../../../game/render/destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import { placeRoutingLabels } from "../../../game/architecture/routingLabels";
 import type { ArchitectureRoutingHole } from "../../../game/architecture/reviewTypes";
@@ -169,5 +170,5 @@ export function createRoutingLabelOverlay(snapshot: RenderSnapshot, project: (p:
       const focused = typeof document === "undefined" ? undefined : controls.find(control => control.button === document.activeElement)?.route.holeId;
       emphasize(focused ?? selected);
     },
-    dispose: () => { listeners.forEach(remove => remove()); resizeObserver?.disconnect(); styleObserver?.disconnect(); root?.remove(); container.onRender = null; container.destroy({ children: true }); } };
+    dispose: () => { listeners.forEach(remove => remove()); resizeObserver?.disconnect(); styleObserver?.disconnect(); root?.remove(); container.onRender = null; destroySceneSubtree(container); } };
 }
