@@ -40,6 +40,48 @@
       ],
       "inverseByteExact": true,
       "sourceMaps": "Stale sourceMappingURL removed; maps not modified."
+    },
+    {
+      "relativePath": "lib/scene/text/AbstractText.mjs",
+      "originalSha256": "4bbb1f83c43095437404351f47cf83bfe688b6b70cb4f5ebc6c9e5b78b8134cd",
+      "patchedSha256": "5d0baf44b7216c8ef553c7815cdda9fc693300054d2df51fbcf7013193d61a02",
+      "originalBytes": 11197,
+      "patchedBytes": 11212,
+      "edits": [
+        {
+          "before": "  destroy(options = false) {\n    super.destroy(options);",
+          "after": "  destroy(options = false) {\n    this._style?.off(\"update\", this.onViewUpdate, this);\n    super.destroy(options);"
+        },
+        {
+          "before": "//# sourceMappingURL=AbstractText.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
+      "upstreamSource": "https://github.com/pixijs/pixijs/blob/v8.21.0/src/scene/text/AbstractText.ts#L621-L626",
+      "upstreamFix": "Detach only this Text update listener before destruction; upstream issue #12049 / PR #12159."
+    },
+    {
+      "relativePath": "lib/scene/text/AbstractText.js",
+      "originalSha256": "cafc92fa90b96607de00abd3f5501b1968d972f3729f477883f0eaca2b029e9d",
+      "patchedSha256": "7339f71b97aa6c40016b0b5cb563022e5130fe5238f5fae77a106883591a7509",
+      "originalBytes": 11291,
+      "patchedBytes": 11307,
+      "edits": [
+        {
+          "before": "  destroy(options = false) {\n    super.destroy(options);",
+          "after": "  destroy(options = false) {\n    this._style?.off(\"update\", this.onViewUpdate, this);\n    super.destroy(options);"
+        },
+        {
+          "before": "//# sourceMappingURL=AbstractText.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
+      "upstreamSource": "https://github.com/pixijs/pixijs/blob/v8.21.0/src/scene/text/AbstractText.ts#L621-L626",
+      "upstreamFix": "Detach only this Text update listener before destruction; upstream issue #12049 / PR #12159."
     }
   ]
 }
