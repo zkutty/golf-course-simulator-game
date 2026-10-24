@@ -3,6 +3,8 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.e2e.ts",
+  // npm test:e2e routes stability through its dedicated production producer.
+  testIgnore: "**/zk682-stability.e2e.ts",
   timeout: 600_000,
   fullyParallel: false,
   workers: process.env.CI ? 1 : undefined,

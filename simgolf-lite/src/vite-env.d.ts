@@ -5,10 +5,12 @@ declare const __APP_VERSION__: string;
 /** Release and commit identifiers injected by Vite for deployment telemetry. */
 declare const __APP_RELEASE__: string;
 declare const __COMMIT_SHA__: string;
+declare const __ZK682_STABILITY_BUILD_ID__: string;
 
 interface ImportMetaEnv {
   readonly VITE_APP_ENVIRONMENT?: string;
   readonly VITE_BUG_REPORTING?: string;
+  readonly VITE_ZK682_STABILITY_FIXTURE?: string;
 }
 
 interface Window {
@@ -195,6 +197,10 @@ interface Window {
     } | null;
   };
   __coursecraftTest?: {
+    stabilityRuntime(): {
+      dev: boolean; prod: boolean; mode: string; commit: string; buildId: string; privatePerfFixture: boolean;
+      fixture: { id: string; theme: string; width: number; height: number; holes: number } | null;
+    };
     enterNormalGameplayForTest(): void;
     setPinRotationForTest(rotation: import("./game/models/types").PinRotation): void;
     setGraphicsQualityFixture(quality: "high" | "medium" | "low"): void;

@@ -133,18 +133,15 @@ function inspectResource(report, candidateCommit) {
 }
 
 async function inspectSupplemental(report, expectedGate, candidateCommit, root) {
-  if (![1, 2].includes(report.schemaVersion) || report.gate !== expectedGate || report.candidateCommit !== candidateCommit) throw new Error(`${expectedGate} evidence identity/schema mismatch`);
+  if (report.schemaVersion !== 2 || report.gate !== expectedGate || report.candidateCommit !== candidateCommit) throw new Error(`${expectedGate} evidence identity/schema mismatch`);
   if (!isRecord(report.observations) || typeof report.passed !== "boolean") throw new Error(`${expectedGate} evidence is incomplete`);
-  if (report.schemaVersion === 2) {
-    const contractPath = join(root, "scripts/zk682-stability-contract.mjs");
-    if (!existsSync(contractPath)) throw new Error("schema-v2 stability evidence requires scripts/zk682-stability-contract.mjs");
-    const { validateZk682SupplementalStabilityReport } = await import(new URL(`file://${contractPath}`).href);
-    const inspected = validateZk682SupplementalStabilityReport(report, expectedGate, candidateCommit);
-    const structuralErrors = inspected.errors.filter((error) => error !== "supplemental stability report did not pass");
-    if (structuralErrors.length) throw new Error(`${expectedGate}: ${structuralErrors.join("; ")}`);
-    return inspected.passed;
-  }
-  return report.passed;
+  const contractPath = join(root, "scripts/zk682-stability-contract.mjs");
+  if (!existsSync(contractPath)) throw new Error("schema-v2 stability evidence requires scripts/zk682-stability-contract.mjs");
+  const { validateZk682SupplementalStabilityReport } = await import(new URL(`file://${contractPath}`).href);
+  const inspected = validateZk682SupplementalStabilityReport(report, expectedGate, candidateCommit);
+  const structuralErrors = inspected.errors.filter((error) => error !== "supplemental stability report did not pass");
+  if (structuralErrors.length) throw new Error(`${expectedGate}: ${structuralErrors.join("; ")}`);
+  return inspected.passed;
 }
 
 function inspectAsset(report, candidateCommit, readBound) {

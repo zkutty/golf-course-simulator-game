@@ -5,7 +5,10 @@ import {
   ZK682_STABILITY_THRESHOLDS,
   createZk682StabilityReport,
   evaluateZk682Stability,
+  validateZk682SupplementalStabilityReport,
 } from "./zk682-stability-contract.mjs";
+
+import { createStabilityProducer, stabilityProducerKind, ZK682_STABILITY_FIXTURE } from "./zk682-stability-producer.mjs";
 
 const COMMIT = "a".repeat(40);
 const browser = { name: "chromium", version: "fixture", cdpHeap: true };
@@ -87,4 +90,28 @@ test("interaction evidence requires exact real outcomes for every scenario", () 
 test("report creation rejects local identity and relaxed thresholds", () => {
   assert.throws(() => createZk682StabilityReport({ ...baseInput("save-load-resource-stability", saveSamples()), candidateCommit: "local" }), /full SHA/);
   assert.throws(() => createZk682StabilityReport({ ...baseInput("save-load-resource-stability", saveSamples()), thresholds: { ...ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"], minimumSaveLoads: 1 } }), /immutable contract/);
+});
+
+
+test("schema-v2 reports preserve legacy identity and validate every corrected producer claim", () => {
+  const input = baseInput("save-load-resource-stability", saveSamples());
+  const legacy = createZk682StabilityReport(input);
+  assert.equal(Object.hasOwn(legacy, "producer"), false);
+  assert.equal(stabilityProducerKind(legacy), "legacy-unattested-producer");
+  assert.equal(validateZk682SupplementalStabilityReport(legacy, input.gate, COMMIT).valid, false);
+  assert.equal(validateZk682SupplementalStabilityReport(legacy, input.gate, COMMIT, { allowLegacy: true }).valid, true);
+  const buildId = "12345678-1234-1234-1234-123456789abc";
+  const runtime = { dev: false, prod: true, mode: "e2e", commit: COMMIT, buildId, privatePerfFixture: true, fixture: { ...ZK682_STABILITY_FIXTURE } };
+  const producer = createStabilityProducer(runtime, COMMIT, buildId);
+  const corrected = createZk682StabilityReport({ ...input, producer });
+  assert.equal(corrected.schemaVersion, 2);
+  const stripped = structuredClone(corrected); delete stripped.producer;
+  assert.equal(validateZk682SupplementalStabilityReport(stripped, input.gate, COMMIT).valid, false);
+  assert.equal(validateZk682SupplementalStabilityReport(corrected, input.gate, COMMIT).valid, true);
+  for (const change of [{ producerVersion: "legacy" }, { heapMethod: "gc-delay-then-read" }, { buildMode: "development" }, { runtime: { ...runtime, dev: true } }, { runtime: { ...runtime, commit: "b".repeat(40) } }, { runtime: { ...runtime, fixture: { ...runtime.fixture, holes: 36 } } }]) {
+    const falseProducer = { ...producer, ...change };
+    assert.throws(() => createZk682StabilityReport({ ...input, producer: falseProducer }));
+    assert.equal(validateZk682SupplementalStabilityReport({ ...corrected, producer: falseProducer }, input.gate, COMMIT).valid, false);
+    assert.equal(validateZk682SupplementalStabilityReport({ ...corrected, producer: falseProducer }, input.gate, COMMIT, { allowLegacy: true }).valid, false);
+  }
 });

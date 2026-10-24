@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { validateStabilityProducer } from "./zk682-stability-producer.mjs";
 
 export const ZK682_STABILITY_SCHEMA_VERSION = 2;
 
@@ -219,6 +220,10 @@ export function createZk682StabilityReport(input) {
   const expectedThresholds = ZK682_STABILITY_THRESHOLDS[input.gate];
   assert.ok(expectedThresholds, "known stability gate is required");
   assert.equal(stableStabilityJson(input.thresholds), stableStabilityJson(expectedThresholds), "thresholds must match the immutable contract");
+  if (Object.hasOwn(input, "producer")) {
+    const producerErrors = validateStabilityProducer(input.producer, input.candidateCommit);
+    assert.deepEqual(producerErrors, [], producerErrors.join("; "));
+  }
   const result = evaluateZk682Stability(input.gate, input.samples, input.thresholds);
   return {
     schemaVersion: ZK682_STABILITY_SCHEMA_VERSION,
@@ -226,6 +231,7 @@ export function createZk682StabilityReport(input) {
     candidateCommit: input.candidateCommit,
     capturedAt: input.capturedAt,
     command: input.command,
+    ...(Object.hasOwn(input, "producer") ? { producer: input.producer } : {}),
     browser: input.browser,
     thresholds: input.thresholds,
     samples: input.samples,
@@ -236,11 +242,16 @@ export function createZk682StabilityReport(input) {
   };
 }
 
-export function validateZk682SupplementalStabilityReport(report, expectedGate, expectedCommit) {
+export function validateZk682SupplementalStabilityReport(report, expectedGate, expectedCommit, { allowLegacy = false } = {}) {
   const errors = [];
   const expectedKeys = ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "browser", "thresholds", "samples", "observations", "summary", "errors", "passed"];
   if (!report || typeof report !== "object" || Array.isArray(report)) {
     return { valid: false, errors: ["supplemental stability report must be an object"], passed: false, observations: {} };
+  }
+  if (!Object.hasOwn(report, "producer") && !allowLegacy) errors.push("corrected stability producer attestation is required; legacy evidence is diagnostic only");
+  if (Object.hasOwn(report, "producer")) {
+    expectedKeys.push("producer");
+    errors.push(...validateStabilityProducer(report.producer, expectedCommit));
   }
   if (stableStabilityJson(Object.keys(report).sort()) !== stableStabilityJson(expectedKeys.sort())) errors.push("supplemental stability report keys are invalid");
   if (report.schemaVersion !== ZK682_STABILITY_SCHEMA_VERSION) errors.push("wrong supplemental stability schema");
@@ -257,5 +268,5 @@ export function validateZk682SupplementalStabilityReport(report, expectedGate, e
     || stableStabilityJson(report.errors) !== stableStabilityJson(recomputed.errors)
     || report.passed !== recomputed.passed) errors.push("declared supplemental result does not match raw samples");
   if (report.passed !== true || recomputed.passed !== true) errors.push("supplemental stability report did not pass");
-  return { valid: errors.length === 0, errors, passed: report.passed === true && recomputed.passed === true, observations: recomputed.observations };
+  return { valid: errors.length === 0, errors, passed: errors.length === 0 && report.passed === true && recomputed.passed === true, observations: recomputed.observations };
 }

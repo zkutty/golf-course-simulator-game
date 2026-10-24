@@ -6,6 +6,8 @@ import {
   createZk682StabilityReport,
 } from "../scripts/zk682-stability-contract.mjs";
 
+import { createStabilityProducer, sampleRetainedHeap } from "../scripts/zk682-stability-producer.mjs";
+
 test.use({ launchOptions: { args: ["--enable-precise-memory-info"] } });
 
 type Measured = {
@@ -15,9 +17,7 @@ type Measured = {
 };
 
 async function measure(page: Page, cdp: CDPSession): Promise<Measured> {
-  await cdp.send("HeapProfiler.collectGarbage");
-  await page.waitForTimeout(120);
-  const heap = await cdp.send("Runtime.getHeapUsage");
+  const heap = await sampleRetainedHeap(page, cdp);
   const renderer = await page.evaluate(() => ({
     resources: window.__coursecraftPixiTest?.resourceSnapshot() ?? null,
     quality: window.__coursecraftPixiTest?.rendererAtlasState().rendered.quality ?? null,
@@ -136,6 +136,8 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest?.rendererAtlasState().rendered.status), { timeout: 120_000 }).toBe("activated");
   const runtimeCommit = await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().pathMaterialCrossSection.commit);
   expect(runtimeCommit).toBe(expectedCommit);
+  const runtime = await page.evaluate(() => window.__coursecraftTest!.stabilityRuntime());
+  const producer = createStabilityProducer(runtime, expectedCommit!, process.env.ZK682_STABILITY_BUILD_ID);
 
   // Repeated production quick-save loads, including real IndexedDB reads and
   // full App state restoration, are measured after a post-GC baseline.
@@ -162,6 +164,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     candidateCommit: expectedCommit!,
     capturedAt: new Date().toISOString(),
     command: "npm run test:stability",
+    producer,
     browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true },
     thresholds: ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"],
     samples: saveLoadSamples,
@@ -186,6 +189,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     candidateCommit: expectedCommit!,
     capturedAt: new Date().toISOString(),
     command: "npm run test:stability",
+    producer,
     browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true },
     thresholds: ZK682_STABILITY_THRESHOLDS["long-session-resource-stability"],
     samples: longSessionSamples,
@@ -242,6 +246,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     candidateCommit: expectedCommit!,
     capturedAt: new Date().toISOString(),
     command: "npm run test:stability",
+    producer,
     browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true },
     thresholds: ZK682_STABILITY_THRESHOLDS["editing-overlay-sleep-recovery"],
     samples: interactionSamples,

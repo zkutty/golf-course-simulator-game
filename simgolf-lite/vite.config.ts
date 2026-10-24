@@ -13,7 +13,8 @@ const pkg = JSON.parse(
 const commitSha = process.env.GITHUB_SHA ?? process.env.VITE_COMMIT_SHA ?? "local";
 const appRelease = process.env.SENTRY_RELEASE ?? `coursecraft@${pkg.version}+${commitSha.slice(0, 12)}`;
 const sentryBuildEnabled = Boolean(
-  process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
+  process.env.COURSECRAFT_ZK682_STABILITY_BUILD !== "1"
+    && process.env.SENTRY_AUTH_TOKEN && process.env.SENTRY_ORG && process.env.SENTRY_PROJECT
 );
 const rootAudioPattern = /\.(?:aac|flac|m4a|mp3|ogg|wav)$/i;
 
@@ -60,6 +61,7 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
     __APP_RELEASE__: JSON.stringify(appRelease),
     __COMMIT_SHA__: JSON.stringify(commitSha),
+    __ZK682_STABILITY_BUILD_ID__: JSON.stringify(process.env.ZK682_STABILITY_BUILD_ID ?? ""),
   },
   test: {
     // Desktop shell tests use Node's built-in test runner so they can verify

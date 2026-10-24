@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { validateStabilityProducer } from "./zk682-stability-producer.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { certifyOfflineIndexedDbSave, PWA_PERSISTENCE_REPORT_SCHEMA_VERSION } from "./pwa-save-evidence.mjs";
@@ -279,7 +280,13 @@ function validateSupplementalStabilityEvidence(report, expectedGate, manifest, l
   const expectedKeys = schemaV1
     ? ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "observations", "passed"]
     : ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "browser", "thresholds", "samples", "observations", "summary", "errors", "passed"];
+  if (!schemaV1 && report && Object.hasOwn(report, "producer")) expectedKeys.push("producer");
   if (!exactKeys(report, expectedKeys, label, errors)) return false;
+  if (!Object.hasOwn(report, "producer")) {
+    errors.push(`${label}: corrected stability producer attestation is required; legacy evidence is diagnostic only`);
+    return false;
+  }
+  if (!schemaV1 && Object.hasOwn(report, "producer")) errors.push(...validateStabilityProducer(report.producer, manifest.candidateCommit).map((error) => `${label}: ${error}`));
   if (![1, ZK682_STABILITY_SCHEMA_VERSION].includes(report.schemaVersion) || report.gate !== expectedGate) errors.push(`${label}: wrong supplemental stability schema/gate`);
   if (!validCommit(report.candidateCommit) || report.candidateCommit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
   if (!validCapturedAt(report.capturedAt)) errors.push(`${label}: capturedAt is invalid`);

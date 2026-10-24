@@ -9,6 +9,8 @@ import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence
 import { createZk682ResourceGrowthReport, ZK682_RESOURCE_GROWTH_THRESHOLDS } from "./zk682-resource-growth-contract.mjs";
 import { buildZk682Report, sha256 } from "./zk682-certification-contract.mjs";
 import { buildZk682Packet, ZK682_PACKET_RECEIPTS } from "./zk682-build-packet.mjs";
+import { createZk682StabilityReport, ZK682_STABILITY_THRESHOLDS } from "./zk682-stability-contract.mjs";
+import { createStabilityProducer, ZK682_STABILITY_FIXTURE } from "./zk682-stability-producer.mjs";
 
 const NOW = "2026-09-29T12:00:00.000Z";
 const write = (root, path, value) => {
@@ -46,8 +48,20 @@ function resourceReport(commit) {
 }
 
 function supplemental(gate, commit) {
-  const observations = gate === "save-load-resource-stability" ? { saveLoads: 20, resourceGrowthBounded: true } : gate === "long-session-resource-stability" ? { sessionMinutes: 120, resourceGrowthBounded: true } : { scenarios: ["editing", "overlay", "recovery", "sleep-wake"], recoveryPassed: true };
-  return { schemaVersion: 1, gate, candidateCommit: commit, capturedAt: NOW, command: `fixture ${gate}`, observations, passed: true };
+  const buildId = "12345678-1234-1234-1234-123456789abc";
+  const producer = createStabilityProducer({ dev: false, prod: true, mode: "e2e", commit, buildId, privatePerfFixture: true, fixture: { ...ZK682_STABILITY_FIXTURE } }, commit, buildId);
+  const measured = (index) => ({ rendererQuality: "high", resources: { displayObjects: 2000, attachedTextures: 80, attachedTextureSources: 20, managedTextureSources: 48, canvasConnected: true }, heap: { runtimeUsedBytes: 40_000_000 + index * 20_000 } });
+  const samples = gate === "save-load-resource-stability"
+    ? Array.from({ length: 13 }, (_, cycle) => ({ cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef", state: { screen: "game", week: 2, cash: 42000, terrainVersion: 7 }, ...measured(cycle) }))
+    : gate === "long-session-resource-stability"
+      ? Array.from({ length: 7 }, (_, index) => ({ elapsedGameMinutes: index * 22.4, courseHash: index.toString(16).padStart(8, "0"), state: { dayMinute: 100 + index * 22.4, speed: "4x", onCourse: 12 }, ...measured(index) }))
+      : [
+        { scenario: "editing", passed: true, before: { terrainVersion: 7 }, after: { terrainVersion: 8, screen: "game" }, ...measured(0) },
+        { scenario: "overlay", passed: true, before: { panelOpen: false, kind: "traces" }, after: { kind: "recovery", visible: true }, ...measured(1) },
+        { scenario: "sleep-wake", passed: true, before: { courseHash: "deadbeef" }, after: { courseHash: "deadbeef", lifecycle: "active", responsive: true }, ...measured(2) },
+        { scenario: "recovery", passed: true, before: { savedCourseHash: "deadbeef", mutatedCourseHash: "cafef00d" }, after: { courseHash: "deadbeef", quickSaveLoaded: true }, ...measured(3) },
+      ];
+  return createZk682StabilityReport({ producer, gate, candidateCommit: commit, capturedAt: NOW, command: `fixture ${gate}`, browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_STABILITY_THRESHOLDS[gate], samples });
 }
 
 function fixture() {
@@ -58,7 +72,11 @@ function fixture() {
   git(repository, "init");
   git(repository, "config", "user.email", "fixture@example.invalid");
   git(repository, "config", "user.name", "Fixture");
-  git(repository, "add", "simgolf-lite/package-lock.json");
+  // The builder imports the candidate-local validator and its producer contract.
+  for (const name of ["zk682-stability-contract.mjs", "zk682-stability-producer.mjs"]) {
+    write(root, `scripts/${name}`, readFileSync(new URL(`./${name}`, import.meta.url)));
+  }
+  git(repository, "add", "simgolf-lite/package-lock.json", "simgolf-lite/scripts");
   git(repository, "commit", "-m", "fixture candidate");
   const commit = git(repository, "rev-parse", "HEAD");
   const raw = join(root, "artifacts/zk682/raw");
@@ -136,4 +154,22 @@ test("builder rejects relaxed timing budgets, wrong HEAD, and unbound raw files"
     await assert.rejects(() => buildZk682Packet({ root: extra.root, candidateCommit: extra.commit, invokeCertification: false }), /unbound raw evidence/);
     await assert.rejects(() => buildZk682Packet({ root: extra.root, candidateCommit: "f".repeat(40), invokeCertification: false }), /HEAD .* does not match candidate/);
   } finally { rmSync(extra.repository, { recursive: true, force: true }); }
+});
+
+
+test("builder rejects stripped, false-production, and legacy supplemental provenance", async () => {
+  for (const kind of ["stripped", "development", "legacy"]) {
+    const value = fixture();
+    try {
+      const report = supplemental("save-load-resource-stability", value.commit);
+      if (kind === "stripped") delete report.producer;
+      if (kind === "development") report.producer.runtime.dev = true;
+      if (kind === "legacy") report.schemaVersion = 1;
+      write(value.raw, "save-load-resource-stability.json", report);
+      await assert.rejects(
+        () => buildZk682Packet({ root: value.root, candidateCommit: value.commit, invokeCertification: false }),
+        kind === "stripped" ? /producer attestation is required/ : kind === "development" ? /production-bundled/ : /identity\/schema mismatch/,
+      );
+    } finally { rmSync(value.repository, { recursive: true, force: true }); }
+  }
 });

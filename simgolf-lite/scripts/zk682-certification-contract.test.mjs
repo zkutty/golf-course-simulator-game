@@ -9,7 +9,11 @@ import { ZK682_RESOURCE_GROWTH_THRESHOLDS, createZk682ResourceGrowthReport } fro
 import { ZK682_STABILITY_THRESHOLDS, createZk682StabilityReport } from "./zk682-stability-contract.mjs";
 import { ZK682_CERTIFICATION_ID, ZK682_CRITERIA, ZK682_GATE_CONTRACTS, ZK682_SCHEMA_VERSION, buildZk682Report, sha256, validateZk682EvidenceManifest } from "./zk682-certification-contract.mjs";
 
+import { createStabilityProducer, ZK682_STABILITY_FIXTURE } from "./zk682-stability-producer.mjs";
+
 const COMMIT = "1".repeat(40);
+const BUILD_ID = "12345678-1234-1234-1234-123456789abc";
+const stabilityProducer = createStabilityProducer({ dev: false, prod: true, mode: "e2e", commit: COMMIT, buildId: BUILD_ID, privatePerfFixture: true, fixture: { ...ZK682_STABILITY_FIXTURE } }, COMMIT, BUILD_ID);
 const LOCK = Buffer.from("lockfile fixture\n");
 const NOW = "2026-09-29T12:00:00.000Z";
 function write(root, path, value) {
@@ -65,7 +69,7 @@ function supplemental(gate) {
         { scenario: "sleep-wake", passed: true, before: { courseHash: "deadbeef" }, after: { courseHash: "deadbeef", lifecycle: "active", responsive: true }, ...measured(2) },
         { scenario: "recovery", passed: true, before: { savedCourseHash: "deadbeef", mutatedCourseHash: "cafef00d" }, after: { courseHash: "deadbeef", quickSaveLoaded: true }, ...measured(3) },
       ];
-  return createZk682StabilityReport({ gate, candidateCommit: COMMIT, capturedAt: NOW, command: `fixture ${gate}`, browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_STABILITY_THRESHOLDS[gate], samples });
+  return createZk682StabilityReport({ producer: stabilityProducer, gate, candidateCommit: COMMIT, capturedAt: NOW, command: `fixture ${gate}`, browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_STABILITY_THRESHOLDS[gate], samples });
 }
 
 function commandReceipt(receiptId, passed = true) {
@@ -323,6 +327,7 @@ test("a schema-v2 supplemental stability failure produces HOLD instead of manife
       const prior = JSON.parse(readFileSync(join(value.root, reference.path), "utf8"));
       prior.samples.at(-1).resources.attachedTextureSources += 2;
       const failed = createZk682StabilityReport({
+        producer: prior.producer,
         gate: prior.gate,
         candidateCommit: prior.candidateCommit,
         capturedAt: prior.capturedAt,
@@ -359,4 +364,28 @@ test("rejects relaxed fixture budget and physical evidence that does not match i
     assert(errors.some((error) => error.includes("normalized observations disagree with typed physical evidence")));
     assert(errors.some((error) => error.includes("physical scenario must exactly match headless")));
   } finally { cleanup(mismatched); }
+});
+
+
+test("typed stability certification validates corrected producers and rejects false production claims", () => {
+  const value = fixture();
+  const buildId = "12345678-1234-1234-1234-123456789abc";
+  const runtime = { dev: false, prod: true, mode: "e2e", commit: COMMIT, buildId, privatePerfFixture: true, fixture: { ...ZK682_STABILITY_FIXTURE } };
+  try {
+    const update = (mutate = report => report) => rewriteGate(value, "stability", gate => {
+      const reference = gate.observations.saveLoadEvidence;
+      const report = JSON.parse(readFileSync(join(value.root, reference.path), "utf8"));
+      report.producer = createStabilityProducer(runtime, COMMIT, buildId);
+      mutate(report);
+      const rewritten = write(value.root, reference.path, report);
+      reference.sha256 = rewritten.sha256;
+      gate.artifacts.find(entry => entry.path === reference.path).sha256 = rewritten.sha256;
+    });
+    update();
+    assert.deepEqual(validateZk682EvidenceManifest(value.manifest, value.options).errors, []);
+    update(report => { delete report.producer; });
+    assert.ok(validateZk682EvidenceManifest(value.manifest, value.options).errors.some(error => error.includes("attestation is required")));
+    update(report => { report.producer.runtime.dev = true; });
+    assert.ok(validateZk682EvidenceManifest(value.manifest, value.options).errors.some(error => error.includes("production-bundled e2e")));
+  } finally { cleanup(value); }
 });

@@ -849,6 +849,7 @@ export default function App() {
   const quickSaveAnnouncementPublishTimeoutRef = useRef<number | null>(null);
   const quickSaveAnnouncementClearTimeoutRef = useRef<number | null>(null);
   const perfFixtureLoadedRef = useRef(false);
+  const stabilityFixtureRef = useRef<{ id: string; theme: string; width: number; height: number; holes: number } | null>(null);
   const audio = useAudio();
   const [showRetention, setShowRetention] = useState(false);
   const [showTournaments, setShowTournaments] = useState(false);
@@ -1822,9 +1823,10 @@ export default function App() {
   }, [audio, gameSession, live.status.dayIndex, setWorld, soundEnabled, t]);
 
   useEffect(() => {
-    if (!import.meta.env.DEV || perfFixtureLoadedRef.current) return;
+    if ((!import.meta.env.DEV && !(import.meta.env.MODE === "e2e" && import.meta.env.VITE_ZK682_STABILITY_FIXTURE === "1")) || perfFixtureLoadedRef.current) return;
     const fixtureParams = new URLSearchParams(window.location.search);
     const isPerfFixture = fixtureParams.get("perfFixture") === "1";
+    if (!import.meta.env.DEV && (!isPerfFixture || [...fixtureParams.keys()].some((key) => key !== "perfFixture"))) return;
     const isM19Fixture = fixtureParams.get("m19Fixture") === "1";
     const isMacroLandformFixture = fixtureParams.get("m35LandformFixture") === "1";
     const isZk677TieredGreenFixture = fixtureParams.get("zk677TieredGreenFixture") === "1";
@@ -1924,6 +1926,7 @@ export default function App() {
     // layout IDs, looks like a physical hole edit, and needlessly replans every
     // live golfer in the renderer stress scenes.
     fixtureCourse = normalizeCourseLayouts(fixtureCourse);
+    if (isPerfFixture) stabilityFixtureRef.current = { id: "render-perf-course-v1", theme: fixtureCourse.theme ?? "parkland", width: fixtureCourse.width, height: fixtureCourse.height, holes: fixtureCourse.holes.length };
     const m52Bookmark = isM52Fixture
       ? biomeCameraBookmarks(fixtureCourse).find((bookmark) =>
         bookmark.view === m52View && bookmark.rotation === m52Rotation) ?? null
@@ -3571,6 +3574,15 @@ export default function App() {
       }
     };
     window.__coursecraftTest = {
+      stabilityRuntime: () => ({
+        dev: import.meta.env.DEV,
+        prod: import.meta.env.PROD,
+        mode: import.meta.env.MODE,
+        commit: __COMMIT_SHA__,
+        buildId: __ZK682_STABILITY_BUILD_ID__,
+        privatePerfFixture: import.meta.env.VITE_ZK682_STABILITY_FIXTURE === "1",
+        fixture: stabilityFixtureRef.current,
+      }),
       enterNormalGameplayForTest: () => {
         exitHoleEditMode();
         selectWorkspace("operate");
