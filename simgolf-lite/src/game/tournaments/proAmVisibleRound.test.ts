@@ -1,5 +1,6 @@
 import { performance } from "node:perf_hooks";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as group from "../competition/challengeGroupRound";
 import { DEFAULT_WORLD } from "../models/defaults";
 import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
 import { concedeChallengeGroupHole } from "../competition/challengeGroupRound";
@@ -277,4 +278,87 @@ describe("ZK-734B visible Pro-Am ChallengeGroup adapter", () => {
       reason: expect.stringContaining("drifted"),
     });
   }, 60_000);
+  it("rejects impossible decode-owned claims before shots and retains genuine replay checks", () => {
+    const { snapshot, roundCourse, round } = started(734_416);
+    const advanced = commitProAmVisiblePlayerShot(round, caddieRecommendation(proAmVisiblePlayerRound(round)!, proAmVisiblePlayerSkills(round)));
+    const encoded = encodeProAmVisibleRound(advanced);
+    const replay = vi.spyOn(group, "replayChallengeGroupPlayerShots");
+    try {
+      for (const mutate of [
+        (copy: ProAmVisibleRound) => { copy.challengeRound.golfers[0].equipment.modifiers = [{ channel: "carry", multiplier: 1.2 }]; },
+        (copy: ProAmVisibleRound) => { copy.challengeRound.golfers[0].confidenceSnapshot = { version: 1, current: 100, reason: "practice", trend: "rising", lastUpdatedAbsoluteDay: 0 }; },
+        (copy: ProAmVisibleRound) => { copy.challengeRound.golfers[1].withdrawn = true; },
+      ]) {
+        const copy = JSON.parse(encoded) as ProAmVisibleRound;
+        mutate(copy);
+        replay.mockClear();
+        expect(decodeProAmVisibleRound(copy, snapshot, roundCourse)).toEqual({ ok: false, reason: "The visible Pro-Am transcript does not match its trusted action log." });
+        expect(replay).not.toHaveBeenCalled();
+        replay.mockClear();
+        expect(settleProAmVisibleRound(copy, snapshot, roundCourse)).toEqual({ ok: false, reason: "The visible Pro-Am transcript does not match its trusted action log." });
+        expect(replay).toHaveBeenCalledTimes(1);
+      }
+      replay.mockClear();
+      const valid = decodeProAmVisibleRound(encoded, snapshot, roundCourse);
+      expect(valid.ok && JSON.stringify(valid.round)).toBe(encoded);
+      expect(replay).toHaveBeenCalledTimes(1);
+      const loggedWithdrawal = withdrawProAmVisibleGolfer(advanced, advanced.challengeRound.golfers[1].id, "Logged test withdrawal.");
+      const withdrawalBytes = encodeProAmVisibleRound(loggedWithdrawal);
+      replay.mockClear();
+      const withdrawn = decodeProAmVisibleRound(withdrawalBytes, snapshot, roundCourse);
+      expect(withdrawn.ok && JSON.stringify(withdrawn.round)).toBe(withdrawalBytes);
+      expect(replay).toHaveBeenCalledTimes(1);
+      const score = JSON.parse(encoded) as ProAmVisibleRound;
+      const forged = score.challengeRound.golfers[0].scorecard[0];
+      forged.strokes += 1;
+      if (forged.gross !== null) { forged.gross += 1; forged.net = forged.gross - forged.handicapStrokes; }
+      replay.mockClear();
+      expect(decodeProAmVisibleRound(score, snapshot, roundCourse)).toEqual({ ok: false, reason: "The visible Pro-Am transcript does not match its trusted action log." });
+      expect(replay).toHaveBeenCalledTimes(1);
+    } finally { replay.mockRestore(); }
+  }, 60_000);
+
+  it("owns raw normalization before preflight and preserves raw settlement getter order", () => {
+    const { snapshot, roundCourse, round } = started(734_417);
+    const advanced = commitProAmVisiblePlayerShot(round, caddieRecommendation(proAmVisiblePlayerRound(round)!, proAmVisiblePlayerSkills(round)));
+    const encoded = encodeProAmVisibleRound(advanced);
+    const copy = JSON.parse(encoded) as ProAmVisibleRound;
+    const action = copy.actions[0];
+    if (action.type !== "player-shot") throw new Error("Expected a player shot.");
+    const power = action.selection.power;
+    let reads = 0;
+    Object.defineProperty(action.selection, "power", { enumerable: true, get() { return ++reads === 1 ? power : power + .01; } });
+    const trace: string[] = [];
+    const raw = { get toJSON() { trace.push("get:toJSON"); return () => {
+      trace.push("call:toJSON");
+      trace.push(`nested:${decodeProAmVisibleRound("{", snapshot, roundCourse).ok}`);
+      return copy;
+    }; } };
+    const decoded = decodeProAmVisibleRound(raw, snapshot, roundCourse);
+    expect(decoded.ok && JSON.stringify(decoded.round)).toBe(encoded);
+    expect(reads).toBe(1);
+    expect(trace).toEqual(["get:toJSON", "call:toJSON", "nested:false"]);
+    expect(Object.isFrozen(copy)).toBe(false);
+    copy.actions = [];
+    if (decoded.ok) expect(JSON.stringify(decoded.round)).toBe(encoded);
+    expect(decodeProAmVisibleRound({ toJSON() { throw new Error("hostile input"); } }, snapshot, roundCourse)).toEqual({ ok: false, reason: "The visible Pro-Am save is not valid JSON." });
+
+    const untrusted = JSON.parse(encoded) as ProAmVisibleRound;
+    const equipment = untrusted.challengeRound.golfers[0].equipment;
+    const settleTrace: string[] = [];
+    Object.defineProperty(untrusted.challengeRound.golfers[0], "equipment", { enumerable: true, get() {
+      settleTrace.push("get:equipment");
+      return { ...equipment, toJSON() { settleTrace.push("call:equipment.toJSON"); return equipment; } };
+    } });
+    const originalReplay = group.replayChallengeGroupPlayerShots;
+    const replay = vi.spyOn(group, "replayChallengeGroupPlayerShots").mockImplementation((...args) => {
+      settleTrace.push("replay");
+      return originalReplay(...args);
+    });
+    try {
+      expect(settleProAmVisibleRound(untrusted, snapshot, roundCourse)).toEqual({ ok: false, reason: "The visible Pro-Am group is not complete." });
+      expect(settleTrace).toEqual(["replay", "get:equipment", "call:equipment.toJSON"]);
+    } finally { replay.mockRestore(); }
+  }, 60_000);
+
 });

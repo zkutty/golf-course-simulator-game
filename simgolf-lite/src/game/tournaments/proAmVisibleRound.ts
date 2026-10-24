@@ -218,6 +218,7 @@ function replayActions(
   state: ProAmVisibleRound,
   snapshot: TournamentActivationSnapshot,
   course: PlayerRoundCourseSnapshot,
+  decodeOwned = false,
 ): ChallengeGroupRound | null {
   let round: ChallengeGroupRound;
   try {
@@ -229,6 +230,14 @@ function replayActions(
       state.playerEntrantId,
       state.seed,
     );
+    // Only decode's JSON-owned candidate can take this necessary-condition
+    // preflight. Direct settlement keeps its original raw-object replay path.
+    if (decodeOwned && state.challengeRound.golfers.some((golfer, index) => {
+      const initial = round.golfers[index];
+      return json(golfer.equipment) !== json(initial.equipment)
+        || json(golfer.confidenceSnapshot) !== json(initial.confidenceSnapshot)
+        || golfer.withdrawn && !state.actions.some((action) => action.type === "withdrawal" && action.entrantId === golfer.id);
+    })) return null;
     let selections: PlayerShotSelection[] = [];
     const flushSelections = (): boolean => {
       if (!selections.length) return true;
@@ -320,8 +329,9 @@ function coherenceProblem(
   state: ProAmVisibleRound,
   snapshot: TournamentActivationSnapshot,
   course: PlayerRoundCourseSnapshot,
+  decodeOwned = false,
 ): string | null {
-  const replayed = replayActions(state, snapshot, course);
+  const replayed = replayActions(state, snapshot, course, decodeOwned);
   return replayed && json(replayed) === json(state.challengeRound)
     ? null
     : "The visible Pro-Am transcript does not match its trusted action log.";
@@ -424,7 +434,7 @@ export function decodeProAmVisibleRound(
   let problem: string | null;
   try {
     problem = bindingProblem(normalized, snapshot, course);
-    if (!problem) problem = coherenceProblem(normalized, snapshot, course);
+    if (!problem) problem = coherenceProblem(normalized, snapshot, course, true);
   } catch {
     problem = "The visible Pro-Am save is malformed.";
   }
