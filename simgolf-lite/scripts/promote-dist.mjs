@@ -172,6 +172,7 @@ export const BUILD_SCRIPT = `${MARKER_COMMAND} BEGIN ${MARKER_ARGS}\nnpm run bui
 const WORKFLOW_CONTRACT_SHA256 = '4e7c9454bb144f1caf54da49c9540441345f1b76e18612b79b1b138a8f0d6889';
 const PACKAGE_CONTRACT_SHA256 = 'dfb51defb420c1a1e0ab6f56564a1e2d4f13eb96dbb8171ba1254c3d8c74cfc7';
 export function verifyExecutionContract(repoRoot) {
+  buildPhase('receipt-execution-contract');
   const workflow = readFileSync(join(repoRoot, WORKFLOW)), packageBytes = readFileSync(join(repoRoot, 'simgolf-lite/package.json'));
   same(sha256(workflow), WORKFLOW_CONTRACT_SHA256, 'reviewed unconditional producer/qualification/deployment workflow');
   same(sha256(packageBytes), PACKAGE_CONTRACT_SHA256, 'reviewed chained package build command');
@@ -211,11 +212,15 @@ function uniqueJob(jobs, ctx, name) {
   return successfulJob(matches[0], ctx, name);
 }
 function producerObservation(jobs, ctx, direct) {
+  buildPhase('receipt-producer-selection');
   const job = uniqueJob(jobs, ctx, PRODUCER);
   if (direct !== undefined) {
+    buildPhase('receipt-producer-direct');
     successfulJob(direct, ctx, PRODUCER);
+    buildPhase('receipt-producer-agreement');
     for (const key of ['id', 'run_id', 'run_attempt', 'head_sha', 'name', 'status', 'conclusion', 'started_at', 'completed_at', 'html_url', 'steps']) same(direct[key], job[key], 'direct/attempt producer agreement');
   }
+  buildPhase('receipt-build-state');
   const builds = job.steps.filter(s => s.name === 'Build'); assert(builds.length <= 1, 'unique Build step');
   const step = builds[0] ?? null;
   let kind;
@@ -277,13 +282,16 @@ export function initialBuild(jobs, ctx, options = {}) {
   const execution = verifyExecutionContract(options.repoRoot);
   const completedLog = verifyCompletedProducerLog(options.log, observed.producer, ctx, execution, options.dist, options.distZIP);
   if (observed.kind === 'github-completed-build-step-v1') {
+    buildPhase('receipt-build-window');
     assert(Date.parse(completedLog.build.begin.timestamp) >= Date.parse(observed.step.started_at) && Date.parse(completedLog.build.end.timestamp) < providerEndExclusive(observed.step.completed_at), 'markers within actual API Build window');
   }
   const proof = { ...observed, execution, completedLog };
+  buildPhase('receipt-sentry');
   proof.sentry = verifySentryLog(options.log, { ...observed.producer, steps: observed.apiObservations.attemptSteps }, options.release, options.bindings, proof);
   verifyBuildProofShape(proof); return proof;
 }
 export function verifyBuildProofShape(proof) {
+  buildPhase('receipt-proof-shape');
   same(Object.keys(proof).sort(), ['schema', 'kind', 'producer', 'apiObservations', 'step', 'execution', 'completedLog', 'sentry'].sort(), 'exact typed proof fields');
   same(proof.schema, 1, 'build proof schema'); assert(['github-completed-build-step-v1', 'completed-producer-log-v1'].includes(proof.kind), 'typed build proof kind');
   same(proof.producer.status, 'completed', 'proof completed producer'); same(proof.producer.conclusion, 'success', 'proof successful producer');
@@ -324,6 +332,7 @@ function providerEndExclusive(timestamp) {
   return Date.parse(timestamp) + (fraction ? Math.max(1, 1000 / 10 ** fraction.length) : 1000);
 }
 export function parsedLog(bytes) {
+  buildPhase('receipt-log-parser');
   assert(bytes.length > 0 && bytes.length <= 32 * 1024 * 1024, 'bounded nonempty completed log');
   const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   assert(text.endsWith('\n') && !text.includes('\0') && !text.includes('\r'), 'complete strict log encoding');
@@ -376,14 +385,17 @@ export function parsedLog(bytes) {
   return lines;
 }
 export function verifyCompletedProducerLog(bytes, producer, ctx, execution, dist, distZIP) {
+  buildPhase('receipt-log-identity');
   same(producer.status, 'completed', 'completed log producer'); same(producer.conclusion, 'success', 'successful log producer');
   same(producer.head_sha, ctx.sha, 'log producer SHA'); same(producer.run_id, ctx.runID, 'log producer run'); same(producer.run_attempt, 1, 'log producer attempt');
   same(execution.buildScript, BUILD_SCRIPT, 'reviewed marker command'); same(execution.buildCommand, BUILD_COMMAND, 'reviewed build command');
   same(execution.workflowSHA256, WORKFLOW_CONTRACT_SHA256, 'reviewed log workflow'); same(execution.packageSHA256, PACKAGE_CONTRACT_SHA256, 'reviewed log package');
   const lines = parsedLog(bytes);
+  buildPhase('receipt-log-window');
   assert(/^Current runner version: /.test(lines[0].text), 'full producer log starts with runner setup');
   assert(lines.every(l => Date.parse(l.timestamp) >= Date.parse(producer.started_at) && Date.parse(l.timestamp) < providerEndExclusive(producer.completed_at)), 'log within genuine producer window');
   assert(!lines.some(l => /##\[error\]|Process completed with exit code [1-9]|The operation was canceled/.test(l.text)), 'no contradictory completed job errors');
+  buildPhase('receipt-build-markers');
   const exact = text => { const matches = lines.filter(l => l.text === text); same(matches.length, 1, 'unique log evidence'); return matches[0]; };
   const marker = edge => `ZK1359_BUILD_V1 ${edge} sha=${ctx.sha} run=${ctx.runID} attempt=1 job=ci`;
   const begin = exact(marker('BEGIN')), end = exact(marker('END')); assert(begin.line < end.line, 'ordered build markers');
@@ -397,6 +409,7 @@ export function verifyCompletedProducerLog(bytes, producer, ctx, execution, dist
   const permitted = new Set([group.line, echoBegin.line, echoEnd.line, begin.line, end.line]);
   assert(!lines.some(l => l.text.includes('ZK1359_BUILD_V1') && !permitted.has(l.line)), 'no duplicate or spoofed markers');
   const command = exact(`> ${BUILD_COMMAND}`); assert(command.line > begin.line && command.line < end.line, 'actual package build execution within markers');
+  buildPhase('receipt-upload-boundaries');
   const uploadGroups = lines.filter(l => l.line > end.line && l.text.startsWith('##[group]'));
   assert(uploadGroups.length > 0, 'following upload action'); const upload = uploadGroups[0]; same(upload.text, '##[group]Run actions/upload-artifact@v4', 'immediately following normal upload');
   assert(lines.filter(l => l.line > end.line && l.line < upload.line).every(l => !l.text.trim()), 'no post-build artifact mutation command');
@@ -406,8 +419,10 @@ export function verifyCompletedProducerLog(bytes, producer, ctx, execution, dist
   const uploadClose = uploadExact('##[endgroup]');
   for (const text of ['  name: dist', '  path: simgolf-lite/dist', '  retention-days: 7', '  overwrite: false', '  include-hidden-files: false']) assert(uploadExact(text).line < uploadClose.line, 'normal immutable upload inputs');
   assert(!uploadLines.some(l => l.text === '  overwrite: true' || l.text === '  include-hidden-files: true'), 'unmutated dist upload settings');
+  buildPhase('receipt-upload-zip');
   assert(Number.isSafeInteger(dist.size) && dist.size > 0, 'API artifact ZIP size');
   same(distZIP.length, dist.size, 'independent raw ZIP size'); verifyDigest(distZIP, dist.digest);
+  buildPhase('receipt-upload-finalization');
   const digest = uploadExact(`SHA256 digest of uploaded artifact zip is ${dist.digest.slice(7)}`);
   const finalization = uploadExact(`Artifact dist.zip successfully finalized. Artifact ID ${dist.id}`);
   const success = uploadExact(`Artifact dist has been successfully uploaded! Final size is ${dist.size} bytes. Artifact ID is ${dist.id}`);
@@ -455,10 +470,12 @@ export function debugBindings(directory) {
   same(new Set(bindings.map(b => b.debugID)).size, bindings.length, 'unique Sentry debug UUIDs'); return bindings;
 }
 export function verifySentryLog(bytes, job, release, bindings, proof) {
+  buildPhase('receipt-sentry');
   let lines;
   if (proof) {
     same(sha256(bytes), proof.completedLog.rawSHA256, 'full Sentry log digest');
     const allLines = parsedLog(bytes);
+    buildPhase('receipt-sentry');
     lines = allLines.filter(l => l.line > proof.completedLog.build.begin.line && l.line < proof.completedLog.build.end.line);
     const buildLines = new Set(lines.map(l => l.line));
     assert(!allLines.some(l => /^(?:> Release:|> Upload type:|Source Map Upload Report|\[sentry-vite-plugin\] Info: Successfully uploaded source maps to Sentry)/.test(l.text) && !buildLines.has(l.line)), 'Sentry upload evidence only within actual Build');
@@ -474,6 +491,7 @@ export function verifySentryLog(bytes, job, release, bindings, proof) {
     const start = Date.parse(build.started_at), end = Date.parse(build.completed_at);
     assert(Number.isFinite(start) && Number.isFinite(end) && end >= start, 'Build timestamps');
     lines = parsedLog(bytes).filter(l => Date.parse(l.timestamp) >= start && Date.parse(l.timestamp) <= end);
+    buildPhase('receipt-sentry');
   }
   const exact = text => { const found = lines.filter(l => l.text === text); same(found.length, 1, 'unique Sentry build evidence'); return found[0]; };
   const uploaded = exact('[sentry-vite-plugin] Info: Successfully uploaded source maps to Sentry');
@@ -524,11 +542,15 @@ export class GitHub {
     throw new Error('pagination not exhausted');
   }
   async signedBytes(path, maxBytes) {
+    buildPhase('receipt-log-redirect');
     const redirect = await this.request(path, true);
+    buildPhase('receipt-log-location');
     const url = new URL(redirect.headers.get('location'));
     assert(url.protocol === 'https:' && !url.username && !url.password, 'unsafe signed download URL');
+    buildPhase('receipt-log-storage');
     const response = await this.fetcher(url.href, { redirect: 'error', signal: AbortSignal.timeout(60_000) });
     assert(response.ok, `signed storage request failed (${response.status})`);
+    buildPhase('receipt-log-body');
     const chunks = []; let received = 0;
     for await (const chunk of response.body) { received += chunk.length; assert(received <= maxBytes, 'bounded storage response'); chunks.push(chunk); }
     assert(received > 0, 'nonempty storage response'); return Buffer.concat(chunks);
@@ -625,10 +647,72 @@ export async function verifyPromotion(api, ctx, repoRoot, root, promotion) {
   if (promotion.sentry) same(promotion.sentry, proof.sentry, 'Sentry provenance recheck'); else promotion.sentry = proof.sentry;
   return receipt;
 }
-const DIAGNOSTIC_PHASES = new Set(['context', 'verify-reports', 'receipt-run', 'receipt-artifacts', 'receipt-release-identity', 'receipt-source-pins', 'receipt-build-metadata', 'receipt-reports', 'receipt-m65', 'receipt-inventory', 'receipt-worker-binding', 'receipt-debug-bindings', 'receipt-write', 'promotion']);
-let diagnosticPhase = 'context';
-function receiptPhase(phase, operation) { diagnosticPhase = phase; return operation(); }
-export function failureDiagnostic(phase, error) {
+const BUILD_DIAGNOSTIC_PHASES = new Set(['receipt-build-metadata', 'receipt-jobs-fetch', 'receipt-producer-selection', 'receipt-direct-fetch', 'receipt-producer-direct', 'receipt-producer-agreement', 'receipt-build-state', 'receipt-execution-contract', 'receipt-log-fetch', 'receipt-log-redirect', 'receipt-log-location', 'receipt-log-storage', 'receipt-log-body', 'receipt-log-identity', 'receipt-log-parser', 'receipt-log-window', 'receipt-build-markers', 'receipt-build-window', 'receipt-upload-boundaries', 'receipt-upload-zip', 'receipt-upload-finalization', 'receipt-sentry', 'receipt-proof-shape']);
+const DIAGNOSTIC_PHASES = new Set(['context', 'verify-reports', 'receipt-run', 'receipt-artifacts', 'receipt-release-identity', 'receipt-source-pins', 'receipt-reports', 'receipt-m65', 'receipt-inventory', 'receipt-worker-binding', 'receipt-debug-bindings', 'receipt-write', 'promotion', ...BUILD_DIAGNOSTIC_PHASES]);
+let diagnosticPhase = 'context', diagnosticObservations = null;
+export function receiptPhase(phase, operation) { diagnosticPhase = phase; return operation(); }
+function buildPhase(phase) { if (BUILD_DIAGNOSTIC_PHASES.has(diagnosticPhase)) diagnosticPhase = phase; }
+
+const MISSING_DIAGNOSTIC = Symbol(), UNSAFE_DIAGNOSTIC = Symbol();
+const TYPED_ARRAY_BYTE_LENGTH = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'byteLength').get;
+// This projection runs only after failure. IO boundaries retain references,
+// without adding any verifier reads. Never evaluate accessor/toJSON properties.
+function diagnosticData(value, key) {
+  try {
+    if (!value || typeof value !== 'object') return MISSING_DIAGNOSTIC;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return !descriptor ? MISSING_DIAGNOSTIC : Object.hasOwn(descriptor, 'value') ? descriptor.value : UNSAFE_DIAGNOSTIC;
+  } catch { return UNSAFE_DIAGNOSTIC; }
+}
+const diagnosticUnavailable = value => value === MISSING_DIAGNOSTIC ? 'unavailable' : 'invalid';
+const diagnosticInteger = value => Number.isSafeInteger(value) && value > 0 ? value : diagnosticUnavailable(value);
+const diagnosticEnum = (value, allowed) => value === null ? null : allowed.includes(value) ? value : diagnosticUnavailable(value);
+function diagnosticTime(value) {
+  if (value === null) return null;
+  const time = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value) ? Date.parse(value) : NaN;
+  return Number.isFinite(time) ? time : diagnosticUnavailable(value);
+}
+function diagnosticRows(value, limit, project) {
+  try {
+    const length = diagnosticData(value, 'length');
+    if (!Array.isArray(value) || !Number.isSafeInteger(length) || length < 0) return { count: diagnosticUnavailable(value), truncated: false, rows: [] };
+    const count = Math.min(length, limit), rows = [];
+    for (let index = 0; index < count; index++) rows.push(project(diagnosticData(value, String(index))));
+    return { count, truncated: length > limit, rows };
+  } catch { return { count: 'invalid', truncated: false, rows: [] }; }
+}
+const diagnosticHash = value => sha256(Buffer.from(JSON.stringify(value)));
+const DIAGNOSTIC_STATUSES = ['queued', 'in_progress', 'completed', 'pending', 'waiting', 'requested'];
+const DIAGNOSTIC_CONCLUSIONS = ['success', 'failure', 'cancelled', 'skipped', 'timed_out', 'action_required', 'neutral', 'stale', 'startup_failure'];
+function diagnosticStep(value) {
+  const name = diagnosticData(value, 'name');
+  return { kind: name === 'Build' ? 'build' : name === 'Test' ? 'test' : 'other', number: diagnosticInteger(diagnosticData(value, 'number')), status: diagnosticEnum(diagnosticData(value, 'status'), DIAGNOSTIC_STATUSES), conclusion: diagnosticEnum(diagnosticData(value, 'conclusion'), DIAGNOSTIC_CONCLUSIONS), startedAt: diagnosticTime(diagnosticData(value, 'started_at')), completedAt: diagnosticTime(diagnosticData(value, 'completed_at')) };
+}
+function diagnosticJob(value) {
+  const steps = diagnosticRows(diagnosticData(value, 'steps'), 64, diagnosticStep);
+  const builds = steps.rows.filter(step => step.kind === 'build'), tests = steps.rows.filter(step => step.kind === 'test');
+  const source = diagnosticData(value, 'head_sha');
+  const projection = { id: diagnosticInteger(diagnosticData(value, 'id')), runID: diagnosticInteger(diagnosticData(value, 'run_id')), attempt: diagnosticInteger(diagnosticData(value, 'run_attempt')), sourceSHA256: typeof source === 'string' && /^[0-9a-f]{40}$/.test(source) ? sha256(Buffer.from(source)) : diagnosticUnavailable(source), status: diagnosticEnum(diagnosticData(value, 'status'), DIAGNOSTIC_STATUSES), conclusion: diagnosticEnum(diagnosticData(value, 'conclusion'), DIAGNOSTIC_CONCLUSIONS), startedAt: diagnosticTime(diagnosticData(value, 'started_at')), completedAt: diagnosticTime(diagnosticData(value, 'completed_at')), steps: { count: steps.count, truncated: steps.truncated, buildCount: builds.length, build: builds[0] ?? null, testCount: tests.length, test: tests[0] ?? null, projectionSHA256: diagnosticHash(steps.rows) } };
+  return { ...projection, projectionSHA256: diagnosticHash(projection) };
+}
+function diagnosticLog(value) {
+  try {
+    if (!Buffer.isBuffer(value)) return 'unavailable';
+    const bytes = TYPED_ARRAY_BYTE_LENGTH.call(value);
+    return bytes <= 32 * 1024 * 1024 ? { bytes, sha256: sha256(value) } : 'invalid';
+  } catch { return 'unavailable'; }
+}
+function diagnosticSummary(observations) {
+  try {
+    const jobs = diagnosticRows(diagnosticData(observations, 'jobs'), 32, value => ({ producer: diagnosticData(value, 'name') === PRODUCER, ...diagnosticJob(value) }));
+    const producers = jobs.rows.filter(job => job.producer);
+    const artifact = diagnosticData(diagnosticData(observations, 'artifacts'), 'dist'), digest = diagnosticData(artifact, 'digest');
+    const summary = { schema: 1, attemptJobs: { count: jobs.count, truncated: jobs.truncated, producerCount: producers.length, producer: producers[0] ?? null, projectionSHA256: diagnosticHash(jobs.rows) }, direct: diagnosticJob(diagnosticData(observations, 'direct')), log: diagnosticLog(diagnosticData(observations, 'log')), dist: { id: diagnosticInteger(diagnosticData(artifact, 'id')), bytes: diagnosticInteger(diagnosticData(artifact, 'size')), digest: typeof digest === 'string' && /^sha256:[0-9a-f]{64}$/.test(digest) ? digest : diagnosticUnavailable(digest) } };
+    const encoded = JSON.stringify(summary);
+    return encoded.length <= 3500 ? encoded : '{"schema":1,"state":"unavailable"}';
+  } catch { return '{"schema":1,"state":"unavailable"}'; }
+}
+export function failureDiagnostic(phase, error, observations = null) {
   const safePhase = DIAGNOSTIC_PHASES.has(phase) ? phase : 'unknown';
   let category = 'verification';
   try {
@@ -636,8 +720,11 @@ export function failureDiagnostic(phase, error) {
     else if (error?.name === 'AbortError' || error?.name === 'TimeoutError') category = 'timeout';
     else if (error?.name === 'TypeError') category = 'type';
   } catch { /* Diagnostic property reads cannot expose a thrown value. */ }
-  return `Artifact promotion verification failed; deployment is blocked. phase=${safePhase} error=${category}\n`;
+  const failure = `Artifact promotion verification failed; deployment is blocked. phase=${safePhase} error=${category}\n`;
+  return observations === null ? failure : `${failure}diagnostic-observations=${diagnosticSummary(observations)}\n`;
 }
+export function receiptFailureDiagnostic(error) { return failureDiagnostic(diagnosticPhase, error, diagnosticObservations); }
+
 async function main(mode) {
   const project = process.cwd(), repoRoot = resolve(project, '..');
   if (mode === 'verify-reports') {
@@ -646,20 +733,25 @@ async function main(mode) {
   }
   const ctx = context(), api = new GitHub(ctx.repository, process.env.GH_TOKEN);
   if (mode === 'receipt') {
+    diagnosticObservations = Object.create(null);
     // Q consumes a completed-success P; the enclosing run and D may still be
     // active. No producer rebuild, report regeneration or artifact re-upload.
     const run = verifyRunIdentity(await receiptPhase('receipt-run', () => api.request(`/actions/runs/${ctx.runID}`)), ctx);
     same(run.id, ctx.runID, 'current qualification run ID');
-    const jobs = await receiptPhase('receipt-build-metadata', () => api.pages(`/actions/runs/${ctx.runID}/attempts/1/jobs`, 'jobs'));
-    const producer = uniqueJob(jobs, ctx, PRODUCER);
-    const direct = await receiptPhase('receipt-build-metadata', () => api.request(`/actions/jobs/${producer.id}`));
+    const jobs = await receiptPhase('receipt-jobs-fetch', () => api.pages(`/actions/runs/${ctx.runID}/attempts/1/jobs`, 'jobs'));
+    diagnosticObservations.jobs = jobs;
+    const producer = receiptPhase('receipt-producer-selection', () => uniqueJob(jobs, ctx, PRODUCER));
+    const direct = await receiptPhase('receipt-direct-fetch', () => api.request(`/actions/jobs/${producer.id}`));
+    diagnosticObservations.direct = direct;
     const artifacts = await receiptPhase('receipt-artifacts', async () => artifactSet(await api.pages(`/actions/runs/${ctx.runID}/artifacts`, 'artifacts'), ARTIFACT_NAMES, run));
+    diagnosticObservations.artifacts = artifacts;
     const root = join(project, 'release-evidence'); rmSync(root, { recursive: true, force: true }); mkdirSync(root);
     for (const [name, artifact] of Object.entries(artifacts)) await receiptPhase('receipt-artifacts', () => api.download(artifact.id, artifact.digest, join(root, `${name}.zip`), join(root, name), artifact.size));
     const files = receiptPhase('receipt-inventory', () => inventory(join(root, 'dist')));
     const bindings = receiptPhase('receipt-debug-bindings', () => debugBindings(join(root, 'dist')));
     const release = receiptPhase('receipt-release-identity', () => releaseIdentity(repoRoot, ctx.sha));
-    const log = await receiptPhase('receipt-build-metadata', () => api.signedBytes(`/actions/jobs/${producer.id}/logs`, 32 * 1024 * 1024));
+    const log = await receiptPhase('receipt-log-fetch', () => api.signedBytes(`/actions/jobs/${producer.id}/logs`, 32 * 1024 * 1024));
+    diagnosticObservations.log = log;
     const authenticatedBuild = receiptPhase('receipt-build-metadata', () => initialBuild(jobs, ctx, { direct, log, repoRoot, dist: artifacts.dist, distZIP: readFileSync(join(root, 'dist.zip')), release, bindings }));
     const receipt = {
       schema: 2, ...ctx, release, sourcePins: receiptPhase('receipt-source-pins', () => sourcePins(repoRoot)), authenticatedBuild,
@@ -693,5 +785,5 @@ async function main(mode) {
   await verifyPromotion(api, ctx, repoRoot, root, json(join(root, 'promotion-receipt.json')));
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main(process.argv[2]).catch(error => { process.stderr.write(failureDiagnostic(diagnosticPhase, error)); process.exitCode = 1; });
+  main(process.argv[2]).catch(error => { process.stderr.write(receiptFailureDiagnostic(error)); process.exitCode = 1; });
 }

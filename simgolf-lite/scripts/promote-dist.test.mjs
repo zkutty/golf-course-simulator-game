@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
   GOLDEN_CASES, VISION_CASES, sha256, verifyCases, verifyReports, safeExtract,
   inventory, verifyInventory, verifyRun, selectRun, verifyJobs, artifactSet,
-  verifyDigest, GitHub, verifyReceipt, debugBindings, verifySentryLog, sourcePins, PIN_PATHS, m65Binding, initialBuild, verifyExecutionContract, verifyRunIdentity, verifyBuildProofShape, BUILD_SCRIPT, BUILD_COMMAND, QUALIFIER, verifyPromotion, parsedLog,
+  verifyDigest, GitHub, verifyReceipt, debugBindings, verifySentryLog, sourcePins, PIN_PATHS, m65Binding, initialBuild, verifyExecutionContract, verifyRunIdentity, verifyBuildProofShape, BUILD_SCRIPT, BUILD_COMMAND, QUALIFIER, verifyPromotion, parsedLog, failureDiagnostic, receiptPhase, receiptFailureDiagnostic, verifyCompletedProducerLog,
 } from './promote-dist.mjs';
 const copy = value => structuredClone(value);
 const ctx = { sha: 'a'.repeat(40), repository: 'owner/game', runID: 17 };
@@ -540,4 +540,159 @@ test('source-bound continuation keeps both typed proof routes and terminal uploa
     assert.equal(rawBuild, `${proof.completedLog.build.begin.timestamp} ZK1359_BUILD_V1 BEGIN sha=${ctx.sha} run=17 attempt=1 job=ci`);
     assert.deepEqual(proof.step, f.jobs[0].steps.find(s => s.name === 'Build')); verifyBuildProofShape(proof);
   }
+});
+
+function parsedDiagnostic(text) {
+  assert(Buffer.byteLength(text) <= 4096, 'bounded diagnostic output');
+  const lines = text.trimEnd().split('\n');
+  assert.equal(lines.length, 2);
+  assert(lines[1].startsWith('diagnostic-observations='));
+  return JSON.parse(lines[1].slice('diagnostic-observations='.length));
+}
+test('failure summary distinguishes safe producer observations and binds exact log bytes', () => {
+  const f = proofFixture(), observations = { jobs: f.jobs, direct: f.options.direct, log: f.logBytes, artifacts: { dist: f.dist } };
+  const error = { code: 'ERR_ASSERTION', message: 'SECRET', actual: 'SECRET', expected: 'SECRET', stack: 'SECRET' };
+  const first = failureDiagnostic('receipt-producer-agreement', error, observations), summary = parsedDiagnostic(first);
+  assert.equal(summary.attemptJobs.producer.id, 31); assert.equal(summary.direct.attempt, 1);
+  assert.equal(summary.attemptJobs.producer.status, 'completed'); assert.equal(summary.direct.steps.build.status, 'completed');
+  assert.equal(summary.direct.startedAt, Date.parse(f.options.direct.started_at));
+  assert.deepEqual(summary.log, { bytes: f.logBytes.length, sha256: sha256(f.logBytes) });
+  assert.deepEqual(summary.dist, { id: f.dist.id, bytes: f.dist.size, digest: f.dist.digest });
+  assert(!first.includes('SECRET') && !first.includes('https:') && !first.includes(ctx.sha));
+  f.options.direct.steps[0].status = 'pending';
+  const changed = parsedDiagnostic(failureDiagnostic('receipt-producer-agreement', error, observations));
+  assert.equal(changed.direct.steps.build.status, 'pending');
+  assert.notEqual(changed.direct.projectionSHA256, summary.direct.projectionSHA256);
+  assert.equal(changed.attemptJobs.projectionSHA256, summary.attemptJobs.projectionSHA256);
+});
+test('summary intentionally collapses unrelated step names while agreement still rejects', () => {
+  const f = proofFixture(); f.jobs[0].steps.push({ ...build, name: 'ordinary first', number: 20 }); f.options.direct = copy(f.jobs[0]);
+  const observations = { jobs: f.jobs, direct: f.options.direct };
+  const before = parsedDiagnostic(failureDiagnostic('receipt-producer-agreement', {}, observations));
+  f.options.direct.steps[1].name = 'SECRET-ordinary-second';
+  const after = parsedDiagnostic(failureDiagnostic('receipt-producer-agreement', {}, observations));
+  assert.equal(before.direct.projectionSHA256, after.direct.projectionSHA256);
+  assert.throws(() => receiptPhase('receipt-build-metadata', () => initialBuild(f.jobs, ctx, f.options)));
+  assert.match(receiptFailureDiagnostic({ code: 'ERR_ASSERTION' }), /phase=receipt-producer-agreement error=assertion/);
+  assert(!JSON.stringify(after).includes('SECRET'));
+});
+test('failure observations never invoke accessor or toJSON properties', () => {
+  let reads = 0;
+  const accessor = () => { reads++; throw new Error('SECRET-GETTER'); };
+  const hostile = Object.create(null);
+  for (const key of ['jobs', 'direct', 'log', 'artifacts', 'toJSON']) Object.defineProperty(hostile, key, { enumerable: true, get: accessor });
+  parsedDiagnostic(failureDiagnostic('receipt-jobs-fetch', { code: 'ERR_ASSERTION' }, hostile));
+  const nested = Object.create(null);
+  for (const key of ['name', 'id', 'run_id', 'run_attempt', 'head_sha', 'status', 'conclusion', 'started_at', 'completed_at', 'steps', 'toJSON']) Object.defineProperty(nested, key, { enumerable: true, get: accessor });
+  const text = failureDiagnostic('receipt-producer-direct', {}, { jobs: [nested], direct: nested, artifacts: { get dist() { return accessor(); } } });
+  parsedDiagnostic(text); assert.equal(reads, 0); assert(!text.includes('SECRET'));
+});
+test('Buffer summary uses intrinsic byte length and never calls user conversion hooks', () => {
+  const bytes = Buffer.from('SECRET-log-byte-content'), expected = sha256(bytes); let reads = 0;
+  const fail = () => { reads++; throw new Error('SECRET-CONVERSION'); };
+  Object.defineProperty(bytes, 'length', { get: fail }); Object.defineProperty(bytes, 'toJSON', { value: fail }); Object.defineProperty(bytes, Symbol.toPrimitive, { value: fail });
+  const text = failureDiagnostic('receipt-log-parser', {}, { log: bytes }), summary = parsedDiagnostic(text);
+  assert.deepEqual(summary.log, { bytes: 23, sha256: expected }); assert.equal(reads, 0); assert(!text.includes('SECRET'));
+});
+test('cycles revoked proxies huge arrays and arbitrary credential fields remain bounded and redacted', () => {
+  const secret = 'https://signed.invalid/?token=SECRET-CREDENTIAL';
+  const f = proofFixture(); const raw = f.options.direct;
+  raw.name = secret; raw.status = secret; raw.started_at = secret; raw.headers = { Authorization: secret }; raw.message = secret; raw[secret] = secret; raw.toJSON = () => { throw new Error(secret); };
+  raw.steps = new Array(1_000_000); raw.steps[0] = { name: secret, status: secret, conclusion: secret, number: secret, started_at: secret, completed_at: secret, toJSON() { throw new Error(secret); } }; raw.steps[1] = raw;
+  const huge = new Array(1_000_000); huge[0] = raw; huge[1] = huge;
+  const revocable = Proxy.revocable({}, {}); revocable.revoke();
+  for (const value of [{ jobs: huge, direct: raw, log: { get length() { throw new Error(secret); }, toJSON() { throw new Error(secret); } } }, revocable.proxy, new Proxy({}, { getOwnPropertyDescriptor() { throw new Error(secret); } })]) {
+    const text = failureDiagnostic(secret, { code: 'ERR_ASSERTION', name: secret, stack: secret, actual: secret, expected: secret }, value);
+    parsedDiagnostic(text); assert.match(text, /phase=unknown error=assertion/); assert(!text.includes(secret) && !text.includes('SECRET') && !text.includes('Authorization'));
+  }
+});
+test('diagnostic error-property failures and summary failures preserve the original throw', () => {
+  const original = new Error('SECRET-original'); let codeReads = 0;
+  Object.defineProperty(original, 'code', { get() { codeReads++; throw new Error('SECRET-secondary'); } });
+  assert.throws(() => receiptPhase('receipt-log-parser', () => { throw original; }), error => error === original);
+  const observations = new Proxy({}, { getOwnPropertyDescriptor() { throw new Error('SECRET-summary'); } });
+  const text = failureDiagnostic('receipt-log-parser', original, observations); parsedDiagnostic(text);
+  assert.equal(codeReads, 1); assert.match(text, /error=verification/); assert(!text.includes('SECRET'));
+});
+for (const [phase, mutate] of [
+  ['receipt-producer-selection', f => { f.jobs = []; }],
+  ['receipt-producer-direct', f => { f.options.direct.status = 'in_progress'; f.options.direct.conclusion = null; }],
+  ['receipt-producer-agreement', f => { f.options.direct.id = 99; f.options.direct.html_url = 'https://github.com/owner/game/actions/runs/17/job/99'; }],
+  ['receipt-build-state', f => { f.jobs[0].steps[0].started_at = '2026-10-12T19:35:00Z'; f.options.direct = copy(f.jobs[0]); }],
+  ['receipt-execution-contract', f => { f.options.repoRoot = '/not-a-valid-contract-root'; }],
+  ['receipt-log-parser', f => { f.options.log = Buffer.from([0xff]); }],
+  ['receipt-log-window', f => { f.options.log = Buffer.from(f.logBytes.toString().replace("Current runner version: 'fixture'", 'not a full producer log')); }],
+  ['receipt-build-markers', f => { f.options.log = Buffer.from(f.logBytes.toString().replace('ZK1359_BUILD_V1 BEGIN sha=', 'ZK1359_BUILD_V1 MISSING sha=')); }],
+  ['receipt-upload-boundaries', f => { f.options.log = Buffer.from(f.logBytes.toString().replace('##[group]Run actions/upload-artifact@v4', '##[group]Run another command')); }],
+  ['receipt-upload-zip', f => { f.options.distZIP = Buffer.from('changed ZIP'); }],
+  ['receipt-upload-finalization', f => { f.options.log = Buffer.from(f.logBytes.toString().replace('Artifact dist.zip successfully finalized. Artifact ID 41', 'Artifact dist.zip successfully finalized. Artifact ID 99')); }],
+  ['receipt-build-window', f => { f.jobs[0].steps[0].started_at = '2026-10-12T19:33:01.005Z'; f.jobs[0].steps[0].completed_at = '2026-10-12T19:33:01.010Z'; f.options.direct = copy(f.jobs[0]); }],
+  ['receipt-sentry', f => { f.options.release = 'SECRET-wrong-release'; }],
+]) test(`existing rejection retains the static ${phase} failure location`, () => {
+  const f = proofFixture(); mutate(f); let original;
+  assert.throws(() => receiptPhase('receipt-build-metadata', () => initialBuild(f.jobs, ctx, f.options)), error => { original = error; return true; });
+  assert(original); assert.match(receiptFailureDiagnostic(original), new RegExp(`phase=${phase} error=`));
+  assert(!receiptFailureDiagnostic(original).includes('SECRET'));
+});
+test('direct log identity and typed-proof rejection retain their own static phases', () => {
+  const f = proofFixture(), execution = verifyExecutionContract(f.options.repoRoot);
+  assert.throws(() => receiptPhase('receipt-build-metadata', () => verifyCompletedProducerLog(f.logBytes, { ...f.jobs[0], run_id: 99 }, ctx, execution, f.dist, f.zipBytes)));
+  assert.match(receiptFailureDiagnostic({ code: 'ERR_ASSERTION' }), /phase=receipt-log-identity error=assertion/);
+  assert.throws(() => receiptPhase('receipt-build-metadata', () => verifyBuildProofShape({ schema: 99 })));
+  assert.match(receiptFailureDiagnostic({ code: 'ERR_ASSERTION' }), /phase=receipt-proof-shape error=assertion/);
+});
+for (const phase of ['receipt-jobs-fetch', 'receipt-direct-fetch']) test(`failed ${phase} makes one request and never retries`, async () => {
+  let requests = 0;
+  const api = new GitHub('owner/game', 'SECRET-token', async () => { requests++; return { ok: false, status: 503 }; });
+  await assert.rejects(receiptPhase(phase, () => phase === 'receipt-jobs-fetch' ? api.pages('/jobs', 'jobs') : api.request('/job')));
+  assert.equal(requests, 1); assert.match(receiptFailureDiagnostic({ code: 'ERR_ASSERTION' }), new RegExp(`phase=${phase} error=assertion`));
+});
+for (const [phase, responses, expectedCalls] of [
+  ['receipt-log-redirect', [{ status: 200 }], 1],
+  ['receipt-log-location', [{ status: 302, headers: new Headers({ location: 'http://signed.invalid/?token=SECRET' }) }], 1],
+  ['receipt-log-storage', [{ status: 302, headers: new Headers({ location: 'https://signed.invalid/?token=SECRET' }) }, { ok: false, status: 503 }], 2],
+  ['receipt-log-body', [{ status: 302, headers: new Headers({ location: 'https://signed.invalid/?token=SECRET' }) }, { ok: true, status: 200, body: (async function* () { throw new Error('SECRET-body'); })() }], 2],
+]) test(`failed ${phase} keeps original fetch count and redacts signed locations`, async () => {
+  let requests = 0;
+  const api = new GitHub('owner/game', 'SECRET-token', async () => responses[requests++]);
+  await assert.rejects(receiptPhase('receipt-log-fetch', () => api.signedBytes('/logs', 100)));
+  assert.equal(requests, expectedCalls);
+  const text = receiptFailureDiagnostic({ code: 'ERR_ASSERTION' }); assert.match(text, new RegExp(`phase=${phase} error=assertion`)); assert(!text.includes('SECRET') && !text.includes('signed.invalid'));
+});
+test('receipt-only phase markers preserve successful and failing verifier read order and proof bytes', () => {
+  function observed(phase, bad = false) {
+    const f = proofFixture(); if (bad) f.options.direct.head_sha = 'b'.repeat(40);
+    const trace = [], seen = new WeakMap();
+    function track(value, path) {
+      if (!value || typeof value !== 'object' || Buffer.isBuffer(value)) return value;
+      if (seen.has(value)) return seen.get(value);
+      const proxy = new Proxy(value, { get(target, key, receiver) { trace.push(`${path}.${String(key)}`); return track(Reflect.get(target, key, receiver), `${path}.${String(key)}`); } }); seen.set(value, proxy); return proxy;
+    }
+    let result, error;
+    try { result = receiptPhase(phase, () => initialBuild(track(f.jobs, 'jobs'), track(ctx, 'ctx'), track(f.options, 'options'))); } catch (failure) { error = failure; }
+    return { trace: [...trace], proof: result && JSON.stringify(result), failure: error && { code: error.code, message: error.message } };
+  }
+  for (const bad of [false, true]) assert.deepEqual(observed('receipt-build-metadata', bad), observed('promotion', bad));
+  receiptPhase('promotion', () => parsedLog(proofFixture().logBytes));
+  assert.equal(receiptFailureDiagnostic({ code: 'ERR_ASSERTION' }), 'Artifact promotion verification failed; deployment is blocked. phase=promotion error=assertion\n');
+});
+test('successful diagnostic phase wiring emits no output and returns the identical proof', () => {
+  const f = proofFixture(), expected = JSON.stringify(initialBuild(f.jobs, ctx, f.options)), output = [];
+  const original = process.stderr.write;
+  process.stderr.write = function (chunk) { output.push(chunk); return true; };
+  try { assert.equal(JSON.stringify(receiptPhase('receipt-build-metadata', () => initialBuild(f.jobs, ctx, f.options))), expected); }
+  finally { process.stderr.write = original; }
+  assert.deepEqual(output, []);
+});
+test('real receipt CLI retains only safe returned observations and remains failed without retries', t => {
+  const root = temporary(t), count = join(root, 'count.json'), preload = join(root, 'fetch.mjs');
+  const repoRoot = fileURLToPath(new URL('../../', import.meta.url)), project = join(repoRoot, 'simgolf-lite');
+  const source = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim();
+  const activeRun = { ...run, head_sha: source, status: 'in_progress', conclusion: null };
+  const failedProducer = { ...jobs[0], head_sha: source, status: 'in_progress', conclusion: null };
+  writeFileSync(preload, `import { writeFileSync } from 'node:fs';let calls=0;process.on('exit',()=>writeFileSync(${JSON.stringify(count)},JSON.stringify(calls)));globalThis.fetch=async url=>{calls++;if(String(url).endsWith('/actions/runs/17'))return {ok:true,json:async()=>(${JSON.stringify(activeRun)})};if(String(url).includes('/attempts/1/jobs?'))return {ok:true,json:async()=>({total_count:1,jobs:[${JSON.stringify(failedProducer)}]})};throw new Error('SECRET-unexpected-network');};`);
+  const child = spawnSync(process.execPath, ['--import', preload, fileURLToPath(new URL('./promote-dist.mjs', import.meta.url)), 'receipt'], { cwd: project, env: { ...process.env, GITHUB_SHA: source, GITHUB_RUN_ID: '17', GITHUB_RUN_ATTEMPT: '1', GITHUB_REPOSITORY: 'owner/game', GITHUB_REF_NAME: 'develop', GITHUB_EVENT_NAME: 'push', GH_TOKEN: 'SECRET-token' }, encoding: 'utf8', timeout: 10_000 });
+  assert.equal(child.status, 1); assert.equal(child.stdout, ''); assert.equal(JSON.parse(readFileSync(count)), 2);
+  assert.match(child.stderr, /phase=receipt-producer-selection error=assertion/);
+  const summary = parsedDiagnostic(child.stderr); assert.equal(summary.attemptJobs.producer.status, 'in_progress'); assert(!child.stderr.includes('SECRET') && !child.stderr.includes('github.com'));
 });
