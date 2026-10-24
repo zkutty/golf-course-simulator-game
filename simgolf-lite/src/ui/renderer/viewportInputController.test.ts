@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { nextRotation, worldToIso, type IsoRotation } from "../../game/render/iso";
 import type { Course } from "../../game/models/types";
 import { DEFAULT_KEYBINDINGS } from "../../accessibility/keybindings";
 import {
@@ -334,4 +335,58 @@ describe("ViewportInputController", () => {
     editing.controller.destroy();
     expect(editing.controller.snapshot().input.editorGesture).toBeNull();
   });
+});
+
+
+describe("committed rotation projection authority", () => {
+  for (const animationsEnabled of [false, true]) for (const direction of [-1, 1] as const) {
+    it(`keeps camera, picking and culling aligned for all bearings (${animationsEnabled ? "animated" : "instant"}, ${direction})`, () => {
+      const { config, controller, world, app, overlay, terrain, advance } = harness();
+      const nextConfig = { ...config, animationsEnabled };
+      controller.update(nextConfig);
+      controller.initializeDefault();
+      controller.focusTileForTest(12.5, 8.5, .75);
+      const initialCamera = controller.snapshot().camera;
+      if (!animationsEnabled) {
+        vi.mocked(nextConfig.onRotationCommit).mockImplementation((committed) => {
+          expect({ x: world.pivot.x, y: world.pivot.y }).toEqual(worldToIso(initialCamera.center.x, initialCamera.center.y, 0, committed));
+          expect(controller.worldPointToScreen(initialCamera.center.x, initialCamera.center.y)).toEqual({ x: app.screen.width / 2, y: app.screen.height / 2 });
+          expect(controller.screenToTile(app.screen.width / 2, app.screen.height / 2)).toEqual({ x: 12, y: 8 });
+        });
+      }
+      let rotation: IsoRotation = 0;
+      for (let turn = 0; turn < 4; turn++) {
+        const culls = terrain.cull.mock.calls.length;
+        const invalidations = overlay.invalidate.mock.calls.length;
+        window.dispatchEvent(keyEvent(direction === 1 ? "e" : "q", direction === 1 ? "KeyE" : "KeyQ"));
+        if (animationsEnabled) {
+          expect(controller.snapshot().rotation.tweening).toBe(true);
+          advance(125);
+          expect(world.rotation).not.toBe(0);
+          advance(125);
+        }
+        rotation = nextRotation(rotation, direction);
+        expect(nextConfig.onRotationCommit).toHaveBeenLastCalledWith(rotation);
+        expect(controller.snapshot().rotation).toMatchObject({ committed: rotation, tweening: false, screenRadians: 0 });
+        expect(controller.snapshot().camera).toEqual(initialCamera);
+        const pivot = worldToIso(initialCamera.center.x, initialCamera.center.y, 0, rotation);
+        expect({ x: world.pivot.x, y: world.pivot.y }).toEqual(pivot);
+        expect(controller.worldPointToScreen(initialCamera.center.x, initialCamera.center.y)).toEqual({ x: app.screen.width / 2, y: app.screen.height / 2 });
+        expect(controller.screenToTile(app.screen.width / 2, app.screen.height / 2)).toEqual({ x: 12, y: 8 });
+        expect(controller.screenToWorldPoint(app.screen.width / 2, app.screen.height / 2)).toEqual(initialCamera.center);
+        expect(terrain.cull.mock.calls.length).toBeGreaterThan(culls);
+        expect(overlay.invalidate.mock.calls.length).toBeGreaterThan(invalidations);
+        expect(terrain.cull).toHaveBeenLastCalledWith(expect.objectContaining({ pivotX: pivot.x, pivotY: pivot.y, scale: initialCamera.zoom, rotation: 0 }));
+        const point = controller.worldPointToScreen(14.5, 10.5);
+        expect(controller.screenToWorldPoint(point.x, point.y)).toEqual({ x: 14.5, y: 10.5 });
+        // React's next config arrives after the immediate commit. It must
+        // neither hide a stale pivot nor move the already-correct camera.
+        controller.update({ ...nextConfig, rotation });
+        expect({ x: world.pivot.x, y: world.pivot.y }).toEqual(pivot);
+        expect(controller.worldPointToScreen(initialCamera.center.x, initialCamera.center.y)).toEqual({ x: app.screen.width / 2, y: app.screen.height / 2 });
+        expect(controller.snapshot().camera).toEqual(initialCamera);
+      }
+      controller.destroy();
+    });
+  }
 });
