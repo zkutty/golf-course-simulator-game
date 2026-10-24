@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlayerProSkills, PlayerRoundCourseSnapshot } from "../models/playerProTypes";
 import * as player from "../playerPro/playerPro";
+import { createShotModelSnapshotV1 } from "../rules/shotModelSnapshot";
+import { freezeProfileCalibration } from "../rules/profileCalibration";
 import {
   challengeGroupPlayerRound,
   challengeGroupPlayerSkills,
   commitChallengeGroupPlayerShot,
   simulateChallengeGroupOwnBallScores,
+  replayChallengeGroupPlayerShots,
   startChallengeGroupRound,
   type StartChallengeGroupRoundArgs,
 } from "./challengeGroupRound";
@@ -163,12 +166,15 @@ describe("owned own-ball score simulation", () => {
     const original = player.caddieRecommendation;
     const unavailable = { club: "unknown", aim: { x: 9, y: 3 }, power: 1, technique: "normal" as const };
     const caddie = vi.spyOn(player, "caddieRecommendation").mockReturnValue(unavailable);
+    const owned = vi.spyOn(player, "ownedCaddieRecommendation").mockReturnValue(unavailable);
     expect(simulateChallengeGroupOwnBallScores(args())).toBeNull();
-    expect(caddie).toHaveBeenCalledTimes(480);
+    expect(owned).toHaveBeenCalledTimes(480);
+    expect(caddie).toHaveBeenCalledTimes(0);
     caddie.mockClear();
     expect(publicScores(args())).toBeNull();
     expect(caddie).toHaveBeenCalledTimes(480);
     caddie.mockImplementation((round, selectedSkills) => round.autoPlay ? unavailable : original(round, selectedSkills));
+    owned.mockImplementation((round, selectedSkills) => round.autoPlay ? unavailable : original(round, selectedSkills));
     const actual = simulateChallengeGroupOwnBallScores(args());
     expect(JSON.stringify(actual)).toBe(JSON.stringify(publicScores(args())));
     expect(actual!.slice(1).every(golfer => golfer.scorecard.every(hole => hole.status === "conceded"))).toBe(true);
@@ -195,4 +201,66 @@ describe("owned own-ball score simulation", () => {
     expect(owned.coursePayloads).toBeLessThan(reference.coursePayloads);
     expect(owned.serializedCharacters).toBeLessThan(reference.serializedCharacters);
   });
+
+  it("keeps public startup, commit and replay on the raw route while private player and AI use owned suggestions", () => {
+    const raw = vi.spyOn(player, "caddieRecommendation");
+    const owned = vi.spyOn(player, "ownedCaddieRecommendation");
+    const input = args();
+    const firstAi = { ...input, participants: [input.participants[1], input.participants[0], ...input.participants.slice(2)] };
+    const started = startChallengeGroupRound(firstAi);
+    expect(raw.mock.calls.length).toBeGreaterThan(0);
+    expect(owned).toHaveBeenCalledTimes(0);
+    const view = challengeGroupPlayerRound(started)!;
+    const selection = player.caddieRecommendation(view, challengeGroupPlayerSkills(started));
+    raw.mockClear();
+    const committed = commitChallengeGroupPlayerShot(started, started.playerGolferId, selection);
+    const replayed = replayChallengeGroupPlayerShots(started, started.playerGolferId, [selection]);
+    expect(replayed).toEqual(committed);
+    expect(raw.mock.calls.length).toBeGreaterThan(0);
+    expect(owned).toHaveBeenCalledTimes(0);
+    vi.clearAllMocks();
+    const own = args();
+    own.participants[1].setup = { course: course(), teeSet: "forward", pinRotation: "A" };
+    own.participants[1].setup.course.holes.forEach(hole => { hole.tee.x = 3; });
+    own.participants[1].setup.course.rating = { courseRating: 28, slope: 120 };
+    const before = JSON.stringify(own);
+    const expected = publicScores(JSON.parse(before));
+    vi.clearAllMocks();
+    const actual = simulateChallengeGroupOwnBallScores(own);
+    expect(JSON.stringify(actual)).toBe(JSON.stringify(expected));
+    expect(owned.mock.calls.some(([round]) => round.autoPlay)).toBe(true);
+    expect(owned.mock.calls.some(([round]) => !round.autoPlay)).toBe(true);
+    expect(raw).toHaveBeenCalledTimes(0);
+    expect(JSON.stringify(own)).toBe(before);
+    expect(Object.isFrozen(own.participants[1].setup.course)).toBe(false);
+    expect(recursivelyFrozen(actual)).toBe(true);
+  });
+
+  it("falls back for accepted missing waypoints and poisoned JSON neighbor tiles without changing public failures", () => {
+    const malformed = args();
+    Reflect.deleteProperty(malformed.course.holes[0], "waypoints");
+    const expected = publicScores(JSON.parse(JSON.stringify(malformed)));
+    const raw = vi.spyOn(player, "caddieRecommendation");
+    const owned = vi.spyOn(player, "ownedCaddieRecommendation");
+    expect(JSON.stringify(simulateChallengeGroupOwnBallScores(malformed))).toBe(JSON.stringify(expected));
+    expect(raw.mock.calls.length).toBeGreaterThan(0);
+    expect(owned).toHaveBeenCalledTimes(0);
+    vi.clearAllMocks();
+    const poisoned = args();
+    poisoned.course.shotModel = createShotModelSnapshotV1();
+    poisoned.course.distanceProfile = freezeProfileCalibration(skills);
+    Reflect.set(poisoned.course.tiles, 3 * poisoned.course.width + 1, { toString: null, valueOf: null });
+    const attempt = (run: typeof simulateChallengeGroupOwnBallScores) => {
+      try { run(JSON.parse(JSON.stringify(poisoned))); }
+      catch (error) { return { name: (error as Error).name, message: (error as Error).message }; }
+      return null;
+    };
+    const reference = attempt(publicScores);
+    vi.clearAllMocks();
+    expect(attempt(simulateChallengeGroupOwnBallScores)).toEqual(reference);
+    expect(reference).toEqual({ name: "TypeError", message: "Cannot convert object to primitive value" });
+    expect(raw.mock.calls.length).toBeGreaterThan(0);
+    expect(owned).toHaveBeenCalledTimes(0);
+  });
+
 });

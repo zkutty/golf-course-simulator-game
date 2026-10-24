@@ -69,6 +69,7 @@ import {
   isValidGreenRollout,
   createGreenRolloutSurfaceSampler,
   createGreenRolloutHeightSampler,
+  createGreenRolloutContext,
   resolveGreenRollout,
   type GreenRolloutV1,
   type GreenRolloutSpin,
@@ -1386,7 +1387,7 @@ export function advancePlayerRound(round: PlayerPlayableRound): PlayerPlayableRo
   };
 }
 
-function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkills): PlayerShotSelection {
+function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkills, ownedPlanning = false): PlayerShotSelection {
   const hole = round.course.holes[round.currentHoleIndex];
   if (usesClubShotModel(round.course.shotModel)) {
     // Deliberately unseeded: compare expected centerlines, never resolve a
@@ -1395,8 +1396,10 @@ function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkill
     const fallback: PlayerShotSelection = { club: clubs[0]?.name ?? "Pitching Wedge", aim: { ...hole.pin }, power: 1, technique: "normal" };
     if (!clubs.length) return fallback;
     const course = courseFromSnapshot(round.course);
-    const sampleSurface = createGreenRolloutSurfaceSampler(course, course.greenSurface);
-    const heightAt = (at: PlayerProPoint) => sampleSurface(at).height * 2.5;
+    const sampleSurface = ownedPlanning ? undefined : createGreenRolloutSurfaceSampler(course, course.greenSurface);
+    const height = ownedPlanning ? createGreenRolloutHeightSampler(course, course.greenSurface) : undefined;
+    const heightAt = (at: PlayerProPoint) => (height ? height(at) : sampleSurface!(at).height) * 2.5;
+    let rolloutContext: ReturnType<typeof createGreenRolloutContext> | undefined;
     const rules = round.rulesSnapshot ?? round.course.rulesSnapshot;
     const decoded = rules ? decodeControlledRoundSnapshotV2(rules) : null;
     const legal = (at: PlayerProPoint) => at.x >= 0 && at.y >= 0 && at.x < round.course.width && at.y < round.course.height
@@ -1489,7 +1492,10 @@ function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkill
       const travelX = expected.landing.x - round.ball.x;
       const travelY = expected.landing.y - round.ball.y;
       const travelLength = Math.max(.001, Math.hypot(travelX, travelY));
-      const rollout = resolveGreenRollout({ course, holeId: hole.id, landing: isPutter ? round.ball : landing,
+      const resolveRollout = ownedPlanning
+        ? (rolloutContext ??= createGreenRolloutContext(course)).resolve
+        : resolveGreenRollout;
+      const rollout = resolveRollout({ course, holeId: hole.id, landing: isPutter ? round.ball : landing,
         direction: { x: travelX / travelLength, y: travelY / travelLength },
         requestedRollYards: blocked ? 0 : isPutter ? travelLength * round.course.yardsPerTile : preview.impact.forwardRollPotentialYards,
         yardsPerTile: round.course.yardsPerTile, club: selection.club, sourceLie: round.lie,
@@ -1859,4 +1865,9 @@ export function caddieShotGuidance(round: PlayerPlayableRound, skills: PlayerPro
 export function playerTournamentPrizePreview(event: TournamentEvent): string {
   const spec = TOURNAMENT_TIERS[event.tier];
   return `${spec.revenueAward}:${spec.reputationAward}`;
+}
+
+/** Internal suggestion-only route for canonical, eligible score-only ownership. */
+export function ownedCaddieRecommendation(round: PlayerPlayableRound, skills: PlayerProSkills): PlayerShotSelection {
+  return recommendedSelection(round, skills, true);
 }

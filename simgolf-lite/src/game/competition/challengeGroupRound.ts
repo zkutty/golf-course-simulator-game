@@ -34,6 +34,7 @@ import { usesClubShotModel } from "../rules/shotModelSnapshot";
 import { normalizePerformanceLoadoutSnapshot } from "./equipmentRuntime";
 import {
   caddieRecommendation,
+  ownedCaddieRecommendation,
   previewPlayableShot,
   resolvePlayableShot,
   type PlayerShotPreview,
@@ -1101,14 +1102,14 @@ function commitTurn(round: ChallengeGroupRound, golferId: string, selection: Pla
   }, golfers);
 }
 
-function runAiUntilPlayer(round: ChallengeGroupRound, freezeResult = true): ChallengeGroupRound {
+function runAiUntilPlayer(round: ChallengeGroupRound, freezeResult = true, ownedPlanning = false): ChallengeGroupRound {
   let next = round;
   let guard = 0;
   while (next.phase !== "complete" && guard++ < MAX_AI_TURNS) {
     if (next.phase === "awaiting_ball_choice") break;
     const golfer = next.golfers.find((candidate) => candidate.id === next.activeGolferId);
     if (!golfer || golfer.controller === "player") break;
-    const selection = caddieRecommendation(playableRound(next, withTeamBallGolfer(next, golfer)), shotSkills(next, golfer));
+    const selection = (ownedPlanning ? ownedCaddieRecommendation : caddieRecommendation)(playableRound(next, withTeamBallGolfer(next, golfer)), shotSkills(next, golfer));
     const advanced = commitTurn(next, golfer.id, selection);
     if (advanced !== next) {
       next = advanced;
@@ -1260,16 +1261,25 @@ export function simulateChallengeGroupOwnBallScores(
     || round.individualAuthority.contests.length || round.sideBets.length) {
     throw new Error("Only an own-ball score-only group can use private simulation.");
   }
+  // Only inspect canonical JSON-owned data. Malformed-but-accepted legacy
+  // geometry retains the original sampler's reads and failures by falling back.
+  const finitePoint = (point: { x: number; y: number } | null | undefined) => !!point && typeof point === "object" && Number.isFinite(point.x) && Number.isFinite(point.y);
+  const ownedPlanning = Number.isFinite(ownedCourse.width) && Number.isFinite(ownedCourse.height)
+    && Number.isFinite(ownedCourse.yardsPerTile)
+    && Array.isArray(ownedCourse.tiles) && ownedCourse.tiles.every((tile) => typeof tile === "string")
+    && Array.isArray(ownedCourse.elevations) && ownedCourse.elevations.every(Number.isFinite)
+    && round.golfers.every((golfer) => Array.isArray(golfer.setup.holes) && golfer.setup.holes.every((hole) =>
+      !!hole && finitePoint(hole.tee) && finitePoint(hole.pin) && Array.isArray(hole.waypoints) && hole.waypoints.every(finitePoint)));
   let guard = 0;
   while (round.phase !== "complete" && guard++ < MAX_SCORE_ONLY_PLAYER_TURNS) {
     const view = challengeGroupPlayerRound(round);
     if (!view || round.phase !== "awaiting_player") return null;
-    const selection = caddieRecommendation(view, challengeGroupPlayerSkills(round));
+    const selection = (ownedPlanning ? ownedCaddieRecommendation : caddieRecommendation)(view, challengeGroupPlayerSkills(round));
     if (round.activeGolferId !== round.playerGolferId) {
       throw new Error("The player-controlled golfer does not own the current turn.");
     }
     const committed = commitTurn(round, round.playerGolferId, selection);
-    const next = committed === round ? round : runAiUntilPlayer(committed, false);
+    const next = committed === round ? round : runAiUntilPlayer(committed, false, ownedPlanning);
     if ((next.phase !== "awaiting_player" && next.phase !== "complete")
       || next.teamAuthority || next.individualAuthority?.contests.length) {
       throw new Error("Only a settled own-ball Pro-Am simulation burst can be compacted.");
