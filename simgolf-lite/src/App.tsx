@@ -11,6 +11,7 @@ import { createPlayerShotPreviewReceiver } from "./ui/playerPro/shotPreviewRecei
 import { isValidRetainedShotMotionV1 } from "./game/rules/shotMotion";
 import type { SfxName } from "./audio/AudioManager";
 import { DesignDock } from "./ui/DesignDock";
+import { createObstacleEditingAction } from "./ui/obstacleEditingAction";
 import {
   buildDesignCatalog,
   type DesignCatalogItem,
@@ -615,30 +616,6 @@ export default function App() {
     setPaintError(null);
   }, [selected, terrainTool]);
 
-  const activateObstacleEditing = useCallback((
-    nextObstacleType: ObstacleType = obstacleType,
-    requestedPlantId: PlantId | null = selectedPlantId,
-    requestedItemId?: string,
-  ) => {
-    const requestedPlant = requestedPlantId
-      ? plantDefinition(requestedPlantId)
-      : null;
-    const plantId = nextObstacleType === "rock"
-      ? null
-      : requestedPlant?.semantics.kind === "obstacle"
-          && requestedPlant.semantics.obstacleType === nextObstacleType
-        ? requestedPlantId
-        : defaultObstaclePlantId(course.theme, nextObstacleType);
-    setObstacleType(nextObstacleType);
-    setSelectedPlantId(plantId);
-    setSelectedDesignItemId(
-      requestedItemId
-        ?? (plantId ? `plant:${plantId}` : "nature:rock"),
-    );
-    setEditorMode("OBSTACLE");
-    setPaintError(null);
-  }, [course.theme, obstacleType, selectedPlantId]);
-
   const activateDecorationEditing = useCallback((
     nextDecorationKind: DecorationKind,
     requestedPlantId: PlantId | null,
@@ -676,6 +653,17 @@ export default function App() {
   // Hover state moved to refs in canvas component to avoid React re-renders
 
   const [paintError, setPaintError] = useState<string | null>(null);
+  const activateObstacleEditing = useMemo(() => createObstacleEditingAction({
+    theme: course.theme,
+    obstacleType,
+    selectedPlantId,
+    setObstacleType,
+    setSelectedPlantId,
+    setSelectedDesignItemId,
+    setEditorMode,
+    setPaintError,
+  }), [course.theme, obstacleType, selectedPlantId]);
+
   const undoTerrainEdit = useCallback(() => {
     const current = gameSession.getState();
     const result = undoEditorEdit(editorHistoryRef.current, current, capital);
