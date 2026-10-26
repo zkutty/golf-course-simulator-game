@@ -12,13 +12,13 @@ defaults:
 
 jobs:
   browser:
-    name: Browser suite (shard ${{ matrix.shard }}/21)
+    name: Browser suite (shard ${{ matrix.shard }}/20)
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
     env:
       PLAYWRIGHT_JSON_OUTPUT_FILE: nightly-evidence/browser-shard-${{ matrix.shard }}-results.json
     steps:
@@ -31,11 +31,13 @@ jobs:
       - run: npm ci
       - name: Install browser
         run: npx playwright install --with-deps chromium
+      # Focused partitions use Playwright directly for shard/trace options.
+      # Production stability stays in test:stability and zk682-certification.yml.
       - name: Run full browser suite shard
         run: >-
-          npm run test:e2e --
+          npx playwright test
           --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$|ZK-571 publishes a versioned machine-only screenshot/state matrix$|M27 reports architecture for a live 36-hole, two-course estate$|M27 report remains usable with pseudo locale, text scaling, reduced motion, and color-safe terrain$|M43 packages a course locally and test plays an isolated copy$|manual reporter sends only the previewed, consented payload$|React crash boundary hands bounded crash context to an opt-in report$|terrain strokes preview and commit atomically, cancel safely, and reject unaffordable work$|M30 pace history exposes identity, local bottlenecks, and multi-course reports$|Classic completes three-hole public operations through weekly results and graduation$|single-cell bunker and natural detail render as organic landscape$|M35 click spline and post-commit node/tangent editing stay atomic$|painting water automatically commits a flat excavated basin$|M36-M37 Player Pro aims, resolves, progresses, and returns to design$|manual reporter sends only required fields when optional evidence is off$|diagnostics and renderer screenshot require separate explicit consent$|keyboard close restores focus to the launcher$|canceling an in-flight submission keeps one report ID for a safe retry$|ZK-1205 exact 144-row real-pointer placement matrix$|ZK-674 keeps (parkland|links|desert) atlas generations atomic through tier and zoom reversals$'
-          --shard=${{ matrix.shard }}/21
+          --shard=${{ matrix.shard }}/20
           --workers=1
           --trace retain-on-failure-and-retries
           --reporter=github,html,json | tee browser-shard-${{ matrix.shard }}.log
@@ -148,7 +150,7 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run deterministic pointer-matrix chunk
         run: >-
-          npm run test:e2e -- e2e/zk1205-pointer-placement-matrix.e2e.ts
+          npx playwright test e2e/zk1205-pointer-placement-matrix.e2e.ts
           --workers=1
           --trace retain-on-failure-and-retries
       - name: Upload pointer-matrix evidence
@@ -183,7 +185,7 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run biome-specific atlas and zoom certification
         run: >-
-          npm run test:e2e -- e2e/zk674-biome-zoom-cache.e2e.ts
+          npx playwright test e2e/zk674-biome-zoom-cache.e2e.ts
           --grep 'ZK-674 keeps ${{ matrix.theme }} atlas generations atomic through tier and zoom reversals$'
           --workers=1
           --trace retain-on-failure-and-retries
@@ -388,7 +390,7 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run isolated M35 landscape-authoring certifications
         run: >-
-          npm run test:e2e -- e2e/m35-landscape-details.e2e.ts e2e/m35-surface-authoring.e2e.ts e2e/m35-water-grading.e2e.ts
+          npx playwright test e2e/m35-landscape-details.e2e.ts e2e/m35-surface-authoring.e2e.ts e2e/m35-water-grading.e2e.ts
           --grep 'single-cell bunker and natural detail render as organic landscape$|M35 click spline and post-commit node/tangent editing stay atomic$|painting water automatically commits a flat excavated basin$'
           --workers=1
           --trace retain-on-failure-and-retries
@@ -705,7 +707,7 @@ jobs:
       - name: Run retry-disabled M35 pointer-drag diagnostic
         run: |
           set +e
-          npm run test:e2e -- e2e/m35-surface-authoring.e2e.ts \
+          npx playwright test e2e/m35-surface-authoring.e2e.ts \
             --grep 'M35 click spline and post-commit node/tangent editing stay atomic$' \
             --retries=0 \
             --trace=on \
