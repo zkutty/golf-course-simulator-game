@@ -355,7 +355,7 @@ export function useLiveSimulation(args: {
     const currentWorld = worldRef.current;
     const render = liveRenderData(live, renderBuffersRef.current[renderBufferIndexRef.current], { runSeed: currentWorld.runSeed, week: currentWorld.week });
     if (focusedOwnerRef.current) projectFocusedShot(focusedOwnerRef.current, render,
-      focusedShotMatches(focusedOwnerRef.current, live, currentWorld, followId(), focusedDrainRef.current !== null));
+      focusedShotMatches(focusedOwnerRef.current, live, currentWorld, followId(), focusedDrainRef.current !== null), courseRef.current);
     return render;
   }, [followId]);
 
@@ -616,7 +616,7 @@ export function useLiveSimulation(args: {
       return;
     }
     if (allowFocus && !runtimeRef.current.controlledRoundActive && followId() != null) {
-      focusedOwnerRef.current = acquireFocusedShot(live, latestWorld(), followId());
+      focusedOwnerRef.current = acquireFocusedShot(live, latestWorld(), followId(), courseRef.current);
       if (focusedOwnerRef.current) {
         publishRender(live, focusedOwnerRef.current.golferId);
         publishFocusedShot();
@@ -630,7 +630,7 @@ export function useLiveSimulation(args: {
       const ev = stepLive(live, courseRef.current, FIXED_GAME_STEP_MINUTES, latestWorld());
       applyStepEvents(live, ev);
       if (allowFocus && !runtimeRef.current.controlledRoundActive && followId() != null) {
-        focusedOwnerRef.current = acquireFocusedShot(live, latestWorld(), followId());
+        focusedOwnerRef.current = acquireFocusedShot(live, latestWorld(), followId(), courseRef.current);
         if (focusedOwnerRef.current) break;
       }
     }
@@ -838,7 +838,7 @@ export function useLiveSimulation(args: {
     }
     liveRef.current = restored.state;
     weekReportPendingRef.current = restored.weekReportPending ?? null;
-    focusedOwnerRef.current = restoreFocusedShot(restored.focusedShot, restored.state, latestWorld());
+    focusedOwnerRef.current = restoreFocusedShot(restored.focusedShot, restored.state, latestWorld(), courseRef.current);
     controlledTimeRef.current = restored.controlledTime ?? null;
     setControlledTimePendingSteps(restored.controlledTime?.pendingSteps ?? 0);
     golfersRef.current = buildRenderData(restored.state);

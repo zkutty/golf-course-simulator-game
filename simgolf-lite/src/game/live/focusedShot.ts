@@ -1,3 +1,6 @@
+import { getPinPosition } from "../models/courseSetup";
+import { stableGolferHandedness } from "./capabilities";
+import { captureGolferReactionSource, clearGolferReactionSource, matchingLiveReactionOutcome, observeGolferReactionSource } from "../render/golferReactionSource";
 import type { Course, World } from "../models/types";
 import type { LiveAudioEvent } from "../../audio/liveEvents";
 import { PUTT_CONTACT_FRAME, SWING_CONTACT_FRAME } from "../render/golferSprites";
@@ -35,6 +38,8 @@ export interface FocusedShotOwner {
   readonly segment: Segment;
   readonly motion: RetainedShotMotionV1;
   readonly plan: ShotPacingPlan;
+  /** Exact existing plan input, transient only; never reconstructed from progress. */
+  readonly retainedDistanceYards: number;
   cursor: ShotPacingCursorV1;
 }
 
@@ -48,8 +53,8 @@ const record = (value: unknown): value is Record<string, unknown> => value != nu
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]) => Object.keys(value).length === keys.length
   && Object.keys(value).every((key) => keys.includes(key));
 
-/** Acquires only the exact current retained flight, without stepping or reading future outcomes. */
-export function acquireFocusedShot(live: LiveState, world: Pick<World, "runSeed" | "week">, golferId: number | null | undefined): FocusedShotOwner | null {
+/** Acquires only the exact current retained flight without stepping. Optional reaction evidence stays private until observed. */
+export function acquireFocusedShot(live: LiveState, world: Pick<World, "runSeed" | "week">, golferId: number | null | undefined, reactionCourse?: Course): FocusedShotOwner | null {
   if (golferId == null || !Number.isSafeInteger(golferId) || live.dayOver) return null;
   const golfer = live.golfers.find((item) => item.id === golferId && !item.finished);
   const segment = golfer?.segments[golfer.segIndex];
@@ -66,7 +71,26 @@ export function acquireFocusedShot(live: LiveState, world: Pick<World, "runSeed"
   const scope = scopeOf(live, world);
   const plan = createShotPacingPlan({ scopeId: scopeId(scope), actorId: String(golferId), motion, distanceYards });
   if (!plan) return null;
-  return { live, scope, golferId, segmentIndex: golfer.segIndex, segmentElapsed: golfer.segElapsed, segment, motion, plan, cursor: createShotPacingCursor(plan) };
+  const owner = { live, scope, golferId, segmentIndex: golfer.segIndex, segmentElapsed: golfer.segElapsed, segment, motion, plan, retainedDistanceYards: distanceYards, cursor: createShotPacingCursor(plan) };
+  captureReaction(owner, distanceYards, reactionCourse);
+  return owner;
+}
+
+/** Optional read-only receipt: the existing acquisition/plan is the sole authority. */
+function captureReaction(owner: FocusedShotOwner, distanceYards: number, course?: Course, originalAimAvailable = true): void {
+  const golfer = owner.live.golfers.find((g) => g.id === owner.golferId);
+  const outcome = matchingLiveReactionOutcome(golfer?.shotOutcomes, owner.motion);
+  const intent = golfer?.currentIntent;
+  const holes = course?.holes.filter((h, i) => (h.id ?? `hole-${i + 1}`) === owner.motion.identity.holeId) ?? [];
+  const hole = holes.length === 1 ? holes[0] : null;
+  const rotation = golfer?.pinRotationsByHole?.[owner.motion.identity.holeId] ?? golfer?.pinRotation ?? course?.activePinRotation ?? "A";
+  const pin = hole ? getPinPosition(hole, rotation) : null;
+  const matchesIntent = outcome && intent && intent.id === outcome.intentId && intent.club === outcome.club
+    && intent.from.x === owner.motion.from.point.x && intent.from.y === owner.motion.from.point.y && intent.target.x === outcome.aim.x && intent.target.y === outcome.aim.y;
+  const handedness = golfer?.capabilities ? stableGolferHandedness(golfer.capabilities.seed) : null;
+  captureGolferReactionSource(owner, { owner: { scopeId: owner.plan.scopeId, actorId: owner.plan.actorId, shot: owner.plan.identity }, authorityRevision: owner.plan.scopeId,
+    plan: owner.plan, initialCursor: owner.cursor, motion: owner.motion, distanceYards, source: owner.segment, courseSource: course ?? null, handedness,
+    sharedOutcome: outcome?.sharedOutcome ?? null, originalAim: originalAimAvailable && owner.segmentElapsed === 0 && course && pin && matchesIntent ? { course, holeId: owner.motion.identity.holeId, pin, from: intent.from, target: intent.target } : null });
 }
 
 /** A presentation hold is valid only while its authoritative cursor is still stopped. */
@@ -86,7 +110,7 @@ export function snapshotFocusedShot(owner: FocusedShotOwner): FocusedShotSnapsho
 }
 
 /** An invalid optional carrier is discarded; legacy live authority remains valid. */
-export function restoreFocusedShot(value: unknown, live: LiveState, world?: Pick<World, "runSeed" | "week">): FocusedShotOwner | null {
+export function restoreFocusedShot(value: unknown, live: LiveState, world?: Pick<World, "runSeed" | "week">, reactionCourse?: Course): FocusedShotOwner | null {
   if (!record(value) || !exactKeys(value, ["version", "scope", "golferId", "segmentIndex", "segmentElapsed", "cursor"])
     || value.version !== 1 || !record(value.scope)
     || !exactKeys(value.scope, ["runSeed", "week", "dayIndex", "liveSeed", "reconcileEpoch"])
@@ -99,21 +123,30 @@ export function restoreFocusedShot(value: unknown, live: LiveState, world?: Pick
   if (!owner || scopeId(owner.scope) !== scopeId(scope) || owner.segmentIndex !== value.segmentIndex
     || owner.segmentElapsed !== value.segmentElapsed || !isShotPacingCursor(value.cursor, owner.plan)) return null;
   owner.cursor = createShotPacingCursor(owner.plan, value.cursor);
+  // Restore has no original acquisition aim receipt; an already reached endpoint is historical.
+  clearGolferReactionSource(owner);
+  captureReaction(owner, owner.retainedDistanceYards, reactionCourse, false);
   return owner;
 }
 
 /** Only a render buffer changes. The golfer, score and saved itinerary stay stopped. */
-export function projectFocusedShot(owner: FocusedShotOwner, render: GolferRenderData[], activityOwnerCurrent = false): void {
+export function projectFocusedShot(owner: FocusedShotOwner, render: GolferRenderData[], activityOwnerCurrent = false, reactionCourse?: Course): void {
   const golfer = render.find((item) => item.id === owner.golferId);
   if (golfer) golfer.activitySource = clearFocusedLiveActivitySource(golfer.activitySource);
   const frame = shotPacingFrame(owner.plan, owner.cursor);
   const pose = frame && sampleRetainedShotMotion(owner.motion, frame.motionProgress);
-  if (!frame || !pose || !golfer) return;
+  if (!frame || !pose || !golfer) { clearGolferReactionSource(owner); return; }
   golfer.activitySource = focusedLiveActivitySource(golfer.activitySource, {
     actorId: owner.golferId, segmentIndex: owner.segmentIndex, segmentElapsed: owner.segmentElapsed,
     plan: owner.plan, cursor: owner.cursor, frame, identity: owner.motion.identity, origin: owner.motion.from,
     target: owner.motion.flight?.geometry.to ?? owner.motion.groundPath[1]?.point ?? null,
   }, activityOwnerCurrent);
+  const activity = golfer.activitySource;
+  const currentOwner = { scopeId: activity?.owner.scopeId ?? owner.plan.scopeId, actorId: activity?.owner.actorId ?? owner.plan.actorId, shot: activity?.owner.shot ?? null };
+  const reactionClassification = observeGolferReactionSource(owner, { owner: { scopeId: owner.plan.scopeId, actorId: owner.plan.actorId, shot: owner.plan.identity }, currentOwner,
+    authorityRevision: owner.plan.scopeId, currentAuthorityRevision: activity?.authorityRevision ?? "unknown", plan: owner.plan, cursor: owner.cursor, frame, motion: owner.motion, position: pose,
+    source: owner.segment, courseSource: reactionCourse ?? null, handedness: activity?.handedness ?? null, ownerCurrent: activityOwnerCurrent && !!activity?.playback });
+  if (activity && reactionClassification) golfer.activitySource = Object.freeze({ ...activity, reactionClassification });
   const contactFrame = owner.plan.kind === "putt" ? PUTT_CONTACT_FRAME : SWING_CONTACT_FRAME;
   const addressProgress = Math.min(1, owner.cursor.elapsedMs / owner.plan.addressMs);
   const beforeContact = owner.cursor.elapsedMs < owner.plan.addressMs;

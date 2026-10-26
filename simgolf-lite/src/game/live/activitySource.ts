@@ -1,6 +1,7 @@
 import { stableGolferHandedness } from "./capabilities";
 import { isShotPacingCursor, type ShotPacingCursorV1, type ShotPacingFrame, type ShotPacingPlan } from "./shotPacing";
 import type { Golfer, LiveState, Segment, SegmentKind } from "./types";
+import type { GolferReactionClassification } from "../render/golferReactions";
 import type { ShotMotionIdentityV1 } from "../rules/shotMotion";
 
 type Point = Readonly<{ x: number; y: number }>;
@@ -13,6 +14,8 @@ export interface LiveActivityScopeV1 {
 }
 export interface LiveGolferActivitySourceV1 {
   readonly version: 1;
+  /** Published only after an exact current-owner physical endpoint observation. */
+  readonly reactionClassification?: GolferReactionClassification | null;
   readonly scope: LiveActivityScopeV1;
   readonly owner: { readonly scopeId: string | null; readonly actorId: string; readonly shot: Readonly<ShotMotionIdentityV1> | null };
   readonly authorityRevision: string;
@@ -110,7 +113,10 @@ function equipmentClass(club: string): LiveGolferActivitySourceV1["equipmentClas
 /** Downgrades a reused buffer before any focused frame/pose can be rejected. */
 export function clearFocusedLiveActivitySource(base: LiveGolferActivitySourceV1 | null | undefined): LiveGolferActivitySourceV1 | null {
   if (!base) return null;
-  return base.playback === null ? base : Object.freeze({ ...base, owner: Object.freeze({ ...base.owner, shot: null }), root: Object.freeze({ ...base.root, heightYards: null }), targetWorld: null, equipmentClass: null, playback: null });
+  if (base.playback === null && !base.reactionClassification) return base;
+  const copy = { ...base };
+  Reflect.deleteProperty(copy, "reactionClassification");
+  return Object.freeze({ ...copy, owner: Object.freeze({ ...base.owner, shot: null }), root: Object.freeze({ ...base.root, heightYards: null }), targetWorld: null, equipmentClass: null, playback: null });
 }
 
 /** Copies the already acquired owner's actual plan/cursor/frame; never acquires or resizes. */

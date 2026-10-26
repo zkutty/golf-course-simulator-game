@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { PlayerPlayableRound, PlayerShotTrace } from "../../game/models/playerProTypes";
+import { captureGolferReactionSource, clearGolferReactionSource, observeGolferReactionSource } from "../../game/render/golferReactionSource";
+import type { PlayerPlayableRound, PlayerRoundCourseSnapshot, PlayerShotTrace } from "../../game/models/playerProTypes";
 import {
   isPlayerShotPresentation,
   playerShotActivityIsCurrent,
@@ -9,17 +10,32 @@ import {
   type PlayerShotPresentationV1,
 } from "../../game/playerPro/shotPlayback";
 import { advanceShotPacingCursor, createShotPacingCursor, createShotPacingPlan, shotPacingEventProgress, shotPacingFrame } from "../../game/live/shotPacing";
-import { isValidRetainedShotMotionV1, type RetainedShotMotionV1, type ShotMotionEventV1 } from "../../game/rules/shotMotion";
+import { isValidRetainedShotMotionV1, sampleRetainedShotMotion, type RetainedShotMotionV1, type RetainedShotMotionPoseV1, type ShotMotionEventV1 } from "../../game/rules/shotMotion";
 
+export interface PlayerPlaybackSourceObservation {
+  readonly roundId: string; readonly actorId: string; readonly shot: PlayerShotTrace | null;
+  readonly course: PlayerRoundCourseSnapshot | undefined; readonly handedness: "right" | "left" | null;
+}
 export type PlayerPlaybackEvent = { kind: "contact" } | ShotMotionEventV1;
 
 /** Presentation clock only. Completion is claimed once for this exact shot. */
-export function createPlayerShotPlaybackDriver(shot: PlayerShotTrace, saved?: PlayerShotPresentationV1, scopeId = "player", actorId = "player", handedness: "right" | "left" | null = null) {
+export function createPlayerShotPlaybackDriver(shot: PlayerShotTrace, saved?: PlayerShotPresentationV1, scopeId = "player", actorId = "player", handedness: "right" | "left" | null = null, reactionCourse?: PlayerRoundCourseSnapshot) {
   const motion = shot.sharedOutcome?.motion;
   const plan = motion && createShotPacingPlan({ scopeId, actorId, motion, distanceYards: shot.carryYards + (shot.rollYards ?? 0) });
   if (!plan) throw new Error("Player playback requires validated retained shot motion.");
   const progress = isPlayerShotPresentation(saved, shot.id) ? saved.progress : 0;
   let cursor = createShotPacingCursor(plan, { version: 1, key: plan.key, elapsedMs: progress * plan.durationMs });
+  const reactionToken = {};
+  const owner = { scopeId, actorId, shot: plan.identity };
+  const matchingTrace = shot.id === motion!.identity.shotId && shot.holeId === motion!.identity.holeId && shot.shotNumber === motion!.identity.shotNumber
+    && shot.club === motion!.identity.club && Number.isSafeInteger(shot.seed) && (shot.seed >>> 0) === motion!.identity.seed;
+  const holes = reactionCourse?.holes.filter((h) => h.id === motion!.identity.holeId) ?? [];
+  const hole = holes.length === 1 ? holes[0]! : null;
+  captureGolferReactionSource(reactionToken, { owner, authorityRevision: scopeId, plan, initialCursor: cursor, motion: motion!, distanceYards: shot.carryYards + (shot.rollYards ?? 0),
+    source: shot, courseSource: reactionCourse ?? null, handedness, sharedOutcome: matchingTrace ? shot.sharedOutcome ?? null : null,
+    originalAim: !saved && reactionCourse && hole && matchingTrace ? { course: reactionCourse, holeId: hole.id, pin: hole.pin, from: shot.from, target: shot.aim } : null });
+  let endpointSample: RetainedShotMotionPoseV1 | null = null;
+  let endpointSampleAttempted = false;
   let completed = false;
   const events = [
     { at: shotPacingEventProgress(plan, 0)!, event: { kind: "contact" } as PlayerPlaybackEvent },
@@ -36,11 +52,21 @@ export function createPlayerShotPlaybackDriver(shot: PlayerShotTrace, saved?: Pl
     cursor: presentation,
     frame,
     plan,
-    sample: (): PlayerShotActivitySampleV1 | null => {
+    sample: (publication?: PlayerPlaybackSourceObservation): PlayerShotActivitySampleV1 | null => {
+      if (publication && (publication.roundId !== scopeId || publication.actorId !== actorId || publication.shot !== shot
+        || publication.shot?.sharedOutcome?.motion !== motion || publication.course !== reactionCourse || publication.handedness !== handedness)) {
+        clearGolferReactionSource(reactionToken); return null;
+      }
       const current = shotPacingFrame(plan, cursor);
-      return current && shot.id === plan.identity.shotId ? playerShotActivitySample(plan, cursor, current, motion!, scopeId, actorId, handedness) : null;
+      if (!current || shot.id !== plan.identity.shotId || shot.sharedOutcome?.motion !== motion) { clearGolferReactionSource(reactionToken); return null; }
+      if (current.motionProgress === 1 && !endpointSampleAttempted) { endpointSampleAttempted = true; endpointSample = sampleRetainedShotMotion(motion, 1); }
+      const reactionClassification = endpointSample && current.motionProgress === 1 ? observeGolferReactionSource(reactionToken, { owner, currentOwner: owner,
+        authorityRevision: scopeId, currentAuthorityRevision: scopeId, plan, cursor, frame: current, motion: motion!, position: endpointSample,
+        source: shot, courseSource: reactionCourse ?? null, handedness, ownerCurrent: true }) : null;
+      return playerShotActivitySample(plan, cursor, current, motion!, scopeId, actorId, handedness, reactionClassification);
     },
     advance(elapsedMs: number, paused = false, skip = false, hidden = false) {
+      if (skip && !hidden) clearGolferReactionSource(reactionToken);
       cursor = advanceShotPacingCursor(plan, cursor, elapsedMs, { paused, skip, hidden })!;
       const next = frame();
       const crossed: PlayerPlaybackEvent[] = [];
@@ -69,14 +95,14 @@ interface PlaybackOptions {
 export function usePlayerShotPlayback(options: PlaybackOptions) {
   const frameRef = useRef<PlayerShotPlaybackFrame | null>(null);
   const activitySampleRef = useRef<PlayerShotActivitySampleV1 | null>(null);
-  const activitySourceRef = useRef<{ shot: PlayerShotTrace; motion: RetainedShotMotionV1 } | null>(null);
+  const activitySourceRef = useRef<{ shot: PlayerShotTrace; motion: RetainedShotMotionV1; course: PlayerRoundCourseSnapshot } | null>(null);
   const optionsRef = useRef(options);
   const skipRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     optionsRef.current = options;
     const pending = options.round?.phase === "flight" ? options.round.pendingShot : null;
     if (!playerShotActivityIsCurrent(activitySampleRef.current, options.round, options.actorId)
-      || activitySourceRef.current?.shot !== pending || activitySourceRef.current?.motion !== pending?.sharedOutcome?.motion) activitySampleRef.current = null;
+      || activitySourceRef.current?.shot !== pending || activitySourceRef.current?.motion !== pending?.sharedOutcome?.motion || activitySourceRef.current?.course !== options.round?.course) activitySampleRef.current = null;
   });
   const shot = options.round?.phase === "flight" ? options.round.pendingShot : null;
   const retained = isValidRetainedShotMotionV1(shot?.sharedOutcome?.motion);
@@ -92,9 +118,9 @@ export function usePlayerShotPlayback(options: PlaybackOptions) {
       skipRef.current = null;
       return;
     }
-    const driver = createPlayerShotPlaybackDriver(pending, round.shotPresentation, round.id, initial.actorId, round.handedness ?? null);
+    const driver = createPlayerShotPlaybackDriver(pending, round.shotPresentation, round.id, initial.actorId, round.handedness ?? null, round.course);
     const ownedMotion = pending.sharedOutcome!.motion;
-    activitySourceRef.current = { shot: pending, motion: ownedMotion! };
+    activitySourceRef.current = { shot: pending, motion: ownedMotion!, course: round.course };
     frameRef.current = driver.frame();
     activitySampleRef.current = driver.sample();
     let lastTime: number | null = null;
@@ -107,8 +133,9 @@ export function usePlayerShotPlayback(options: PlaybackOptions) {
       const paused = current.paused;
       const result = driver.advance(elapsed, paused, skip || current.immediate && !paused, document.hidden);
       frameRef.current = result.frame;
-      const sample = driver.sample();
-      activitySampleRef.current = current.round?.pendingShot === pending && current.round.pendingShot.sharedOutcome?.motion === ownedMotion
+      const sample = driver.sample({ roundId: current.round?.id ?? "", actorId: current.actorId ?? "player", shot: current.round?.pendingShot ?? null, course: current.round?.course,
+        handedness: current.round?.handedness === "right" || current.round?.handedness === "left" ? current.round.handedness : null });
+      activitySampleRef.current = current.round?.pendingShot === pending && current.round.pendingShot.sharedOutcome?.motion === ownedMotion && current.round.course === round.course
         && playerShotActivityIsCurrent(sample, current.round, current.actorId) ? sample : null;
       const bucket = Math.floor(result.frame.progress * 10);
       if (bucket !== checkpoint || result.events.length || result.complete) {

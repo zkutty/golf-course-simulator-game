@@ -1,3 +1,4 @@
+import type { GolferReactionClassification } from "../render/golferReactions";
 import { isShotPacingCursor, shotPacingDurationMs, type ShotPacingCursorV1, type ShotPacingFrame, type ShotPacingPhase, type ShotPacingPlan } from "../live/shotPacing";
 import type { PlayerPlayableRound } from "../models/playerProTypes";
 import type { RetainedShotMotionV1, ShotMotionIdentityV1 } from "../rules/shotMotion";
@@ -19,6 +20,8 @@ export interface PlayerShotPlaybackFrame {
 /** Transient body-source DTO. This is not a saved cursor or a second clock. */
 export interface PlayerShotActivitySampleV1 {
   readonly version: 1;
+  readonly authorityRevision: string;
+  readonly reactionClassification?: GolferReactionClassification | null;
   readonly roundId: string;
   readonly actorId: string;
   readonly key: string;
@@ -50,7 +53,7 @@ function retainedEquipment(club: string): PlayerShotActivitySampleV1["equipmentC
 
 /** Snapshot only the actual shared plan/cursor/frame. Never derive a cursor from progress. */
 export function playerShotActivitySample(plan: ShotPacingPlan, cursor: ShotPacingCursorV1, frame: ShotPacingFrame, motion: RetainedShotMotionV1,
-  roundId: string, actorId: string, handedness: "right" | "left" | null): PlayerShotActivitySampleV1 | null {
+  roundId: string, actorId: string, handedness: "right" | "left" | null, reactionClassification?: GolferReactionClassification | null): PlayerShotActivitySampleV1 | null {
   const identity = motion.identity;
   if (!identity || !motion.from?.point || (handedness !== null && handedness !== "right" && handedness !== "left")) return null;
   const key = JSON.stringify([roundId, actorId, identity.shotId, identity.holeId, identity.shotNumber, identity.seed, identity.club, identity.style, identity.modelVersion]);
@@ -60,7 +63,7 @@ export function playerShotActivitySample(plan: ShotPacingPlan, cursor: ShotPacin
     || frame.addressing !== (cursor.elapsedMs < plan.addressMs + plan.contactMs) || Math.abs(frame.progress - cursor.elapsedMs / plan.durationMs) > 1e-12
     || ![motion.from.point.x, motion.from.point.y, motion.from.heightYards].every(Number.isFinite)) return null;
   const shot = Object.freeze({ shotId: identity.shotId, holeId: identity.holeId, shotNumber: identity.shotNumber, seed: identity.seed, club: identity.club, style: identity.style, modelVersion: identity.modelVersion });
-  return Object.freeze({ version: 1, roundId, actorId, key, owner: Object.freeze({ scopeId: roundId, actorId, shot }), handedness,
+  return Object.freeze({ version: 1, authorityRevision: roundId, ...(reactionClassification ? { reactionClassification } : {}), roundId, actorId, key, owner: Object.freeze({ scopeId: roundId, actorId, shot }), handedness,
     equipmentClass: retainedEquipment(identity.club), origin: Object.freeze({ horizontal: "tiles", vertical: "yards", x: motion.from.point.x, y: motion.from.point.y, heightYards: motion.from.heightYards }),
     targetWorld: retainedTarget(motion), plan: Object.freeze({ version: plan.version, scopeId: plan.scopeId, actorId: plan.actorId, key, identity: shot, kind: plan.kind,
       durationMs: plan.durationMs, addressMs: plan.addressMs, contactMs: plan.contactMs, restMs: plan.restMs, firstContactT: plan.firstContactT }),
