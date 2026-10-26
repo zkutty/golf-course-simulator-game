@@ -157,6 +157,28 @@ describe("projectGolferActivity — pinned pure foundation", () => {
     expect(projectGolferActivity(policy, { ...f, paused: true }, idle).pose).toEqual(idle?.pose);
   });
 
+  it("holds one paused actor for60s while common admission time and another actor advance", () => {
+    const heldFacts = facts(900, "swing", "held"), initial = projectGolferActivity(policy, heldFacts);
+    let held = initial.nextState!;
+    for (const now of [1000, 10000, 30000, 60900]) {
+      const projection = projectGolferActivity(policy, { ...heldFacts, paused: true, presentationTimeMs: now }, held);
+      expect(projection.pose).toEqual(initial.pose); expect(projection.reason).toBe("held");
+      expect(projection.nextState?.observedAtMs).toBe(now);
+      expect(projection.nextState?.startedAtMs).toBe(now);
+      const moving = projectGolferActivity(policy, { ...walk(.2, 10.2), presentationTimeMs: now });
+      const admittedMoving = admitGolferActivity(policy, [], moving, now);
+      const admittedHeld = admitGolferActivity(policy, admittedMoving.records, projection, now);
+      expect(admittedHeld.records).toHaveLength(2); expect(admittedHeld.projection.reason).toBe("held");
+      held = admittedHeld.projection.nextState!;
+    }
+    const resumed = projectGolferActivity(policy, { ...facts(950, "swing", "held"), presentationTimeMs: 60950 }, held);
+    expect(resumed.pose?.phase).toBe("backswing"); expect(resumed.nextState).not.toBeNull();
+    expect(projectGolferActivity(policy, { ...heldFacts, paused: true, presentationTimeMs: 62000, currentAuthorityRevision: "replaced" }, held).reason).toBe("owner-invalidated");
+    expect(projectGolferActivity(policy, { ...heldFacts, paused: true, presentationTimeMs: 62000, root: { ...heldFacts.root, x: 99 } }, held).reason).toBe("held-authority-changed");
+    expect(projectGolferActivity(policy, { ...facts(901, "swing", "held"), paused: true, presentationTimeMs: 62000 }, held).reason).toBe("held-authority-changed");
+    expect(projectGolferActivity(policy, { ...heldFacts, paused: true, presentationTimeMs: 60899 }, held).reason).toBe("nonmonotonic-presentation");
+  });
+
   it("discards hidden, culled, reload, reveal and skip choreography even when paused", () => {
     const old = projectGolferActivity(policy, facts(900)).nextState;
     for (const changes of [{ hidden: true }, { visibility: "culled" as const }, ...["reload", "reveal", "skip"].map((discontinuity) => ({ discontinuity: discontinuity as "reload" | "reveal" | "skip" }))]) {

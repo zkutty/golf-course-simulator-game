@@ -76,6 +76,13 @@ validated settled initial pose without replaying a foot adjustment or reaction.
 
 ## Required checks before enabling gripping art
 
+The shared activity admission timestamp may keep advancing while only LIVE or
+only controlled play is paused. A valid paused actor keeps its exact body pose,
+root, shared cursor and movement distance. Only its transient retention start
+is shifted by the observed held interval. This permits a common monotonic
+admission timestamp without adding an actor clock or freezing another domain.
+Ownership, surface and route invalidation still precede any held publication.
+
 Eight views and four rotations, off-octant/boundary bearings, exact shared
 launch samples, stable world feet/shadow/depth, unchanged retained ball samples,
 named glyph/contact overlap, native trim geometry, safe/blocked/sloped support,

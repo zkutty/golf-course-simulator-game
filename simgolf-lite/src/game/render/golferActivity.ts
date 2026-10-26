@@ -83,7 +83,7 @@ export interface GolferActivityFacts {
   readonly paused: boolean;
   readonly hidden: boolean;
   readonly discontinuity: "none" | "reload" | "skip" | "reveal";
-  /** Nondecreasing active presentation time supplied by the caller, held during pause/hidden. */
+  /** Nondecreasing caller admission time. Other actor domains may advance while this actor is paused. */
   readonly presentationTimeMs: number;
 }
 export interface GolferActivityPose {
@@ -268,14 +268,17 @@ export function projectGolferActivity(policy: GolferActivityPolicy, canonicalFac
   const movementKey = f.movement ? JSON.stringify([f.movement.routeRevision, f.movement.segmentId]) : null;
   if (previous && previous.planSignature !== planSignature) return noRecord(f, key, "shared-plan-changed");
   if (previous && (f.presentationTimeMs < previous.observedAtMs || (elapsed !== null && previous.elapsedMs !== null && elapsed < previous.elapsedMs))) return noRecord(f, key, "nonmonotonic-presentation");
-  if (previous && f.presentationTimeMs - previous.startedAtMs > policy.maxRetentionMs) return noRecord(f, key, "retention-expired");
   const foreground = f.playback !== null && (f.mode === "controlled" || (f.mode === "follow" && f.followExplicit));
   if (f.movement && f.movement.routeRevision !== f.movement.currentRouteRevision) return noRecord(f, key, "stale-route");
   if (previous && previous.movementKey !== movementKey) return noRecord(f, key, "movement-invalidated");
   if (previous && f.paused) {
-    if (!same(previous.pose.root, f.root) || previous.elapsedMs !== elapsed || previous.observedAtMs !== f.presentationTimeMs || previous.movementDistanceTiles !== (f.movement?.distanceTiles ?? null)) return noRecord(f, key, "held-authority-changed");
-    return { pose: { ...previous.pose, root: { ...f.root }, feetPx: [24, 69] }, nextState: { ...previous, foreground, pose: { ...previous.pose, root: { ...f.root }, feetPx: [24, 69] } }, reason: "held" };
+    if (!same(previous.pose.root, f.root) || previous.elapsedMs !== elapsed || previous.movementDistanceTiles !== (f.movement?.distanceTiles ?? null)) return noRecord(f, key, "held-authority-changed");
+    // Retention bookkeeping consumes the caller's timestamp; it never advances
+    // an actor cursor. A pause in one domain must not freeze all other actors.
+    const heldInterval = f.presentationTimeMs - previous.observedAtMs;
+    return { pose: { ...previous.pose, root: { ...f.root }, feetPx: [24, 69] }, nextState: { ...previous, foreground, startedAtMs: previous.startedAtMs + heldInterval, observedAtMs: f.presentationTimeMs, pose: { ...previous.pose, root: { ...f.root }, feetPx: [24, 69] } }, reason: "held" };
   }
+  if (previous && f.presentationTimeMs - previous.startedAtMs > policy.maxRetentionMs) return noRecord(f, key, "retention-expired");
   if (previous && f.movement && previous.movementKey === movementKey && previous.movementDistanceTiles !== null) {
     const distance = f.movement.distanceTiles - previous.movementDistanceTiles;
     const displacement = Math.hypot(f.root.x - previous.pose.root.x, f.root.y - previous.pose.root.y);
