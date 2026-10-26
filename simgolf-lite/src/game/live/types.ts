@@ -10,6 +10,7 @@ import type { GreenKeepingReport } from "../greens/greenMaintenance";
 import type { ShotEnvironmentV1 } from "../rules/shotEnvironment";
 
 import type { RetainedShotMotionV1, RetainedShotMotionPoseV1, ShotMotionEventV1, ShotMotionIdentityV1 } from "../rules/shotMotion";
+import type { LiveGolferActivitySourceV1 } from "./activitySource";
 
 export interface LiveBallMotionV1 {
   identity: ShotMotionIdentityV1;
@@ -290,6 +291,8 @@ export interface RoundReactions {
 // Minimal per-golfer data the renderer needs each frame. Read from a ref so
 // the canvas never triggers React re-renders.
 export interface GolferRenderData {
+  /** Transient readonly facts for the future activity consumer; never persisted. */
+  activitySource?: LiveGolferActivitySourceV1 | null;
   id: number;
   personId?: string;
   x: number;

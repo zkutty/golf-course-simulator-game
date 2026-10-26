@@ -7,6 +7,7 @@ import {
   type ShotPacingCursorV1, type ShotPacingPlan,
 } from "./shotPacing";
 import type { GolferRenderData, LiveState, Segment } from "./types";
+import { clearFocusedLiveActivitySource, focusedLiveActivitySource } from "./activitySource";
 
 export interface FocusedShotScope {
   runSeed: number;
@@ -102,11 +103,17 @@ export function restoreFocusedShot(value: unknown, live: LiveState, world?: Pick
 }
 
 /** Only a render buffer changes. The golfer, score and saved itinerary stay stopped. */
-export function projectFocusedShot(owner: FocusedShotOwner, render: GolferRenderData[]): void {
+export function projectFocusedShot(owner: FocusedShotOwner, render: GolferRenderData[], activityOwnerCurrent = false): void {
+  const golfer = render.find((item) => item.id === owner.golferId);
+  if (golfer) golfer.activitySource = clearFocusedLiveActivitySource(golfer.activitySource);
   const frame = shotPacingFrame(owner.plan, owner.cursor);
   const pose = frame && sampleRetainedShotMotion(owner.motion, frame.motionProgress);
-  const golfer = render.find((item) => item.id === owner.golferId);
   if (!frame || !pose || !golfer) return;
+  golfer.activitySource = focusedLiveActivitySource(golfer.activitySource, {
+    actorId: owner.golferId, segmentIndex: owner.segmentIndex, segmentElapsed: owner.segmentElapsed,
+    plan: owner.plan, cursor: owner.cursor, frame, identity: owner.motion.identity, origin: owner.motion.from,
+    target: owner.motion.flight?.geometry.to ?? owner.motion.groundPath[1]?.point ?? null,
+  }, activityOwnerCurrent);
   const contactFrame = owner.plan.kind === "putt" ? PUTT_CONTACT_FRAME : SWING_CONTACT_FRAME;
   const addressProgress = Math.min(1, owner.cursor.elapsedMs / owner.plan.addressMs);
   const beforeContact = owner.cursor.elapsedMs < owner.plan.addressMs;

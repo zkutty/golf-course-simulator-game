@@ -40,6 +40,7 @@ import { emptyM51LiveMobilityState } from "../m51/mobility";
 import { applyGolferMobilityReaction, reapplyGroupMobility, releaseFinishedMobilityGroups, reserveGroupMobility } from "../m51/operations";
 import { isCoursePlayable } from "../sim/isCoursePlayable";
 import { shotEnvironmentFromWeather } from "../rules/shotEnvironment";
+import { createLiveActivitySource, liveActivityScope, type LiveActivityScopeContext } from "./activitySource";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -896,7 +897,8 @@ function shotRecordFromOutcome(outcome: LiveShotOutcome): NonNullable<CompletedR
   };
 }
 
-export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): GolferRenderData[] {
+export function liveRenderData(state: LiveState, out: GolferRenderData[] = [], activityContext?: LiveActivityScopeContext): GolferRenderData[] {
+  const activityScope = liveActivityScope(state, activityContext);
   const mobilityRiders = new Map<number, { assignmentId: string; unitId?: string; mode: "walk" | "pushcart" | "riding_cart" }>();
   for (const assignment of state.m51?.assignments ?? []) {
     if (assignment.status !== "active") continue;
@@ -947,6 +949,7 @@ export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): 
     const motionPose = motion ? sampleRetainedShotMotion(motion, activeMotion ? segT : 1) : null;
     const mobility = mobilityRiders.get(g.id);
     const next: GolferRenderData = {
+      activitySource: createLiveActivitySource(activityScope, g, seg, mobility?.mode),
       id: g.id,
       personId: g.personId,
       x: g.pos.x,

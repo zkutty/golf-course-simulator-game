@@ -352,10 +352,12 @@ export function useLiveSimulation(args: {
 
   const buildRenderData = useCallback((live: LiveState) => {
     renderBufferIndexRef.current = renderBufferIndexRef.current === 0 ? 1 : 0;
-    const render = liveRenderData(live, renderBuffersRef.current[renderBufferIndexRef.current]);
-    if (focusedOwnerRef.current) projectFocusedShot(focusedOwnerRef.current, render);
+    const currentWorld = worldRef.current;
+    const render = liveRenderData(live, renderBuffersRef.current[renderBufferIndexRef.current], { runSeed: currentWorld.runSeed, week: currentWorld.week });
+    if (focusedOwnerRef.current) projectFocusedShot(focusedOwnerRef.current, render,
+      focusedShotMatches(focusedOwnerRef.current, live, currentWorld, followId(), focusedDrainRef.current !== null));
     return render;
-  }, []);
+  }, [followId]);
 
   useEffect(() => {
     runtimeRef.current = args;
