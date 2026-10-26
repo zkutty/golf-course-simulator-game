@@ -48,12 +48,16 @@ export interface ActivityRoot {
   readonly x: number; readonly y: number; readonly heightYards: number;
 }
 /** A real available clip pair, validated upstream; never an un-authored manifest promise. */
-export interface ActivityClipPair {
+interface ActivityClipGeometry {
   readonly id: string; readonly role: "swing" | "putt";
-  readonly targetOctant: number; readonly handedness: ActivityHand; readonly equipmentClass: ActivityEquipment;
+  readonly targetOctant: number; readonly handedness: ActivityHand;
   readonly row: number; readonly frames: number; readonly contactFrame: number;
   readonly mirror: false; readonly validated: true;
 }
+export type ActivityClipPair = ActivityClipGeometry & (
+  | { readonly equipmentClass: ActivityEquipment }
+  | { readonly equipmentClass: null; readonly compatibleEquipmentClasses: readonly ActivityEquipment[] }
+);
 export interface GolferActivityFacts {
   readonly version: 1;
   readonly owner: ActivityOwner;
@@ -170,9 +174,13 @@ function root(v: unknown): v is ActivityRoot {
   return record(v) && keys(v, ["horizontal", "vertical", "x", "y", "heightYards"]) && v.horizontal === "tiles" && v.vertical === "yards" && finite(v.x) && finite(v.y) && finite(v.heightYards);
 }
 function clip(v: unknown): v is ActivityClipPair {
-  return record(v) && keys(v, ["id", "role", "targetOctant", "handedness", "equipmentClass", "row", "frames", "contactFrame", "mirror", "validated"])
-    && label(v.id, 128) && (v.role === "swing" || v.role === "putt") && octant(v.targetOctant) && hand(v.handedness) && equipment(v.equipmentClass)
-    && v.equipmentClass !== "none" && (v.role === "putt" ? v.equipmentClass === "putter" : v.equipmentClass !== "putter")
+  if (!record(v)) return false;
+  const fields = ["id", "role", "targetOctant", "handedness", "equipmentClass", "row", "frames", "contactFrame", "mirror", "validated"];
+  const compatible = v.equipmentClass === null ? v.compatibleEquipmentClasses : [v.equipmentClass];
+  return keys(v, v.equipmentClass === null ? [...fields, "compatibleEquipmentClasses"] : fields)
+    && label(v.id, 128) && (v.role === "swing" || v.role === "putt") && octant(v.targetOctant) && hand(v.handedness)
+    && Array.isArray(compatible) && compatible.length > 0 && compatible.length <= 3 && new Set(compatible).size === compatible.length
+    && compatible.every((c) => equipment(c) && c !== "none" && (v.role === "putt" ? c === "putter" : c !== "putter"))
     && integer(v.row, 0, 7) && v.frames === (v.role === "swing" ? 8 : 4) && v.contactFrame === (v.role === "swing" ? 5 : 2) && v.mirror === false && v.validated === true;
 }
 function playbackShape(v: unknown): boolean {
@@ -282,7 +290,9 @@ export function projectGolferActivity(policy: GolferActivityPolicy, canonicalFac
     const phase: GolferActivityPhase = t < settle ? "settle" : t < p.addressMs - backswing ? "address" : t < p.addressMs ? "backswing" : t <= launch ? "contact" : t < launch + follow ? "follow-through" : "watch";
     pose = { ...pose, phase };
     if (["address", "backswing", "contact", "follow-through"].includes(phase)) {
-      const pair = f.clips.find((candidate) => candidate.role === p.kind && candidate.targetOctant === f.targetOctant && candidate.handedness === f.handedness && candidate.equipmentClass === f.equipmentClass);
+      const compatible = (candidate: ActivityClipPair) => candidate.role === p.kind && candidate.targetOctant === f.targetOctant && candidate.handedness === f.handedness;
+      const pair = f.clips.find((candidate) => compatible(candidate) && candidate.equipmentClass !== null && candidate.equipmentClass === f.equipmentClass)
+        ?? f.clips.find((candidate) => compatible(candidate) && candidate.equipmentClass === null && f.equipmentClass !== null && candidate.compatibleEquipmentClasses.includes(f.equipmentClass));
       const legacyAllowed = f.handedness === null && f.targetOctant !== null;
       if (!pair && !legacyAllowed) pose = neutral(f, key, f.targetOctant === null ? "unknown-target" : "unsupported-hand-equipment-pair");
       else {

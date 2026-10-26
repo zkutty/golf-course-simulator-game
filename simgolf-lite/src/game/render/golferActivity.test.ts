@@ -102,6 +102,31 @@ describe("projectGolferActivity — pinned pure foundation", () => {
     expect(projectGolferActivity(policy, { ...facts(1200), equipmentClass: "putter" }).reason).toBe("equipment-kind-mismatch");
   });
 
+  it.each(["swing", "putt"] as const)("matches explicit generic %s motion without certifying a pictured equipment class", (role) => {
+    const compatibleEquipmentClasses = role === "swing" ? ["driver", "iron", "wedge"] as const : ["putter"] as const;
+    const pair: ActivityClipPair = { ...available(role), id: `generic-${role}`, equipmentClass: null, compatibleEquipmentClasses };
+    for (const equipmentClass of compatibleEquipmentClasses) {
+      const f = { ...facts(role === "swing" ? 1200 : 650, role), handedness: "right" as const, equipmentClass, clips: [pair] };
+      expect(projectGolferActivity(policy, f).pose).toMatchObject({ clipId: pair.id, renderedHandedness: "right", renderedEquipmentClass: null, col: pair.contactFrame, fallbackReason: null });
+      for (const changes of [{ handedness: "left" as const }, { targetOctant: 1 }, { targetOctant: null }, { equipmentClass: null }]) {
+        expect(projectGolferActivity(policy, { ...f, ...changes }).pose?.clipId).toBe("idle");
+      }
+    }
+    const f = { ...facts(role === "swing" ? 1200 : 650, role), handedness: "right" as const, equipmentClass: compatibleEquipmentClasses[0], clips: [pair, available(role)] };
+    expect(projectGolferActivity(policy, f).pose?.renderedEquipmentClass).toBe(compatibleEquipmentClasses[0]);
+  });
+
+  it("rejects missing, ambiguous or role-incompatible generic compatibility lists", () => {
+    const f = { ...facts(1200), handedness: "right" as const, equipmentClass: "driver" as const };
+    for (const compatibleEquipmentClasses of [undefined, [], ["driver", "driver"], ["putter"], ["none"], ["unknown"], ["driver", "iron", "wedge", "putter"]]) {
+      const pair = { ...available(), equipmentClass: null, compatibleEquipmentClasses };
+      expect(projectGolferActivity(policy, { ...f, clips: [pair as ActivityClipPair] }).reason).toBe("invalid-carrier");
+    }
+    const pair: ActivityClipPair = { ...available(), equipmentClass: null, compatibleEquipmentClasses: ["iron"] };
+    expect(projectGolferActivity(policy, { ...f, clips: [pair] }).pose?.clipId).toBe("idle");
+    expect(projectGolferActivity(policy, { ...f, clips: [pair, { ...pair, id: "duplicate" }] }).reason).toBe("invalid-carrier");
+  });
+
   it("rejects malformed JSON/carriers, invalid clip claims, evidence mismatches, and shared frame divergence", () => {
     const changes: ((f: Record<string, unknown>) => void)[] = [
       (f) => { f.extra = true; }, (f) => { f.presentationTimeMs = NaN; }, (f) => { f.quality = "ultra"; },
