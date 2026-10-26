@@ -126,9 +126,9 @@
     {
       "relativePath": "lib/rendering/batcher/shared/Batcher.mjs",
       "originalSha256": "82735cc25bb286519729145292d0b96a8086fcf14a12dde901d2f0c4e88cb490",
-      "patchedSha256": "c29f51bf607597008b43da03c59353a8059a36d33527cfeb3f8c076c100d12df",
+      "patchedSha256": "2d7a3bdbb891306b2b2b9f441f48d3eb6842106d91c95f1d46d91f98aefc9f63",
       "originalBytes": 12165,
-      "patchedBytes": 12236,
+      "patchedBytes": 12371,
       "edits": [
         {
           "before": "  finish(instructionSet) {\n    this.break(instructionSet);\n  }",
@@ -137,18 +137,26 @@
         {
           "before": "//# sourceMappingURL=Batcher.mjs.map\n",
           "after": ""
+        },
+        {
+          "before": "function returnBatchToPool(batch) {\n  batchPool[batchPoolIndex++] = batch;\n}",
+          "after": "function returnBatchToPool(batch) {\n  batch.textures?.clear();\n  batch.batcher = null;\n  batch.bindGroup = null;\n  batch.gpuBindGroup = null;\n  batchPool[batchPoolIndex++] = batch;\n}"
+        },
+        {
+          "before": "    for (let i = 0; i < this.batchIndex; i++) {\n      returnBatchToPool(this.batches[i]);\n    }\n    this.batchIndex = 0;",
+          "after": "    for (let i = 0; i < this.batchIndex; i++) {\n      returnBatchToPool(this.batches[i]);\n    }\n    this.batches.length = 0;\n    this.batchIndex = 0;"
         }
       ],
       "inverseByteExact": true,
       "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
-      "purpose": "Release consumed scratch-array capacity after the completed batch pass without changing packed buffers or batch ownership."
+      "purpose": "Preserve exclusive current-batch ownership and clear returned borrowed payload while releasing consumed scratch storage, without changing draw buffers or global-release behavior."
     },
     {
       "relativePath": "lib/rendering/batcher/shared/Batcher.js",
       "originalSha256": "60564ba2b6c8ec3c2c7e15b6d3754b115e0c848f539eff5dd841cb0bb0c59170",
-      "patchedSha256": "0b48acebed29abe68185f1bec60bfc926182f799cc968a875f4c359cfefeaf00",
+      "patchedSha256": "e39d2083753fe565c5b146f5362f9b5b2adf61fe7d2d2b9d01c488b82f94d98f",
       "originalBytes": 12366,
-      "patchedBytes": 12438,
+      "patchedBytes": 12573,
       "edits": [
         {
           "before": "  finish(instructionSet) {\n    this.break(instructionSet);\n  }",
@@ -157,11 +165,19 @@
         {
           "before": "//# sourceMappingURL=Batcher.js.map\n",
           "after": ""
+        },
+        {
+          "before": "function returnBatchToPool(batch) {\n  batchPool[batchPoolIndex++] = batch;\n}",
+          "after": "function returnBatchToPool(batch) {\n  batch.textures?.clear();\n  batch.batcher = null;\n  batch.bindGroup = null;\n  batch.gpuBindGroup = null;\n  batchPool[batchPoolIndex++] = batch;\n}"
+        },
+        {
+          "before": "    for (let i = 0; i < this.batchIndex; i++) {\n      returnBatchToPool(this.batches[i]);\n    }\n    this.batchIndex = 0;",
+          "after": "    for (let i = 0; i < this.batchIndex; i++) {\n      returnBatchToPool(this.batches[i]);\n    }\n    this.batches.length = 0;\n    this.batchIndex = 0;"
         }
       ],
       "inverseByteExact": true,
       "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
-      "purpose": "Release consumed scratch-array capacity after the completed batch pass without changing packed buffers or batch ownership."
+      "purpose": "Preserve exclusive current-batch ownership and clear returned borrowed payload while releasing consumed scratch storage, without changing draw buffers or global-release behavior."
     },
     {
       "relativePath": "lib/rendering/batcher/shared/BatchTextureArray.mjs",
