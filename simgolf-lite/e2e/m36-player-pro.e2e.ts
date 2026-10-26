@@ -4,6 +4,15 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    const originalError = console.error;
+    console.error = (...args) => {
+      if (args.some((value) => typeof value === "string" && value.includes("Maximum update depth"))) {
+        console.info("M36 React update-depth diagnostic", new Error().stack);
+      }
+      originalError.apply(console, args);
+    };
+  });
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/");
   await page.getByRole("button", { name: "Quick Start" }).click();
