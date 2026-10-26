@@ -285,6 +285,7 @@ export function useLiveSimulation(args: {
   const clockRemainderRef = useRef(0);
   const weekLedgerRef = useRef(createWeekLedger(world.week));
   const lastStatusAtRef = useRef(0);
+  const statusDirtyRef = useRef(true);
   const selectedIdRef = useRef<number | null>(null);
   const onDayRef = useRef(onDayCommitted);
   const onCashRef = useRef(onCashTick);
@@ -300,6 +301,10 @@ export function useLiveSimulation(args: {
   }, []);
 
   useEffect(() => {
+    if (courseRef.current !== course || worldRef.current !== world
+      || operationPolicyRef.current.tutorialThreeHolePreview !== publicThreeHoleOperation) {
+      statusDirtyRef.current = true;
+    }
     courseRef.current = course;
     worldRef.current = world;
     onDayRef.current = onDayCommitted;
@@ -324,13 +329,16 @@ export function useLiveSimulation(args: {
       prev.buildings !== course.buildings;
     const live = liveRef.current;
     courseCanReceiveArrivalsRef.current = courseCanReceiveLiveArrivals(course, operationPolicyRef.current);
-    if (enabled && live) ensureOpeningDayArrivals(live, course, worldRef.current, operationPolicyRef.current);
+    if (enabled && live && ensureOpeningDayArrivals(live, course, worldRef.current, operationPolicyRef.current)) {
+      statusDirtyRef.current = true;
+    }
     if (!changed) return;
     geomRef.current = { tiles: course.tiles, holes: course.holes, obstacles: course.obstacles, buildings: course.buildings, activePinRotation: course.activePinRotation ?? "A" };
     const skipGolferReconcile = skipNextReconcileRef.current;
     skipNextReconcileRef.current = false;
     if (skipGolferReconcile) return;
     if (enabled && live && live.golfers.length > 0) {
+      statusDirtyRef.current = true;
       reconcileGolfers(live, course, pinChanged ? "daily-pin" : "geometry");
       golfersRef.current = buildRenderData(live);
     }
@@ -339,6 +347,7 @@ export function useLiveSimulation(args: {
   const flushCash = useCallback(() => {
     const d = pendingCashRef.current;
     if (d === 0) return;
+    statusDirtyRef.current = true;
     pendingCashRef.current = 0;
     worldRef.current = { ...worldRef.current, cash: worldRef.current.cash + d };
     setWorld((w) => ({ ...w, cash: w.cash + d }));
@@ -352,7 +361,7 @@ export function useLiveSimulation(args: {
       selectedIdRef.current = null;
       setSelectedId(null);
     }
-    setStatus({
+    const nextStatus: LiveStatus = {
       speed: speedRef.current,
       dayIndex: live.dayIndex,
       dayMinute: live.dayMinute,
@@ -386,10 +395,13 @@ export function useLiveSimulation(args: {
       } : null,
       pace: paceStatus(live, courseRef.current, worldRef.current),
       mobility: buildMobilityOperationsReports({ course: courseRef.current, world: worldRef.current, live: live.m51, week: worldRef.current.week, dayIndex: live.dayIndex }),
-    });
+    };
+    statusDirtyRef.current = false;
+    setStatus(nextStatus);
   }, [status.lastDay]);
 
   const selectGolfer = useCallback((id: number | null) => {
+    statusDirtyRef.current = true;
     selectedIdRef.current = id;
     setSelectedId(id);
     setStatus((s) => ({ ...s, selected: buildSelected(liveRef.current, id) }));
@@ -398,6 +410,7 @@ export function useLiveSimulation(args: {
   // Commit a finished day: apply costs/rep/condition as deltas (green fees were
   // already banked live), then roll the calendar and start the next day.
   const finishDay = useCallback((live: LiveState) => {
+    statusDirtyRef.current = true;
     flushCash();
     const tournament = completeTournament(worldRef.current, live);
     const revenue = live.greenFeeCollected + live.concessionCollected + tournament.revenue;
@@ -502,6 +515,7 @@ export function useLiveSimulation(args: {
     const clock = consumeClock(realMs, speedRef.current, clockRemainderRef.current);
     clockRemainderRef.current = clock.remainderMinutes;
     if (clock.steps === 0) return;
+    statusDirtyRef.current = true;
     const previousRender = golfersRef.current;
     for (let step = 0; step < clock.steps && !live.dayOver; step++) {
       const ev = stepLive(live, courseRef.current, FIXED_GAME_STEP_MINUTES, worldRef.current);
@@ -527,6 +541,7 @@ export function useLiveSimulation(args: {
   // Main clock loop.
   useEffect(() => {
     if (!enabled) return;
+    statusDirtyRef.current = true;
     if (!liveRef.current) {
       const prepared = prepareTournamentDay(courseRef.current, worldRef.current, 0);
       if (prepared.world !== worldRef.current) {
@@ -545,12 +560,14 @@ export function useLiveSimulation(args: {
 
       advanceSimulation(live, realDtSec * 1000);
 
-      // Publish status (clock, on-course, selected golfer) on a throttle even
-      // while paused, so the inspector and clock stay responsive.
+      // Keep the original cadence for changed state and the selected inspector,
+      // which also reads renderer-owned emotes outside LiveStatus.
       if (ts - lastStatusAtRef.current >= STATUS_THROTTLE_MS) {
         lastStatusAtRef.current = ts;
         flushCash();
-        publishStatus(live);
+        if (speedRef.current !== "paused" || selectedIdRef.current != null || statusDirtyRef.current) {
+          publishStatus(live);
+        }
       }
       if (live.dayOver) finishDay(live);
 
@@ -582,6 +599,7 @@ export function useLiveSimulation(args: {
 
   const restoreSnapshot = useCallback((snapshot: LiveSimulationSnapshotV1 | undefined): boolean => {
     if (!snapshot) {
+      statusDirtyRef.current = true;
       liveRef.current = null;
       golfersRef.current = [];
       pendingCashRef.current = 0;
@@ -595,6 +613,7 @@ export function useLiveSimulation(args: {
     }
     const restored = restoreLiveSimulation(snapshot);
     if (!restored) return false;
+    statusDirtyRef.current = true;
     liveRef.current = restored.state;
     golfersRef.current = buildRenderData(restored.state);
     pendingCashRef.current = restored.pendingCash;
@@ -658,6 +677,7 @@ export function useLiveSimulation(args: {
   const setSpeed = useCallback((next: SpeedName) => {
     // Update the loop's ref synchronously. App-shell pause must freeze the
     // mutable live store before React gets a chance to paint the overlay.
+    if (speedRef.current !== next) statusDirtyRef.current = true;
     speedRef.current = next;
     setSpeedState(next);
     setStatus((current) => ({ ...current, speed: next }));
