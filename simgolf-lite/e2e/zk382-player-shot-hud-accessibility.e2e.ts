@@ -1,7 +1,14 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 const fixture = "/e2e/fixtures/zk382-player-shot-hud.html";
-const evidence = process.env.HUD_EVIDENCE_DIR ?? "/private/tmp/golf-batch19-player-shot-candidate-attempt3";
+const evidenceOverride = process.env.HUD_EVIDENCE_DIR ?? null;
+const evidencePath = (info: TestInfo, filename: string) => {
+  if (evidenceOverride !== null) {
+    mkdirSync(evidenceOverride, { recursive: true });
+    return `${evidenceOverride}/${filename}`;
+  }
+  return info.outputPath(filename);
+};
 const nativeOptionText = async (page: Page, text: string) => {
   const session = await page.context().newCDPSession(page);
   try {
@@ -55,7 +62,7 @@ for (const phase of ["awaiting", "result"]) for (const locale of ["en", "pseudo"
         const text = node.selectedOptions[0].textContent!, textWidth = context.measureText(text).width, available = node.clientWidth - Number.parseFloat(css.paddingLeft) - Number.parseFloat(css.paddingRight) - 20;
         return { text, value: node.value, font: css.font, textWidth, available, selectedIndex: node.selectedIndex, focused: document.activeElement === node, box: node.getBoundingClientRect().toJSON() };
       }); nativeSelections.push(selected);
-      mkdirSync(evidence, { recursive: true }); await page.screenshot({ path: `${evidence}/native-value-${phase}-${locale}-${width}-${nativeSelections.length}.png` });
+      await page.screenshot({ path: evidencePath(info, `native-value-${phase}-${locale}-${width}-${nativeSelections.length}.png`) });
     }
     const geometry = [];
     for (const element of await hud.locator("*").all()) {
@@ -94,7 +101,7 @@ for (const phase of ["awaiting", "result"]) for (const locale of ["en", "pseudo"
     await expect(footer).toBeInViewport();
     const focused = await footer.evaluate(element => { const css = getComputedStyle(element); const lum = (value: string) => value.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(channel => { const v = channel / 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((sum, v, index) => sum + v * [.2126, .7152, .0722][index], 0); const outline = lum(css.outlineColor), panel = element.closest('[data-testid="player-shot-hud"]')!, gradient = getComputedStyle(panel).backgroundImage.match(/rgba?\([^)]+\)/g)!; const contrast = Math.min(...gradient.map(value => { const bg = lum(value); return (Math.max(outline, bg) + .05) / (Math.min(outline, bg) + .05); })); return { contrast, visible: element.matches(":focus-visible"), outlineColor: css.outlineColor, width: css.outlineWidth, offset: css.outlineOffset, background: css.backgroundColor, rect: element.getBoundingClientRect().toJSON() }; });
     const record = { header, nativeSelections, phase, emittedPhase: await page.getByTestId("phase").textContent(), locale, width, samples, geometry, panel, nativeTop, nativeBottom, focused, errors, immutable: await page.getByTestId("immutable").textContent(), input: JSON.parse((await page.getByTestId("input-snapshot").textContent())!) };
-    mkdirSync(evidence, { recursive: true }); const prefix = `${evidence}/${phase}-${locale}-${width}`; writeFileSync(prefix + ".json", JSON.stringify(record, null, 2)); await page.screenshot({ path: prefix + ".png" }); await info.attach("authored HUD measurements", { body: JSON.stringify(record), contentType: "application/json" });
+    writeFileSync(evidencePath(info, `${phase}-${locale}-${width}.json`), JSON.stringify(record, null, 2)); await page.screenshot({ path: evidencePath(info, `${phase}-${locale}-${width}.png`) }); await info.attach("authored HUD measurements", { body: JSON.stringify(record), contentType: "application/json" });
     await expect(page.getByTestId("immutable")).toHaveText("true"); expect(errors).toEqual([]);
     expect.soft(nativeSelections.filter(item => item.textWidth > item.available), "selected native values must fit painted font/content area; native focus screenshots retained").toEqual([]);
     expect.soft(panel.rect.left).toBeGreaterThanOrEqual(0); expect.soft(panel.rect.right).toBeLessThanOrEqual(width);
@@ -128,7 +135,7 @@ for (const locale of ["en", "pseudo"]) for (const scale of [100, 130]) {
     await page.getByTestId("commit-player-shot").focus(); await page.keyboard.press("Enter");
     await expect(page.getByTestId("calls")).toHaveText(JSON.stringify([{ name: "aim", value: guidance.aim }, { name: "commit", value: expected }]));
     await expect(page.getByTestId("immutable")).toHaveText("true"); expect(errors).toEqual([]);
-    mkdirSync(evidence, { recursive: true }); writeFileSync(`${evidence}/native-${locale}-${scale}.json`, JSON.stringify({ locale, scale, expected, guidance, errors, calls: JSON.parse((await page.getByTestId("calls").textContent())!) }, null, 2)); await page.screenshot({ path: `${evidence}/native-${locale}-${scale}.png` }); await info.attach("native callback payload", { body: JSON.stringify(expected), contentType: "application/json" });
+    writeFileSync(evidencePath(info, `native-${locale}-${scale}.json`), JSON.stringify({ locale, scale, expected, guidance, errors, calls: JSON.parse((await page.getByTestId("calls").textContent())!) }, null, 2)); await page.screenshot({ path: evidencePath(info, `native-${locale}-${scale}.png`) }); await info.attach("native callback payload", { body: JSON.stringify(expected), contentType: "application/json" });
   });
 }
 for (const phase of ["flight", "conceded"]) test(`actual emitted HUD footer ${phase}`, async ({ page }) => {
@@ -164,5 +171,5 @@ for (const locale of ["en", "pseudo"]) test(`genuine trained Punch flight state 
   const expected = { club: await page.getByTestId("player-shot-club").inputValue(), aim: JSON.parse((await page.getByTestId("aim").textContent())!), power: Number(await page.getByTestId("player-shot-power").inputValue()) / 100, technique: "punch", flightProfile: "low" };
   await page.getByTestId("commit-player-shot").focus(); await page.keyboard.press("Enter"); await expect(page.getByTestId("calls")).toHaveText(JSON.stringify([{ name: "commit", value: expected }]));
   await expect(page.getByTestId("immutable")).toHaveText("true"); expect(errors).toEqual([]); expect(await high.evaluate(node => getComputedStyle(node).opacity)).toBe("0.64");
-  mkdirSync(evidence, { recursive: true }); const record = { locale, training, normalHigh, normalLow, blocked, focused, ringBounds, unfocusedBlockedOpacity, expected, errors }; writeFileSync(`${evidence}/trained-${locale}.json`, JSON.stringify(record, null, 2)); await page.screenshot({ path: `${evidence}/trained-${locale}.png` }); await info.attach("genuine training/flight paint", { body: JSON.stringify(record), contentType: "application/json" });
+  const record = { locale, training, normalHigh, normalLow, blocked, focused, ringBounds, unfocusedBlockedOpacity, expected, errors }; writeFileSync(evidencePath(info, `trained-${locale}.json`), JSON.stringify(record, null, 2)); await page.screenshot({ path: evidencePath(info, `trained-${locale}.png`) }); await info.attach("genuine training/flight paint", { body: JSON.stringify(record), contentType: "application/json" });
 });
