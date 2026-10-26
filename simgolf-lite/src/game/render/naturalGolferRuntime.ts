@@ -4,6 +4,7 @@ import { ELEVATION_STEP_YARDS } from "../rules/obstacleCollision";
 import type { NaturalGolferAtlas, NaturalGolferTextureLookup } from "../../render/naturalGolferAtlas";
 import { admitGolferActivity, golferActivityOwnerKey, NATURAL_GOLFER_ACTIVITY_POLICY, projectGolferActivity } from "./golferActivity";
 import type { GolferActivityFacts, GolferActivityProjection, GolferActivityState } from "./golferActivity";
+import { scheduleGolferReactions, type GolferReactionState } from "./golferReactions";
 import { projectGolferLocomotion } from "./golferLocomotion";
 import type { GolferLocomotionState } from "./golferLocomotion";
 import { createGolferStanceBinding, NATURAL_GOLFER_CONTACT_MODEL, naturalGolferWorldView, sampleGolferStance } from "./golferStance";
@@ -40,7 +41,7 @@ export interface NaturalGolferRuntimeInput {
 }
 export interface NaturalGolferRuntimeDiagnostics {
   readonly pilotId: number | null; readonly scopeId: string | null; readonly records: number; readonly localRecords: number;
-  readonly foreground: number; readonly pending: 0; readonly surfaceRevision: string | null;
+  readonly foreground: number; readonly pending: 0; readonly reactionRecords: number; readonly eligibleReactions: number; readonly surfaceRevision: string | null;
   readonly atlas: ReturnType<NaturalGolferAtlas<unknown>["snapshot"]> | null;
   readonly legacyAtlasAlsoResident: true;
 }
@@ -74,6 +75,7 @@ const currentSource = (g: GolferRenderData) => {
 /** One accepted admission store shared by LIVE and a later controlled borrower.
  * Never loads/disposes its borrowed atlas, advances a cursor, or owns authority. */
 export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T> | null) {
+  let reactionState: GolferReactionState | null = null;
   let records: readonly GolferActivityState[] = [], liveKeys = new Set<string>();
   let scopeId: string | null = null, pilotId: number | null = null, selectedPilot = false;
   let surfaceRevision: string | null = null, visibilityEpoch: number | null = null, lastTime = -1;
@@ -90,7 +92,9 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
     tickLive(input: NaturalGolferRuntimeInput): ReadonlyMap<number, NaturalGolferRuntimeFrame<T>> {
       const borrowed = atlas(), nextIndex = borrowed?.artIndex() ?? null;
       const firstScope = input.golfers.find(currentSource)?.activitySource?.scope.id ?? null;
-      if (firstScope !== null && firstScope !== scopeId) { dropLive(); scopeId = firstScope; pilotId = null; selectedPilot = false; }
+      const scopeChanged = firstScope !== null && firstScope !== scopeId;
+      const invalidated = surfaceRevision !== input.ground.surfaceRevision || visibilityEpoch !== input.visibilityEpoch || nextIndex !== index;
+      if (scopeChanged) { dropLive(); scopeId = firstScope; pilotId = null; selectedPilot = false; }
       if (surfaceRevision !== input.ground.surfaceRevision || visibilityEpoch !== input.visibilityEpoch || input.presentationTimeMs < lastTime || nextIndex !== index) dropLive();
       surfaceRevision = input.ground.surfaceRevision; visibilityEpoch = input.visibilityEpoch; lastTime = input.presentationTimeMs;
       if (nextIndex !== index) { index = nextIndex; clips = naturalGolferActivityClips(index, NATURAL_GOLFER_PILOT_SELECTION); }
@@ -120,6 +124,20 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
           paused: input.paused, hidden: input.hidden, discontinuity: "none", presentationTimeMs: input.presentationTimeMs };
         liveKeys.add(actorKey); return { golfer, source, facts };
       });
+      // Exactly one LIVE batch/store. A later controlled borrower must join this
+      // same batch; separate per-domain or per-actor scheduler calls would lose caps.
+      const reactionBatch = prepared.filter(row => row.facts?.playback && row.facts.owner.shot).slice(0, 128);
+      const reactions = scheduleGolferReactions(reactionState, { scopeId: "natural-golfer-render-session", authorityRevision: "1",
+        presentationTimeMs: input.presentationTimeMs, quality: input.quality, motionEnabled: input.motionEnabled, hidden: input.hidden,
+        discontinuity: invalidated ? "reveal" : scopeChanged ? "reload" : "none",
+        actors: reactionBatch.map(({ facts, golfer }) => ({ owner: facts!.owner, currentOwner: facts!.currentOwner,
+          authorityRevision: facts!.authorityRevision, currentAuthorityRevision: facts!.currentAuthorityRevision,
+          ...facts!.playback!, classification: golfer.activitySource?.reactionClassification ?? null, visibility: facts!.visibility, paused: facts!.paused })) });
+      reactionState = reactions.state;
+      const outcomes = new Map(reactions.outputs.map(out => [out.actorKey, out.outcome]));
+      for (const row of prepared) if (row.facts) row.facts = { ...row.facts, outcome: outcomes.get(keyActor(row.facts.owner.scopeId, row.facts.owner.actorId)) ?? null };
+      // Eligible static cues precede ordinary activity admission, without a queue.
+      prepared.sort((a, b) => Number(b.facts?.outcome?.eligible === true) - Number(a.facts?.outcome?.eligible === true));
       // Retention expires HISTORY, not the selected visual family. Reacquire
       // current facts in the same tick with no old gait/plant/strike evidence.
       if (!input.paused) for (const row of prepared) {
@@ -151,6 +169,7 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
           phase: "watch", reason: "unsupported-current-source", fastForward: false, contact: false, plantKey: null, contactGeometry: null };
         if (!source || !facts) { output.set(golfer.id, Object.freeze(frame)); continue; }
         const projection = admit(projectGolferActivity(NATURAL_GOLFER_ACTIVITY_POLICY, facts, previousActivity(facts)), input.presentationTimeMs);
+        const reactionCue = projection.pose?.phase === "reaction" && facts.outcome?.eligible === true && input.quality !== "low" && input.motionEnabled;
         frame = { ...frame, phase: projection.pose?.phase ?? "watch", reason: projection.reason };
         if (!projection.nextState || !projection.pose) { locals.delete(golfer.id); output.set(golfer.id, Object.freeze(frame)); continue; }
         retainedIds.add(golfer.id);
@@ -159,24 +178,39 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
         if (!local || local.ownerKey !== ownerKey || local.surfaceRevision !== surfaceRevision) {
           const observed = local?.presentedFeet ?? null;
           local = { ownerKey, surfaceRevision: surfaceRevision!, binding: null, plant: null, locomotion: null, presentedFeet: sameFeet(observed, root) ? observed : null,
-            late: !!facts.playback && facts.playback.cursor.elapsedMs > 100, pending: null };
+            late: !!source.playback && source.playback.cursor.elapsedMs > 100, pending: null };
           locals.set(golfer.id, local);
         }
         let binding = local.binding, stanceIdentity = null;
         const pilot = golfer.id === pilotId && source.handedness === "right" && index !== null;
-        if (pilot && facts.playback && source.targetWorld) {
+        if (pilot && source.playback && source.targetWorld) {
           stanceIdentity = { owner: facts.owner, authorityRevision: facts.authorityRevision, surfaceRevision: input.ground.surfaceRevision,
-            targetWorld: source.targetWorld, handedness: source.handedness, modelVersion: NATURAL_GOLFER_CONTACT_MODEL.modelVersion, role: facts.playback.plan.kind };
-          if (!binding) {
+            targetWorld: source.targetWorld, handedness: source.handedness, modelVersion: NATURAL_GOLFER_CONTACT_MODEL.modelVersion, role: source.playback.plan.kind };
+          if (!binding && !reactionCue) {
             const candidate = createGolferStanceBinding({ identity: stanceIdentity, launch: root, ground: input.ground, artIndex: index });
             if (candidate.kind === "candidate") { binding = candidate.binding; local.binding = binding; }
           }
         }
         let locomotion = null, nextPlant = local.plant, feet = root;
-        let naturalClip: "walk" | "idle" | "swing" | "putt" = "idle", col = 0;
+        let naturalClip: "walk" | "idle" | "swing" | "putt" | "positive" | "negative" = "idle", col = 0;
         let direction = naturalGolferWorldView(source.facingWorld ?? { x: golfer.dirX, y: golfer.dirY }, input.rotation)?.direction ?? "s";
         let geometry: NaturalGolferRuntimeFrame<T>["contactGeometry"] = null;
-        if (pilot && binding && stanceIdentity && facts.playback && local.late && !sameFeet(local.presentedFeet, binding.feet)) {
+        if (reactionCue) {
+          // A reaction can hold an already verified F plant; it cannot acquire
+          // a stance/arrival or turn visual-neutral acknowledgement into proof.
+          feet = local.presentedFeet ?? root; nextPlant = null;
+          if (pilot && binding && stanceIdentity && local.plant) {
+            const held = sampleGolferStance(binding, { currentIdentity: stanceIdentity, launch: root, ground: input.ground, rotation: input.rotation, phase: "watch",
+              actualFeet: local.presentedFeet, arrival: null, previousPlant: local.plant, walking: null,
+              acquisition: local.late ? "late-acquisition" : "continuous", paused: input.paused, hidden: input.hidden });
+            if (held.kind === "planted") {
+              nextPlant = held.nextPlant; feet = binding.feet; frame = { ...frame, plantKey: binding.key };
+              // Only a verified held stance proves the target+90 body facing.
+              // Unplanted/visual-neutral bodies retain their current source facing.
+              direction = naturalGolferWorldView({ x: -binding.targetWorld.y, y: binding.targetWorld.x }, input.rotation)?.direction ?? direction;
+            }
+          }
+        } else if (pilot && binding && stanceIdentity && source.playback && local.late && !sameFeet(local.presentedFeet, binding.feet)) {
           // New/revealed family starts with a neutral supported initial pose.
           // Only the scene's subsequent presentation acknowledgement proves F.
           feet = binding.feet; frame = { ...frame, reason: "settled-initial-awaiting-presentation" };
@@ -184,7 +218,7 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
         } else {
           locomotion = projectGolferLocomotion({ owner: facts.owner, currentOwner: facts.currentOwner, authorityRevision: facts.authorityRevision,
             currentAuthorityRevision: facts.currentAuthorityRevision, surfaceRevision: input.ground.surfaceRevision, root,
-            actualFeet: binding ? local.presentedFeet ?? root : root, live: source, stance: pilot && binding && stanceIdentity && facts.playback ? { binding, identity: stanceIdentity, playback: facts.playback } : null,
+            actualFeet: binding ? local.presentedFeet ?? root : root, live: source, stance: pilot && binding && stanceIdentity && source.playback ? { binding, identity: stanceIdentity, playback: source.playback } : null,
             ground: input.ground, presentationTimeMs: input.presentationTimeMs, paused: input.paused, hidden: input.hidden, culled: false,
             acquisition: local.late && binding ? "late-acquisition" : "continuous", motionEnabled: input.motionEnabled, rotation: input.rotation,
             quality: input.quality, operatingTier: input.operatingTier }, local.locomotion);
@@ -214,7 +248,7 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
             } else { nextPlant = null; naturalClip = "idle"; col = 0; frame = { ...frame, reason: plant.kind === "neutral" ? plant.reason : "released" }; }
           }
         }
-        const support = pilot ? input.ground.sampleFootprintAt(root.x + .5, root.y + .5) : null;
+        const support = pilot || reactionCue ? input.ground.sampleFootprintAt(root.x + .5, root.y + .5) : null;
         const validVisualRoot = support?.surfaceRevision === input.ground.surfaceRevision && support.supportedFootprint === true && support.inBounds === true && Number.isFinite(support.heightYards);
         const matchingRoot = validVisualRoot && Math.abs(support!.heightYards - root.heightYards) < 1e-7;
         const arrivalEligible = !pilot || matchingRoot;
@@ -228,14 +262,22 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
             reason: validVisualRoot ? "native-neutral-height" : "unsupported-visual-ground" };
           if (validVisualRoot) feet = feetCopy({ x: root.x, y: root.y, heightYards: support!.heightYards });
         }
+        if (reactionCue && validVisualRoot) {
+          naturalClip = facts.outcome!.result === "bad" ? "negative" : "positive"; col = 1;
+          frame = { ...frame, phase: "reaction", contact: false, contactGeometry: null };
+          // Legacy reaction art has only an authored front view. Other current
+          // views remain neutral rather than rotate or mirror a new reaction.
+          if (facing === 2) frame = { ...frame, legacyPose: { anim: facts.outcome!.result === "bad" ? "mad" : "cheer", row: 0, col: facts.outcome!.result === "bad" ? 3 : 0, mirror: false } };
+        } else if (frame.phase === "reaction") frame = { ...frame, phase: "watch", contact: false, plantKey: null, contactGeometry: null };
         if (pilot && borrowed && validVisualRoot) {
           const pair = borrowed.lookup({ selection: NATURAL_GOLFER_PILOT_SELECTION, clip: naturalClip, direction, col, handedness: source.handedness });
-          if (pair.kind === "pair") {
+          if (pair.kind === "pair" && (!reactionCue || (pair.frame.clip === naturalClip && pair.frame.col === 1 && pair.frame.direction === direction
+            && pair.frame.directionRole === "facing" && !pair.frame.contact && !pair.frame.mirror))) {
             const base = tileCenterIso(root.x, root.y, support!.heightYards / ELEVATION_STEP_YARDS, input.rotation), foot = tileCenterIso(feet.x, feet.y, feet.heightYards / ELEVATION_STEP_YARDS, input.rotation);
             frame = { ...frame, natural: { pair, feet, footDomain: matchingRoot ? "arrival-eligible" : "visual-neutral",
               physicalRootHeightYards: source.root.heightYards, visualRootHeightYards: support!.heightYards,
               localOffset: Object.freeze({ x: foot.x - base.x, y: foot.y - base.y }), depth: Math.round(entityDepth(feet.x, feet.y, feet.heightYards / ELEVATION_STEP_YARDS, input.rotation) * 10) / 10 }, contactGeometry: geometry };
-          } else frame = { ...frame, reason: pair.reason };
+          } else frame = { ...frame, reason: pair.kind === "pair" ? "unverified-static-reaction-frame" : pair.reason };
         }
         if (!frame.natural) frame = { ...frame, contact: false, plantKey: null, contactGeometry: null };
         else if (!frame.contact) frame = { ...frame, contactGeometry: null };
@@ -260,7 +302,7 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
       if (observed.plant || !observed.local.binding) observed.local.late = false;
     },
     diagnostics(): NaturalGolferRuntimeDiagnostics { return Object.freeze({ pilotId, scopeId, records: records.length, localRecords: locals.size,
-      foreground: records.filter(r => r.foreground).length, pending: 0, surfaceRevision, atlas: atlas()?.snapshot() ?? null, legacyAtlasAlsoResident: true }); },
-    clear(): void { dropLive(); records = []; scopeId = null; pilotId = null; selectedPilot = false; surfaceRevision = null; visibilityEpoch = null; lastTime = -1; },
+      foreground: records.filter(r => r.foreground).length, pending: 0, reactionRecords: reactionState?.records.length ?? 0, eligibleReactions: reactionState?.records.filter(r => r.active).length ?? 0, surfaceRevision, atlas: atlas()?.snapshot() ?? null, legacyAtlasAlsoResident: true }); },
+    clear(): void { dropLive(); records = []; reactionState = null; scopeId = null; pilotId = null; selectedPilot = false; surfaceRevision = null; visibilityEpoch = null; lastTime = -1; },
   };
 }

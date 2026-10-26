@@ -447,7 +447,7 @@ export function createLiveEntitiesSceneSystem(
       if (naturalRuntime.diagnostics().pilotId === golfer.id) naturalPilotDiagnostic = Object.freeze({ family: base && tint ? "legacy" : "dot", actorId: golfer.id,
         ownerKey: frame.ownerKey, frame: name, phase: frame.phase, contact: false, plantKey: null, geometry: null, reason: frame.reason, fastForward: frame.fastForward });
     }
-    sprite.reaction = null; sprite.lastScored = golfer.scoredHoles;
+    sprite.reaction = null; sprite.reactionUntil = 0; sprite.lastScored = golfer.scoredHoles;
     naturalRuntime.observePresented(frame);
   };
   const tickEntities = (input: LiveEntityTickInput) => {

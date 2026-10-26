@@ -4,8 +4,11 @@ import { createLiveActivitySource, focusedLiveActivitySource, liveActivityScope 
 import { createGolferCapabilities, stableGolferHandedness } from "../live/capabilities";
 import { advanceShotPacingCursor, createShotPacingCursor, createShotPacingPlan, shotPacingFrame } from "../live/shotPacing";
 import type { GolferRenderData, Segment } from "../live/types";
+import type { SharedShotOutcome } from "../rules/contracts";
+import { captureGolferReactionSource, observeGolferReactionSource } from "./golferReactionSource";
+import type { ShotMotionIdentityV1 } from "../rules/shotMotion";
 import type { Course } from "../models/types";
-import { createRetainedShotMotion } from "../rules/shotMotion";
+import { createRetainedShotMotion, sampleRetainedShotMotion } from "../rules/shotMotion";
 import { resolveObstacleCollision } from "../rules/obstacleCollision";
 import type { NaturalGolferAtlas, NaturalGolferTextureLookup } from "../../render/naturalGolferAtlas";
 import type { NaturalGolferArtRequest } from "./naturalGolferArt";
@@ -14,7 +17,7 @@ import { ISO_ROTATIONS, tileCenterIso } from "./iso";
 import { NATURAL_GOLFER_DIRECTIONS, parseNaturalGolferArt, resolveNaturalGolferArt } from "./naturalGolferArt";
 import { createNaturalGolferRuntime, naturalGolferCandidateEnabled, naturalGolferVerificationJSON } from "./naturalGolferRuntime";
 import type { NaturalGolferRuntimeInput } from "./naturalGolferRuntime";
-import { NATURAL_GOLFER_ACTIVITY_POLICY, projectGolferActivity } from "./golferActivity";
+import { NATURAL_GOLFER_ACTIVITY_POLICY, golferActivityOwnerKey, projectGolferActivity } from "./golferActivity";
 
 const parsed = parseNaturalGolferArt(JSON.parse(readFileSync(new URL("../../../art/natural-golfer-v1/manifest.json", import.meta.url), "utf8")), JSON.parse(readFileSync(new URL("../../../art/natural-golfer-v1/cost.json", import.meta.url), "utf8")));
 if (!parsed.ok) throw new Error(parsed.reason);
@@ -51,23 +54,48 @@ function actor(id = 7, x = 12, epoch = 0, left = false): GolferRenderData {
   return { id, x, y: 12, ballX: null, ballY: null, ballToX: null, ballToY: null, color: "#ff0000", mood: .7, thought: null, archetype: "casual",
     segKind: "walk", segT: (x - 12) / 8, shot: null, dirX: 1, dirY: 0, scoredHoles: 0, lastHoleDelta: 0, activitySource: source };
 }
-function shot(kind: "swing" | "putt" = "swing", degrees = 0, epoch = 0) {
+function shot(kind: "swing" | "putt" = "swing", degrees = 0, epoch = 0, options: { actorId?: number; identity?: Partial<ShotMotionIdentityV1>; holed?: boolean } = {}) {
+  const id = options.actorId ?? 7;
   const a = degrees * Math.PI / 180, from = { x: 12, y: 12 }, landing = { x: 12 + 2 * Math.cos(a), y: 12 + 2 * Math.sin(a) }, rest = { x: 12 + 3 * Math.cos(a), y: 12 + 3 * Math.sin(a) };
   const at = (point: { x: number; y: number }) => ({ point, heightYards: 0 });
   const flight = kind === "putt" ? null : resolveObstacleCollision({ from, to: landing, flight: { profile: "standard", apexHeightYards: 4 }, width: 32, height: 32, yardsPerTile: 10, elevations: course.elevations, obstacles: [], retainGeometry: true }).retained!;
-  const motion = createRetainedShotMotion({ identity: { shotId: "shot:1", holeId: "hole:1", shotNumber: 1, seed: 42, club: kind === "putt" ? "Putter" : "7 Iron", style: "normal", modelVersion: "physical_shot_v1" },
-    yardsPerTile: 10, from: at(from), landing: at(kind === "putt" ? from : landing), physicalRest: at(rest), flight, rollPath: [at(kind === "putt" ? from : landing), at(rest)], holed: false })!;
-  const plan = createShotPacingPlan({ scopeId: scope(epoch).id!, actorId: "7", motion, distanceYards: 30 })!;
-  const base = createLiveActivitySource(scope(epoch), { id: 7, pos: from, segIndex: 1, segElapsed: .1, finished: false,
+  const motion = createRetainedShotMotion({ identity: { shotId: "shot:1", holeId: "hole:1", shotNumber: 1, seed: 42, club: kind === "putt" ? "Putter" : "7 Iron", style: "normal", modelVersion: "physical_shot_v1", ...options.identity },
+    yardsPerTile: 10, from: at(from), landing: at(kind === "putt" ? from : landing), physicalRest: at(rest), flight, rollPath: [at(kind === "putt" ? from : landing), at(rest)], holed: options.holed ?? false })!;
+  const plan = createShotPacingPlan({ scopeId: scope(epoch).id!, actorId: String(id), motion, distanceYards: 30 })!;
+  const base = createLiveActivitySource(scope(epoch), { id, pos: from, segIndex: 1, segElapsed: .1, finished: false,
     capabilities: createGolferCapabilities({ personality, seed: rightSeed }) }, { kind: "flight", from, to: rest, dur: 2, holeIndex: 0 })!;
   const atCursor = (elapsedMs: number): GolferRenderData => {
     const cursor = createShotPacingCursor(plan, { version: 1, key: plan.key, elapsedMs }), frame = shotPacingFrame(plan, cursor)!;
-    const source = focusedLiveActivitySource(base, { actorId: 7, segmentIndex: 1, segmentElapsed: .1, plan, cursor, frame, identity: motion.identity,
+    const source = focusedLiveActivitySource(base, { actorId: id, segmentIndex: 1, segmentElapsed: .1, plan, cursor, frame, identity: motion.identity,
       origin: motion.from, target: kind === "putt" ? rest : landing }, true)!;
-    return { ...actor(), segKind: "flight", shot: kind, segT: frame.motionProgress, activitySource: source };
+    return { ...actor(id), segKind: "flight", shot: kind, segT: frame.motionProgress, activitySource: source };
   };
   return { plan, motion, at: atCursor };
 }
+
+type ReactionCase = "good" | "bad" | "exceptional" | "hole-out" | "unknown" | "relief" | "aggregate";
+function evidencedShot(result: ReactionCase = "good", options: { kind?: "swing" | "putt"; actorId?: number; identity?: Partial<ShotMotionIdentityV1>; epoch?: number; degrees?: number } = {}) {
+  const s = shot(options.kind, options.degrees, options.epoch, { ...options, holed: result === "hole-out" });
+  const token = {}, sourceToken = {}, owner = { scopeId: s.plan.scopeId, actorId: s.plan.actorId, shot: s.plan.identity };
+  const rest = s.motion.physicalRest.point, pin = { x: rest.x + (result === "exceptional" || result === "hole-out" ? 0 : 1), y: rest.y };
+  const greenCourse = { ...course, tiles: course.tiles.map((v, i) => Math.abs(i % 32 - rest.x) <= 2 && Math.abs(Math.floor(i / 32) - rest.y) <= 2 ? "green" : v) };
+  const shared: SharedShotOutcome = { rulesVersion: 1, lieEffect: { sourceLie: "fairway", effectiveLie: "fairway", carryMultiplier: 1, dispersionMultiplier: 1, rollMultiplier: 1 },
+    requestedCarryYards: 20, effectiveCarryYards: 20, requestedDispersionTiles: 1, effectiveDispersionTiles: 1,
+    flight: { profile: "standard", launchAngleDegrees: 1, apexHeightYards: 4, apexPosition: { x: 13, y: 12 }, carryEnd: s.motion.landing.point, clearance: [] },
+    collision: { kind: "none" }, physicalRest: rest, ruling: { status: result === "hole-out" || result === "aggregate" ? "holed" : result === "bad" ? "penalty" : "in_play",
+      penaltyKind: result === "bad" ? "out_of_bounds" : "none", penaltyStrokes: result === "bad" ? 1 : 0, penaltyComponentId: null, penaltyAreaClassification: null, referencePoint: null, crossingPoint: null },
+    relief: { status: result === "relief" ? "resolved" : "not_required", type: result === "relief" ? "lateral" : "none", candidates: [], selectedCandidateId: null, finalPosition: rest }, finalPosition: rest, motion: s.motion };
+  captureGolferReactionSource(token, { owner, authorityRevision: s.plan.scopeId, plan: s.plan, initialCursor: createShotPacingCursor(s.plan), motion: s.motion, distanceYards: 30,
+    source: sourceToken, courseSource: greenCourse, handedness: "right", sharedOutcome: result === "unknown" ? null : shared,
+    originalAim: { course: greenCourse, holeId: s.plan.identity.holeId, pin, from: s.motion.from.point, target: rest } });
+  return { ...s, at(elapsedMs: number) {
+    const g = s.at(elapsedMs), p = g.activitySource!.playback!;
+    const c = observeGolferReactionSource(token, { owner, currentOwner: owner, authorityRevision: s.plan.scopeId, currentAuthorityRevision: s.plan.scopeId,
+      ...p, motion: s.motion, position: sampleRetainedShotMotion(s.motion, p.frame.motionProgress)!, source: sourceToken, courseSource: greenCourse, handedness: "right", ownerCurrent: true });
+    return { ...g, dirX: 1, dirY: 1, activitySource: Object.freeze({ ...g.activitySource!, ...(c ? { reactionClassification: c } : {}) }) };
+  } };
+}
+
 function input(golfers: readonly GolferRenderData[], time = 0, patch: Partial<NaturalGolferRuntimeInput> = {}): NaturalGolferRuntimeInput {
   return { golfers, ground: ground(), visibleIds: new Set(golfers.map(g => g.id)), rotation: 0, presentationTimeMs: time, paused: false, hidden: false, visibilityEpoch: 0,
     motionEnabled: true, quality: "high", operatingTier: 1, followedId: 7, ...patch };
@@ -267,5 +295,140 @@ describe("actual shared cursor, supported arrival and camera-locked contact", ()
     const unknown = s.at(2000); unknown.activitySource = { ...unknown.activitySource!, equipmentClass: null };
     const g = setup(); present(g, input([unknown], 2000));
     expect(present(g, input([unknown], 2001)).get(7)?.natural?.pair.frame.clip).toBe("idle");
+  });
+});
+
+describe("LIVE observed static reaction consumer", () => {
+  it.each((["good", "bad", "exceptional", "hole-out"] as const).flatMap(result => ["swing", "putt"].map(kind => [result, kind] as const)))("consumes evidenced%s %s only in shared last600ms", (result, kind) => {
+    const f = setup(), s = evidencedShot(result, { kind: kind as "swing" | "putt" }), endpoint = s.plan.durationMs - s.plan.restMs, start = s.plan.durationMs - 600;
+    reach(f, s, endpoint - .001);
+    expect(present(f, input([s.at(endpoint)], endpoint)).get(7)!.natural!.pair.frame.clip).not.toMatch(/positive|negative/u);
+    expect(present(f, input([s.at(start - .001)], start - .001)).get(7)!.phase).not.toBe("reaction");
+    const cue = present(f, input([s.at(start)], start)).get(7)!;
+    const eligible = kind !== "putt" || result === "bad" || result === "hole-out";
+    expect(cue.natural!.pair.frame.clip).toBe(eligible ? result === "bad" ? "negative" : "positive" : "putt");
+    if (eligible) {
+      expect(cue).toMatchObject({ phase: "reaction", contact: false, contactGeometry: null });
+      expect(cue.natural!.pair.frame).toMatchObject({ col: 1, directionRole: "facing", mirror: false, contact: false });
+      const held = present(f, input([s.at(start + 300)], start + 300)).get(7)!;
+      expect(held.natural!.pair.frame.id).toBe(cue.natural!.pair.frame.id); expect(held.natural!.feet).toEqual(cue.natural!.feet); expect(held.plantKey).toBe(cue.plantKey);
+    }
+    expect(present(f, input([s.at(s.plan.durationMs)], s.plan.durationMs)).get(7)!.phase).not.toBe("reaction");
+  });
+  it.each(["unknown", "relief", "aggregate"] as const)("never grants a%s cue or a legacy lastHoleDelta override", result => {
+    const f = setup(), s = evidencedShot(result), start = s.plan.durationMs - 600;
+    present(f, input([s.at(0)], 0)); present(f, input([s.at(start - 1)], start - 1));
+    const g = { ...s.at(start), scoredHoles: 2, lastHoleDelta: -3 }, before = structuredClone(g);
+    const frame = present(f, input([g], start)).get(7)!;
+    expect(frame.phase).not.toBe("reaction"); expect(frame.legacyPose.anim).toBe("idle"); expect(g).toEqual(before);
+    expect(f.runtime.diagnostics().eligibleReactions).toBe(0);
+  });
+  it("holds verified F feet and maps target rows to the same actual facing in all rotations", () => {
+    const f = setup(), s = evidencedShot("good"), start = s.plan.durationMs - 600;
+    const watch = reach(f, s, start - 1), plant = watch.plantKey; expect(plant).not.toBeNull();
+    for (const rotation of ISO_ROTATIONS) {
+      const frame = present(f, input([s.at(start)], start, { rotation })).get(7)!;
+      expect(frame.natural!.feet).toEqual(watch.natural!.feet); expect(frame.plantKey).toBe(plant); expect(frame.contact).toBe(false);
+      // Swing target E means body faces N (+90 world degrees), authored facing SW at camera0.
+      expect(frame.natural!.pair.frame.direction).toBe(NATURAL_GOLFER_DIRECTIONS[((90 - rotation + 360) / 45 + 7) % 8]);
+    }
+    const end = present(f, input([s.at(s.plan.durationMs)], s.plan.durationMs)).get(7)!;
+    expect(end.natural!.pair.frame.clip).toBe("swing"); expect(end.natural!.pair.frame.direction).toBe("se");
+    expect(end.natural!.feet).toEqual(watch.natural!.feet); expect(end.plantKey).toBe(plant); expect(end.contact).toBe(false);
+  });
+  it.each(ISO_ROTATIONS.flatMap(rotation => (["good", "bad"] as const).map(result => [rotation, result] as const)))("preserves visual-neutral source facing before/during/after%s %s reaction", (rotation, result) => {
+    const f = setup(), s = evidencedShot(result), start = s.plan.durationMs - 600, raised = ground("neutral-facing", 1);
+    const patch = { ground: raised, rotation };
+    present(f, input([s.at(0)], 0, patch));
+    const before = present(f, input([s.at(start - 1)], start - 1, patch)).get(7)!;
+    const sourceFacing = NATURAL_GOLFER_DIRECTIONS[((45 - rotation + 360) / 45 + 7) % 8];
+    expect(before.natural!.pair.frame.direction).toBe(sourceFacing);
+    expect(before.natural!.pair.frame.clip).toBe("idle");
+    for (const t of [start, start + 1, s.plan.durationMs]) {
+      const g = s.at(t), sourceBefore = structuredClone(g), frame = present(f, input([g], t, patch)).get(7)!;
+      expect(frame.natural!.pair.frame.direction).toBe(sourceFacing);
+      expect(frame.natural!.pair.frame.clip).toBe(t < s.plan.durationMs ? result === "bad" ? "negative" : "positive" : "idle");
+      expect(frame.natural!.feet).toEqual(before.natural!.feet); expect(frame.natural!.localOffset).toEqual({ x: 0, y: 0 });
+      expect(frame.natural!.footDomain).toBe("visual-neutral"); expect(frame.plantKey).toBeNull(); expect(frame.contact).toBe(false); expect(g).toEqual(sourceBefore);
+    }
+  });
+  it("allows visual-neutral G to react without acquiring stance, arrival or contact proof", () => {
+    const f = setup(), s = evidencedShot("good"), start = s.plan.durationMs - 600, raised = ground("shared-query", 1);
+    present(f, input([s.at(0)], 0, { ground: raised })); present(f, input([s.at(start - 1)], start - 1, { ground: raised }));
+    for (let i = 0; i < 3; i++) {
+      const frame = present(f, input([s.at(start + i)], start + i, { ground: raised })).get(7)!;
+      expect(frame).toMatchObject({ phase: "reaction", plantKey: null, contact: false, contactGeometry: null });
+      expect(frame.natural).toMatchObject({ footDomain: "visual-neutral", feet: { heightYards: 2.5 } });
+      expect(frame.natural!.pair.frame.clip).toBe("positive");
+    }
+    const nowMatching = present(f, input([s.at(start + 3)], start + 3, { ground: ground("shared-query", 0) })).get(7)!;
+    expect(nowMatching.plantKey).toBeNull(); expect(nowMatching.contact).toBe(false);
+  });
+  it("holds a paused valid cue and never renders one at Low or motion-off", () => {
+    const f = setup(), s = evidencedShot("good"), start = s.plan.durationMs - 600;
+    reach(f, s, start - 1); const cue = present(f, input([s.at(start)], start)).get(7)!;
+    const paused = present(f, input([s.at(start)], 100000, { paused: true })).get(7)!;
+    expect(paused.natural!.pair.frame.id).toBe(cue.natural!.pair.frame.id); expect(paused.natural!.feet).toEqual(cue.natural!.feet);
+    expect(paused.plantKey).toBe(cue.plantKey);
+    const disabled = present(f, input([s.at(start)], 100001, { paused: true, motionEnabled: false })).get(7)!;
+    expect(disabled.natural!.pair.frame.clip).not.toMatch(/positive|negative/u);
+    const low = present(f, input([s.at(start)], 100002, { quality: "low" })).get(7)!;
+    expect(low.natural!.pair.frame.clip).not.toMatch(/positive|negative/u);
+  });
+  it.each(["late", "reveal", "hidden", "cull", "atlas", "surface", "retention", "skip"] as const)("discards%s without delayed replay", kind => {
+    const f = setup(), s = evidencedShot("good"), start = s.plan.durationMs - 600;
+    if (kind === "late") {
+      expect(present(f, input([s.at(start)], start)).get(7)!.phase).not.toBe("reaction"); return;
+    }
+    reach(f, s, start - 1); expect(present(f, input([s.at(start)], start)).get(7)!.phase).toBe("reaction");
+    if (kind === "atlas") f.state.ready = false;
+    const patch: Partial<NaturalGolferRuntimeInput> = kind === "reveal" ? { visibilityEpoch: 1 } : kind === "hidden" ? { hidden: true } : kind === "cull" ? { visibleIds: new Set() } : kind === "surface" ? { ground: ground("new-ground") } : {};
+    const time = kind === "retention" ? 20000 : start + 1;
+    const elapsed = kind === "skip" ? s.plan.durationMs : start + 1;
+    expect(present(f, input([s.at(elapsed)], time, patch)).get(7)!.phase).not.toBe("reaction");
+    f.state.ready = true;
+    const next = present(f, input([s.at(kind === "skip" ? s.plan.durationMs : start + 2)], time + 1, { ...patch, hidden: false, visibleIds: new Set([7]) })).get(7)!;
+    expect(next.phase).not.toBe("reaction"); expect(next.contact).toBe(false);
+  });
+  it("keeps cooldown tombstones across follow changes/atlas reload and admits a new hole after expiry", () => {
+    const f = setup(), a = evidencedShot("good"), start = a.plan.durationMs - 600;
+    present(f, input([a.at(0)], 0)); present(f, input([a.at(start - 1)], 1000)); expect(present(f, input([a.at(start)], 1001)).get(7)!.phase).toBe("reaction");
+    f.state.ready = false; present(f, input([], 1002)); f.state.ready = true; present(f, input([], 1003));
+    const b = evidencedShot("good", { identity: { shotId: "two", shotNumber: 2 } });
+    present(f, input([b.at(start - 1)], 2000)); expect(present(f, input([b.at(start)], 2001)).get(7)!.phase).not.toBe("reaction");
+    expect(f.runtime.diagnostics().reactionRecords).toBe(1);
+    const newHole = evidencedShot("good", { identity: { shotId: "new-hole", holeId: "hole:2", shotNumber: 1 } });
+    present(f, input([newHole.at(start - 1)], 9000)); expect(present(f, input([newHole.at(start)], 9001)).get(7)!.phase).toBe("reaction");
+  });
+  it("drops former-follow raw metadata before overview ownership and preserves that actor cooldown", () => {
+    const f = setup(), a = evidencedShot("good"), b = evidencedShot("good", { actorId: 9 }), start = a.plan.durationMs - 600;
+    present(f, input([a.at(0)], 0)); present(f, input([a.at(start - 1)], 1000)); present(f, input([a.at(start)], 1001));
+    const aRaw = a.at(start + 1), bBefore = b.at(start - 1);
+    const switched = present(f, input([aRaw, bBefore], 1002, { followedId: 9 }));
+    expect(switched.get(7)!.phase).not.toBe("reaction"); expect(switched.get(7)!.reason).not.toBe("outcome-owner-mismatch");
+    expect(switched.get(7)!.ownerKey).toBe(golferActivityOwnerKey({ scopeId: scope().id!, actorId: "7", shot: null }));
+    expect(present(f, input([aRaw, b.at(start)], 1003, { followedId: 9 })).get(9)!.phase).toBe("reaction");
+    expect(present(f, input([a.at(start + 2), b.at(start + 1)], 1004)).get(7)!.phase).not.toBe("reaction");
+    expect(f.runtime.diagnostics().reactionRecords).toBe(2);
+  });
+  it.each(["high", "medium", "low"] as const)("uses one current LIVE owner among100 rows with%s cap and no extra foreground", quality => {
+    const f = setup(), sources = Array.from({ length: 100 }, (_, i) => evidencedShot("good", { actorId: i + 1 })), start = sources[0]!.plan.durationMs - 600;
+    //99 old raw playbacks are deliberate reused-buffer fixtures, not authority to acquire them.
+    present(f, input(sources.map(s => s.at(0)), 0, { followedId: 100, quality }));
+    present(f, input(sources.map(s => s.at(start - 1)), 1000, { followedId: 100, quality }));
+    const frames = present(f, input(sources.map(s => s.at(start)), 1001, { followedId: 100, quality }));
+    expect([...frames.values()].filter(frame => frame.phase === "reaction")).toHaveLength(quality === "low" ? 0 : 1);
+    expect(f.runtime.diagnostics()).toMatchObject({ reactionRecords: 1, eligibleReactions: quality === "low" ? 0 : 1, foreground: 1, pending: 0 });
+    expect([...frames.values()].filter(frame => ["cheer", "mad"].includes(frame.legacyPose.anim))).toHaveLength(quality === "low" ? 0 : 1);
+  });
+  it("rejects stale revision/owner and fabricated classifications and never changes source/ball/gameplay facts", () => {
+    for (const invalid of ["revision", "owner", "fabricated"] as const) {
+      const f = setup(), s = evidencedShot("good"), start = s.plan.durationMs - 600;
+      present(f, input([s.at(0)], 0)); present(f, input([s.at(start - 1)], 1000));
+      const g = s.at(start), source = g.activitySource!;
+      g.activitySource = invalid === "revision" ? { ...source, authorityRevision: "stale" } : invalid === "owner" ? { ...source, owner: { ...source.owner, actorId: "other" } } : { ...source, reactionClassification: structuredClone(source.reactionClassification!) };
+      const before = structuredClone(g), rng = vi.spyOn(Math, "random").mockImplementation(() => { throw new Error("no RNG"); });
+      try { expect(present(f, input([g], 1001)).get(7)!.phase).not.toBe("reaction"); expect(g).toEqual(before); } finally { rng.mockRestore(); }
+    }
   });
 });

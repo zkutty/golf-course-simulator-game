@@ -7,7 +7,10 @@ import type { GolferRenderData } from "../../../game/live/types";
 import { DEFAULT_COURSE } from "../../../game/models/defaults";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import { SceneSystemHost } from "../SceneSystemHost";
-import { createLiveEntitiesSceneSystem } from "./liveEntitiesScene";
+import { captureGolferReactionSource, observeGolferReactionSource } from "../../../game/render/golferReactionSource";
+import { golferTint, golferVariant } from "../../../game/render/golferSprites";
+import type { SharedShotOutcome } from "../../../game/rules/contracts";
+import { createLiveEntitiesSceneSystem, type LiveEntityTickInput } from "./liveEntitiesScene";
 import { readFileSync } from "node:fs";
 import { createLiveActivitySource, focusedLiveActivitySource, liveActivityScope } from "../../../game/live/activitySource";
 import { createGolferCapabilities, stableGolferHandedness } from "../../../game/live/capabilities";
@@ -164,6 +167,7 @@ function fixture(options: { atlasReady?: boolean; addLog?: string[]; naturalAtla
   const graphics: FakeGraphics[] = [];
   const sprites: FakeSprite[] = [];
   const texture = { destroy: vi.fn() };
+  const legacyFrames: string[] = [];
   const system = createLiveEntitiesSceneSystem(
     {
       objects: objects as unknown as PIXI.Container,
@@ -174,7 +178,7 @@ function fixture(options: { atlasReady?: boolean; addLog?: string[]; naturalAtla
     {
       naturalAtlas: () => options.naturalAtlas ?? null,
       atlasReady: () => options.atlasReady ?? false,
-      golferFrame: () => texture as unknown as PIXI.Texture,
+      golferFrame: name => { legacyFrames.push(name); return texture as unknown as PIXI.Texture; },
       createContainer: () => {
         const container = new FakeContainer();
         containers.push(container);
@@ -193,7 +197,7 @@ function fixture(options: { atlasReady?: boolean; addLog?: string[]; naturalAtla
       createText: () => new FakeText() as unknown as PIXI.Text,
     },
   );
-  return { objects, terrainDecals, fx, screenOverlay, containers, graphics, sprites, texture, system };
+  return { objects, terrainDecals, fx, screenOverlay, containers, graphics, sprites, texture, legacyFrames, system };
 }
 
 function tick(scene: ReturnType<typeof fixture>, golfers: readonly GolferRenderData[], tickMobilityEntities = vi.fn()) {
@@ -315,26 +319,40 @@ function candidateFixture(legacyReady = true) {
   scene.system.create!(snapshot(1, { course, effectiveTiles: course.tiles, naturalGolfersCandidate: true, naturalGolferGround: ground }));
   return { ...scene, state, atlas, textures, course, ground };
 }
-function candidateShot(kind: "swing" | "putt" = "swing") {
+function candidateShot(kind: "swing" | "putt" = "swing", reaction?: "good" | "bad" | "hole-out", actorId = 7) {
   const at = (x: number, y = 5) => ({ point: { x, y }, heightYards: 5 });
   const flight = kind === "putt" ? null : resolveObstacleCollision({ from: { x: 1, y: 5 }, to: { x: 11, y: 5 }, flight: { profile: "standard", apexHeightYards: 4, curve: { kind: "lateral_quadratic_v1", lateralOffsetTiles: 2 } }, width: 16, height: 16, yardsPerTile: 10, elevations: Array(256).fill(2), obstacles: [], retainGeometry: true }).retained!;
   const motion = createRetainedShotMotion({ identity: { shotId: "candidate", holeId: "one", shotNumber: 1, seed: 42, club: kind === "putt" ? "Putter" : "7 Iron", style: "straight_run", modelVersion: "club_styles_v1" }, yardsPerTile: 10,
-    from: at(1), landing: at(kind === "putt" ? 1 : 11), physicalRest: at(12, 6), flight, rollPath: [at(kind === "putt" ? 1 : 11), at(12, 6)], holed: false })!;
+    from: at(1), landing: at(kind === "putt" ? 1 : 11), physicalRest: at(12, 6), flight, rollPath: [at(kind === "putt" ? 1 : 11), at(12, 6)], holed: reaction === "hole-out" })!;
   const scope = liveActivityScope({ dayIndex: 2, seed: 42, reconcileEpoch: 0, dayOver: false }, { runSeed: 17, week: 1 })!;
-  const plan = createShotPacingPlan({ scopeId: scope.id!, actorId: "7", motion, distanceYards: 110 })!;
+  const plan = createShotPacingPlan({ scopeId: scope.id!, actorId: String(actorId), motion, distanceYards: 110 })!;
   const seed = Array.from({ length: 20 }, (_, i) => i).find(n => stableGolferHandedness(n) === "right")!;
   const capabilities = createGolferCapabilities({ seed, personality: { skill: .6, consistency: .6, patience: .5, spendPropensity: .5, prefs: { difficulty: 0, scenery: 0, price: 0 } } });
-  const base = createLiveActivitySource(scope, { id: 7, pos: { x: 1, y: 5 }, segIndex: 1, segElapsed: .1, finished: false, capabilities }, { kind: "flight", from: { x: 1, y: 5 }, to: { x: 12, y: 6 }, dur: 2, holeIndex: 0 })!;
+  const base = createLiveActivitySource(scope, { id: actorId, pos: { x: 1, y: 5 }, segIndex: 1, segElapsed: .1, finished: false, capabilities }, { kind: "flight", from: { x: 1, y: 5 }, to: { x: 12, y: 6 }, dur: 2, holeIndex: 0 })!;
+  const token = {}, owner = { scopeId: plan.scopeId, actorId: plan.actorId, shot: plan.identity }, sourceToken = {};
+  const greenCourse = { width: 16, height: 16, tiles: Array.from({ length: 256 }, (_, i) => Math.abs(i % 16 - 12) <= 1 && Math.abs(Math.floor(i / 16) - 6) <= 1 ? "green" : "fairway") };
+  const shared: SharedShotOutcome = { rulesVersion: 1, lieEffect: { sourceLie: "fairway", effectiveLie: "fairway", carryMultiplier: 1, dispersionMultiplier: 1, rollMultiplier: 1 },
+    requestedCarryYards: 100, effectiveCarryYards: 100, requestedDispersionTiles: 1, effectiveDispersionTiles: 1,
+    flight: { profile: "standard", launchAngleDegrees: 1, apexHeightYards: 4, apexPosition: { x: 6, y: 5 }, carryEnd: motion.landing.point, clearance: [] }, collision: { kind: "none" }, physicalRest: motion.physicalRest.point,
+    ruling: { status: reaction === "hole-out" ? "holed" : reaction === "bad" ? "penalty" : "in_play", penaltyKind: reaction === "bad" ? "out_of_bounds" : "none", penaltyStrokes: reaction === "bad" ? 1 : 0,
+      penaltyComponentId: null, penaltyAreaClassification: null, referencePoint: null, crossingPoint: null },
+    relief: { status: "not_required", type: "none", candidates: [], selectedCandidateId: null, finalPosition: motion.physicalRest.point }, finalPosition: motion.physicalRest.point, motion };
+  if (reaction) captureGolferReactionSource(token, { owner, authorityRevision: plan.scopeId, plan, initialCursor: createShotPacingCursor(plan), motion, distanceYards: 110,
+    source: sourceToken, courseSource: greenCourse, handedness: "right", sharedOutcome: shared,
+    originalAim: { course: greenCourse, holeId: "one", from: motion.from.point, target: motion.physicalRest.point, pin: { x: 13, y: 6 } } });
   return { plan, at(elapsedMs: number) {
     const cursor = createShotPacingCursor(plan, { version: 1, key: plan.key, elapsedMs }), frame = shotPacingFrame(plan, cursor)!, pose = sampleRetainedShotMotion(motion, frame.motionProgress)!;
-    return golfer(7, { x: 1, y: 5, segKind: "flight", shot: kind, segT: frame.motionProgress, ballX: pose.point.x, ballY: pose.point.y, ballToX: 12, ballToY: 6,
-      activitySource: focusedLiveActivitySource(base, { actorId: 7, segmentIndex: 1, segmentElapsed: .1, plan, cursor, frame, identity: motion.identity, origin: motion.from, target: kind === "putt" ? motion.groundPath[1]!.point : motion.flight!.geometry.to }, true),
+    const activity = focusedLiveActivitySource(base, { actorId, segmentIndex: 1, segmentElapsed: .1, plan, cursor, frame, identity: motion.identity, origin: motion.from, target: kind === "putt" ? motion.groundPath[1]!.point : motion.flight!.geometry.to }, true)!;
+    const classification = reaction ? observeGolferReactionSource(token, { owner, currentOwner: owner, authorityRevision: plan.scopeId, currentAuthorityRevision: plan.scopeId,
+      plan, cursor, frame, motion, position: pose, source: sourceToken, courseSource: greenCourse, handedness: "right", ownerCurrent: true }) : null;
+    return golfer(actorId, { x: 1, y: 5, segKind: "flight", shot: kind, segT: frame.motionProgress, ballX: pose.point.x, ballY: pose.point.y, ballToX: 12, ballToY: 6,
+      activitySource: classification ? Object.freeze({ ...activity, reactionClassification: classification }) : activity,
       ballMotion: { identity: motion.identity, pose, events: motion.events, contactTerrain: "fairway", collisionTerrain: null, active: true } });
   } };
 }
-function candidateTick(scene: ReturnType<typeof candidateFixture>, value: GolferRenderData, time: number) {
+function candidateTick(scene: ReturnType<typeof candidateFixture>, value: GolferRenderData, time: number, patch: Partial<LiveEntityTickInput> = {}) {
   scene.system.tickEntities({ nowMs: time, presentationTimeMs: time, animationsEnabled: true, golfers: [value], selectedGolferId: 7, followSelected: true,
-    cullBounds: unbounded, worldPointToScreen: (x, y) => ({ x, y }), followCamera: vi.fn(), startleAtmosphere: vi.fn(), tickMobilityEntities: vi.fn() });
+    cullBounds: unbounded, worldPointToScreen: (x, y) => ({ x, y }), followCamera: vi.fn(), startleAtmosphere: vi.fn(), tickMobilityEntities: vi.fn(), ...patch });
 }
 
 describe("opt-in LIVE natural body binding", () => {
@@ -518,5 +536,61 @@ describe("100-golfer retained scene budget", () => {
     host.dispose();
     expect(scene.objects.children).toHaveLength(0);
     expect(scene.terrainDecals.children).toHaveLength(0);
+  });
+});
+
+describe("LIVE static evidenced reaction rendering", () => {
+  it.each([0, 90, 180, 270] as IsoRotation[])("keeps unplanted G facing through reaction start/end at rotation%s", rotation => {
+    const scene = candidateFixture(), s = candidateShot("swing", "good"); scene.state.ready = true;
+    const raised = createLiveGolferGroundAuthority({ course: scene.course, effectiveTiles: scene.course.tiles,
+      field: { width: 16, height: 16, vertices: new Float32Array(289).fill(3) }, componentsByCell: new Array(256).fill(null), quality: "high", surfaceRevision: "reaction-neutral-facing" });
+    scene.system.update!(snapshot(2, { course: scene.course, effectiveTiles: scene.course.tiles, naturalGolfersCandidate: true, naturalGolferGround: raised, surfaceHeightAt: () => 3, rotation }));
+    const start = s.plan.durationMs - 600;
+    candidateTick(scene, s.at(0), 0); candidateTick(scene, s.at(start - 1), start - 1);
+    const before = JSON.parse(scene.system.naturalDiagnosticsText()), direction = before.frame.split(".")[2];
+    expect(before.frame).toContain(".idle."); expect(before.footDomain).toBe("visual-neutral");
+    for (const t of [start, start + 1, s.plan.durationMs]) {
+      candidateTick(scene, s.at(t), t);
+      const view = JSON.parse(scene.system.naturalDiagnosticsText());
+      expect(view.frame.split(".")[2]).toBe(direction); expect(view.frame).toContain(t < s.plan.durationMs ? ".positive." : ".idle.");
+      expect(view.feet).toEqual(before.feet); expect(view.offset).toEqual(before.offset); expect(view.contact.active).toBe(false);
+    }
+  });
+
+  it.each(["good", "bad", "hole-out"] as const)("applies one native%s frame at current feet without changing ball/source", result => {
+    const scene = candidateFixture(), baseline = fixture({ atlasReady: true }), s = candidateShot("swing", result); scene.state.ready = true; baseline.system.create!(snapshot());
+    const start = s.plan.durationMs - 600;
+    for (const t of [0, s.plan.durationMs - s.plan.restMs - .001, s.plan.durationMs - s.plan.restMs, start - 1]) candidateTick(scene, s.at(t), t);
+    const g = s.at(start), before = structuredClone(g); candidateTick(scene, g, start); tick(baseline, [g]);
+    const first = JSON.parse(scene.system.naturalDiagnosticsText());
+    expect(first).toMatchObject({ family: "natural-golfer-v1", phase: "reaction", contact: { active: false } });
+    expect(first.frame).toContain(result === "bad" ? ".negative." : ".positive."); expect(first.frame).toMatch(/\.1$/u);
+    expect(scene.objects.children[1].position).toMatchObject({ x: baseline.objects.children[1].position.x, y: baseline.objects.children[1].position.y });
+    expect(scene.terrainDecals.children[0].position).toMatchObject({ x: baseline.terrainDecals.children[0].position.x, y: baseline.terrainDecals.children[0].position.y }); expect(g).toEqual(before);
+    const baseId = (scene.sprites[0].texture as { id: string }).id, feet = first.feet;
+    candidateTick(scene, s.at(start + 300), start + 300, { nowMs: 999999 });
+    expect((scene.sprites[0].texture as { id: string }).id).toBe(baseId); expect(JSON.parse(scene.system.naturalDiagnosticsText()).feet).toEqual(feet);
+    candidateTick(scene, s.at(s.plan.durationMs), s.plan.durationMs); expect(JSON.parse(scene.system.naturalDiagnosticsText()).phase).not.toBe("reaction");
+    for (const texture of scene.textures.values()) expect(texture.destroy).not.toHaveBeenCalled();
+  });
+  it.each(["good", "bad"] as const)("keeps nonpilot legacy%s identity/tint and uses a planted static front frame", result => {
+    const scene = candidateFixture(), pilot = candidateShot(), s = candidateShot("swing", result, 9); scene.state.ready = true;
+    candidateTick(scene, pilot.at(0), 0); const start = s.plan.durationMs - 600;
+    const front = (t: number) => ({ ...s.at(t), dirX: 1, dirY: 1, color: "#915cb0", archetype: "senior" as const, scoredHoles: 3, lastHoleDelta: result === "bad" ? -3 : 3 });
+    candidateTick(scene, front(start - 1), 1000, { selectedGolferId: 9 });
+    const tint = scene.sprites.at(-1)!.tint;
+    candidateTick(scene, front(start), 1001, { selectedGolferId: 9 });
+    const variant = golferVariant("senior", 9), name = `golfer${variant}_${result === "bad" ? "mad_0_3" : "cheer_0_0"}`;
+    expect(scene.legacyFrames).toContain(name); expect(scene.legacyFrames).toContain(name.replace("_0_", "_t_0_"));
+    expect(tint).toBe(golferTint("#915cb0", 9)); expect(scene.sprites.at(-1)!.tint).toBe(tint);
+    const last = scene.legacyFrames.slice(-2); candidateTick(scene, front(start + 100), 1101, { nowMs: 1000000, selectedGolferId: 9 });
+    expect(scene.legacyFrames.slice(-2)).toEqual(last);
+  });
+  it("keeps unauthored legacy reaction views neutral and ignores old wall-time hole cues", () => {
+    const scene = candidateFixture(), pilot = candidateShot(), s = candidateShot("swing", "good", 9); scene.state.ready = true;
+    candidateTick(scene, pilot.at(0), 0); const start = s.plan.durationMs - 600;
+    candidateTick(scene, s.at(start - 1), 1000, { selectedGolferId: 9 });
+    candidateTick(scene, { ...s.at(start), lastHoleDelta: -3, scoredHoles: 5 }, 1001, { nowMs: 999999, selectedGolferId: 9 });
+    expect(scene.legacyFrames.slice(-2).every(name => name.includes("_idle"))).toBe(true);
   });
 });
