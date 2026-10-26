@@ -239,4 +239,3 @@ export function drawGolfer(ctx, { x = 0, y = 0, width = 26, direction = 'se', ac
   if(skeleton.club){const club=skeleton.club;line(club.handR,club.tip,.48,'#a5b0a9',2);line(club.handR,club.handL,.9,'#4d544d',2);line(club.tip,club.headEnd,1.2,'#718279',2);}
   parts.sort((a,b)=>a.depth-b.depth).forEach(part=>{activeLayer=part.layer??'base';part.draw();});ctx.restore();
 }
-
