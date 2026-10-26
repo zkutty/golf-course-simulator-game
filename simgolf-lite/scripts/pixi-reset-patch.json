@@ -122,6 +122,86 @@
       "inverseByteExact": true,
       "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
       "purpose": "Keep positive unique renderer identities outside JavaScript array-index range so one-owner numeric-key caches do not allocate holes proportional to mount count."
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/Batcher.mjs",
+      "originalSha256": "82735cc25bb286519729145292d0b96a8086fcf14a12dde901d2f0c4e88cb490",
+      "patchedSha256": "c29f51bf607597008b43da03c59353a8059a36d33527cfeb3f8c076c100d12df",
+      "originalBytes": 12165,
+      "patchedBytes": 12236,
+      "edits": [
+        {
+          "before": "  finish(instructionSet) {\n    this.break(instructionSet);\n  }",
+          "after": "  finish(instructionSet) {\n    this.break(instructionSet);\n    // Consumed entries are null; release their historical backing capacity.\n    this._elements.length = 0;\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=Batcher.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
+      "purpose": "Release consumed scratch-array capacity after the completed batch pass without changing packed buffers or batch ownership."
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/Batcher.js",
+      "originalSha256": "60564ba2b6c8ec3c2c7e15b6d3754b115e0c848f539eff5dd841cb0bb0c59170",
+      "patchedSha256": "0b48acebed29abe68185f1bec60bfc926182f799cc968a875f4c359cfefeaf00",
+      "originalBytes": 12366,
+      "patchedBytes": 12438,
+      "edits": [
+        {
+          "before": "  finish(instructionSet) {\n    this.break(instructionSet);\n  }",
+          "after": "  finish(instructionSet) {\n    this.break(instructionSet);\n    // Consumed entries are null; release their historical backing capacity.\n    this._elements.length = 0;\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=Batcher.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
+      "purpose": "Release consumed scratch-array capacity after the completed batch pass without changing packed buffers or batch ownership."
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/BatchTextureArray.mjs",
+      "originalSha256": "c80a652e9e3c9e12034547a365348b1b9235aaa00c2a273adba1d4ef9d8f508b",
+      "patchedSha256": "c7af86cdaf49250acc7f80c54d90787b7e77ddc096e96aad87c066fb1686ef8e",
+      "originalBytes": 513,
+      "patchedBytes": 503,
+      "edits": [
+        {
+          "before": "  clear() {\n    for (let i = 0; i < this.count; i++) {\n      const t = this.textures[i];\n      this.textures[i] = null;\n      this.ids[t.uid] = null;\n    }\n    this.count = 0;\n  }",
+          "after": "  clear() {\n    for (let i = 0; i < this.count; i++) {\n      this.textures[i] = null;\n    }\n    // Discard historical numeric IDs and their backing storage.\n    this.ids = Object.create(null);\n    this.count = 0;\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=BatchTextureArray.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
+      "purpose": "Forget cleared historical texture-source IDs while preserving live peer lookup tables and borrowed textures."
+    },
+    {
+      "relativePath": "lib/rendering/batcher/shared/BatchTextureArray.js",
+      "originalSha256": "c11312509faaa1981e7251a957e704c72694a7e4955e75a809ce85cfba88d8e8",
+      "patchedSha256": "1c5b5fedd9935ae0c1b97147f2470f04ad6c1426897015f4cfc68d622465df62",
+      "originalBytes": 544,
+      "patchedBytes": 535,
+      "edits": [
+        {
+          "before": "  clear() {\n    for (let i = 0; i < this.count; i++) {\n      const t = this.textures[i];\n      this.textures[i] = null;\n      this.ids[t.uid] = null;\n    }\n    this.count = 0;\n  }",
+          "after": "  clear() {\n    for (let i = 0; i < this.count; i++) {\n      this.textures[i] = null;\n    }\n    // Discard historical numeric IDs and their backing storage.\n    this.ids = Object.create(null);\n    this.count = 0;\n  }"
+        },
+        {
+          "before": "//# sourceMappingURL=BatchTextureArray.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
+      "purpose": "Forget cleared historical texture-source IDs while preserving live peer lookup tables and borrowed textures."
     }
   ]
 }
