@@ -45,7 +45,7 @@ function expectSameGeometry(
   }
 }
 
-test("DesignDock keeps geometry stable across inspector and card states", async ({ page }) => {
+test("DesignDock keeps geometry stable across inspector and card states", async ({ page }, testInfo) => {
   await page.goto("/e2e/fixtures/zk1158-design-dock.html");
   const dock = page.getByTestId("design-dock");
   await expect(dock).toBeVisible();
@@ -166,7 +166,7 @@ test("DesignDock keeps geometry stable across inspector and card states", async 
   expect(await palette.evaluate((element) => element.scrollTop)).toBe(compactScrollTop);
   expectSameGeometry(compactGeometry, await visibleGeometry(page, natureCards));
   const zoomScreenshot = await page.screenshot({
-    path: "/private/tmp/zk1158-design-dock-200-percent-zoom.png",
+    path: testInfo.outputPath("zk1158-design-dock-200-percent-zoom.png"),
   });
   await test.info().attach("zk1158-design-dock-200-percent-zoom", {
     body: zoomScreenshot,

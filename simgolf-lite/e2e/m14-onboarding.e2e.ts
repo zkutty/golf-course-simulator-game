@@ -1054,7 +1054,7 @@ test("week-close report owns pointer and keyboard input across supported viewpor
     await expect(summary).toBeFocused();
     await page.keyboard.press("Shift+Tab");
     await expect(continueButton).toBeFocused();
-    await testInfo.attach(`week-close-expanded-${viewport.width}`, { body: await page.screenshot({ path: `/private/tmp/zk382-week-close-game-${viewport.width}-green.png` }), contentType: "image/png" });
+    await testInfo.attach(`week-close-expanded-${viewport.width}`, { body: await page.screenshot({ path: testInfo.outputPath(`zk382-week-close-game-${viewport.width}-green.png`) }), contentType: "image/png" });
     await page.keyboard.press("Enter");
     await expect(report).toHaveCount(0);
     await expect(pause).toBeFocused();

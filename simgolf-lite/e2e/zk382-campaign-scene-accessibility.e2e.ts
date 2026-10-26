@@ -1,8 +1,15 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 
 const fixture = "/e2e/fixtures/zk382-campaign-scene.html";
-const receipts = process.env.CAMPAIGN_EVIDENCE_DIR ?? "/private/tmp/golf-batch18-campaign-candidate-attempt1";
+const receiptsOverride = process.env.CAMPAIGN_EVIDENCE_DIR ?? null;
+const receiptPath = (info: TestInfo, filename: string) => {
+  if (receiptsOverride !== null) {
+    mkdirSync(receiptsOverride, { recursive: true });
+    return `${receiptsOverride}/${filename}`;
+  }
+  return info.outputPath(filename);
+};
 const active = (page: Page) => page.evaluate(() => ({ testId: document.activeElement?.getAttribute("data-testid"), text: document.activeElement?.textContent, inScene: Boolean(document.activeElement?.closest('[data-testid="campaign-scene"]')) }));
 
 for (const strict of [false, true]) for (const locale of ["en", "pseudo"] as const) for (const width of [320, 768, 1280]) {
@@ -39,11 +46,10 @@ for (const strict of [false, true]) for (const locale of ["en", "pseudo"] as con
     const pageWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     const panelBounds = await scene.boundingBox();
     const record = { strict, locale, width, height, measurements, baselinePanel, panelBounds, geometry, scroll, pageWidth, errors, renderer, initialFocus: await active(page) };
-    mkdirSync(receipts, { recursive: true });
-    const prefix = `${receipts}/text-${strict ? "strict" : "normal"}-${locale}-${width}`;
-    writeFileSync(`${prefix}.json`, JSON.stringify(record, null, 2));
+    const prefix = `text-${strict ? "strict" : "normal"}-${locale}-${width}`;
+    writeFileSync(receiptPath(info, `${prefix}.json`), JSON.stringify(record, null, 2));
     await info.attach("measured text and layout", { body: JSON.stringify(record, null, 2), contentType: "application/json" });
-    await page.screenshot({ path: `${prefix}.png` });
+    await page.screenshot({ path: receiptPath(info, `${prefix}.png`) });
     expect.soft(measurements.filter(item => Math.abs(item.ratio - 1.3) >= .01), "all visible authored and control text must grow with root text").toEqual([]);
     expect.soft(geometry.filter(item => item.left < 0 || item.right > width + 1 || item.top < 0 || item.bottom > height + 1 || item.overflow > 1), "every authored/control element must be reachable without clipping").toEqual([]);
     expect.soft(pageWidth).toBeLessThanOrEqual(width);
@@ -86,15 +92,14 @@ for (const strict of [false, true]) for (const scale of [100, 130]) for (const i
     const contract = JSON.parse((await page.getByTestId("campaign-contract").textContent())!) as { sceneId: string; choiceIds: string[] };
     const choiceIndex = interaction === "Enter" ? 0 : contract.choiceIds.length - 1;
     await choices.nth(choiceIndex).focus();
-    await page.screenshot({ path: `${receipts}/native-${strict ? "strict" : "normal"}-${scale}-${interaction}.png` });
+    await page.screenshot({ path: receiptPath(info, `native-${strict ? "strict" : "normal"}-${scale}-${interaction}.png`) });
     if (interaction === "Enter") await page.keyboard.press("Enter"); else await choices.nth(choiceIndex).click();
     await expect(scene).toHaveCount(0);
     await expect(page.getByTestId("campaign-log")).toHaveText(JSON.stringify([{ sceneId: contract.sceneId, choiceId: contract.choiceIds[choiceIndex] }]));
     const returnedFocus = await active(page);
     const gameplayKeys = await page.getByTestId("gameplay-keys").textContent();
     const record = { strict, scale, interaction, rootFont: await page.locator("html").evaluate(element => getComputedStyle(element).fontSize), initialFocus, reverseFocus, reverseWrapped, forwardFocus, forwardWrapped, afterEscape, afterBackdrop, backgroundFocus, returnedFocus, contract, log: await page.getByTestId("campaign-log").textContent(), gameplayKeys, errors, renderer };
-    mkdirSync(receipts, { recursive: true });
-    writeFileSync(`${receipts}/native-${strict ? "strict" : "normal"}-${scale}-${interaction}.json`, JSON.stringify(record, null, 2));
+    writeFileSync(receiptPath(info, `native-${strict ? "strict" : "normal"}-${scale}-${interaction}.json`), JSON.stringify(record, null, 2));
     await info.attach("native focus phases and callbacks", { body: JSON.stringify(record, null, 2), contentType: "application/json" });
     expect.soft(initialFocus.inScene, "native opener must transfer focus into the mandatory scene").toBe(true);
     expect.soft(reverseWrapped, "Shift+Tab must wrap inside the scene").toBe(true);
@@ -211,17 +216,16 @@ for (const strict of [false, true]) for (const locale of ["en", "pseudo"] as con
     for (let index = 0; index < 6; index++) await page.keyboard.press("PageUp");
     await expect.poll(() => scene.evaluate(element => element.scrollTop)).toBe(0);
     await expect(scene.locator("h2")).toBeInViewport();
-    mkdirSync(receipts, { recursive: true });
-    const prefix = `${receipts}/paint-scroll-${strict ? "strict" : "normal"}-${locale}`;
-    await page.screenshot({ path: `${prefix}-top.png` });
+    const prefix = `paint-scroll-${strict ? "strict" : "normal"}-${locale}`;
+    await page.screenshot({ path: receiptPath(info, `${prefix}-top.png`) });
     for (let index = 0; index < 6; index++) await page.keyboard.press("PageDown");
     await expect.poll(() => scene.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThanOrEqual(1);
     await expect(scene.getByRole("button").last()).toBeInViewport();
     const bottom = await scene.evaluate(element => element.scrollTop);
-    await page.screenshot({ path: `${prefix}-bottom.png` });
+    await page.screenshot({ path: receiptPath(info, `${prefix}-bottom.png`) });
     await expect(page.getByTestId("campaign-log")).toHaveText("[]"); await expect(page.getByTestId("outside-actions")).toHaveText("0");
     expect(errors).toEqual([]);
     const record = { strict, locale, rootFont: await page.locator("html").evaluate(element => getComputedStyle(element).fontSize), paint, bottom, errors };
-    writeFileSync(`${prefix}.json`, JSON.stringify(record, null, 2)); await info.attach("paint and native scrolling", { body: JSON.stringify(record), contentType: "application/json" });
+    writeFileSync(receiptPath(info, `${prefix}.json`), JSON.stringify(record, null, 2)); await info.attach("paint and native scrolling", { body: JSON.stringify(record), contentType: "application/json" });
   });
 }

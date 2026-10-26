@@ -4,7 +4,14 @@ import type { TournamentFixtureEvidence } from "./fixtures/zk736-player-tourname
 import type { TournamentEvent } from "../src/game/tournaments/types";
 import type { TournamentRankedStanding } from "../src/game/tournaments/tournamentStandings";
 
-const evidence = process.env.TOURNAMENT_EVIDENCE_DIR ?? "/private/tmp/golf-batch20-tournament-candidate-attempt2/proof";
+const evidenceOverride = process.env.TOURNAMENT_EVIDENCE_DIR ?? null;
+const evidencePath = (info: TestInfo, filename: string) => {
+  if (evidenceOverride !== null) {
+    mkdirSync(evidenceOverride, { recursive: true });
+    return `${evidenceOverride}/${filename}`;
+  }
+  return info.outputPath(filename);
+};
 const fixture = "/e2e/fixtures/zk736-player-tournament-events.html";
 test.setTimeout(45_000);
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
@@ -46,10 +53,9 @@ async function enterTab(page: Page, query: string) {
 const snapshot = (page: Page): Promise<{ expected: TournamentFixtureEvidence["expected"]; calls: TournamentFixtureEvidence["calls"]; immutable: boolean }> => page.evaluate(() => ({ expected: window.tournamentEventFixture.expected, calls: window.tournamentEventFixture.calls,
   immutable: JSON.stringify({ course: window.tournamentEventFixture.course, world: window.tournamentEventFixture.world }) === window.tournamentEventFixture.initial }));
 async function record(page: Page, info: TestInfo, payload: unknown) {
-  mkdirSync(evidence, { recursive: true });
   const stem = info.title.replace(/[^a-zA-Z0-9]+/g, "-");
-  writeFileSync(`${evidence}/${stem}.json`, JSON.stringify(payload, null, 2));
-  await page.screenshot({ path: `${evidence}/${stem}.png` });
+  writeFileSync(evidencePath(info, `${stem}.json`), JSON.stringify(payload, null, 2));
+  await page.screenshot({ path: evidencePath(info, `${stem}.png`) });
   await info.attach("tournament acceptance evidence", { body: JSON.stringify(payload), contentType: "application/json" });
 }
 async function verifyCanonical(page: Page) {
@@ -276,7 +282,7 @@ async function glyphGeometry(page: Page) {
     return { samples, overlaps, body: { clientWidth: body.clientWidth, scrollWidth: body.scrollWidth, clientHeight: body.clientHeight, scrollHeight: body.scrollHeight }, viewport: { width: innerWidth, height: innerHeight } };
   });
 }
-async function focusRing(page: Page, element: Locator, evidenceId: string) {
+async function focusRing(page: Page, info: TestInfo, element: Locator, evidenceId: string) {
   await element.focus(); await page.keyboard.press("Tab"); await page.keyboard.press("Shift+Tab"); await expect(element).toBeFocused();
   const ring = await element.evaluate((node) => {
     const css = getComputedStyle(node), box = node.getBoundingClientRect(), extra = Number.parseFloat(css.outlineWidth) + Number.parseFloat(css.outlineOffset);
@@ -290,8 +296,7 @@ async function focusRing(page: Page, element: Locator, evidenceId: string) {
   });
   const sample = (await collectPaint(page)).find((item) => item.focus)!;
   const text = await element.textContent();
-  mkdirSync(evidence, { recursive: true });
-  writeFileSync(`${evidence}/focus-ring-${evidenceId}.json`, JSON.stringify({ text, ring, sample }, null, 2));
+  writeFileSync(evidencePath(info, `focus-ring-${evidenceId}.json`), JSON.stringify({ text, ring, sample }, null, 2));
   expect(ring.visible).toBe(true); expect(ring.style).toBe("solid"); expect(ring.width).toBe(3); expect(sample.focus!.contrast).toBeGreaterThanOrEqual(3);
   for (const clip of ring.clips) { expect(ring.paint.left).toBeGreaterThanOrEqual(clip.left); expect(ring.paint.right).toBeLessThanOrEqual(clip.right); expect(ring.paint.top).toBeGreaterThanOrEqual(clip.top); expect(ring.paint.bottom).toBeLessThanOrEqual(clip.bottom); }
   return { ring, sample };
@@ -323,7 +328,7 @@ async function verifyPaint(page: Page, info: TestInfo, locale: "en" | "pseudo", 
   expect(summaries.length).toBeLessThanOrEqual(128);
   for (const summary of summaries) {
     if (!await summary.evaluate((node) => node.checkVisibility())) continue;
-    focused.push(await focusRing(page, summary, `${locale}-${width}-${focused.length}`));
+    focused.push(await focusRing(page, info, summary, `${locale}-${width}-${focused.length}`));
   }
   expect(focused.length).toBeGreaterThan(1);
   await hosting.locator(":scope > summary").focus();
