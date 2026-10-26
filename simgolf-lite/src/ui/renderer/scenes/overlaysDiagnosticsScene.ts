@@ -91,10 +91,10 @@ export interface PlayerShotRenderDiagnostics {
 
 export function playerShotGolferPose(frame: PlayerShotPlaybackFrame, club: string, direction: Point, rotation: IsoRotation) {
   const contactFrame = club === "Putter" ? PUTT_CONTACT_FRAME : SWING_CONTACT_FRAME;
-  const atContact = !frame.addressing && frame.motionProgress < .03;
+  const atContact = frame.phase === "contact" || !frame.addressing && frame.motionProgress < .03;
   const segment = frame.addressing || atContact ? "pause" : "flight";
-  const progress = frame.addressing ? frame.progress / PLAYER_SHOT_CONTACT_FRACTION * contactFrame / (contactFrame + 1) * .999999
-    : atContact ? 1 : frame.motionProgress;
+  const progress = atContact ? 1 : frame.addressing ? (frame.addressProgress ?? frame.progress / PLAYER_SHOT_CONTACT_FRACTION) * contactFrame / (contactFrame + 1) * .999999
+    : frame.motionProgress;
   return golferPose({ segKind: segment, segT: progress, shot: club === "Putter" ? "putt" : "swing",
     facingOct: facingOctant(direction.x, direction.y, rotation), walkPhase: 0, timeSec: 0, reaction: null });
 }

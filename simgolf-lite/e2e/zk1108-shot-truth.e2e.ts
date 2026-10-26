@@ -4,9 +4,12 @@ import { writeFileSync } from "node:fs";
 const state = (page: Page) => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}"));
 const saved = (page: Page) => page.evaluate(async (path) => (await import(path)).loadSlot("quick-save"), "/src/utils/saveStore.ts");
 const quickSave = async (page: Page) => {
+  const acknowledgement = page.locator('.sr-only[role="status"]');
+  const sequence = await acknowledgement.getAttribute("data-announcement-sequence");
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.keyboard.press("Control+KeyS");
-  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+  await expect.poll(() => acknowledgement.getAttribute("data-announcement-sequence")).not.toBe(sequence);
+  await expect(acknowledgement).toContainText("Quick save complete");
 };
 
 test("current-shot channel follows actual live action and survives keyboard save/reload", async ({ page }, info) => {

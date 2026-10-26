@@ -14,10 +14,18 @@ import { normalizeShotEnvironmentV1 } from "../rules/shotEnvironment";
 import { isValidRetainedShotMotionV1 } from "../rules/shotMotion";
 import { isShotStyleId } from "../rules/shotStyles";
 import { dispersionClubIdForLabel } from "../rules/dispersionRegistry";
+import { restoreFocusedShot, snapshotFocusedShot, type FocusedShotSnapshotV1 } from "./focusedShot";
+import { restoreControlledTimeLedger, type ControlledTimeLedger } from "./controlledTime";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
 const MAX_SEGMENTS_PER_GOLFER = 5_000;
+
+export interface WeekReportPendingV1 {
+  version: 1;
+  week: number;
+  resumeSpeed: Exclude<SpeedName, "paused">;
+}
 
 export interface LiveSimulationSnapshotV1 {
   version: 1 | 2 | 3 | 4 | 5 | 6;
@@ -27,6 +35,9 @@ export interface LiveSimulationSnapshotV1 {
   selectedGolferId: number | null;
   clockRemainderMinutes?: number;
   weekLedger?: LiveWeekLedger;
+  focusedShot?: FocusedShotSnapshotV1;
+  controlledTime?: ControlledTimeLedger;
+  weekReportPending?: WeekReportPendingV1;
 }
 
 export interface RestoredLiveSimulation {
@@ -36,6 +47,9 @@ export interface RestoredLiveSimulation {
   selectedGolferId: number | null;
   clockRemainderMinutes: number;
   weekLedger: LiveWeekLedger;
+  focusedShot?: FocusedShotSnapshotV1;
+  controlledTime?: ControlledTimeLedger;
+  weekReportPending?: WeekReportPendingV1;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -44,6 +58,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+/** An explicit acknowledgement barrier must never become an implicit resume. */
+export function restoreWeekReportPending(value: unknown): WeekReportPendingV1 | null {
+  if (!isRecord(value) || Object.keys(value).length !== 3
+    || (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)
+    || !["version", "week", "resumeSpeed"].every((key) => Object.hasOwn(value, key))
+    || value.version !== 1 || !Number.isSafeInteger(value.week) || (value.week as number) < 1
+    || (value.resumeSpeed !== "1x" && value.resumeSpeed !== "2x" && value.resumeSpeed !== "4x")) return null;
+  return { version: 1, week: value.week as number, resumeSpeed: value.resumeSpeed };
 }
 
 function point(value: unknown, nullable = false): boolean {
@@ -285,9 +309,15 @@ export function snapshotLiveSimulation(args: {
   selectedGolferId: number | null;
   clockRemainderMinutes?: number;
   weekLedger?: LiveWeekLedger;
+  focusedShot?: FocusedShotSnapshotV1;
+  controlledTime?: ControlledTimeLedger;
+  weekReportPending?: WeekReportPendingV1;
 }): LiveSimulationSnapshotV1 {
   const { walkCache: _walkCache, ...serializable } = args.state;
   void _walkCache;
+  const focus = restoreFocusedShot(args.focusedShot, args.state);
+  const controlledTime = restoreControlledTimeLedger(args.controlledTime);
+  const weekReportPending = restoreWeekReportPending(args.weekReportPending);
   return {
     version: 6,
     state: cloneSerializableState(serializable),
@@ -296,6 +326,9 @@ export function snapshotLiveSimulation(args: {
     selectedGolferId: args.selectedGolferId,
     clockRemainderMinutes: Math.max(0, args.clockRemainderMinutes ?? 0),
     weekLedger: args.weekLedger ?? createWeekLedger(1),
+    ...(focus ? { focusedShot: snapshotFocusedShot(focus) } : {}),
+    ...(controlledTime ? { controlledTime } : {}),
+    ...(weekReportPending ? { weekReportPending } : {}),
   };
 }
 
@@ -397,18 +430,26 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
       blockingReasons: [],
     };
   }
-  return {
-    state: {
+  const restoredState: LiveState = {
       ...serializable,
       greenDrainageLevel: finite(serializable.greenDrainageLevel)
         ? Math.max(0, Math.min(3, Math.round(serializable.greenDrainageLevel)))
         : 0,
       walkCache: new Map(),
-    },
+  };
+  const focus = restoreFocusedShot(input.focusedShot, restoredState);
+  const controlledTime = restoreControlledTimeLedger(input.controlledTime);
+  const weekReportPending = restoreWeekReportPending(input.weekReportPending);
+  if (Object.hasOwn(input, "weekReportPending") && (!weekReportPending || restoredState.dayIndex !== 0)) return null;
+  return {
+    state: restoredState,
     pendingCash: input.pendingCash,
     speed,
     selectedGolferId: input.selectedGolferId as number | null,
     clockRemainderMinutes: finite(input.clockRemainderMinutes) ? input.clockRemainderMinutes : 0,
     weekLedger: normalizeWeekLedger(input.weekLedger, 1),
+    ...(focus ? { focusedShot: snapshotFocusedShot(focus) } : {}),
+    ...(controlledTime ? { controlledTime } : {}),
+    ...(weekReportPending ? { weekReportPending } : {}),
   };
 }

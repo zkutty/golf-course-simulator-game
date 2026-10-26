@@ -1,3 +1,4 @@
+import type { ChallengeGroupPresentationV1 } from "./challengeGroupPresentation";
 import type {
   EquipmentLoadout,
   EquipmentModifier,
@@ -221,6 +222,8 @@ export interface ChallengeGroupRound {
   pinRotation: "A" | "B" | "C";
   currentHoleIndex: number;
   activeGolferId: string | null;
+  /** Optional bounded presentation cursor; has no result authority. */
+  presentation?: ChallengeGroupPresentationV1;
   playerGolferId: string;
   honorsOrder: readonly string[];
   golfers: readonly ChallengeGroupGolfer[];

@@ -1,51 +1,56 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { PlayerPlayableRound, PlayerShotTrace } from "../../game/models/playerProTypes";
 import {
-  PLAYER_SHOT_CONTACT_FRACTION,
-  advancePlayerShotPresentation,
   isPlayerShotPresentation,
-  playerShotDurationMs,
-  playerShotPlaybackFrame,
   type PlayerShotPlaybackFrame,
   type PlayerShotPresentationV1,
 } from "../../game/playerPro/shotPlayback";
+import { advanceShotPacingCursor, createShotPacingCursor, createShotPacingPlan, shotPacingEventProgress, shotPacingFrame } from "../../game/live/shotPacing";
 import { isValidRetainedShotMotionV1, type ShotMotionEventV1 } from "../../game/rules/shotMotion";
 
 export type PlayerPlaybackEvent = { kind: "contact" } | ShotMotionEventV1;
 
 /** Presentation clock only. Completion is claimed once for this exact shot. */
-export function createPlayerShotPlaybackDriver(shot: PlayerShotTrace, saved?: PlayerShotPresentationV1) {
-  let cursor: PlayerShotPresentationV1 = isPlayerShotPresentation(saved, shot.id)
-    ? { ...saved } : { version: 1, shotId: shot.id, progress: 0 };
-  let completed = false;
+export function createPlayerShotPlaybackDriver(shot: PlayerShotTrace, saved?: PlayerShotPresentationV1, scopeId = "player", actorId = "player") {
   const motion = shot.sharedOutcome?.motion;
+  const plan = motion && createShotPacingPlan({ scopeId, actorId, motion, distanceYards: shot.carryYards + (shot.rollYards ?? 0) });
+  if (!plan) throw new Error("Player playback requires validated retained shot motion.");
+  const progress = isPlayerShotPresentation(saved, shot.id) ? saved.progress : 0;
+  let cursor = createShotPacingCursor(plan, { version: 1, key: plan.key, elapsedMs: progress * plan.durationMs });
+  let completed = false;
   const events = [
-    { at: PLAYER_SHOT_CONTACT_FRACTION, event: { kind: "contact" } as PlayerPlaybackEvent },
-    ...(motion?.events ?? []).filter((event) => event.kind !== "launch" && event.kind !== "rest").map((event) => ({
-      at: PLAYER_SHOT_CONTACT_FRACTION + event.time * (1 - PLAYER_SHOT_CONTACT_FRACTION), event,
+    { at: shotPacingEventProgress(plan, 0)!, event: { kind: "contact" } as PlayerPlaybackEvent },
+    ...motion!.events.filter((event) => event.kind !== "launch" && event.kind !== "rest").map((event) => ({
+      at: shotPacingEventProgress(plan, event.time)!, event,
     })),
   ];
-  let eventIndex = events.findIndex((event) => event.at > cursor.progress);
+  let eventIndex = events.findIndex((event) => event.at > progress);
   if (eventIndex < 0) eventIndex = events.length;
+  const presentation = (): PlayerShotPresentationV1 => ({ version: 1, shotId: shot.id, progress: cursor.elapsedMs / plan.durationMs });
+  const frame = (): PlayerShotPlaybackFrame => ({ ...shotPacingFrame(plan, cursor)!,
+    addressProgress: Math.min(1, cursor.elapsedMs / plan.addressMs) });
   return {
-    cursor: () => ({ ...cursor }),
-    advance(elapsedMs: number, paused = false, skip = false) {
-      cursor = skip ? { ...cursor, progress: 1 }
-        : advancePlayerShotPresentation(cursor, elapsedMs, playerShotDurationMs(shot.club, shot.carryYards), paused);
+    cursor: presentation,
+    frame,
+    plan,
+    advance(elapsedMs: number, paused = false, skip = false, hidden = false) {
+      cursor = advanceShotPacingCursor(plan, cursor, elapsedMs, { paused, skip, hidden })!;
+      const next = frame();
       const crossed: PlayerPlaybackEvent[] = [];
-      while (eventIndex < events.length && events[eventIndex]!.at <= cursor.progress) {
+      while (eventIndex < events.length && events[eventIndex]!.at <= next.progress) {
         if (!skip) crossed.push(events[eventIndex]!.event);
         eventIndex += 1;
       }
-      const complete = cursor.progress === 1 && !completed;
+      const complete = next.complete && !completed;
       if (complete) completed = true;
-      return { frame: playerShotPlaybackFrame(shot.id, cursor.progress), events: crossed, complete };
+      return { frame: next, events: crossed, complete };
     },
   };
 }
 
 interface PlaybackOptions {
   round: PlayerPlayableRound | null;
+  actorId?: string;
   paused: boolean;
   immediate: boolean;
   onCheckpoint: (roundId: string, cursor: PlayerShotPresentationV1) => void;
@@ -61,7 +66,7 @@ export function usePlayerShotPlayback(options: PlaybackOptions) {
   useEffect(() => { optionsRef.current = options; });
   const shot = options.round?.phase === "flight" ? options.round.pendingShot : null;
   const retained = isValidRetainedShotMotionV1(shot?.sharedOutcome?.motion);
-  const key = retained && options.round && shot ? `${options.round.id}:${shot.id}` : null;
+  const key = retained && options.round && shot ? `${options.round.id}:${options.actorId ?? "player"}:${shot.id}` : null;
   useEffect(() => {
     const initial = optionsRef.current;
     const round = initial.round;
@@ -71,8 +76,8 @@ export function usePlayerShotPlayback(options: PlaybackOptions) {
       skipRef.current = null;
       return;
     }
-    const driver = createPlayerShotPlaybackDriver(pending, round.shotPresentation);
-    frameRef.current = playerShotPlaybackFrame(pending.id, driver.cursor().progress);
+    const driver = createPlayerShotPlaybackDriver(pending, round.shotPresentation, round.id, initial.actorId);
+    frameRef.current = driver.frame();
     let lastTime: number | null = null;
     let request = 0;
     let checkpoint = Math.floor(driver.cursor().progress * 10);
@@ -80,8 +85,8 @@ export function usePlayerShotPlayback(options: PlaybackOptions) {
     const publish = (elapsed: number, skip = false) => {
       if (finished) return;
       const current = optionsRef.current;
-      const paused = current.paused || document.hidden;
-      const result = driver.advance(elapsed, paused, skip || current.immediate && !paused);
+      const paused = current.paused;
+      const result = driver.advance(elapsed, paused, skip || current.immediate && !paused, document.hidden);
       frameRef.current = result.frame;
       const bucket = Math.floor(result.frame.progress * 10);
       if (bucket !== checkpoint || result.events.length || result.complete) {

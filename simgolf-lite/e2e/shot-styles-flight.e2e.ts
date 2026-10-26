@@ -440,12 +440,25 @@ test("ordinary selected AI golfer displays three canonical airborne positions", 
   const stageBounds = await stage.boundingBox();
   if (!stageBounds) throw new Error("Missing live stage bounds");
   await page.mouse.move(stageBounds.x + stageBounds.width * .5, stageBounds.y + stageBounds.height * .45);
-  for (let notch = 0; notch < 8; notch++) {
+  // Keep the ball large enough for the unchanged white-core pixel check;
+  // a subpixel circle can contain only antialiased edge pixels after panning.
+  for (let notch = 0; notch < 16; notch++) {
     const camera = await page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()!.camera);
-    if (camera.targetZoom >= .75) break;
+    if (camera.targetZoom >= 1.1) break;
     await page.mouse.wheel(0, -120);
     await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()!.camera.targetZoom)).toBeGreaterThan(camera.targetZoom);
   }
+  await page.waitForFunction(() => {
+    const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
+    return camera && Math.abs(camera.zoom - camera.targetZoom) < .001
+      && Math.abs(camera.center.x - camera.targetCenter.x) < .01
+      && Math.abs(camera.center.y - camera.targetCenter.y) < .01;
+  });
+  // Keep this physics/render gate on the authoritative segment clock. Explicit
+  // follow now owns a separate presentation clock, covered by readable pacing.
+  await follow.click();
+  await expect(follow).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(async () => (await textState(page)).simulation.focusedShot).toBeNull();
   const captures = [];
   let shotId: string | null = null;
   for (const [index, target] of [.15, .35, .55].entries()) {
@@ -454,6 +467,17 @@ test("ordinary selected AI golfer displays three canonical airborne positions", 
       if (actor.ballMotion?.pose.time >= target) break;
       await page.evaluate(() => window.__coursecraftTest!.advanceLiveClock(20, "1x"));
     }
+    // Pan through real camera input: with follow disabled, later positions
+    // otherwise pass behind the minimap's composited overlay.
+    const position = (await textState(page)).golfers.find((golfer: { id: number }) => golfer.id === actorId).ballMotion.pose.point;
+    const projected = await page.evaluate((at) => window.__coursecraftPixiTest!.tileToScreen(at.x, at.y), position);
+    if (!projected) throw new Error("Missing selected AI camera projection");
+    const start = { x: stageBounds.x + stageBounds.width * .5, y: stageBounds.y + stageBounds.height * .4 };
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down({ button: "middle" });
+    await page.mouse.move(start.x + stageBounds.width * .6 - projected.x,
+      start.y + stageBounds.height * .55 - projected.y, { steps: 4 });
+    await page.mouse.up({ button: "middle" });
     await page.waitForFunction(() => {
       const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
       return camera && Math.abs(camera.zoom - camera.targetZoom) < .001
@@ -509,9 +533,10 @@ test("ordinary selected AI golfer displays three canonical airborne positions", 
       const rgb = [pixels.data[offset], pixels.data[offset + 1], pixels.data[offset + 2]];
       if (Math.min(...rgb) > 200 && Math.max(...rgb) - Math.min(...rgb) < 25) ballPixels++;
     }
-    expect(ballPixels, "ordinary AI ball must be visible at its retained airborne projection").toBeGreaterThan(0);
     captures.push({ seed: saved.seed, actorId, current, motion, expected, iso, transform, camera: state.camera,
       projection: { x, y }, ballPixels, imageHash: createHash("sha256").update(body).digest("hex") });
+    writeFileSync(info.outputPath("ai-airborne-evidence.json"), JSON.stringify({ actualSimulationStepMs: 20, viewport: page.viewportSize(), captures, errors }, null, 2));
+    expect(ballPixels, "ordinary AI ball must be visible at its retained airborne projection").toBeGreaterThan(0);
   }
   expect(new Set(captures.map((capture) => JSON.stringify(capture.expected.point))).size).toBe(3);
   expect(new Set(captures.map((capture) => capture.imageHash)).size).toBe(3);
