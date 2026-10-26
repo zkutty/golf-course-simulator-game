@@ -211,7 +211,11 @@ The non-shipping first-golfer look sheet, timed full-hole storyboard, provenance
 versioned clip/activity proposal and deterministic checks are in
 [`art/review/zk-1414-v1/README.md`](art/review/zk-1414-v1/README.md).
 Open its self-contained `review.html` for actual 50/100/200% samples and the
-paused-by-default animatic. Human golfer/rhythm/group acceptance is pending.
+paused-by-default animatic. The user accepted the golfer, hole rhythm and quiet
+group treatment as concept direction on October 26, 2026 ("Accept this concept
+direction"). The exact accepted review is frozen as `review.accepted-v1.html`;
+its SHA-256 and the user decision are recorded in the manifest. This is not
+smooth-motion, GPU, retained-physics or production certification.
 
 This is an additive review proposal, not a replacement atlas. Keep existing
 48×72 frames, feet y=69, 26px display width, five authored rows plus mirroring,
@@ -224,5 +228,6 @@ Production clips consume the already published c08a5ff retained-shot pacing
 contract. Reactions fit within canonical rest, walking uses current legal
 routes, and overview cannot retain stale actors/queues or add a global hold.
 The review manifest nominates finite position/timing/quality/motion-off bounds.
-No new art is packed, loaded or approved by this section. Approve one golfer and
-one group treatment before the separately owned production/variant work.
+No new art is packed, loaded or production-approved by this section. The
+one-golfer and group concept direction is accepted; separately owned
+production/variant work retains its validation and certification gates.

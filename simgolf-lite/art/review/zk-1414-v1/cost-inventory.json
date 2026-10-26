@@ -2,12 +2,12 @@
   "version": 1,
   "shipping": false,
   "productionBytesAdded": 0,
-  "reviewBytes": 5012310,
+  "reviewBytes": 7889338,
   "files": [
     {
       "file": "README.md",
-      "bytes": 11957,
-      "sha256": "c593f6e491d55b2c835b4ab9baf114dc4011858ca90b4144406759d76d093b43"
+      "bytes": 12595,
+      "sha256": "a63043f31ddf8c0afa8219a5d6ec5abe7febd57e4a6e43b3b01d293c822bce3d"
     },
     {
       "file": "activity-contract.v1.d.ts",
@@ -16,8 +16,8 @@
     },
     {
       "file": "activity-manifest.v1.json",
-      "bytes": 14357,
-      "sha256": "17409ed05345d65f73518c741c72e8682bcc5dd67141abcb42ceead76678c75a"
+      "bytes": 15004,
+      "sha256": "ac7afe13efed424c5badb4b42911c971e6ffbff2f3039f7e1590950ffc3a0b96"
     },
     {
       "file": "browser-verification.json",
@@ -50,14 +50,19 @@
       "sha256": "b402dd3a1fd10f20cf2607ffcb9fb9dc8d1ba6dde972ddccf6d0d54766fcbf20"
     },
     {
-      "file": "review.html",
+      "file": "review.accepted-v1.html",
       "bytes": 2873942,
       "sha256": "5f4864f6b9d9bb5f0dcec94b638e05b82a276c89e44574bb56ad89968f3d2ffd"
     },
     {
+      "file": "review.html",
+      "bytes": 2874772,
+      "sha256": "dee9a1921602839059be42d462429c0d89edd080c15366d5abd4ea6a4d067ad4"
+    },
+    {
       "file": "review.template.html",
-      "bytes": 20431,
-      "sha256": "a4ec9ce7c0c6462232bf4f5f25f3bbf468616fc9de27f739bbdcff850d129b8a"
+      "bytes": 20614,
+      "sha256": "d1769a15420cd8bf15b5072812f40e1c02e07614cfacd2a4cbe9603c0401b4e9"
     },
     {
       "file": "storyboard.v1.json",
@@ -66,8 +71,8 @@
     },
     {
       "file": "validate.mjs",
-      "bytes": 10666,
-      "sha256": "14feaa4b4aa307dea200694fd0e4a60dea8bf48d9471e83f927bb6efbd5a4eaf"
+      "bytes": 11454,
+      "sha256": "ee57b16ac674bde51c247727d3927f76fee2b3969acc551cd9876e2ff2138c4b"
     }
   ]
 }

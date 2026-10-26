@@ -1,6 +1,6 @@
 # ZK-1414: one golfer / one bounded hole, review v1
 
-Status: **concrete review package; human art, rhythm and group decisions pending**.
+Status: **golfer, hole rhythm and quiet group accepted as concept direction on October 26, 2026**.
 Open `review.html` directly in a browser. It contains its own image data and code,
 starts paused, and needs no server, credentials or game build. Press Play to see
 the 51.64-second full-hole timed storyboard. Scrub or use the nine beat buttons
@@ -151,7 +151,7 @@ selection/actor change, day replacement or reconcile cancels without draining
 or inventing an outcome; no catch-up debt. No force-follow, camera recenter,
 zoom change or new global hold is introduced.
 
-## Cost, checks and remaining human decision
+## Cost, checks and recorded human decision
 
 Legacy compatibility: 108 frame slots per variant × two layers × three variants
 ×48×72×RGBA4 = **8,957,952 uncompressed source bytes**, before packing. Proposed
@@ -179,8 +179,19 @@ load, responds to controls, plays through one full hole without page errors,
 and honors motion off and reload. Those checks do not certify production
 performance, smoothness or human preference.
 
-The user's actual decisions remain null in the manifest: **golfer look,
-full-hole rhythm, group treatment**. The coordinator must show this concrete
-media and ask for acceptance or specific revisions. Do not advance production
-art/adapters or mark the issue Done until that decision is recorded. Even an
-accepted concept does not close later exact-build animation certification.
+On **October 26, 2026**, the user answered **“Accept this concept direction”**
+to the coordinator's question covering the teal/cream golfer, hole rhythm and
+quiet group treatment as direction for production animation. All three decisions
+are recorded in `activity-manifest.v1.json`. The accepted reference is the
+unchanged `review.accepted-v1.html` (review commit
+`32090a1ca2bccbf4faf060307d88fad3366a8581`), SHA-256:
+
+`5f4864f6b9d9bb5f0dcec94b638e05b82a276c89e44574bb56ad89968f3d2ffd`.
+
+The frozen accepted page preserves its pre-decision status label and content.
+`review.html` now shows the recorded concept acceptance. Earlier browser
+receipts retain the acceptance state at capture time; they are not rewritten.
+This accepts concept direction only, not smooth-motion, GPU, retained-physics
+or production certification. No production assets, adapter or new atlas is
+authorized or implemented within this packet. Even an accepted concept does
+not close later exact-build animation certification.

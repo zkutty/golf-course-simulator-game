@@ -5,7 +5,7 @@
   "passed": true,
   "checks": [
     {
-      "name": "manifest version, non-shipping boundary and unresolved human decision",
+      "name": "manifest version, non-shipping boundary and recorded concept acceptance",
       "pass": true
     },
     {
@@ -45,6 +45,8 @@
       "pass": true
     }
   ],
-  "humanAccepted": false,
+  "humanAccepted": true,
+  "humanAcceptanceScope": "concept-direction-only",
+  "productionCertified": false,
   "browserVerifiedSeparately": true
 }

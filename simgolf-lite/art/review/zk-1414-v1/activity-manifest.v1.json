@@ -1,7 +1,7 @@
 {
   "schema": "coursecraft.golfer-activity-review",
   "version": 1,
-  "status": "human-review-pending",
+  "status": "concept-direction-accepted",
   "shipping": false,
   "sources": {
     "release": "5729faf7a17dcb2c5e12c27422a8b1590d59f4d0",
@@ -546,17 +546,25 @@
     "note": "28 proposed frame slots \u00d7 48 \u00d7 72 \u00d7 RGBA4 \u00d7 two layers. No atlas generated, loaded, expanded or approved."
   },
   "humanDecision": {
-    "golferLook": null,
-    "fullHoleRhythm": null,
-    "groupTreatment": null,
-    "reviewer": null,
-    "decidedAt": null,
+    "golferLook": "accepted-as-concept-direction",
+    "fullHoleRhythm": "accepted-as-concept-direction",
+    "groupTreatment": "accepted-as-concept-direction",
+    "reviewer": "User",
+    "decidedAt": "2026-10-26",
     "requiredBefore": [
       "production adapter",
       "production atlas",
       "bulk variants"
     ],
-    "question": "Accept teal/cream golfer, the bounded one-hole rhythm, and quiet three-person group treatment, or request specific changes?"
+    "question": "Accept teal/cream golfer, the bounded one-hole rhythm, and quiet three-person group treatment, or request specific changes?",
+    "sourceQuote": "Accept this concept direction",
+    "decisionSource": "Explicit user response to the coordinator's golfer, hole-rhythm and quiet-group concept-acceptance question.",
+    "acceptanceScope": "Direction for production animation only. Not smooth-motion, GPU, retained-physics or production certification.",
+    "acceptedReference": {
+      "file": "review.accepted-v1.html",
+      "sha256": "5f4864f6b9d9bb5f0dcec94b638e05b82a276c89e44574bb56ad89968f3d2ffd",
+      "referenceCommit": "32090a1ca2bccbf4faf060307d88fad3366a8581"
+    }
   },
   "deferred": [
     "Production clean pixel-alpha and per-frame feet/hand/club anchors",
