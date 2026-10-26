@@ -25,6 +25,8 @@ import type { PlayerRoundCourseSnapshot } from "../../../game/models/playerProTy
 import { createGreenRolloutSurfaceSampler } from "../../../game/greens/greenRollout";
 import { GOLFER_DISPLAY_W, GOLFER_FEET_Y, GOLFER_FRAME_H, GOLFER_FRAME_W, PUTT_CONTACT_FRAME, SWING_CONTACT_FRAME, facingOctant, golferFrameName, golferPose } from "../../../game/render/golferSprites";
 import { getGolferFrame, golfersAtlasReady } from "../../../render/atlas";
+import { golferActivityOwnerKey } from "../../../game/render/golferActivity";
+import type { ControlledGolferRuntimeFrame, createNaturalGolferRuntime } from "../../../game/render/naturalGolferRuntime";
 import { buildLandscapeComponents } from "../../../game/render/landscapeGeometry";
 import { PerfWindow } from "../../../game/render/perfStats";
 import { seasonalTerrainTreatment } from "../../../game/render/seasonalTerrainPresentation";
@@ -75,6 +77,11 @@ export interface OverlayTickInput {
   readonly decorationSpan?: number;
   readonly playerShotPlayback?: PlayerShotPlaybackFrame | null;
   readonly playerShotPreview?: PlayerShotPreview | null;
+  readonly controlledBodyEnabled?: boolean;
+  /** Current stage draw/cull/hidden policy, independent of optional body/source publication. */
+  readonly controlledBodyDrawEligible?: boolean;
+  readonly controlledActorId?: string | null;
+  readonly controlledBody?: ControlledGolferRuntimeFrame | null;
 }
 
 export interface PlayerShotRenderDiagnostics {
@@ -129,6 +136,7 @@ export interface OverlaysDiagnosticsLayers {
 }
 
 export interface OverlaysDiagnosticsDependencies {
+  readonly activityRuntime?: Pick<ReturnType<typeof createNaturalGolferRuntime<PIXI.Texture>>, "observeControlledPresented">;
   readonly createContainer?: () => PIXI.Container;
   readonly createGraphics?: () => PIXI.Graphics;
   readonly createText?: (options: PIXI.TextOptions) => PIXI.Text;
@@ -366,20 +374,36 @@ export function createOverlaysDiagnosticsSceneSystem(
     let golferFrame: string | null = null;
     if (golferBase && golferTint) {
       const origin = worldToIso(motion.from.point.x + .5, motion.from.point.y + .5, motion.from.heightYards / ELEVATION_STEP_YARDS, input.rotation);
-      const spritePose = playerShotGolferPose(frame, pending.club, { x: pending.aim.x - pending.from.x, y: pending.aim.y - pending.from.y }, input.rotation);
+      const body = input.controlledBody;
+      const bodySourceCurrent = !!body && !!input.controlledActorId && body.actorId === input.controlledActorId
+        && body.ownerKey === golferActivityOwnerKey({ scopeId: round!.id, actorId: input.controlledActorId, shot: motion.identity })
+        && body.sourceFrame.shotId === frame.shotId && body.sourceFrame.progress === frame.progress && body.sourceFrame.motionProgress === frame.motionProgress
+        && body.sourceFrame.phase === frame.phase && body.sourceFrame.addressing === frame.addressing && body.sourceFrame.complete === frame.complete;
+      const bodyCurrent = bodySourceCurrent && body.admitted;
+      const spritePose = input.controlledBodyEnabled ? bodyCurrent ? body.legacyPose : { anim: "idle" as const, row: 0, mirror: false, col: 0 }
+        : playerShotGolferPose(frame, pending.club, { x: pending.aim.x - pending.from.x, y: pending.aim.y - pending.from.y }, input.rotation);
       const frameName = golferFrameName(0, spritePose, false);
       golferFrame = frameName;
-      if (golferFrame !== lastGolferFrame) {
-        lastGolferFrame = golferFrame;
+      let complete = !input.controlledBodyEnabled || input.controlledBodyDrawEligible === true
+        && !(bodySourceCurrent && (body.reason === "culled" || body.reason === "hidden"));
+      if (golferFrame !== lastGolferFrame || input.controlledBodyEnabled) {
         const getFrame = dependencies.golferFrame ?? getGolferFrame;
         const texture = getFrame(frameName), tint = getFrame(golferFrameName(0, spritePose, true));
-        if (texture) golferBase.texture = texture;
-        if (tint) golferTint.texture = tint;
+        if (input.controlledBodyEnabled) {
+          complete = complete && !!texture && !!tint;
+          if (complete) { golferBase.texture = texture!; golferTint.texture = tint!; lastGolferFrame = golferFrame; }
+        } else {
+          lastGolferFrame = golferFrame;
+          if (texture) golferBase.texture = texture;
+          if (tint) golferTint.texture = tint;
+        }
       }
       for (const sprite of [golferBase, golferTint]) {
+        sprite.visible = !input.controlledBodyEnabled || complete;
         sprite.position.set(origin.x - 5, origin.y);
         sprite.scale.x = Math.abs(sprite.scale.x) * (spritePose.mirror ? -1 : 1);
       }
+      if (input.controlledBodyEnabled && complete && bodyCurrent) dependencies.activityRuntime?.observeControlledPresented(body);
     }
     contactEffect.clear();
     let contact: typeof motion.events[number] | undefined;

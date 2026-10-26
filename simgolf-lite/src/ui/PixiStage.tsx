@@ -13,6 +13,8 @@ import type { PlayerShotPreview } from "../game/playerPro/playerPro";
 import type { PlayerShotActivitySampleV1, PlayerShotPlaybackFrame } from "../game/playerPro/shotPlayback";
 import type { PlayerProWorldDisplayPresentation } from "../game/playerPro/socialPresentation";
 import { createLiveGolferGroundAuthority } from "../game/render/golferGroundAuthority";
+import { groundedGolferFrame } from "../game/render/golferGrounding";
+import { createNaturalGolferRuntime } from "../game/render/naturalGolferRuntime";
 import type { NaturalGolferAtlas } from "../render/naturalGolferAtlas";
 import type { SeasonName } from "../game/seasons/types";
 import type { SeasonalVisualState } from "../game/presentation/seasonalVisualState";
@@ -666,6 +668,8 @@ export interface PixiStageProps {
   playerShotAim?: PlayerProPoint | null;
   playerShotPlaybackRef?: React.RefObject<PlayerShotPlaybackFrame | null>;
   playerShotActivityRef?: React.RefObject<PlayerShotActivitySampleV1 | null>;
+  controlledActorId?: string | null;
+  controlledPresentationPaused?: boolean;
   playerShotPreview?: PlayerShotPreview | null;
   openingMarker?: RenderSnapshot["openingMarker"];
   openingTargets?: RenderSnapshot["openingTargets"];
@@ -918,8 +922,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const mobilityEntitiesSceneRef = useRef<MobilityEntitiesSceneSystem | null>(null);
   const liveEntitiesSceneRef = useRef<LiveEntitiesSceneSystem | null>(null);
   const naturalGolferAtlasRef = useRef<NaturalGolferAtlas<PIXI.Texture> | null>(null);
-  const naturalDiagnosticOutputRef = useRef<HTMLOutputElement | null>(null);
   const naturalCandidate = import.meta.env.DEV && new URLSearchParams(window.location.search).get("naturalGolfers") === "1";
+  const golferActivityRuntimeRef = useRef<ReturnType<typeof createNaturalGolferRuntime<PIXI.Texture>> | null>(null);
+  if (import.meta.env.DEV && naturalCandidate && !golferActivityRuntimeRef.current) golferActivityRuntimeRef.current = createNaturalGolferRuntime(() => naturalGolferAtlasRef.current);
+  const naturalDiagnosticOutputRef = useRef<HTMLOutputElement | null>(null);
   const naturalPresentationTimeRef = useRef(0);
   const naturalVisibilityRef = useRef({ hidden: document.hidden, epoch: 0 });
   const overlaysDiagnosticsSceneRef = useRef<OverlaysDiagnosticsSceneSystem | null>(null);
@@ -3931,12 +3937,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
       terrainDecals: layers.terrainDecals,
       fx: layers.fx,
       screenOverlay: layers.screenOverlay,
-    }, { naturalAtlas: () => naturalGolferAtlasRef.current });
+    }, { naturalAtlas: () => naturalGolferAtlasRef.current, activityRuntime: golferActivityRuntimeRef.current ?? undefined });
     const overlaysDiagnostics = deferredWorldScenes.createOverlaysDiagnosticsSceneSystem({
       terrainDecals: layers.terrainDecals,
       fx: layers.fx,
       screenOverlay: layers.screenOverlay,
-    });
+    }, { activityRuntime: golferActivityRuntimeRef.current ?? undefined });
     const terrainWater = terrainWaterSceneRef.current;
     if (!terrainWater) {
       console.error("[PixiStage] Renderer became ready without its terrain/water scene");
@@ -3990,6 +3996,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (liveEntitiesSceneRef.current === liveEntities) liveEntitiesSceneRef.current = null;
       if (overlaysDiagnosticsSceneRef.current === overlaysDiagnostics) overlaysDiagnosticsSceneRef.current = null;
       host.dispose();
+      golferActivityRuntimeRef.current?.clear();
     };
   }, [appReady]);
 
@@ -4069,6 +4076,38 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (naturalCandidate && !document.hidden) naturalPresentationTimeRef.current += Math.min(100, Math.max(0, dtMs));
       tickerOnFrameTime?.(dtMs);
 
+      const list = liveActive && tickerShowGolfers !== false ? golfersRef?.current ?? [] : [];
+      let cullL = -Infinity, cullR = Infinity, cullT = -Infinity, cullB = Infinity;
+      const worldCull = layers.world;
+      if (worldCull.rotation === 0) {
+        const margin = 96, halfW = app.screen.width / 2 / worldCull.scale.x, halfH = app.screen.height / 2 / worldCull.scale.y;
+        cullL = worldCull.pivot.x - halfW - margin; cullR = worldCull.pivot.x + halfW + margin;
+        cullT = worldCull.pivot.y - halfH - margin; cullB = worldCull.pivot.y + halfH + margin;
+      }
+      const visible = (p: Point) => p.x >= cullL && p.x <= cullR && p.y >= cullT && p.y <= cullB;
+      const controlledSample = props.playerShotActivityRef?.current ?? null;
+      const controlledPlayback = playerShotPlaybackRef?.current ?? null;
+      const controlledShot = props.playerRound?.phase === "flight" ? props.playerRound.pendingShot : null;
+      const controlledMotion = controlledShot?.sharedOutcome?.motion;
+      const controlledOrigin = controlledMotion?.from;
+      // Draw eligibility belongs to the current round, not the optional activity
+      // publication (which clears at completion while the round still retains B).
+      const controlledBodyDrawEligible = naturalCandidate && tickerShowGolfers !== false && !document.hidden && !naturalVisibilityRef.current.hidden
+        && typeof controlledShot?.id === "string" && controlledShot.id.length > 0
+        && controlledPlayback?.shotId === controlledShot.id && controlledMotion?.identity?.shotId === controlledShot.id
+        && !!controlledOrigin?.point && Number.isFinite(controlledOrigin.point.x) && Number.isFinite(controlledOrigin.point.y) && Number.isFinite(controlledOrigin.heightYards)
+        && visible(tileCenterIso(controlledOrigin.point.x, controlledOrigin.point.y, controlledOrigin.heightYards / 2.5, rotation));
+      const activityBatch = naturalCandidate && naturalGolferGround ? golferActivityRuntimeRef.current!.tickFrame({
+        golfers: list, ground: naturalGolferGround, rotation,
+        visibleIds: new Set(list.filter(g => visible(groundedGolferFrame(g.x, g.y, rotation, surfaceHeightAt).screen)).map(g => g.id)),
+        presentationTimeMs: naturalPresentationTimeRef.current, paused: props.livePresentationPaused ?? false,
+        hidden: naturalVisibilityRef.current.hidden, visibilityEpoch: naturalVisibilityRef.current.epoch,
+        motionEnabled: tickerAnimationsEnabled, quality: tickerGraphicsQuality, operatingTier: props.liveOperatingTier ?? 1,
+        followedId: tickerFollowSelected ? tickerSelectedGolferId ?? null : null,
+      }, { sample: controlledSample, round: props.playerRound ?? null, expectedActorId: props.controlledActorId ?? null,
+        playback: controlledPlayback, paused: props.controlledPresentationPaused ?? false, visible: controlledBodyDrawEligible,
+      }) : null;
+
       const overlaysDiagnostics = overlaysDiagnosticsSceneRef.current;
       overlaysDiagnostics?.beginFrame(nowMs);
       overlaysDiagnostics?.tick({
@@ -4092,8 +4131,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
         selectedDecorationKind: tickerSelectedDecorationKind,
         decorationRotation: tickerDecorationRotation,
         decorationSpan: tickerDecorationSpan,
-        playerShotPlayback: playerShotPlaybackRef?.current ?? null,
+        playerShotPlayback: controlledPlayback,
         playerShotPreview: tickerPlayerShotPreview,
+        controlledBodyEnabled: naturalCandidate,
+        controlledBodyDrawEligible,
+        controlledActorId: props.controlledActorId,
+        controlledBody: activityBatch?.controlled ?? null,
       });
       (window as unknown as { __ccPlayerShotPlayback?: ReturnType<OverlaysDiagnosticsSceneSystem["playerShotPlayback"]> }).__ccPlayerShotPlayback
         = overlaysDiagnostics?.playerShotPlayback() ?? null;
@@ -4161,7 +4204,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
       perfMark("fx");
 
-      const list = liveActive && tickerShowGolfers !== false ? golfersRef?.current ?? [] : [];
       const terrainPreview = terrainStrokePreview;
       habitatFieldSceneRef.current?.tick({
         golfers: list,
@@ -4178,21 +4220,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
       // Preserve the legacy entity culling and tick ordering while the scene
       // owns every golfer, ball, emote, and transient display object.
-      let cullL = -Infinity;
-      let cullR = Infinity;
-      let cullT = -Infinity;
-      let cullB = Infinity;
-      const worldCull = layers.world;
-      if (worldCull.rotation === 0) {
-        const margin = 96;
-        const halfW = app.screen.width / 2 / worldCull.scale.x;
-        const halfH = app.screen.height / 2 / worldCull.scale.y;
-        cullL = worldCull.pivot.x - halfW - margin;
-        cullR = worldCull.pivot.x + halfW + margin;
-        cullT = worldCull.pivot.y - halfH - margin;
-        cullB = worldCull.pivot.y + halfH + margin;
-      }
       liveEntities?.tickEntities({
+        activityFrames: activityBatch?.live,
         nowMs,
         animationsEnabled: tickerAnimationsEnabled,
         presentationTimeMs: naturalPresentationTimeRef.current,
@@ -4244,7 +4273,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     return () => {
       app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, draftGreen, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, terrainStrokePreview, clickSplineDraft, clickSplineHover, tickerColorVision, tickerGraphicsQuality, tickerReducedMotion, tickerSeasonalVisualState, tickerSculptRadius, tickerSelectedDecorationKind, tickerDecorationRotation, tickerDecorationSpan, tickerAnimationsEnabled, tickerAmbienceFx, tickerWaterAnimation, tickerTreeSway, props.flagColor, tickerSelectedGolferId, tickerFollowSelected, tickerShowGolfers, tickerOnFrameTime, playerShotPlaybackRef, tickerPlayerShotPreview, clampCenter, surfaceHeightAt, naturalCandidate, props.livePresentationPaused, props.liveOperatingTier]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, draftGreen, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, terrainStrokePreview, clickSplineDraft, clickSplineHover, tickerColorVision, tickerGraphicsQuality, tickerReducedMotion, tickerSeasonalVisualState, tickerSculptRadius, tickerSelectedDecorationKind, tickerDecorationRotation, tickerDecorationSpan, tickerAnimationsEnabled, tickerAmbienceFx, tickerWaterAnimation, tickerTreeSway, props.flagColor, tickerSelectedGolferId, tickerFollowSelected, tickerShowGolfers, tickerOnFrameTime, playerShotPlaybackRef, tickerPlayerShotPreview, clampCenter, surfaceHeightAt, naturalCandidate, naturalGolferGround, props.livePresentationPaused, props.liveOperatingTier, props.playerRound, props.playerShotActivityRef, props.controlledActorId, props.controlledPresentationPaused]);
 
   // Camera and editor input listeners are owned by ViewportInputController.
 

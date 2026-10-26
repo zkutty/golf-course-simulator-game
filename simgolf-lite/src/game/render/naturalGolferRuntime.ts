@@ -1,5 +1,9 @@
 import { clearFocusedLiveActivitySource } from "../live/activitySource";
+import { isShotPacingCursor, shotPacingFrame } from "../live/shotPacing";
 import type { GolferRenderData } from "../live/types";
+import type { PlayerPlayableRound } from "../models/playerProTypes";
+import { playerShotActivityIsCurrent, playerShotActivitySample, type PlayerShotActivitySampleV1, type PlayerShotPlaybackFrame } from "../playerPro/shotPlayback";
+import { isValidRetainedShotMotionV1 } from "../rules/shotMotion";
 import { ELEVATION_STEP_YARDS } from "../rules/obstacleCollision";
 import type { NaturalGolferAtlas, NaturalGolferTextureLookup } from "../../render/naturalGolferAtlas";
 import { admitGolferActivity, golferActivityOwnerKey, NATURAL_GOLFER_ACTIVITY_POLICY, projectGolferActivity } from "./golferActivity";
@@ -39,6 +43,26 @@ export interface NaturalGolferRuntimeInput {
   readonly motionEnabled: boolean; readonly quality: "high" | "medium" | "low"; readonly operatingTier: 1 | 2 | 4;
   readonly followedId: number | null;
 }
+export interface ControlledGolferRuntimeInput {
+  readonly sample: PlayerShotActivitySampleV1 | null;
+  readonly round: PlayerPlayableRound | null;
+  readonly expectedActorId: string | null;
+  readonly playback: PlayerShotPlaybackFrame | null;
+  readonly paused: boolean;
+  readonly visible: boolean;
+}
+export interface ControlledGolferRuntimeFrame {
+  readonly actorKey: string; readonly actorId: string; readonly ownerKey: string;
+  readonly sourceFrame: PlayerShotActivitySampleV1["frame"];
+  readonly legacyPose: GolferPose; readonly phase: string; readonly reason: string | null;
+  readonly admitted: boolean;
+  /** Legacy art has no certified hand/contact pair or independent facing. */
+  readonly verifiedContact: false;
+}
+export interface NaturalGolferRuntimeBatch<T> {
+  readonly live: ReadonlyMap<number, NaturalGolferRuntimeFrame<T>>;
+  readonly controlled: ControlledGolferRuntimeFrame | null;
+}
 export interface NaturalGolferRuntimeDiagnostics {
   readonly pilotId: number | null; readonly scopeId: string | null; readonly records: number; readonly localRecords: number;
   readonly foreground: number; readonly pending: 0; readonly reactionRecords: number; readonly eligibleReactions: number; readonly surfaceRevision: string | null;
@@ -49,6 +73,8 @@ interface Local {
   ownerKey: string; surfaceRevision: string; binding: GolferStanceBinding | null; plant: GolferStancePlant | null;
   locomotion: GolferLocomotionState | null; presentedFeet: GolferStancePoint | null; late: boolean;
   pending: object | null;
+  presentedLegacy?: GolferPose;
+  controlledContext?: string;
 }
 const feetCopy = (p: GolferStancePoint): GolferStancePoint => Object.freeze({ x: p.x, y: p.y, heightYards: p.heightYards });
 const sameFeet = (a: GolferStancePoint | null, b: GolferStancePoint) => !!a && Math.hypot(a.x - b.x, a.y - b.y) < 1e-7 && Math.abs(a.heightYards - b.heightYards) < 1e-7;
@@ -72,28 +98,55 @@ const currentSource = (g: GolferRenderData) => {
   return !!s && s.version === 1 && s.active && s.scope.active && !!s.scope.id && s.owner.scopeId === s.scope.id
     && s.owner.actorId === String(g.id) && s.authorityRevision === s.scope.revision && s.root.x === g.x && s.root.y === g.y;
 };
+function currentControlled(c: ControlledGolferRuntimeInput | null): PlayerShotActivitySampleV1 | null {
+  try {
+  const s = c?.sample, f = c?.playback, r = c?.round;
+  if (!c || !s || !f || !r || !c.expectedActorId || typeof c.paused !== "boolean" || typeof c.visible !== "boolean"
+    || !playerShotActivityIsCurrent(s, r, c.expectedActorId) || !isValidRetainedShotMotionV1(r.pendingShot?.sharedOutcome?.motion)
+    || s.authorityRevision !== r.id || s.owner.scopeId !== r.id || s.owner.actorId !== c.expectedActorId || s.key !== golferActivityOwnerKey(s.owner)
+    || !isShotPacingCursor(s.cursor, s.plan) || s.frame.complete || f.shotId !== s.frame.shotId || f.phase !== s.frame.phase || f.progress !== s.frame.progress
+    || f.motionProgress !== s.frame.motionProgress || f.addressing !== s.frame.addressing || f.complete !== s.frame.complete) return null;
+  const actual = shotPacingFrame(s.plan, s.cursor);
+  if (!actual || Object.keys(actual).some(key => actual[key as keyof typeof actual] !== s.frame[key as keyof typeof actual])) return null;
+  const expected = playerShotActivitySample(s.plan, s.cursor, actual, r.pendingShot!.sharedOutcome!.motion!, r.id, c.expectedActorId, r.handedness ?? null);
+  if (!expected || s.origin.horizontal !== "tiles" || s.origin.vertical !== "yards" || s.equipmentClass !== expected.equipmentClass
+    || s.retainedEvidence.validated !== true || s.retainedEvidence.key !== expected.key) return null;
+  return s;
+  } catch { return null; }
+}
+/** Immutable body permissions/context only: excludes camera, cursor, and object identity. */
+function controlledContext(s: PlayerShotActivitySampleV1, r: PlayerPlayableRound): string {
+  const p = s.plan;
+  return JSON.stringify([s.key, s.authorityRevision, s.handedness, s.origin.horizontal, s.origin.vertical, s.origin.x, s.origin.y, s.origin.heightYards,
+    s.targetWorld?.x ?? null, s.targetWorld?.y ?? null, s.equipmentClass, p.version, p.kind, p.durationMs, p.addressMs, p.contactMs, p.restMs, p.firstContactT,
+    r.kind, r.course.courseId, r.course.geometryVersion ?? null, r.course.width, r.course.height, r.course.yardsPerTile, r.teeSet, r.pinRotation, r.currentHoleIndex]);
+}
 /** One accepted admission store shared by LIVE and a later controlled borrower.
  * Never loads/disposes its borrowed atlas, advances a cursor, or owns authority. */
 export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T> | null) {
   let reactionState: GolferReactionState | null = null;
-  let records: readonly GolferActivityState[] = [], liveKeys = new Set<string>();
+  let records: readonly GolferActivityState[] = [], liveKeys = new Set<string>(), controlledKey: string | null = null;
   let scopeId: string | null = null, pilotId: number | null = null, selectedPilot = false;
   let surfaceRevision: string | null = null, visibilityEpoch: number | null = null, lastTime = -1;
   let index: NaturalGolferArtIndex | null = null, clips = naturalGolferActivityClips(null, NATURAL_GOLFER_PILOT_SELECTION);
-  const locals = new Map<number, Local>();
-  const publications = new WeakMap<object, { local: Local; feet: GolferStancePoint | null; locomotion: GolferLocomotionState | null; plant: GolferStancePlant | null }>();
-  const dropLive = () => { records = records.filter(r => !liveKeys.has(r.actorKey)); liveKeys.clear(); locals.clear(); };
+  const locals = new Map<string, Local>();
+  const publications = new WeakMap<object, { actorKey: string; local: Local; feet: GolferStancePoint | null; locomotion: GolferLocomotionState | null; plant: GolferStancePlant | null }>();
+  const controlledPublications = new WeakMap<object, Local>();
+  const dropLive = () => { records = records.filter(r => !liveKeys.has(r.actorKey)); for (const key of liveKeys) locals.delete(key); liveKeys.clear(); };
   const admit = (projection: GolferActivityProjection, time: number) => {
     const result = admitGolferActivity(NATURAL_GOLFER_ACTIVITY_POLICY, records, projection, time); records = result.records; return result.projection;
   };
   return {
     /** Callers must use the SAME active timestamp and this store, never create a second cap domain. */
     admitExternalActivity: admit,
-    tickLive(input: NaturalGolferRuntimeInput): ReadonlyMap<number, NaturalGolferRuntimeFrame<T>> {
+    tickLive(input: NaturalGolferRuntimeInput): ReadonlyMap<number, NaturalGolferRuntimeFrame<T>> { return this.tickFrame(input, null).live; },
+    tickFrame(input: NaturalGolferRuntimeInput, controlled: ControlledGolferRuntimeInput | null): NaturalGolferRuntimeBatch<T> {
       const borrowed = atlas(), nextIndex = borrowed?.artIndex() ?? null;
+      const sample = currentControlled(controlled);
       const firstScope = input.golfers.find(currentSource)?.activitySource?.scope.id ?? null;
       const scopeChanged = firstScope !== null && firstScope !== scopeId;
       const invalidated = surfaceRevision !== input.ground.surfaceRevision || visibilityEpoch !== input.visibilityEpoch || nextIndex !== index;
+      const sessionInvalidated = visibilityEpoch !== null && visibilityEpoch !== input.visibilityEpoch || input.presentationTimeMs < lastTime;
       if (scopeChanged) { dropLive(); scopeId = firstScope; pilotId = null; selectedPilot = false; }
       if (surfaceRevision !== input.ground.surfaceRevision || visibilityEpoch !== input.visibilityEpoch || input.presentationTimeMs < lastTime || nextIndex !== index) dropLive();
       surfaceRevision = input.ground.surfaceRevision; visibilityEpoch = input.visibilityEpoch; lastTime = input.presentationTimeMs;
@@ -103,13 +156,29 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
         if (eligible[0]) { pilotId = eligible[0].id; selectedPilot = true; }
       }
       const previousRecords = new Map(records.map(r => [r.actorKey, r]));
-      records = records.filter(r => !liveKeys.has(r.actorKey)); liveKeys = new Set();
+      records = records.filter(r => !liveKeys.has(r.actorKey) && r.actorKey !== controlledKey); liveKeys = new Set();
+      if (controlledKey && (!sample || controlledKey !== keyActor(sample.owner.scopeId, sample.actorId))) locals.delete(controlledKey);
+      controlledKey = sample ? keyActor(sample.owner.scopeId, sample.actorId) : null;
+      const context = sample ? controlledContext(sample, controlled!.round!) : null;
+      if (controlledKey && locals.get(controlledKey)?.controlledContext !== context) {
+        // A current replacement may keep the same owner key. Invalidate its
+        // prior activity/acknowledged pose BEFORE a paused publication.
+        previousRecords.delete(controlledKey); locals.delete(controlledKey);
+      }
+      let controlledFacts: GolferActivityFacts | null = sample ? { version: 1, owner: sample.owner, currentOwner: sample.owner,
+        authorityRevision: sample.authorityRevision, currentAuthorityRevision: sample.authorityRevision, root: sample.origin,
+        facingOctant: null, targetOctant: naturalGolferWorldView(sample.targetWorld, input.rotation)?.octant ?? null,
+        handedness: sample.handedness, equipmentClass: sample.equipmentClass, movement: null,
+        playback: { plan: sample.plan, cursor: sample.cursor, frame: sample.frame, retainedEvidence: sample.retainedEvidence }, outcome: null, clips: [],
+        mode: "controlled", followExplicit: false, visibility: controlled!.visible ? "visible" : "culled", quality: input.quality,
+        motionEnabled: input.motionEnabled, paused: controlled!.paused, hidden: input.hidden, discontinuity: sessionInvalidated ? "reveal" : "none", presentationTimeMs: input.presentationTimeMs } : null;
       const output = new Map<number, NaturalGolferRuntimeFrame<T>>();
       const sorted = [...input.golfers].sort((a, b) => Number(b.id === input.followedId) - Number(a.id === input.followedId) || Number(b.id === pilotId) - Number(a.id === pilotId) || a.id - b.id);
       const prepared = sorted.map(golfer => {
-        const raw = golfer.activitySource, followed = input.followedId === golfer.id;
+        const raw = golfer.activitySource, followed = !sample && input.followedId === golfer.id;
         const source = !followed && raw?.playback ? clearFocusedLiveActivitySource(raw) : raw;
-        if (!source || !currentSource(golfer) || !source.scope.id || source.scope.id !== scopeId) return { golfer, source: null, facts: null };
+        if (!source || !currentSource(golfer) || !source.scope.id || source.scope.id !== scopeId
+          || sample && source.owner.scopeId === sample.owner.scopeId && source.owner.actorId === sample.actorId) return { golfer, source: null, facts: null };
         const owner = { ...source.owner, scopeId: source.scope.id }, actorKey = keyActor(owner.scopeId, owner.actorId);
         const height = source.root.heightYards ?? input.ground.heightAt(golfer.x + .5, golfer.y + .5) * ELEVATION_STEP_YARDS;
         const facing = source.facingWorld ? facingOctant(source.facingWorld.x, source.facingWorld.y, input.rotation) : null;
@@ -124,27 +193,30 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
           paused: input.paused, hidden: input.hidden, discontinuity: "none", presentationTimeMs: input.presentationTimeMs };
         liveKeys.add(actorKey); return { golfer, source, facts };
       });
-      // Exactly one LIVE batch/store. A later controlled borrower must join this
-      // same batch; separate per-domain or per-actor scheduler calls would lose caps.
-      const reactionBatch = prepared.filter(row => row.facts?.playback && row.facts.owner.shot).slice(0, 128);
+      // One frame-wide reaction batch and admission store for both domains.
+      const reactionBatch = [
+        ...(controlledFacts ? [{ facts: controlledFacts, classification: sample?.reactionClassification ?? null, discard: false }] : []),
+        ...prepared.filter(row => row.facts?.playback && row.facts.owner.shot).map(row => ({ facts: row.facts!, classification: row.golfer.activitySource?.reactionClassification ?? null, discard: invalidated || scopeChanged })),
+      ].slice(0, 128);
       const reactions = scheduleGolferReactions(reactionState, { scopeId: "natural-golfer-render-session", authorityRevision: "1",
         presentationTimeMs: input.presentationTimeMs, quality: input.quality, motionEnabled: input.motionEnabled, hidden: input.hidden,
-        discontinuity: invalidated ? "reveal" : scopeChanged ? "reload" : "none",
-        actors: reactionBatch.map(({ facts, golfer }) => ({ owner: facts!.owner, currentOwner: facts!.currentOwner,
+        discontinuity: sessionInvalidated ? "reveal" : "none",
+        actors: reactionBatch.map(({ facts, classification, discard }) => ({ owner: facts!.owner, currentOwner: facts!.currentOwner,
           authorityRevision: facts!.authorityRevision, currentAuthorityRevision: facts!.currentAuthorityRevision,
-          ...facts!.playback!, classification: golfer.activitySource?.reactionClassification ?? null, visibility: facts!.visibility, paused: facts!.paused })) });
+          ...facts!.playback!, classification, visibility: discard ? "culled" : facts!.visibility, paused: facts!.paused })) });
       reactionState = reactions.state;
       const outcomes = new Map(reactions.outputs.map(out => [out.actorKey, out.outcome]));
+      if (controlledFacts) controlledFacts = { ...controlledFacts, outcome: outcomes.get(controlledKey!) ?? null };
       for (const row of prepared) if (row.facts) row.facts = { ...row.facts, outcome: outcomes.get(keyActor(row.facts.owner.scopeId, row.facts.owner.actorId)) ?? null };
       // Eligible static cues precede ordinary activity admission, without a queue.
       prepared.sort((a, b) => Number(b.facts?.outcome?.eligible === true) - Number(a.facts?.outcome?.eligible === true));
       // Retention expires HISTORY, not the selected visual family. Reacquire
       // current facts in the same tick with no old gait/plant/strike evidence.
-      if (!input.paused) for (const row of prepared) {
-        if (!row.facts) continue;
-        const actor = keyActor(row.facts.owner.scopeId, row.facts.owner.actorId), previous = previousRecords.get(actor);
+      for (const facts of [...prepared.map(row => row.facts), controlledFacts]) {
+        if (!facts || facts.paused) continue;
+        const actor = keyActor(facts.owner.scopeId, facts.owner.actorId), previous = previousRecords.get(actor);
         if (previous && input.presentationTimeMs - previous.startedAtMs > NATURAL_GOLFER_ACTIVITY_POLICY.maxRetentionMs) {
-          previousRecords.delete(actor); locals.delete(row.golfer.id);
+          previousRecords.delete(actor); locals.delete(actor);
         }
       }
       const previousActivity = (facts: GolferActivityFacts) => {
@@ -154,14 +226,41 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
         // projection is current-authority static/gait, never a queued route.
         return previous?.movementKey === movementKey ? previous : undefined;
       };
-      // A valid paused owner keeps its slot. Rebuild from actual projections so
-      // follow changes downgrade old foreground ownership before new admission.
-      if (input.paused) for (const row of prepared) {
-        if (!row.facts) continue;
+      const retainedIds = new Set<string>();
+      let controlledFrame: ControlledGolferRuntimeFrame | null = null;
+      if (controlledFacts && sample) {
+        const projection = admit(projectGolferActivity(NATURAL_GOLFER_ACTIVITY_POLICY, controlledFacts, previousActivity(controlledFacts)), input.presentationTimeMs);
+        let local = locals.get(controlledKey!);
+        if (!local || local.ownerKey !== sample.key) {
+          local = { ownerKey: sample.key, surfaceRevision: "controlled-legacy", binding: null, plant: null, locomotion: null, presentedFeet: null, late: true, pending: null, controlledContext: context! };
+        }
+        let pose: GolferPose = { anim: "idle", ...octantRow(2), col: 0 };
+        const p = projection.pose;
+        // Target never supplies actual facing. Only explicitly degraded unknown-
+        // hand legacy strikes use the target rows; known unsupported hands rest.
+        if (projection.nextState && p?.fallbackReason === "legacy-unverified-strike" && (p.clipId === "swing" || p.clipId === "putt")) pose = { anim: p.clipId, row: p.row, mirror: p.mirror, col: p.col };
+        if (controlledFacts.paused && local.presentedLegacy) {
+          const held = local.presentedLegacy;
+          // Hold phase/column, while deriving the current camera view from the
+          // unchanged world target. Known hands never inherit a degraded strike.
+          pose = sample.handedness === null && (held.anim === "swing" || held.anim === "putt") && controlledFacts.targetOctant !== null
+            ? { ...held, ...octantRow(controlledFacts.targetOctant) } : { anim: "idle", ...octantRow(2), col: 0 };
+        }
+        controlledFrame = Object.freeze({ actorKey: controlledKey!, actorId: sample.actorId, ownerKey: sample.key,
+          sourceFrame: Object.freeze({ key: sample.frame.key, shotId: sample.frame.shotId, progress: sample.frame.progress, motionProgress: sample.frame.motionProgress,
+            phase: sample.frame.phase, addressing: sample.frame.addressing, complete: sample.frame.complete }), legacyPose: Object.freeze(pose),
+          phase: p?.phase ?? "watch", reason: projection.reason ?? p?.fallbackReason ?? (p?.phase === "reaction" ? "unsupported-reaction-facing" : null),
+          admitted: !!projection.nextState, verifiedContact: false });
+        if (projection.nextState) { retainedIds.add(controlledKey!); locals.set(controlledKey!, local); local.pending = controlledFrame; controlledPublications.set(controlledFrame, local); }
+        else locals.delete(controlledKey!);
+      }
+      // Reserve the current controlled foreground first. Paused overview actors
+      // keep their proofs only within the unchanged remaining quality capacity.
+      for (const row of prepared) {
+        if (!row.facts?.paused) continue;
         const prev = previousActivity(row.facts);
         if (prev) admit(projectGolferActivity(NATURAL_GOLFER_ACTIVITY_POLICY, row.facts, prev), input.presentationTimeMs);
       }
-      const retainedIds = new Set<number>();
       for (const { golfer, source, facts } of prepared) {
         const facing = facts?.facingOctant ?? facingOctant(golfer.dirX, golfer.dirY, input.rotation);
         const legacy: GolferPose = { anim: "idle", ...octantRow(facing), col: 0 };
@@ -171,8 +270,9 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
         const projection = admit(projectGolferActivity(NATURAL_GOLFER_ACTIVITY_POLICY, facts, previousActivity(facts)), input.presentationTimeMs);
         const reactionCue = projection.pose?.phase === "reaction" && facts.outcome?.eligible === true && input.quality !== "low" && input.motionEnabled;
         frame = { ...frame, phase: projection.pose?.phase ?? "watch", reason: projection.reason };
-        if (!projection.nextState || !projection.pose) { locals.delete(golfer.id); output.set(golfer.id, Object.freeze(frame)); continue; }
-        retainedIds.add(golfer.id);
+        const actorKey = keyActor(facts.owner.scopeId, facts.owner.actorId);
+        if (!projection.nextState || !projection.pose) { locals.delete(actorKey); output.set(golfer.id, Object.freeze(frame)); continue; }
+        retainedIds.add(actorKey);
         const root = feetCopy({ x: facts.root.x, y: facts.root.y, heightYards: facts.root.heightYards }), ownerKey = projection.pose.ownerKey;
         const pilot = golfer.id === pilotId && source.handedness === "right" && index !== null;
         const support = pilot || reactionCue ? input.ground.sampleFootprintAt(root.x + .5, root.y + .5) : null;
@@ -180,11 +280,11 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
         // Physical root B remains the retained source. The visual holder and
         // initial grounded feet use independently sampled, same-XY G.
         const visualLaunch = validVisualRoot ? feetCopy({ x: root.x, y: root.y, heightYards: support!.heightYards }) : null;
-        let local = locals.get(golfer.id);
+        let local = locals.get(actorKey);
         if (!local || local.ownerKey !== ownerKey || local.surfaceRevision !== surfaceRevision) {
           local = { ownerKey, surfaceRevision: surfaceRevision!, binding: null, plant: null, locomotion: null, presentedFeet: null,
             late: !!source.playback && source.playback.cursor.elapsedMs > 100, pending: null };
-          locals.set(golfer.id, local);
+          locals.set(actorKey, local);
         }
         let binding = local.binding, stanceIdentity = null, stanceFailure: string | null = null;
         if (pilot && source.playback && source.targetWorld && visualLaunch) {
@@ -297,17 +397,17 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
         else if (!frame.contact) frame = { ...frame, contactGeometry: null };
         const published = Object.freeze(frame); local.pending = published;
         const observedEligible = arrivalEligible && (!pilot || !!frame.natural);
-        publications.set(published, { local, feet: observedEligible ? feetCopy(frame.natural ? feet : root) : null,
+        publications.set(published, { actorKey, local, feet: observedEligible ? feetCopy(frame.natural ? feet : root) : null,
           locomotion: observedEligible ? locomotion?.nextState ?? null : null, plant: observedEligible && frame.natural ? nextPlant : null });
         output.set(golfer.id, published);
       }
       for (const id of locals.keys()) if (!retainedIds.has(id)) locals.delete(id);
-      return output;
+      return Object.freeze({ live: output, controlled: controlledFrame });
     },
     /** Scene calls only AFTER the complete pair/legacy fallback was applied. */
     observePresented(frame: NaturalGolferRuntimeFrame<T>): void {
       const observed = publications.get(frame);
-      if (!observed || observed.local.pending !== frame || locals.get(frame.actorId) !== observed.local) return;
+      if (!observed || observed.local.pending !== frame || locals.get(observed.actorKey) !== observed.local) return;
       if (observed.feet === null) {
         observed.local.presentedFeet = null; observed.local.locomotion = null; observed.local.plant = null; observed.local.binding = null;
         observed.local.late = true; observed.local.pending = null; return;
@@ -316,8 +416,14 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
       observed.local.pending = null;
       if (observed.plant || !observed.local.binding) observed.local.late = false;
     },
+    observeControlledPresented(frame: ControlledGolferRuntimeFrame): void {
+      const local = controlledPublications.get(frame);
+      if (!local || local.pending !== frame || locals.get(frame.actorKey) !== local) return;
+      local.presentedLegacy = frame.legacyPose; local.pending = null;
+    },
     diagnostics(): NaturalGolferRuntimeDiagnostics { return Object.freeze({ pilotId, scopeId, records: records.length, localRecords: locals.size,
       foreground: records.filter(r => r.foreground).length, pending: 0, reactionRecords: reactionState?.records.length ?? 0, eligibleReactions: reactionState?.records.filter(r => r.active).length ?? 0, surfaceRevision, atlas: atlas()?.snapshot() ?? null, legacyAtlasAlsoResident: true }); },
-    clear(): void { dropLive(); records = []; reactionState = null; scopeId = null; pilotId = null; selectedPilot = false; surfaceRevision = null; visibilityEpoch = null; lastTime = -1; },
+    clearLive(): void { dropLive(); },
+    clear(): void { dropLive(); locals.clear(); controlledKey = null; records = []; reactionState = null; scopeId = null; pilotId = null; selectedPilot = false; surfaceRevision = null; visibilityEpoch = null; lastTime = -1; },
   };
 }

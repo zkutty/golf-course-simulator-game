@@ -6504,6 +6504,8 @@ export default function App() {
                 playerShotAim={playerShotAim}
                 playerShotPlaybackRef={playerPlayback.frameRef}
                 playerShotActivityRef={playerPlayback.activitySampleRef}
+                controlledActorId={featuredGroupShot?.golfer.id ?? playerPro.identity.id}
+                controlledPresentationPaused={live.loading || flow.paused || Boolean(flow.modal) || Boolean(pendingWeekReport) || showPlayerPro || screen !== "game"}
                 playerShotPreview={playerShotPreview}
                 openingMarker={openingMarker}
                 openingTargets={openingTargets}

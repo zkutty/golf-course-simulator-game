@@ -10,6 +10,15 @@ import type { SharedShotOutcome } from "../rules/contracts";
 import { captureGolferReactionSource, observeGolferReactionSource } from "./golferReactionSource";
 import type { ShotMotionIdentityV1 } from "../rules/shotMotion";
 import type { Course } from "../models/types";
+import type { PlayerPlayableRound, PlayerShotTrace } from "../models/playerProTypes";
+import { createPlayerShotPlaybackDriver } from "../../ui/playerPro/usePlayerShotPlayback";
+import type { ControlledGolferRuntimeInput } from "./naturalGolferRuntime";
+import { naturalGolferWorldView } from "./golferStance";
+import { octantRow } from "./golferSprites";
+import { createRenderPerfCourse } from "../testing/referenceCourse";
+import { caddieRecommendation, createDefaultPlayerPro, startPlayableRound } from "../playerPro/playerPro";
+import { challengeGroupPlayerRound, challengeGroupPlayerSkills, commitChallengeGroupPlayerShot, startChallengeGroupRound } from "../competition/challengeGroupRound";
+import { challengeGroupFeaturedShot, challengeGroupPresentationRound, checkpointChallengeGroupPresentation, createChallengeGroupPresentation } from "../competition/challengeGroupPresentation";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { DEFAULT_WORLD } from "../models/defaults";
 import { createRetainedShotMotion, sampleRetainedShotMotion } from "../rules/shotMotion";
@@ -60,11 +69,12 @@ function actor(id = 7, x = 12, epoch = 0, left = false): GolferRenderData {
   return { id, x, y: 12, ballX: null, ballY: null, ballToX: null, ballToY: null, color: "#ff0000", mood: .7, thought: null, archetype: "casual",
     segKind: "walk", segT: (x - 12) / 8, shot: null, dirX: 1, dirY: 0, scoredHoles: 0, lastHoleDelta: 0, activitySource: source };
 }
-function shot(kind: "swing" | "putt" = "swing", degrees = 0, epoch = 0, options: { actorId?: number; identity?: Partial<ShotMotionIdentityV1>; holed?: boolean } = {}) {
+function shot(kind: "swing" | "putt" = "swing", degrees = 0, epoch = 0, options: { actorId?: number; identity?: Partial<ShotMotionIdentityV1>; holed?: boolean; originHeight?: number } = {}) {
   const id = options.actorId ?? 7;
   const a = degrees * Math.PI / 180, from = { x: 12, y: 12 }, landing = { x: 12 + 2 * Math.cos(a), y: 12 + 2 * Math.sin(a) }, rest = { x: 12 + 3 * Math.cos(a), y: 12 + 3 * Math.sin(a) };
-  const at = (point: { x: number; y: number }) => ({ point, heightYards: 0 });
-  const flight = kind === "putt" ? null : resolveObstacleCollision({ from, to: landing, flight: { profile: "standard", apexHeightYards: 4 }, width: 32, height: 32, yardsPerTile: 10, elevations: course.elevations, obstacles: [], retainGeometry: true }).retained!;
+  const height = options.originHeight ?? 0, at = (point: { x: number; y: number }) => ({ point, heightYards: height });
+  const flight = kind === "putt" ? null : resolveObstacleCollision({ from, to: landing, flight: { profile: "standard", apexHeightYards: 4 }, width: 32, height: 32, yardsPerTile: 10,
+    endpointHeightsYards: { from: height, to: height }, elevations: course.elevations, obstacles: [], retainGeometry: true }).retained!;
   const motion = createRetainedShotMotion({ identity: { shotId: "shot:1", holeId: "hole:1", shotNumber: 1, seed: 42, club: kind === "putt" ? "Putter" : "7 Iron", style: "normal", modelVersion: "physical_shot_v1", ...options.identity },
     yardsPerTile: 10, from: at(from), landing: at(kind === "putt" ? from : landing), physicalRest: at(rest), flight, rollPath: [at(kind === "putt" ? from : landing), at(rest)], holed: options.holed ?? false })!;
   const plan = createShotPacingPlan({ scopeId: scope(epoch).id!, actorId: String(id), motion, distanceYards: 30 })!;
@@ -107,6 +117,19 @@ function input(golfers: readonly GolferRenderData[], time = 0, patch: Partial<Na
     motionEnabled: true, quality: "high", operatingTier: 1, followedId: 7, ...patch };
 }
 function setup() { const f = atlasFixture(); return { ...f, runtime: createNaturalGolferRuntime(() => f.atlas) }; }
+function controlledShot(hand: "right" | "left" | null = "right", kind: "swing" | "putt" = "swing", actorId = "7", roundId = "controlled-round:1",
+  options: { degrees?: number; originHeight?: number; carryYards?: number; geometryVersion?: string } = {}) {
+  const s = shot(kind, options.degrees ?? 0, 0, options), m = s.motion;
+  const pending = { id: m.identity.shotId, holeId: m.identity.holeId, shotNumber: m.identity.shotNumber, seed: m.identity.seed,
+    club: m.identity.club, shotStyle: m.identity.style, from: m.from.point, aim: m.flight?.geometry.to ?? m.physicalRest.point, carryYards: options.carryYards ?? 30, rollYards: 0,
+    sharedOutcome: { motion: m } } as unknown as PlayerShotTrace;
+  const round = { id: roundId, phase: "flight", handedness: hand ?? undefined, pendingShot: pending, shots: [], course: { ...course, courseId: "course:1", geometryVersion: options.geometryVersion, holes: [] } } as unknown as PlayerPlayableRound;
+  const driver = createPlayerShotPlaybackDriver(pending, undefined, round.id, actorId, hand, round.course);
+  return { round, pending, driver, at(elapsed: number): ControlledGolferRuntimeInput {
+    while (driver.frame().progress * driver.plan.durationMs < elapsed - 1e-9) driver.advance(Math.min(100, elapsed - driver.frame().progress * driver.plan.durationMs));
+    return { round, sample: driver.sample(), playback: driver.frame(), expectedActorId: actorId, paused: false, visible: true };
+  } };
+}
 function present(f: ReturnType<typeof setup>, req: NaturalGolferRuntimeInput) {
   const frames = f.runtime.tickLive(req); for (const frame of frames.values()) f.runtime.observePresented(frame); return frames;
 }
@@ -344,6 +367,163 @@ describe("one opt-in LIVE pilot and accepted shared presentation store", () => {
     expect(text).not.toContain("excluded"); expect(text).not.toContain("ownerKey"); expect(text.length).toBeLessThan(2000);
     expect({ ...source, privateSource: null }).toEqual(before);
     expect(JSON.parse(naturalGolferVerificationJSON(null))).toMatchObject({ pilotId: null, family: null, feet: null, contact: { active: null, actualTip: null }, atlas: { status: null } });
+  });
+});
+
+describe("one combined LIVE/controlled body batch", () => {
+  it("consumes each actual featured challenge participant, without displaying other participants or changing committed authority", () => {
+    const base = createRenderPerfCourse("parkland"), holes = base.holes.slice(0, 9).map((h, i) => ({ ...h, id: `group-hole-${i + 1}`,
+      teeBoxes: { member: h.tee }, pinPositions: { A: h.green }, parByTee: { member: { mode: "MANUAL" as const, par: 5 as const } } }));
+    const ids = holes.map(h => h.id), layout = { id: "group-fixture", name: "Group", draftHoleIds: ids, publishedHoleIds: ids, roundLength: 9 as const, state: "open" as const, greenFee: 0 };
+    const career = createDefaultPlayerPro({ seed: 1409 }), started = startPlayableRound({ course: { ...base, holes, layouts: [layout], activeCourseId: layout.id }, world: { ...DEFAULT_WORLD, playerPro: career }, layoutId: layout.id });
+    if (!started.ok) throw new Error(started.reason);
+    const original = startChallengeGroupRound({ id: "group-1409", course: started.round.course, teeSet: started.round.teeSet, pinRotation: started.round.pinRotation,
+      participants: ["a", "b", "c", "d"].map((id, i) => ({ id, name: id, controller: i === 1 ? "player" : "ai", skills: career.skills, handicapIndex: 10 })), scoringMode: "gross-stroke", rngSeed: 1409, startedWeek: 1, startedDay: 2 });
+    let committed = original;
+    for (let i = 0; i < 8; i++) committed = commitChallengeGroupPlayerShot(committed, committed.playerGolferId, caddieRecommendation(challengeGroupPlayerRound(committed)!, challengeGroupPlayerSkills(committed)));
+    const before = structuredClone(committed), f = setup(), actors: string[] = [];
+    let display = createChallengeGroupPresentation(original, committed);
+    while (challengeGroupFeaturedShot(display)) {
+      const featured = challengeGroupFeaturedShot(display)!, round = challengeGroupPresentationRound(display)!;
+      const driver = createPlayerShotPlaybackDriver(featured.shot, round.shotPresentation, round.id, featured.golfer.id, round.handedness ?? null, round.course);
+      const frame = f.runtime.tickFrame(input([], actors.length), { round, sample: driver.sample(), playback: driver.frame(), expectedActorId: featured.golfer.id, paused: false, visible: true }).controlled!;
+      expect(frame).toMatchObject({ actorId: featured.golfer.id, admitted: true, verifiedContact: false });
+      f.runtime.observeControlledPresented(frame); actors.push(frame.actorId);
+      expect(f.runtime.diagnostics()).toMatchObject({ records: 1, localRecords: 1, foreground: 1, pending: 0 });
+      display = checkpointChallengeGroupPresentation(display, featured.shot.id, 1, true);
+    }
+    expect(actors).toHaveLength(4); expect(new Set(actors).size).toBe(4); expect(committed).toEqual(before);
+  });
+  it.each(["right", "left", null] as const)("uses the actual controlled%s cursor with honest legacy hand fallback", hand => {
+    for (const kind of ["swing", "putt"] as const) for (const offset of [-.001, 0, .001]) {
+      const f = setup(), s = controlledShot(hand, kind), launch = kind === "putt" ? 650 : 1200, c = s.at(launch + offset), before = structuredClone(c.sample), cursor = s.driver.cursor();
+      const frame = f.runtime.tickFrame(input([], launch + offset), c).controlled!;
+      expect(frame).toMatchObject({ admitted: true, actorId: "7", verifiedContact: false });
+      expect(frame.legacyPose.anim).toBe(hand === null ? kind : "idle");
+      if (hand === null) { expect(frame.reason).toBe("legacy-unverified-strike"); expect(frame.legacyPose.col).toBe(offset < 0 ? kind === "putt" ? 1 : 4 : offset === 0 ? kind === "putt" ? 2 : 5 : kind === "putt" ? 3 : 6); }
+      else expect(frame.legacyPose.col).toBe(0);
+      expect(s.driver.cursor()).toEqual(cursor); expect(c.sample).toEqual(before);
+      expect(f.runtime.diagnostics()).toMatchObject({ records: 1, localRecords: 1, foreground: 1, pending: 0 });
+    }
+  });
+  it("prioritizes current controlled foreground defensively while preserving raw LIVE source and numeric/string identities", () => {
+    const f = setup(), live = shot(), first = reach(f, live, 1200); expect(first.contact).toBe(true);
+    const s = controlledShot(), g = live.at(1200), original = structuredClone(g);
+    const batch = f.runtime.tickFrame(input([g], 1201, { paused: true }), s.at(0));
+    expect(batch.controlled!.admitted).toBe(true); expect(batch.live.get(7)!.contact).toBe(false); expect(g).toEqual(original);
+    expect(f.runtime.diagnostics()).toMatchObject({ records: 2, localRecords: 2, foreground: 1, pending: 0, reactionRecords: 1 });
+    f.runtime.observeControlledPresented(batch.controlled!);
+    f.runtime.clearLive(); expect(f.runtime.diagnostics()).toMatchObject({ records: 1, localRecords: 1, foreground: 1 });
+    const next = f.runtime.tickFrame(input([actor()], 1300, { ground: ground("changed:surface") }), s.at(20));
+    expect(next.controlled!.admitted).toBe(true); expect(f.runtime.diagnostics().records).toBe(2);
+  });
+  it("coalesces an exact cross-domain scope/actor collision into the current controlled presentation", () => {
+    const f = setup(), s = controlledShot("right", "swing", "7", scope().id!);
+    const batch = f.runtime.tickFrame(input([actor()], 0), s.at(0));
+    expect(batch.controlled!.admitted).toBe(true); expect(batch.live.get(7)!.natural).toBeNull();
+    expect(f.runtime.diagnostics()).toMatchObject({ records: 1, localRecords: 1, foreground: 1, pending: 0 });
+    f.runtime.clearLive(); expect(f.runtime.diagnostics().records).toBe(1);
+  });
+  it.each(["high", "medium", "low"] as const)("shares the %s activity cap for 100 LIVE actors plus a controlled actor", quality => {
+    const f = setup(), s = controlledShot(), actors = Array.from({ length: 100 }, (_, i) => actor(i + 1));
+    const batch = f.runtime.tickFrame(input(actors, 0, { quality }), s.at(0));
+    expect(batch.controlled!.admitted).toBe(true);
+    const cap = { high: 16, medium: 8, low: 4 }[quality];
+    expect(f.runtime.diagnostics()).toMatchObject({ records: cap, localRecords: cap, foreground: 1, pending: 0 });
+    expect([...batch.live.values()].filter(frame => frame.reason === "activity-cap")).toHaveLength(101 - cap);
+  });
+  it.each(["high", "medium", "low"] as const)("admits current control after preloaded100 LIVE actors become paused at %s quality", quality => {
+    const f = setup(), actors = Array.from({ length: 100 }, (_, i) => actor(i + 1)), cap = { high: 16, medium: 8, low: 4 }[quality];
+    const before = present(f, input(actors, 0, { quality })); expect(f.runtime.diagnostics().records).toBe(cap);
+    const source = controlledShot(), c = source.at(0), original = structuredClone(actors);
+    for (const time of [1, 20, 10000]) {
+      const batch = f.runtime.tickFrame(input(actors, time, { quality, paused: true }), c);
+      expect(batch.controlled).toMatchObject({ admitted: true, legacyPose: { anim: "idle", col: 0 } });
+      expect(f.runtime.diagnostics()).toMatchObject({ records: cap, localRecords: cap, foreground: 1, pending: 0 });
+      expect(batch.live.get(1)!.natural!.feet).toEqual(before.get(1)!.natural!.feet);
+      expect([...batch.live.values()].filter(row => row.reason !== "activity-cap")).toHaveLength(cap - 1);
+      for (const row of batch.live.values()) f.runtime.observePresented(row);
+      f.runtime.observeControlledPresented(batch.controlled!);
+    }
+    expect(actors).toEqual(original); expect(source.driver.cursor().progress).toBe(0);
+  });
+  it.each(ISO_ROTATIONS.flatMap(rotation => (["right", "left"] as const).map(hand => [rotation, hand] as const)))("invalidates a fully current paused replacement at camera%d from unknown to%s hand before any hold", (rotation, hand) => {
+    const f = setup(), old = controlledShot(null), initial = f.runtime.tickFrame(input([], 0), old.at(1200)).controlled!;
+    expect(initial.legacyPose).toMatchObject({ anim: "swing", col: 5 }); f.runtime.observeControlledPresented(initial);
+    const replacement = controlledShot(hand), c = { ...replacement.at(1200), paused: true };
+    expect(c.sample!.key).toBe(initial.ownerKey);
+    const next = f.runtime.tickFrame(input([], 1, { rotation }), c).controlled!;
+    expect(next).toMatchObject({ admitted: true, legacyPose: { anim: "idle", col: 0, mirror: false }, verifiedContact: false });
+    f.runtime.observeControlledPresented(initial); // Same key, obsolete local/context.
+    expect(f.runtime.tickFrame(input([], 2, { rotation }), c).controlled!.legacyPose).toEqual(next.legacyPose);
+    expect(f.runtime.diagnostics().reactionRecords).toBe(1);
+  });
+  it.each(["target", "origin", "plan", "context"] as const)("invalidates fully current paused immutable%s metadata while preserving the shared source clock", variant => {
+    const f = setup(), old = controlledShot(null), first = f.runtime.tickFrame(input([], 0), old.at(1200)).controlled!;
+    f.runtime.observeControlledPresented(first);
+    const options = variant === "target" ? { degrees: 90 } : variant === "origin" ? { originHeight: .05 } : variant === "plan" ? { carryYards: 60 } : { geometryVersion: "replacement" };
+    const replacement = controlledShot(null, "swing", "7", "controlled-round:1", options), c = { ...replacement.at(1200), paused: true }, clock = replacement.driver.cursor();
+    expect(c.sample!.key).toBe(first.ownerKey);
+    const next = f.runtime.tickFrame(input([], 1), c).controlled!;
+    expect(next).toMatchObject({ admitted: true, legacyPose: { anim: "idle", col: 0 }, verifiedContact: false });
+    f.runtime.observeControlledPresented(first);
+    expect(f.runtime.tickFrame(input([], 2), c).controlled!.legacyPose.anim).toBe("idle");
+    expect(replacement.driver.cursor()).toEqual(clock); expect(f.runtime.diagnostics().reactionRecords).toBe(1);
+  });
+  it("holds an unknown legacy stroke column while projecting each current camera, without using sample/round pointers as context", () => {
+    const f = setup(), source = controlledShot(null), c = source.at(1200);
+    const initial = f.runtime.tickFrame(input([], 0), c).controlled!; f.runtime.observeControlledPresented(initial);
+    for (const [i, rotation] of ISO_ROTATIONS.entries()) {
+      const held = { ...c, sample: structuredClone(c.sample), round: structuredClone(c.round), paused: true };
+      const frame = f.runtime.tickFrame(input([], i + 1, { rotation }), held).controlled!;
+      expect(frame.legacyPose).toEqual({ anim: "swing", col: 5, ...octantRow(naturalGolferWorldView(c.sample!.targetWorld, rotation)!.octant) });
+      expect(frame.sourceFrame).toEqual(c.sample!.frame); f.runtime.observeControlledPresented(frame);
+    }
+    expect(source.driver.cursor()).toEqual({ version: 1, shotId: "shot:1", progress: 1200 / source.driver.plan.durationMs });
+  });
+  it("holds each domain independently under a common timestamp and does not clear controlled state for LIVE day/surface/atlas changes", () => {
+    const f = setup(), s = controlledShot(null), c = s.at(1200);
+    let batch = f.runtime.tickFrame(input([actor()], 0, { paused: true }), c); f.runtime.observeControlledPresented(batch.controlled!);
+    const applied = batch.controlled!.legacyPose;
+    const held = { ...c, paused: true };
+    batch = f.runtime.tickFrame(input([actor(7, 12.05)], 100000), held);
+    expect(batch.controlled!.legacyPose).toEqual(applied); expect(applied.col).toBe(5);
+    f.runtime.observeControlledPresented(batch.controlled!);
+    f.state.ready = false;
+    batch = f.runtime.tickFrame(input([actor(7, 12.1, 1)], 100100, { ground: ground("surface:2"), paused: false }), held);
+    expect(batch.controlled!.admitted).toBe(true); expect(batch.controlled!.legacyPose.col).toBe(5);
+    expect(f.runtime.diagnostics().foreground).toBe(1);
+  });
+  it.each(["actor", "round", "hand", "identity", "origin", "target", "revision", "key", "frame", "exact-clock", "evidence", "equipment"])("rejects controlled %s mismatch and clears its old local state", variant => {
+    const f = setup(), s = controlledShot(), c = s.at(0); f.runtime.tickFrame(input([actor()], 0), c);
+    const invalid = { ...c };
+    if (variant === "actor") invalid.expectedActorId = "other";
+    if (variant === "round") invalid.round = { ...c.round!, id: "other" };
+    if (variant === "hand") invalid.round = { ...c.round!, handedness: "left" };
+    if (variant === "identity") invalid.round = { ...c.round!, pendingShot: { ...s.pending, sharedOutcome: { ...s.pending.sharedOutcome!, motion: { ...s.pending.sharedOutcome!.motion!, identity: { ...s.pending.sharedOutcome!.motion!.identity, seed: 99 } } } } };
+    if (variant === "origin") invalid.sample = { ...c.sample!, origin: { ...c.sample!.origin, heightYards: 99 } };
+    if (variant === "target") invalid.sample = { ...c.sample!, targetWorld: { x: 0, y: 1 } };
+    if (variant === "revision") invalid.sample = { ...c.sample!, authorityRevision: "other" };
+    if (variant === "key") invalid.sample = { ...c.sample!, key: "other" };
+    if (variant === "frame") invalid.playback = { ...c.playback!, motionProgress: .5 };
+    if (variant === "exact-clock") { invalid.sample = { ...c.sample!, frame: { ...c.sample!.frame, motionProgress: .5 } }; invalid.playback = { ...c.playback!, motionProgress: .5 }; }
+    if (variant === "evidence") invalid.sample = { ...c.sample!, retainedEvidence: { key: "other", validated: true } };
+    if (variant === "equipment") invalid.sample = { ...c.sample!, equipmentClass: "putter" };
+    expect(f.runtime.tickFrame(input([actor()], 1), invalid).controlled).toBeNull();
+    expect(f.runtime.diagnostics()).toMatchObject({ records: 1, localRecords: 1, foreground: 0 });
+  });
+  it("clears hidden/cull/reveal/skip/complete sources without replay and accepts the actual next participant", () => {
+    const f = setup(), s = controlledShot(null), c = s.at(1200);
+    const initial = f.runtime.tickFrame(input([], 0), c).controlled!;
+    for (const [time, patch, control] of [[1, { hidden: true }, c], [2, {}, { ...c, visible: false }], [3, { visibilityEpoch: 1 }, c]] as const) {
+      expect(f.runtime.tickFrame(input([], time, patch), control).controlled!.admitted).toBe(false);
+      f.runtime.observeControlledPresented(initial); expect(f.runtime.diagnostics().localRecords).toBe(0);
+    }
+    s.driver.advance(0, false, true);
+    expect(f.runtime.tickFrame(input([], 4), { ...c, sample: s.driver.sample(), playback: s.driver.frame() }).controlled).toBeNull();
+    const next = controlledShot("left", "putt", "participant:8");
+    expect(f.runtime.tickFrame(input([], 5), next.at(0)).controlled).toMatchObject({ actorId: "participant:8", admitted: true, legacyPose: { anim: "idle" } });
+    f.runtime.tickFrame(input([], 6), null); expect(f.runtime.diagnostics()).toMatchObject({ records: 0, localRecords: 0, pending: 0 });
   });
 });
 

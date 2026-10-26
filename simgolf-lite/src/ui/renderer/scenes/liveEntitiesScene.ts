@@ -123,6 +123,7 @@ export interface LiveEntityCullBounds {
 }
 
 export interface LiveEntityTickInput {
+  readonly activityFrames?: ReadonlyMap<number, NaturalGolferRuntimeFrame<PIXI.Texture>>;
   readonly nowMs: number;
   readonly animationsEnabled: boolean;
   readonly presentationTimeMs?: number;
@@ -172,6 +173,7 @@ export interface LiveEntitiesSceneSystem extends RenderSceneSystem {
 }
 
 export interface LiveEntitiesSceneDependencies {
+  readonly activityRuntime?: ReturnType<typeof createNaturalGolferRuntime<PIXI.Texture>>;
   readonly naturalAtlas?: () => NaturalGolferAtlas<PIXI.Texture> | null;
   readonly atlasReady?: () => boolean;
   readonly golferFrame?: (frame: string) => PIXI.Texture | undefined;
@@ -267,7 +269,8 @@ export function createLiveEntitiesSceneSystem(
   const createSprite = dependencies.createSprite ?? (() => new PIXI.Sprite());
   const createText = dependencies.createText ?? ((options) => new PIXI.Text(options));
   const bubbleDependencies = { createContainer, createGraphics, createText };
-  const naturalRuntime = createNaturalGolferRuntime(dependencies.naturalAtlas ?? (() => null));
+  const ownsRuntime = !dependencies.activityRuntime;
+  const naturalRuntime = dependencies.activityRuntime ?? createNaturalGolferRuntime(dependencies.naturalAtlas ?? (() => null));
   let naturalPilotDiagnostic: object | null = null;
 
   let authority: LiveEntityAuthority | null = null;
@@ -319,7 +322,7 @@ export function createLiveEntitiesSceneSystem(
     ripples = [];
     impacts = [];
     authority = null;
-    naturalRuntime.clear(); naturalPilotDiagnostic = null;
+    if (ownsRuntime) naturalRuntime.clear(); else naturalRuntime.clearLive(); naturalPilotDiagnostic = null;
   };
 
   const ensureEffects = () => {
@@ -401,7 +404,7 @@ export function createLiveEntitiesSceneSystem(
       entry.sprite = null; entry.dot = null;
       const body = createGraphics(); entry.holder.addChild(body); entry.dot = { body, lastColor: "", lastMoodBucket: -1 };
     }
-    naturalRuntime.clear(); naturalPilotDiagnostic = null;
+    if (ownsRuntime) naturalRuntime.clear(); else naturalRuntime.clearLive(); naturalPilotDiagnostic = null;
   };
   const applyCandidateFrame = (entry: GolferEntry, golfer: GolferRenderData, frame: NaturalGolferRuntimeFrame<PIXI.Texture>) => {
     const sprite = entry.sprite!;
@@ -466,7 +469,7 @@ export function createLiveEntitiesSceneSystem(
       tickMobilityEntities,
     } = input;
     const candidate = authority.candidate && !!authority.ground;
-    const naturalFrames = candidate ? naturalRuntime.tickLive({ golfers, ground: authority.ground!, rotation,
+    const naturalFrames = candidate ? input.activityFrames ?? naturalRuntime.tickLive({ golfers, ground: authority.ground!, rotation,
       visibleIds: new Set(golfers.filter(g => { const p = groundedGolferFrame(g.x, g.y, rotation, surfaceHeightAt).screen;
         return p.x >= cullBounds.left && p.x <= cullBounds.right && p.y >= cullBounds.top && p.y <= cullBounds.bottom; }).map(g => g.id)),
       presentationTimeMs: input.presentationTimeMs ?? nowMs, paused: input.presentationPaused ?? false, hidden: input.hidden ?? false,

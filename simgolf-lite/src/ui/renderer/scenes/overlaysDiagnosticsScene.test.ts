@@ -11,6 +11,10 @@ import { playerShotPlaybackFrame } from "../../../game/playerPro/shotPlayback";
 import type { PlayerPlayableRound, PlayerShotTrace } from "../../../game/models/playerProTypes";
 import { worldToIso } from "../../../game/render/iso";
 import type { PlayerShotPreview } from "../../../game/playerPro/playerPro";
+import { createPlayerShotPlaybackDriver } from "../../playerPro/usePlayerShotPlayback";
+import { createNaturalGolferRuntime } from "../../../game/render/naturalGolferRuntime";
+import { createLiveGolferGroundAuthority } from "../../../game/render/golferGroundAuthority";
+import { ISO_ROTATIONS } from "../../../game/render/iso";
 
 function point(x = 0, y = 0) {
   return {
@@ -123,7 +127,8 @@ function snapshot(revision = 1): RenderSnapshot {
   };
 }
 
-function fixture(options: { perfEnabled?: boolean; atlasReady?: () => boolean } = {}) {
+function fixture(options: { perfEnabled?: boolean; atlasReady?: () => boolean; golferFrame?: (name: string) => PIXI.Texture | null;
+  activityRuntime?: Pick<ReturnType<typeof createNaturalGolferRuntime<PIXI.Texture>>, "observeControlledPresented"> } = {}) {
   const terrainDecals = new FakeContainer();
   const fx = new FakeContainer();
   const screenOverlay = new FakeContainer();
@@ -152,7 +157,8 @@ function fixture(options: { perfEnabled?: boolean; atlasReady?: () => boolean } 
       },
       readPerfEnabled: () => options.perfEnabled ?? false,
       atlasReady: options.atlasReady ?? (() => false),
-      golferFrame: () => null,
+      golferFrame: options.golferFrame ?? (() => null),
+      activityRuntime: options.activityRuntime,
       createSprite: () => {
         const sprite = new FakeSprite(); sprites.push(sprite);
         return sprite as unknown as PIXI.Sprite;
@@ -179,9 +185,133 @@ function tickInput(patch: Partial<OverlayTickInput> = {}): OverlayTickInput {
     terrainStrokePreview: null,
     colorVision: "standard",
     graphicsQuality: "low",
+    controlledBodyDrawEligible: true,
     ...patch,
   };
 }
+
+function controlledSource(hand: "right" | "left" | null, putt = false) {
+  const base = playerShot();
+  const motion = putt ? createRetainedShotMotion({ identity: { ...base.motion.identity, club: "Putter" }, yardsPerTile: 10,
+    from: base.motion.from, landing: base.motion.from, physicalRest: base.motion.physicalRest, flight: null,
+    rollPath: [base.motion.from, base.motion.physicalRest], holed: false })! : base.motion;
+  const shot = { ...base.shot, holeId: motion.identity.holeId, shotNumber: motion.identity.shotNumber, seed: motion.identity.seed, club: motion.identity.club,
+    shotStyle: motion.identity.style, carryYards: 100, rollYards: 20, sharedOutcome: { motion } } as unknown as PlayerShotTrace;
+  const course = { ...DEFAULT_COURSE, width: 16, height: 16, tiles: Array(256).fill("fairway"), elevations: Array(256).fill(2), holes: [], obstacles: [], buildings: [] };
+  const round = { ...base.round, handedness: hand ?? undefined, pendingShot: shot, course: { ...course, courseId: "one" } } as unknown as PlayerPlayableRound;
+  const driver = createPlayerShotPlaybackDriver(shot, undefined, round.id, "participant:7", hand, round.course);
+  const ground = createLiveGolferGroundAuthority({ course, effectiveTiles: course.tiles, field: { width: 16, height: 16, vertices: new Float32Array(289).fill(999) },
+    componentsByCell: Array(256).fill(null), quality: "high", surfaceRevision: "editable-visual-ground" });
+  const runtime = createNaturalGolferRuntime<PIXI.Texture>(() => null);
+  return { round, driver, motion, runtime, at(elapsed: number, rotation: 0 | 90 | 180 | 270 = 0, policy: { visible?: boolean; hidden?: boolean; sampleAbsent?: boolean } = {}) {
+    while (driver.frame().progress * driver.plan.durationMs < elapsed - 1e-9) driver.advance(Math.min(100, elapsed - driver.frame().progress * driver.plan.durationMs));
+    const frame = driver.frame(), sample = policy.sampleAbsent ? null : driver.sample();
+    const batch = runtime.tickFrame({ golfers: [], ground, visibleIds: new Set(), rotation, presentationTimeMs: elapsed,
+      paused: false, hidden: policy.hidden ?? false, visibilityEpoch: 0, motionEnabled: true, quality: "high", operatingTier: 1, followedId: null },
+    { round, expectedActorId: "participant:7", sample, playback: frame, visible: policy.visible ?? true, paused: false });
+    return { frame, sample, body: batch.controlled };
+  } };
+}
+
+describe("controlled legacy body consumption of the shared batch", () => {
+  it.each(ISO_ROTATIONS.flatMap(rotation => (["right", "left", null] as const).map(hand => [rotation, hand] as const)))("keeps camera%d hand%s ball/shadow/FX exact and preserves legacy appearance/placement", (rotation, hand) => {
+    for (const putt of [false, true]) {
+      const source = controlledSource(hand, putt), texture = {} as PIXI.Texture, ack = vi.spyOn(source.runtime, "observeControlledPresented");
+      const scene = fixture({ atlasReady: () => true, golferFrame: () => texture, activityRuntime: source.runtime }), baseline = fixture({ atlasReady: () => true });
+      const saved = { ...snapshot(), playerRound: source.round, surfaceHeightAt: () => 999, rotation };
+      scene.system.create!(saved); baseline.system.create!(saved);
+      const before = structuredClone(source.round), launch = putt ? 650 : 1200;
+      for (const offset of [-.001, 0, .001]) {
+        const { frame, body } = source.at(launch + offset, rotation), input = tickInput({ rotation, surfaceHeightAt: () => 999, playerShotPlayback: frame });
+        const cursor = source.driver.cursor();
+        scene.system.tick({ ...input, controlledBodyEnabled: true, controlledActorId: "participant:7", controlledBody: body }); baseline.system.tick(input);
+        const a = scene.system.playerShotPlayback()!, b = baseline.system.playerShotPlayback()!;
+        for (const key of ["shotId", "progress", "motionProgress", "phase", "point", "heightYards", "ball", "shadow"] as const) expect(a[key]).toEqual(b[key]);
+        expect(a.ball).toEqual(worldToIso(a.point.x + .5, a.point.y + .5, a.heightYards / 2.5, rotation));
+        expect(a.shadow).toEqual(worldToIso(a.point.x + .5, a.point.y + .5, 2, rotation));
+        const origin = worldToIso(1.5, 5.5, 2, rotation);
+        for (const sprite of scene.sprites) {
+          expect(sprite.position).toMatchObject({ x: origin.x - 5, y: origin.y });
+          expect(sprite.anchor.y).toBe(69 / 72); expect(Math.abs(sprite.scale.x)).toBe(26 / 48); expect(sprite.visible).toBe(true);
+        }
+        expect(scene.sprites[1].tint).toBe(0x467449); expect(scene.sprites[0].texture).toBe(texture);
+        expect(a.golferFrame).toMatch(hand === null ? putt ? /_putt_\d_\d$/u : /_swing_\d_\d$/u : /_idle_\d_0$/u);
+        const effect = scene.graphics.find(g => g.label === "player-pro-contact-effect")!, original = baseline.graphics.find(g => g.label === "player-pro-contact-effect")!;
+        expect(effect.ellipse.mock.calls).toEqual(original.ellipse.mock.calls); expect(effect.stroke.mock.calls).toEqual(original.stroke.mock.calls);
+        expect(source.driver.cursor()).toEqual(cursor); expect(source.round).toEqual(before);
+        expect(ack).toHaveBeenLastCalledWith(body);
+      }
+      expect(scene.sprites).toHaveLength(2); expect(source.runtime.diagnostics()).toMatchObject({ records: 1, localRecords: 1, foreground: 1, pending: 0 });
+      scene.system.destroy!(); baseline.system.destroy!();
+    }
+  });
+  it("requires both current legacy textures before applying/acknowledging, retries readiness, and rejects stale actor/owner frames", () => {
+    const source = controlledSource(null), texture = {} as PIXI.Texture, ack = vi.spyOn(source.runtime, "observeControlledPresented");
+    let complete = false;
+    const scene = fixture({ atlasReady: () => true, activityRuntime: source.runtime, golferFrame: name => complete || !name.includes("_t_") ? texture : null });
+    scene.system.create!({ ...snapshot(), playerRound: source.round });
+    const { frame, body } = source.at(1200), input = tickInput({ playerShotPlayback: frame, controlledBodyEnabled: true, controlledActorId: "participant:7", controlledBody: body });
+    scene.system.tick(input); expect(ack).not.toHaveBeenCalled(); expect(scene.sprites.every(s => !s.visible)).toBe(true);
+    complete = true; scene.system.tick(input); expect(ack).toHaveBeenCalledOnce(); expect(scene.sprites.every(s => s.visible)).toBe(true);
+    scene.system.tick({ ...input, controlledActorId: "other" }); expect(ack).toHaveBeenCalledOnce(); expect(scene.sprites.every(s => s.visible)).toBe(true);
+    expect(scene.system.playerShotPlayback()!.golferFrame).toBe("golfer0_idle_0_0"); expect(scene.sprites.every(s => s.scale.x > 0)).toBe(true);
+    scene.system.tick({ ...input, controlledBody: { ...body!, ownerKey: "old-owner" } }); expect(ack).toHaveBeenCalledOnce();
+    scene.system.tick({ ...input, controlledBody: null }); expect(scene.sprites.every(s => s.visible)).toBe(true);
+    const next = source.at(1200.001);
+    scene.system.tick({ ...input, playerShotPlayback: next.frame }); // Same owner, older body cursor.
+    expect(ack).toHaveBeenCalledOnce(); expect(scene.sprites.every(s => s.visible)).toBe(true); expect(scene.system.playerShotPlayback()!.golferFrame).toBe("golfer0_idle_0_0");
+    scene.system.tick({ ...input, playerShotPlayback: next.frame, controlledBody: next.body }); expect(ack).toHaveBeenCalledTimes(2);
+    scene.system.destroy!(); expect(source.driver.frame().progress).toBe(next.frame.progress);
+  });
+  it.each(["visible", "culled", "hidden", "show-golfers-off"] as const)("preserves current%s draw policy through the actual1200→7200 null-source completion barrier without ball/FX change", policy => {
+    const source = controlledSource(null), texture = {} as PIXI.Texture, ack = vi.spyOn(source.runtime, "observeControlledPresented");
+    const scene = fixture({ atlasReady: () => true, activityRuntime: source.runtime, golferFrame: () => texture }), baseline = fixture({ atlasReady: () => true });
+    const saved = { ...snapshot(), playerRound: source.round, surfaceHeightAt: () => 999 };
+    scene.system.create!(saved); baseline.system.create!(saved);
+    expect(source.driver.plan.durationMs).toBe(7200);
+    const drawEligible = policy === "visible";
+    const before = structuredClone(source.round);
+    for (const time of [1200, 7200]) {
+      const { frame, sample, body } = source.at(time, 0, { visible: policy === "visible" || policy === "hidden", hidden: policy === "hidden", sampleAbsent: time === 7200 });
+      const input = tickInput({ playerShotPlayback: frame, surfaceHeightAt: () => 999, controlledBodyDrawEligible: drawEligible });
+      const cursor = source.driver.cursor();
+      scene.system.tick({ ...input, controlledBodyEnabled: true, controlledActorId: "participant:7", controlledBody: body }); baseline.system.tick(input);
+      const a = scene.system.playerShotPlayback()!, b = baseline.system.playerShotPlayback()!;
+      for (const key of ["shotId", "progress", "motionProgress", "phase", "point", "heightYards", "ball", "shadow"] as const) expect(a[key]).toEqual(b[key]);
+      expect(scene.sprites.every(s => s.visible)).toBe(drawEligible);
+      for (const sprite of scene.sprites) expect(sprite.position).toMatchObject({ x: worldToIso(1.5, 5.5, 2).x - 5, y: worldToIso(1.5, 5.5, 2).y });
+      const effect = scene.graphics.find(g => g.label === "player-pro-contact-effect")!, original = baseline.graphics.find(g => g.label === "player-pro-contact-effect")!;
+      expect(effect.ellipse.mock.calls).toEqual(original.ellipse.mock.calls); expect(effect.stroke.mock.calls).toEqual(original.stroke.mock.calls);
+      if (time === 7200) { expect(sample).toBeNull(); expect(body).toBeNull(); expect(a.golferFrame).toBe("golfer0_idle_0_0"); expect(source.runtime.diagnostics().records).toBe(0); }
+      else if (!drawEligible) expect(body?.admitted ?? false).toBe(false);
+      expect(source.round).toEqual(before); expect(source.driver.cursor()).toEqual(cursor);
+    }
+    expect(ack).toHaveBeenCalledTimes(drawEligible ? 1 : 0); expect(scene.sprites).toHaveLength(2); scene.system.destroy!(); baseline.system.destroy!();
+  });
+  it.each((["absent", "mismatched", "stale", "unavailable", "culled", "hidden"] as const).flatMap(variant => [true, false].map(drawEligible => [variant, drawEligible] as const)))("uses current neutral body fallback for%s output only under current draw eligibility%s without acknowledging it", (variant, drawEligible) => {
+    const source = controlledSource(null), texture = {} as PIXI.Texture, ack = vi.spyOn(source.runtime, "observeControlledPresented");
+    const scene = fixture({ atlasReady: () => true, activityRuntime: source.runtime, golferFrame: () => texture });
+    scene.system.create!({ ...snapshot(), playerRound: source.round });
+    const current = source.at(1200), next = source.at(1200.001);
+    const body = variant === "absent" ? null : variant === "mismatched" ? { ...next.body!, ownerKey: "old" } : variant === "stale" ? current.body
+      : { ...next.body!, admitted: false, reason: variant === "unavailable" ? "activity-cap" : variant };
+    scene.system.tick(tickInput({ playerShotPlayback: next.frame, controlledBodyEnabled: true, controlledBodyDrawEligible: drawEligible, controlledActorId: "participant:7", controlledBody: body }));
+    expect(ack).not.toHaveBeenCalled(); expect(scene.sprites.every(s => s.visible)).toBe(drawEligible && variant !== "culled" && variant !== "hidden");
+    expect(scene.system.playerShotPlayback()!.golferFrame).toBe("golfer0_idle_0_0");
+    expect(scene.sprites.every(s => s.scale.x > 0)).toBe(true); expect(source.driver.frame()).toEqual(next.frame); scene.system.destroy!();
+  });
+  it("requires explicit DEV draw eligibility and leaves the flag-off legacy body policy unchanged", () => {
+    const source = controlledSource(null), texture = {} as PIXI.Texture, ack = vi.spyOn(source.runtime, "observeControlledPresented");
+    const scene = fixture({ atlasReady: () => true, activityRuntime: source.runtime, golferFrame: () => texture });
+    scene.system.create!({ ...snapshot(), playerRound: source.round });
+    const { frame, body } = source.at(1200);
+    const input = tickInput({ playerShotPlayback: frame, controlledBodyEnabled: true, controlledBodyDrawEligible: undefined, controlledActorId: "participant:7", controlledBody: body });
+    scene.system.tick(input); expect(scene.sprites.every(s => !s.visible)).toBe(true); expect(ack).not.toHaveBeenCalled();
+    scene.system.tick({ ...input, controlledBodyEnabled: false, controlledBodyDrawEligible: false });
+    expect(scene.sprites.every(s => s.visible)).toBe(true); expect(ack).not.toHaveBeenCalled();
+    expect(scene.system.playerShotPlayback()!.golferFrame).toBe("golfer0_swing_1_5"); scene.system.destroy!();
+  });
+});
 
 describe("overlay and diagnostics scene ownership", () => {
   it("uses the sole overlaysDiagnostics host ID and preserves dynamic display identity across updates", () => {

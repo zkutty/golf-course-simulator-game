@@ -23,6 +23,7 @@ import { createShotPacingCursor, createShotPacingPlan, shotPacingFrame } from ".
 import { createLiveGolferGroundAuthority } from "../../../game/render/golferGroundAuthority";
 import { parseNaturalGolferArt, resolveNaturalGolferArt } from "../../../game/render/naturalGolferArt";
 import type { NaturalGolferAtlas } from "../../../render/naturalGolferAtlas";
+import { createNaturalGolferRuntime } from "../../../game/render/naturalGolferRuntime";
 
 function point(x = 0, y = 0) {
   return {
@@ -155,7 +156,7 @@ function snapshot(revision = 1, patch: Partial<RenderSnapshot> = {}): RenderSnap
 
 const unbounded = { left: -Infinity, right: Infinity, top: -Infinity, bottom: Infinity };
 
-function fixture(options: { atlasReady?: boolean; addLog?: string[]; naturalAtlas?: NaturalGolferAtlas<PIXI.Texture> } = {}) {
+function fixture(options: { atlasReady?: boolean; addLog?: string[]; naturalAtlas?: NaturalGolferAtlas<PIXI.Texture>; activityRuntime?: ReturnType<typeof createNaturalGolferRuntime<PIXI.Texture>> } = {}) {
   const world = new FakeContainer();
   world.scale.set(1);
   const objects = new FakeContainer();
@@ -182,6 +183,7 @@ function fixture(options: { atlasReady?: boolean; addLog?: string[]; naturalAtla
     },
     {
       naturalAtlas: () => options.naturalAtlas ?? null,
+      activityRuntime: options.activityRuntime,
       atlasReady: () => options.atlasReady ?? false,
       golferFrame: name => { legacyFrames.push(name); return texture as unknown as PIXI.Texture; },
       createContainer: () => {
@@ -306,7 +308,7 @@ describe("live golfer, ball, emote, and transient scene ownership", () => {
 const naturalParsed = parseNaturalGolferArt(JSON.parse(readFileSync(new URL("../../../../art/natural-golfer-v1/manifest.json", import.meta.url), "utf8")), JSON.parse(readFileSync(new URL("../../../../art/natural-golfer-v1/cost.json", import.meta.url), "utf8")));
 if (!naturalParsed.ok) throw new Error(naturalParsed.reason);
 const naturalArtIndex = naturalParsed.index;
-function candidateFixture(legacyReady = true) {
+function candidateFixture(legacyReady = true, activityRuntime?: ReturnType<typeof createNaturalGolferRuntime<PIXI.Texture>>) {
   const state = { ready: false, missing: false }, textures = new Map<string, { id: string; destroy: ReturnType<typeof vi.fn> }>();
   const texture = (id: string) => { if (!textures.has(id)) textures.set(id, { id, destroy: vi.fn() }); return textures.get(id)! as unknown as PIXI.Texture; };
   const atlas: NaturalGolferAtlas<PIXI.Texture> = { load: vi.fn(async () => ({ status: "ready" as const, generation: 0, reason: null })), dispose: vi.fn(), reset: vi.fn(() => 1),
@@ -318,7 +320,7 @@ function candidateFixture(legacyReady = true) {
       return { kind: "pair", generation: 0, frame: result.frame, base: texture(`${result.frame.id}.base`), tint: texture(`${result.frame.id}.tint`), shadow: texture("shadow"),
         shadowPlacement: { unitScale: 1, worldOffset: [1.5, .8], alphaBaked: true }, bodyUnitScale: 26 / 48, coverage: result.coverage };
     } };
-  const scene = fixture({ atlasReady: legacyReady, naturalAtlas: atlas });
+  const scene = fixture({ atlasReady: legacyReady, naturalAtlas: atlas, activityRuntime });
   const course = { ...DEFAULT_COURSE, width: 16, height: 16, tiles: new Array(256).fill("fairway"), elevations: new Array(256).fill(2), buildings: [], obstacles: [], decorations: [] };
   const ground = createLiveGolferGroundAuthority({ course, effectiveTiles: course.tiles, field: { width: 16, height: 16, vertices: new Float32Array(289).fill(2) }, componentsByCell: new Array(256).fill(null), quality: "high", surfaceRevision: "scene-ground:1" });
   scene.system.create!(snapshot(1, { course, effectiveTiles: course.tiles, naturalGolfersCandidate: true, naturalGolferGround: ground }));
@@ -439,6 +441,20 @@ describe("real-course B/G/F scene publication", () => {
 });
 
 describe("opt-in LIVE natural body binding", () => {
+  it("borrows one stage-owned batch and acknowledges applied native feet without projecting a second store", () => {
+    let atlas: NaturalGolferAtlas<PIXI.Texture> | null = null;
+    const shared = createNaturalGolferRuntime(() => atlas), scene = candidateFixture(true, shared), source = candidateShot();
+    atlas = scene.atlas; scene.state.ready = true;
+    const project = vi.spyOn(shared, "tickFrame"), oldTick = vi.spyOn(shared, "tickLive"), observe = vi.spyOn(shared, "observePresented");
+    const at = (time: number) => shared.tickFrame({ golfers: [source.at(2000)], visibleIds: new Set([7]), ground: scene.ground, rotation: 0,
+      presentationTimeMs: time, paused: false, hidden: false, visibilityEpoch: 0, motionEnabled: true, quality: "high", operatingTier: 1, followedId: 7 }, null);
+    const first = at(0); candidateTick(scene, source.at(2000), 0, { activityFrames: first.live });
+    expect(project).toHaveBeenCalledTimes(1); expect(oldTick).not.toHaveBeenCalled(); expect(observe).toHaveBeenCalledWith(first.live.get(7));
+    const next = at(1); candidateTick(scene, source.at(2000), 1, { activityFrames: next.live });
+    expect((scene.sprites[0].texture as { id: string }).id).toContain(".swing.");
+    expect(project).toHaveBeenCalledTimes(2); expect(shared.diagnostics()).toMatchObject({ records: 1, localRecords: 1, foreground: 1, pending: 0 });
+    scene.system.destroy!(); expect(shared.diagnostics().localRecords).toBe(0);
+  });
   it.each(["swing", "putt"] as const)("keeps a height-mismatched %s pilot native neutral at visual B without changing retained balls or gaining contact", kind => {
     const scene = candidateFixture(), legacy = fixture({ atlasReady: true }), source = candidateShot(kind), launch = source.plan.addressMs + source.plan.contactMs;
     const raised = createLiveGolferGroundAuthority({ course: scene.course, effectiveTiles: scene.course.tiles, field: { width: 16, height: 16, vertices: new Float32Array(289).fill(3) },
