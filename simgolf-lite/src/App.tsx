@@ -7,6 +7,7 @@ import "./ui/cozyLayout.css";
 import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
 import { usePlayerShotPlayback } from "./ui/playerPro/usePlayerShotPlayback";
+import { createPlayerShotPreviewReceiver } from "./ui/playerPro/shotPreviewReceiver";
 import { isValidRetainedShotMotionV1 } from "./game/rules/shotMotion";
 import type { SfxName } from "./audio/AudioManager";
 import { DesignDock } from "./ui/DesignDock";
@@ -957,9 +958,7 @@ export default function App() {
   const [showPlayerPro, setShowPlayerPro] = useState(false);
   const [playerShotAim, setPlayerShotAim] = useState<PlayerProPoint | null>(null);
   const [playerShotPreview, setPlayerShotPreview] = useState<PlayerShotPreview | null>(null);
-  const receivePlayerShotPreview = useCallback((preview: PlayerShotPreview) => {
-    setPlayerShotPreview((previous) => JSON.stringify(previous?.expectedFlight ?? null) === JSON.stringify(preview.expectedFlight ?? null) ? previous : preview);
-  }, []);
+  const [receivePlayerShotPreview] = useState(() => createPlayerShotPreviewReceiver(setPlayerShotPreview));
   const playerRoundResumeSpeedRef = useRef<SpeedName>("1x");
   const storyResumeSpeedRef = useRef<SpeedName>("1x");
   const majorStoryPausedRef = useRef(false);
