@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "baseSHA": "5729faf7a17dcb2c5e12c27422a8b1590d59f4d0",
+  "pacingInputSHA": "c08a5ff358dcbe874796b76cdaeae96a8fa94748",
+  "passed": true,
+  "checks": [
+    {
+      "name": "manifest version, non-shipping boundary and unresolved human decision",
+      "pass": true
+    },
+    {
+      "name": "legacy exact grids, contact indices, layers and costs",
+      "pass": true
+    },
+    {
+      "name": "source raster hash, crop rectangles, pivots and finite frame anchors",
+      "pass": true
+    },
+    {
+      "name": "additive clips preserve legacy fallback and frame/contact compatibility",
+      "pass": true
+    },
+    {
+      "name": "finite contiguous full-hole screenplay and calm route speed",
+      "pass": true
+    },
+    {
+      "name": "phase/lie/pose coverage, exact launch, endpoint and reaction truth",
+      "pass": true
+    },
+    {
+      "name": "timing min/max, one-cursor sums and finite caps/quality tiers",
+      "pass": true
+    },
+    {
+      "name": "review cursor pause, hidden, explicit skip, frame cap and exact restore boundaries",
+      "pass": true
+    },
+    {
+      "name": "production source/PNG immutable, additive guide and no src/public imports",
+      "pass": true
+    },
+    {
+      "name": "self-contained rendered source, no autoplay/network dependency and reproducible build",
+      "pass": true
+    }
+  ],
+  "humanAccepted": false,
+  "browserVerifiedSeparately": true
+}

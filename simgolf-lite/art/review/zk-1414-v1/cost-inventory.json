@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "shipping": false,
+  "productionBytesAdded": 0,
+  "reviewBytes": 5012310,
+  "files": [
+    {
+      "file": "README.md",
+      "bytes": 11957,
+      "sha256": "c593f6e491d55b2c835b4ab9baf114dc4011858ca90b4144406759d76d093b43"
+    },
+    {
+      "file": "activity-contract.v1.d.ts",
+      "bytes": 2729,
+      "sha256": "8e0ae05e9342aa6edc74938c0a202e992396e3adf4b6ea4e9af5d080a6c1e319"
+    },
+    {
+      "file": "activity-manifest.v1.json",
+      "bytes": 14357,
+      "sha256": "17409ed05345d65f73518c741c72e8682bcc5dd67141abcb42ceead76678c75a"
+    },
+    {
+      "file": "browser-verification.json",
+      "bytes": 842,
+      "sha256": "5b6c021047ac5959eb89dab8697f9051c61f124562313f26ceab2dd9c7a95475"
+    },
+    {
+      "file": "build-review.mjs",
+      "bytes": 875,
+      "sha256": "bc9319e4c0b89781d61414d0b0bab9325a21b3be619a22e6a54c3e96c327e87c"
+    },
+    {
+      "file": "golfer-look-source.png",
+      "bytes": 2064665,
+      "sha256": "eada911c244d734a6e5c236b80b04e23202365795db0cbd5c4393a7a664bd2aa"
+    },
+    {
+      "file": "imagegen-prompts.txt",
+      "bytes": 3327,
+      "sha256": "97b0e209a5f95af529f23f716f447933c90019db3ab6ac66f4b917024446797d"
+    },
+    {
+      "file": "provenance.v1.json",
+      "bytes": 767,
+      "sha256": "329d6a2e02cd0a7b759b6b7c550eac5b905faab55fcb8b8b87a3ed5a775e597e"
+    },
+    {
+      "file": "review-player.mjs",
+      "bytes": 3175,
+      "sha256": "b402dd3a1fd10f20cf2607ffcb9fb9dc8d1ba6dde972ddccf6d0d54766fcbf20"
+    },
+    {
+      "file": "review.html",
+      "bytes": 2873942,
+      "sha256": "5f4864f6b9d9bb5f0dcec94b638e05b82a276c89e44574bb56ad89968f3d2ffd"
+    },
+    {
+      "file": "review.template.html",
+      "bytes": 20431,
+      "sha256": "a4ec9ce7c0c6462232bf4f5f25f3bbf468616fc9de27f739bbdcff850d129b8a"
+    },
+    {
+      "file": "storyboard.v1.json",
+      "bytes": 4577,
+      "sha256": "b19258ef3a9587662e0f7aea3518e43d4bb82559df277a2d5f2b0fba209069d4"
+    },
+    {
+      "file": "validate.mjs",
+      "bytes": 10666,
+      "sha256": "14feaa4b4aa307dea200694fd0e4a60dea8bf48d9471e83f927bb6efbd5a4eaf"
+    }
+  ]
+}

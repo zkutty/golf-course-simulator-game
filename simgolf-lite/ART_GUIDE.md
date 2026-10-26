@@ -204,3 +204,25 @@ Objective gates before a raster enters an atlas:
   shore frames. Runtime motion may only modulate those authored layers.
   Reduced motion freezes base tint, reflection, shore alpha, tree sway, and
   looping flag motion.
+
+## Relaxed golfer review contract (ZK-1414, additive v1)
+
+The non-shipping first-golfer look sheet, timed full-hole storyboard, provenance,
+versioned clip/activity proposal and deterministic checks are in
+[`art/review/zk-1414-v1/README.md`](art/review/zk-1414-v1/README.md).
+Open its self-contained `review.html` for actual 50/100/200% samples and the
+paused-by-default animatic. Human golfer/rhythm/group acceptance is pending.
+
+This is an additive review proposal, not a replacement atlas. Keep existing
+48×72 frames, feet y=69, 26px display width, five authored rows plus mirroring,
+6f walk / 8f swing contact 5 / 4f putt contact 2 and layered tint compatibility.
+The candidate authors one right-handed screen-east study; it makes no claim of
+eight authored directions. Never mirror a known player's strike into another
+hand. Unsupported hand/target pairs require the declared neutral fallback.
+
+Production clips consume the already published c08a5ff retained-shot pacing
+contract. Reactions fit within canonical rest, walking uses current legal
+routes, and overview cannot retain stale actors/queues or add a global hold.
+The review manifest nominates finite position/timing/quality/motion-off bounds.
+No new art is packed, loaded or approved by this section. Approve one golfer and
+one group treatment before the separately owned production/variant work.

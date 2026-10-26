@@ -1,0 +1,218 @@
+{
+  "version": 1,
+  "shipping": false,
+  "durationMs": 51640,
+  "defaultPaused": true,
+  "camera": {
+    "rotation": 0,
+    "zoom": 1,
+    "tilePx": [
+      64,
+      32
+    ],
+    "cssSpriteCanvasAt100": [
+      26,
+      39
+    ]
+  },
+  "disclaimer": "Illustrative timed blocking with discrete raster key poses; no smooth-motion, live physics, production routing, or release certification. Ball paths and outcome labels are synthetic storyboard evidence only.",
+  "group": {
+    "actor": "teal-cream-01",
+    "partners": 2,
+    "policy": "Two quiet watch/wait partners. Their strokes are omitted from this one-actor full-hole screenplay; no partner scores/results are invented.",
+    "maximumGroup": 4
+  },
+  "beats": [
+    {
+      "id": "arrive",
+      "kind": "walk",
+      "phase": "walk",
+      "startMs": 0,
+      "endMs": 3000,
+      "route": [
+        [
+          160,
+          490
+        ],
+        [
+          210,
+          440
+        ]
+      ],
+      "pose": "walk-a",
+      "evidence": "authored blocking route, not production routing evidence"
+    },
+    {
+      "id": "tee",
+      "kind": "swing",
+      "phase": "shot",
+      "startMs": 3000,
+      "endMs": 11400,
+      "position": [
+        210,
+        440
+      ],
+      "distanceYards": 240,
+      "observedOutcome": "bad",
+      "lie": "tee",
+      "target": "e",
+      "handedness": "right",
+      "evidence": "synthetic storyboard shot, illustrative ball path; production must sample exact retained evidence",
+      "ballEnd": [
+        490,
+        330
+      ]
+    },
+    {
+      "id": "to-bunker",
+      "kind": "walk",
+      "phase": "walk",
+      "startMs": 11400,
+      "endMs": 23400,
+      "route": [
+        [
+          210,
+          440
+        ],
+        [
+          310,
+          420
+        ],
+        [
+          380,
+          360
+        ],
+        [
+          490,
+          330
+        ]
+      ],
+      "pose": "walk-a",
+      "evidence": "authored blocking route, not production routing evidence"
+    },
+    {
+      "id": "bunker",
+      "kind": "swing",
+      "phase": "shot",
+      "startMs": 23400,
+      "endMs": 29700,
+      "position": [
+        490,
+        330
+      ],
+      "distanceYards": 30,
+      "observedOutcome": "good",
+      "lie": "bunker",
+      "target": "e",
+      "handedness": "right",
+      "evidence": "synthetic storyboard shot, illustrative ball path; production must sample exact retained evidence",
+      "ballEnd": [
+        650,
+        280
+      ]
+    },
+    {
+      "id": "to-fringe",
+      "kind": "walk",
+      "phase": "walk",
+      "startMs": 29700,
+      "endMs": 35700,
+      "route": [
+        [
+          490,
+          330
+        ],
+        [
+          580,
+          310
+        ],
+        [
+          650,
+          280
+        ]
+      ],
+      "pose": "walk-a",
+      "evidence": "authored blocking route, not production routing evidence"
+    },
+    {
+      "id": "chip",
+      "kind": "swing",
+      "phase": "shot",
+      "startMs": 35700,
+      "endMs": 41880,
+      "position": [
+        650,
+        280
+      ],
+      "distanceYards": 18,
+      "observedOutcome": "neutral",
+      "lie": "fringe",
+      "target": "e",
+      "handedness": "right",
+      "evidence": "synthetic storyboard shot, illustrative ball path; production must sample exact retained evidence",
+      "ballEnd": [
+        710,
+        260
+      ]
+    },
+    {
+      "id": "to-green",
+      "kind": "walk",
+      "phase": "walk",
+      "startMs": 41880,
+      "endMs": 44880,
+      "route": [
+        [
+          650,
+          280
+        ],
+        [
+          710,
+          260
+        ]
+      ],
+      "pose": "walk-a",
+      "evidence": "authored blocking route, not production routing evidence"
+    },
+    {
+      "id": "putt",
+      "kind": "putt",
+      "phase": "shot",
+      "startMs": 44880,
+      "endMs": 47640,
+      "position": [
+        710,
+        260
+      ],
+      "distanceYards": 8,
+      "observedOutcome": "hole-out",
+      "lie": "green",
+      "target": "e",
+      "handedness": "right",
+      "evidence": "synthetic storyboard shot, illustrative ball path; production must sample exact retained evidence",
+      "ballEnd": [
+        758,
+        245
+      ]
+    },
+    {
+      "id": "walk-on",
+      "kind": "walk",
+      "phase": "walk-on",
+      "startMs": 47640,
+      "endMs": 51640,
+      "route": [
+        [
+          710,
+          260
+        ],
+        [
+          780,
+          200
+        ]
+      ],
+      "pose": "walk-a",
+      "evidence": "authored blocking route, not production routing evidence"
+    }
+  ]
+}
