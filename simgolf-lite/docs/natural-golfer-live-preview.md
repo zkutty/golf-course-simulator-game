@@ -1,8 +1,48 @@
 # First in-course adult golfer preview
 
-October 26, 2026. Local implementation checkpoint `8ac5bb1`; readonly result
-publication checkpoint `d7a7a57`. The approved Study 02 source checkpoint
-`aa5933d` is published. The later implementation is local and is not deployed.
+October 26, 2026. Current local LIVE contact checkpoint `5e65ce8`, following
+the reaction consumer `54b80b2` and pure physical-ball/visual-feet contract
+`fc21698`. The approved Study 02 source checkpoint `aa5933d` is published.
+The later implementation is local and is not deployed.
+
+## Current supported shot and observed motion
+
+The runtime now keeps retained physical ball B unchanged while independently
+sampling supported visual ground G and stance feet F. A complete native G
+frame must be presented, the existing bounded G-to-F adjustment must run, and
+a subsequent actual F presentation must be acknowledged before gripping.
+Body, tint and shadow share F minus G. No extra clock, route, hold or stroke
+is introduced. M47 shot 1 remains neutral because its fixed-pose contact
+residual exceeds the unchanged 0.5 logical pixel tolerance; shots 2 and 3 are
+eligible under the actual current ground certificate.
+
+Native Load restored the same 6:27 AM Avery Shot 3. A readonly browser trace
+then observed settle, address, backswing, pre-launch contact phase,
+follow-through and watch on the real shared cursor. Feet reached
+(38.5598908333, 6.825971, 2.3552678593 yards) and stayed there through watch.
+Pause held the final native watch frame at cursor 1700 ms. Physical ball
+origin height stayed 2.5 yards; G stayed 2.4921190313 yards. The trace did not
+sample the exact terminal impact instant, so its pre-launch contact-phase
+screenshots are not exact-impact proof. Automated launch-minus/exact/plus
+tests provide that separate timing check.
+
+The capture used the restored wide camera; a separate close paused watch PNG
+and an earlier close address PNG make the adult body readable. These sampled
+stills and diagnostics do not constitute a continuous full-hole recording or
+human motion acceptance. Browser console errors were empty. Atlas counts
+remained 224 pairs, 272 cropped textures and two sources.
+
+This three-file adapter passed eight suites / 489 tests in the coordinator
+run, an independent four-suite / 340-test review with no P1/P2 findings, app
+typecheck, scoped lint and staged whitespace checks. These overlapping sets
+must not be summed. LIVE reaction consumption separately passed its final
+102 runtime/scene tests after one correction; actual reaction motion still
+needs review. Controlled bodies/reactions remain the next integration surface.
+
+## Earlier first-idle checkpoint
+
+The following first-preview evidence describes `8ac5bb1`, before the accepted
+B/G/F runtime successor. It is preserved as checkpoint history.
 
 ## Verified slice
 
@@ -66,14 +106,14 @@ installation. Typecheck uses `--noEmit --incremental false -p tsconfig.app.json`
 
 ## Remaining acceptance
 
-The physical-ball/visual-feet contact extension, controlled bodies, LIVE and
-controlled reaction consumption, group/camera staging and full-hole human
-review remain separate gates. Bulk variants wait for that review.
+Controlled bodies and reaction consumption, broader unsupported-lie coverage,
+actual reaction motion review, group/camera staging and full-hole human review
+remain separate gates. Bulk variants wait for that review.
 
 The actual M47 geometry diagnosis finds shot 1 outside the unchanged 0.5-pixel
 contact tolerance; shots 2 and 3 are geometrically eligible with independently
-grounded feet. This is a measured successor proposal, not implemented contact
-coverage in this checkpoint. Unsupported shots must stay neutral.
+grounded feet. The pure successor was accepted in `fc21698` and its LIVE
+adapter in `5e65ce8`. Unsupported shots must stay neutral.
 
 At 1×, base travel is about 18.67 tiles/second, at least 422 logical pixels per
 second, versus the 32-pixel readable gait cap. Current zero-lag overview policy
