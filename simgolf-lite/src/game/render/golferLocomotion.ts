@@ -33,8 +33,10 @@ export interface GolferLocomotionRequest {
   readonly owner: ActivityOwner; readonly currentOwner: ActivityOwner;
   readonly authorityRevision: string; readonly currentAuthorityRevision: string;
   readonly surfaceRevision: string;
-  /** Current authority, never a smoothed/lagged simulation root. */
+  /** Current authority / unchanged physical ball B, never visual launch G. */
   readonly root: GolferStancePoint;
+  /** Same XY as B, exact supported visual launch G. Omitted means B=G. */
+  readonly visualGroundLaunch?: GolferStancePoint;
   /** Last actually presented feet; not a proposed future position. */
   readonly actualFeet: GolferStancePoint | null;
   /** Only LIVE supplies a current legal itinerary leg. Controlled travel is unsupported. */
@@ -142,7 +144,7 @@ function stanceProjection(r: GolferLocomotionRequest, ownerKey: string, previous
     || r.live.root.heightYards !== r.root.heightYards)) return neutral(r, "live-playback-mismatch");
   // The accepted stance helper owns the candidate brand and exact identity,
   // endpoint support, model, target and launch checks. No forged arrival is used.
-  const check = sampleGolferStance(b, { currentIdentity: s.identity, launch: r.root, ground: r.ground, rotation: r.rotation,
+  const check = sampleGolferStance(b, { currentIdentity: s.identity, launch: r.root, visualGroundLaunch: r.visualGroundLaunch === undefined ? r.root : r.visualGroundLaunch, ground: r.ground, rotation: r.rotation,
     phase: "address", actualFeet: null, arrival: null, previousPlant: null, walking: null,
     acquisition: "continuous", paused: false, hidden: false });
   if (check.kind !== "neutral" || check.reason !== "arrival-proof-required" || b.ownerKey !== ownerKey
@@ -178,9 +180,9 @@ function stanceProjection(r: GolferLocomotionRequest, ownerKey: string, previous
   }
   if (!r.motionEnabled && previous?.mode !== "awaiting-arrival") return neutral(r, "adjustment-motion-disabled");
   const limit = GOLFER_LOCOMOTION_LIMITS.maxAdjustmentMs[b.role];
-  if (!previous && (p.elapsed > limit || !point(r.actualFeet) || !equal(r.actualFeet, b.launch))) return neutral(r, "continuous-arrival-required");
+  if (!previous && (p.elapsed > limit || !point(r.actualFeet) || !equal(r.actualFeet, b.visualGroundLaunch))) return neutral(r, "continuous-arrival-required");
   if (previous && (!point(r.actualFeet) || !equal(r.actualFeet, previous.feet))) return neutral(r, "adjustment-observation-mismatch");
-  const from = previous?.adjustmentFrom ?? copy(b.launch), cert = sweep(r, from, b.feet);
+  const from = previous?.adjustmentFrom ?? copy(b.visualGroundLaunch), cert = sweep(r, from, b.feet);
   if (!cert) return neutral(r, "unsupported-adjustment-sweep");
   const duration = cert.maxProjectedDerivativePx / GOLFER_LOCOMOTION_LIMITS.maxSpeedPxPerSecond * 1000;
   const start = previous?.adjustmentStartMs ?? p.elapsed;

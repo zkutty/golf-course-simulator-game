@@ -1,10 +1,17 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 import { createLiveActivitySource, focusedLiveActivitySource, liveActivityScope } from "../live/activitySource";
 import { createGolferCapabilities, stableGolferHandedness } from "../live/capabilities";
 import { advanceShotPacingCursor, createShotPacingCursor, createShotPacingPlan, shotPacingFrame } from "../live/shotPacing";
+import { createLiveState, stepLive } from "../live/simulation";
 import type { Segment } from "../live/types";
-import { createRetainedShotMotion } from "../rules/shotMotion";
+import { normalizeCourseLayouts } from "../models/courseLayouts";
+import { DEFAULT_WORLD } from "../models/defaults";
+import { createRetainedShotMotion, sampleRetainedShotMotion } from "../rules/shotMotion";
+import { createM47CertificationCourse } from "../testing/m47Certification";
+import { createLiveGolferGroundAuthority } from "./golferGroundAuthority";
+import { buildLandscapeComponents, buildVisualHeightfield, type LandscapeComponent } from "./landscapeGeometry";
 import { parseNaturalGolferArt } from "./naturalGolferArt";
 import { ISO_ROTATIONS, tileCenterIso } from "./iso";
 import { createGolferStanceBinding, NATURAL_GOLFER_CONTACT_MODEL, sampleGolferStance } from "./golferStance";
@@ -43,7 +50,7 @@ function walk(x = 0, time = 0, patch: Partial<GolferLocomotionRequest> = {}, seg
     root, actualFeet: root, live, stance: null, ground: ground(), presentationTimeMs: time, paused: false, hidden: false, culled: false,
     acquisition: "continuous", motionEnabled: true, rotation: 0, quality: "high", operatingTier: 1, ...patch };
 }
-function shot(role: "swing" | "putt" = "swing", degrees = 45, g = ground(), liveMode = false) {
+function shot(role: "swing" | "putt" = "swing", degrees = 45, g = ground(), liveMode = false, visualGroundLaunch?: GolferStancePoint) {
   const at = (x: number) => ({ point: { x, y: 5 }, heightYards: 0 });
   const motion = createRetainedShotMotion({ identity: { shotId: "shot:1", holeId: "hole:1", shotNumber: 1, seed: 42,
     club: role === "putt" ? "Putter" : "7 Iron", style: "normal", modelVersion: "physical_shot_v1" },
@@ -52,18 +59,18 @@ function shot(role: "swing" | "putt" = "swing", degrees = 45, g = ground(), live
   const owner = { scopeId: plan.scopeId, actorId: plan.actorId, shot: plan.identity }, root = p(5, 5);
   const identity: GolferStanceIdentity = { owner, authorityRevision: liveMode ? scope.revision : "round-rev:1", surfaceRevision: g.surfaceRevision,
     targetWorld: { x: Math.cos(degrees * Math.PI / 180), y: Math.sin(degrees * Math.PI / 180) }, handedness: "right", modelVersion: NATURAL_GOLFER_CONTACT_MODEL.modelVersion, role };
-  const creation = createGolferStanceBinding({ identity, launch: root, ground: g, artIndex });
+  const creation = createGolferStanceBinding({ identity, launch: root, visualGroundLaunch, ground: g, artIndex });
   if (creation.kind !== "candidate") throw new Error(creation.reason);
   const binding = creation.binding;
   const atCursor = (elapsedMs: number, patch: Partial<GolferLocomotionRequest> = {}): FixtureRequest => {
     const cursor = createShotPacingCursor(plan, { version: 1, key: plan.key, elapsedMs });
     return { owner, currentOwner: owner, authorityRevision: identity.authorityRevision, currentAuthorityRevision: identity.authorityRevision,
-      surfaceRevision: g.surfaceRevision, root, actualFeet: root, live: null, stance: { binding, identity,
+      surfaceRevision: g.surfaceRevision, root, visualGroundLaunch, actualFeet: visualGroundLaunch ?? root, live: null, stance: { binding, identity,
         playback: { plan, cursor, frame: shotPacingFrame(plan, cursor)!, retainedEvidence: { key: plan.key, validated: true } } },
       ground: g, presentationTimeMs: elapsedMs, paused: false, hidden: false, culled: false, acquisition: "continuous", motionEnabled: true,
       rotation: 0, quality: "high", operatingTier: 1, ...patch };
   };
-  return { plan, binding, identity, root, at: atCursor };
+  return { motion, plan, binding, identity, root, at: atCursor };
 }
 function state(result: GolferLocomotionProjection): GolferLocomotionState {
   if (!result.nextState) throw new Error(result.reason ?? "missing state");
@@ -87,6 +94,164 @@ function finish(s: ReturnType<typeof shot>, interval = 1000 / 60, patch: Partial
   expect(result.arrival?.kind).toBe("validated-adjustment");
   return { result, seen, cursor };
 }
+
+let retainedM47: ReturnType<typeof m47Fixture> | undefined;
+function m47Fixture() {
+  const course = normalizeCourseLayouts(createM47CertificationCourse(18));
+  const world = Object.assign(structuredClone(DEFAULT_WORLD), { week: 1, cash: 250000, reputation: 95, runSeed: 12160, isBankrupt: false, distressWeeks: 0, mode: "sandbox" as const });
+  const live = createLiveState(course, world, 0);
+  for (let i = 0; i < 540; i++) stepLive(live, course, .05, world);
+  const golfer = live.golfers.find(g => g.id === 1)!, scope = liveActivityScope(live, world)!;
+  const effectiveTiles = courseWithEffectiveSurfaces(course).tiles, field = buildVisualHeightfield(course);
+  const componentsByCell: (LandscapeComponent | null)[] = Array(effectiveTiles.length).fill(null);
+  for (const component of buildLandscapeComponents(effectiveTiles, course.width, course.height, { cornerRadius: .4, cornerSegments: 4 })) {
+    for (const i of component.cells) componentsByCell[i] = component;
+  }
+  const ground = createLiveGolferGroundAuthority({ course, effectiveTiles, field, componentsByCell, quality: "high", surfaceRevision: "m47:high" });
+  return { course, world, live, golfer, scope, ground };
+}
+function m47Shot(shotNumber: number) {
+  const f = retainedM47 ??= m47Fixture(), index = f.golfer.segments.findIndex(s => s.motion?.identity.holeId === "m47-hole-1" && s.motion.identity.shotNumber === shotNumber);
+  const segment = f.golfer.segments[index], motion = segment.motion!, B = { ...motion.from.point, heightYards: motion.from.heightYards };
+  const G = { ...B, heightYards: f.ground.sampleFootprintAt(B.x + .5, B.y + .5).heightYards };
+  const target = motion.flight?.geometry.to ?? motion.groundPath[1].point;
+  let distanceYards = Math.hypot(motion.landing.point.x - B.x, motion.landing.point.y - B.y) * motion.units.yardsPerTile;
+  for (let i = 1; i < motion.groundPath.length; i++) distanceYards += Math.hypot(motion.groundPath[i].point.x - motion.groundPath[i - 1].point.x, motion.groundPath[i].point.y - motion.groundPath[i - 1].point.y) * motion.units.yardsPerTile;
+  const plan = createShotPacingPlan({ scopeId: f.scope.id!, actorId: "1", motion, distanceYards })!;
+  const owner = { scopeId: plan.scopeId, actorId: plan.actorId, shot: plan.identity };
+  const base = createLiveActivitySource(f.scope, { ...f.golfer, pos: motion.from.point, segIndex: index, segElapsed: 0 }, segment)!;
+  const initial = createShotPacingCursor(plan), frame = shotPacingFrame(plan, initial)!;
+  const source = focusedLiveActivitySource(base, { actorId: 1, segmentIndex: index, segmentElapsed: 0, plan, cursor: initial, frame, identity: motion.identity, origin: motion.from, target }, true)!;
+  const identity: GolferStanceIdentity = { owner, authorityRevision: source.authorityRevision, surfaceRevision: f.ground.surfaceRevision,
+    targetWorld: source.targetWorld!, handedness: source.handedness, modelVersion: NATURAL_GOLFER_CONTACT_MODEL.modelVersion, role: plan.kind };
+  const creation = createGolferStanceBinding({ identity, launch: B, visualGroundLaunch: G, ground: f.ground, artIndex });
+  const at = (elapsedMs: number, binding: GolferStanceBinding, patch: Partial<GolferLocomotionRequest> = {}): FixtureRequest => {
+    const cursor = createShotPacingCursor(plan, { version: 1, key: plan.key, elapsedMs }), frame = shotPacingFrame(plan, cursor)!;
+    const current = focusedLiveActivitySource(base, { actorId: 1, segmentIndex: index, segmentElapsed: 0, plan, cursor, frame, identity: motion.identity, origin: motion.from, target }, true)!;
+    return { owner, currentOwner: owner, authorityRevision: source.authorityRevision, currentAuthorityRevision: source.authorityRevision,
+      surfaceRevision: f.ground.surfaceRevision, root: B, visualGroundLaunch: G, actualFeet: G, live: current, stance: { binding, identity, playback: current.playback! },
+      ground: f.ground, presentationTimeMs: elapsedMs, paused: false, hidden: false, culled: false, acquisition: "continuous", motionEnabled: true,
+      rotation: 0, quality: "high", operatingTier: 1, ...patch };
+  };
+  return { ...f, motion, B, G, identity, creation, plan, source, at };
+}
+
+describe("observed visual G→F adjustment with an unchanged physical ball B", () => {
+  it.each([2, 3].flatMap(shotNumber => ISO_ROTATIONS.map(rotation => [shotNumber, rotation] as const)))("reaches retained M47 shot %d F at camera %d without rewriting source B", (shotNumber, rotation) => {
+    const s = m47Shot(shotNumber), before = structuredClone({ live: s.live, world: s.world, motion: s.motion, source: s.source });
+    if (s.creation.kind !== "candidate") throw new Error(s.creation.reason);
+    const b = s.creation.binding;
+    deepFreeze(s.motion); deepFreeze(s.source);
+    let result = projectGolferLocomotion(s.at(0, b, { rotation }));
+    expect(result).toMatchObject({ kind: "adjust", root: s.B, feet: s.G, arrival: null, strideFrame: 0 });
+    expect(s.B.heightYards).not.toBe(s.G.heightYards);
+    for (let elapsed = 50; !result.arrival && elapsed <= 800; elapsed += 50) {
+      const previous = state(result), req = s.at(elapsed, b, { rotation, actualFeet: result.feet });
+      const frozenFacts = deepFreeze({ owner: req.owner, root: req.root, live: req.live, stance: req.stance });
+      const published = projectGolferLocomotion(req, previous);
+      expect(published.root).toEqual(s.B);
+      expect(req.root).toBe(frozenFacts.root); expect(req.live!.root.heightYards).toBe(s.B.heightYards);
+      expect(chord(previous.feet, published.feet!)).toBeLessThanOrEqual(32 * (elapsed - previous.cursorMs!) / 1000 + 1e-7);
+      if (published.reason === "awaiting-arrival-observation") expect(published.arrival).toBeNull();
+      result = published;
+    }
+    expect(result).toMatchObject({ kind: "arrived", feet: b.feet, arrival: { kind: "validated-adjustment" } });
+    expect(state(result).adjustmentFrom).toEqual(s.G); expect(state(result).adjustmentFrom).not.toEqual(s.B);
+    expect(state(result).adjustmentDurationMs).toBeCloseTo(shotNumber === 2 ? 333.97592810969394 : 343.0981962894866, 7);
+    const launch = s.plan.addressMs + s.plan.contactMs;
+    for (const target of [launch - .001, launch, launch + .001]) {
+      while (state(result).cursorMs! < target) {
+        const elapsed = Math.min(target, state(result).cursorMs! + 100);
+        const req = s.at(elapsed, b, { rotation, actualFeet: result.feet });
+        const cursorBefore = { ...req.stance!.playback.cursor };
+        result = projectGolferLocomotion(req, state(result));
+        expect(result).toMatchObject({ kind: "planted", root: s.B, feet: b.feet });
+        expect(req.stance!.playback.cursor).toEqual(cursorBefore);
+        const pose = sampleRetainedShotMotion(s.motion, req.stance!.playback.frame.motionProgress);
+        expect(pose).toEqual(sampleRetainedShotMotion(before.motion, req.stance!.playback.frame.motionProgress));
+      }
+      const held = projectGolferLocomotion(s.at(target, b, { rotation, actualFeet: result.feet, paused: true, hidden: true, motionEnabled: false, presentationTimeMs: 100000 + target }), state(result));
+      expect(held).toMatchObject({ kind: "planted", reason: "held", root: s.B, feet: b.feet, stridePhase: result.stridePhase });
+    }
+    expect({ live: s.live, world: s.world, motion: s.motion, source: s.source }).toEqual(before);
+    frozen(state(result));
+  });
+
+  it("rejects the real shot 1 and does not admit a G-as-B substitute candidate", () => {
+    const s = m47Shot(1);
+    expect(s.creation).toMatchObject({ kind: "neutral", reason: "contact-residual" });
+    const forgedBall = createGolferStanceBinding({ identity: s.identity, launch: s.G, ground: s.ground, artIndex });
+    if (forgedBall.kind !== "candidate") throw new Error("visual-only counterexample");
+    expect(projectGolferLocomotion(s.at(0, forgedBall.binding))).toMatchObject({ kind: "neutral", reason: "stance-invalidated", nextState: null });
+  });
+
+  it.each(["root-is-G", "source-is-G", "G-is-B", "G-omitted", "target", "epoch", "surface"])("rejects distinct-domain %s before a paused hold", variant => {
+    const s = m47Shot(3); if (s.creation.kind !== "candidate") throw new Error(s.creation.reason);
+    const b = s.creation.binding, initial = state(projectGolferLocomotion(s.at(0, b))), req = s.at(0, b, { paused: true, hidden: true, presentationTimeMs: 1000 });
+    if (variant === "root-is-G") req.root = s.G;
+    if (variant === "source-is-G") req.live = { ...req.live!, root: { ...req.live!.root, heightYards: s.G.heightYards } };
+    if (variant === "G-is-B") req.visualGroundLaunch = s.B;
+    if (variant === "G-omitted") req.visualGroundLaunch = undefined;
+    if (variant === "target") req.live = { ...req.live!, targetWorld: { x: 1, y: 0 } };
+    if (variant === "epoch") req.currentAuthorityRevision += ":replaced";
+    if (variant === "surface") req.ground = { ...req.ground, surfaceRevision: "replaced" };
+    expect(projectGolferLocomotion(req, initial)).toMatchObject({ kind: "neutral", nextState: null, arrival: null });
+  });
+
+  it("never treats repeated neutral G observations as F proof or a late contact arrival", () => {
+    const s = m47Shot(3); if (s.creation.kind !== "candidate") throw new Error(s.creation.reason);
+    const b = s.creation.binding, first = projectGolferLocomotion(s.at(0, b));
+    for (const presentationTimeMs of [0, 16, 1000, 100000]) {
+      const still = projectGolferLocomotion(s.at(0, b, { actualFeet: s.G, presentationTimeMs }), state(first));
+      expect(still).toMatchObject({ feet: s.G, arrival: null, strideFrame: 0 });
+    }
+    const moving = projectGolferLocomotion(s.at(100, b, { actualFeet: s.G }), state(first));
+    expect(moving.kind).toBe("adjust"); expect(moving.arrival).toBeNull();
+    expect(projectGolferLocomotion(s.at(200, b, { actualFeet: s.G }), state(moving))).toMatchObject({ reason: "adjustment-observation-mismatch", arrival: null });
+    expect(projectGolferLocomotion(s.at(100, b, { actualFeet: b.feet }), state(first))).toMatchObject({ reason: "adjustment-observation-mismatch", arrival: null });
+    for (const elapsed of [1200 - .001, 1200, 1200 + .001]) {
+      expect(projectGolferLocomotion(s.at(elapsed, b, { actualFeet: s.G }))).toMatchObject({ kind: "neutral", arrival: null });
+    }
+    expect(projectGolferLocomotion(s.at(0, b, { actualFeet: s.B }))).toMatchObject({ reason: "continuous-arrival-required", arrival: null });
+  });
+
+  it.each(["swing", "putt"] as const)("fits explicit non-equal B/G in the existing %s window and only grants subsequent observed-F proof", role => {
+    const G = p(5, 5, .05), s = shot(role, 45, ground(() => G.heightYards), false, G), before = structuredClone({ motion: s.motion, plan: s.plan });
+    deepFreeze(s.motion); deepFreeze(s.plan);
+    const { result, seen } = finish(s);
+    expect(seen[0]).toMatchObject({ root: s.root, feet: G, arrival: null });
+    expect(seen.at(-2)).toMatchObject({ feet: s.binding.feet, reason: "awaiting-arrival-observation", arrival: null });
+    expect(result.arrival).toMatchObject({ kind: "validated-adjustment" });
+    expect(state(result).adjustmentDurationMs).toBeLessThan(role === "swing" ? 800 : 400);
+    expect(projectGolferLocomotion(s.at((role === "swing" ? 800 : 400) - state(result).adjustmentDurationMs! + .001))).toMatchObject({ reason: "adjustment-window-exceeded", arrival: null });
+    let planted = result;
+    const launch = role === "swing" ? 1200 : 650;
+    for (const target of [launch - .001, launch, launch + .001]) {
+      while (state(planted).cursorMs! < target) {
+        const elapsed = Math.min(target, state(planted).cursorMs! + 100), req = s.at(elapsed, { actualFeet: planted.feet });
+        const clock = structuredClone(req.stance!.playback);
+        planted = projectGolferLocomotion(req, state(planted));
+        expect(planted).toMatchObject({ kind: "planted", root: s.root, feet: s.binding.feet });
+        expect(req.stance!.playback).toEqual(clock);
+      }
+      const frame = s.at(target).stance!.playback.frame;
+      expect(frame.motionProgress === 0).toBe(target <= launch);
+      expect(sampleRetainedShotMotion(s.motion, frame.motionProgress)).toEqual(sampleRetainedShotMotion(before.motion, frame.motionProgress));
+    }
+    expect({ motion: s.motion, plan: s.plan }).toEqual(before);
+  });
+
+  it.each(["blocked", "bounds", "nonfinite", "changed-height", "unsupported-sweep"])("keeps the existing %s ground rejection for distinct G/F", variant => {
+    const s = m47Shot(3); if (s.creation.kind !== "candidate") throw new Error(s.creation.reason);
+    const b = s.creation.binding, first = projectGolferLocomotion(s.at(0, b)), req = s.at(0, b, { actualFeet: s.G, paused: true });
+    const original = req.ground.sampleFootprintAt;
+    if (variant === "unsupported-sweep") req.ground = { ...req.ground, sweepFootprint: () => null };
+    else req.ground = { ...req.ground, sampleFootprintAt: (x, y) => ({ ...original(x, y),
+      ...(variant === "blocked" ? { supportedFootprint: false } : variant === "bounds" ? { inBounds: false } : { heightYards: variant === "nonfinite" ? NaN : original(x, y).heightYards + .001 }) }) };
+    const result = projectGolferLocomotion(req, variant === "unsupported-sweep" ? null : state(first));
+    expect(result).toMatchObject({ kind: "neutral", arrival: null, nextState: null });
+  });
+});
 
 describe("current legal leg and distance gait", () => {
   it.each([30, 60, 120])("walks naturally at %d Hz using distance, never a free-running frame clock", hz => {

@@ -38,7 +38,8 @@ export interface GolferStanceSupportSample {
 export interface GolferStanceGroundAuthority {
   readonly surfaceRevision: string;
   /**
-   * Same ground authority as the retained ball. Coordinates are grid-vertex
+   * Current visual ground authority, distinct from retained physical ball B.
+   * Coordinates are grid-vertex
    * space: entity x/y + .5, matching groundedGolferFrame/tileCenterIso.
    * supportedFootprint certifies the WHOLE stance footprint using the existing
    * walking support predicate (including water/building/decoration rejection).
@@ -48,7 +49,10 @@ export interface GolferStanceGroundAuthority {
 }
 export interface GolferStanceRequest {
   readonly identity: GolferStanceIdentity;
+  /** Unmodified retained physical ball B; the legacy name remains compatible. */
   readonly launch: GolferStancePoint;
+  /** Same XY as B, with exact current visual ground height G. Omitted means B=G. */
+  readonly visualGroundLaunch?: GolferStancePoint;
   readonly artIndex: NaturalGolferArtIndex | null;
   readonly ground: GolferStanceGroundAuthority;
 }
@@ -63,12 +67,15 @@ export interface GolferStanceBinding {
   readonly handedness: "right";
   readonly modelVersion: typeof NATURAL_GOLFER_CONTACT_MODEL.modelVersion;
   readonly role: "swing" | "putt";
+  /** Compatibility alias of physicalBallLaunch; never the visual launch G. */
   readonly launch: GolferStancePoint;
+  readonly physicalBallLaunch: GolferStancePoint;
+  readonly visualGroundLaunch: GolferStancePoint;
   readonly feet: GolferStancePoint;
   readonly deltaWorld: Readonly<IsoPoint>;
   readonly requiresArrivalProof: true;
 }
-export type GolferStanceReason = "invalid-identity" | "unsupported-handedness" | "unsupported-model" | "unsupported-role" | "invalid-launch" | "art-unavailable" | "invalid-ground-authority" | "surface-revision-mismatch" | "invalid-surface-sample" | "out-of-bounds" | "unsupported-footprint" | "launch-ground-mismatch" | "stance-radius-exceeded" | "contact-residual" | "tip-outside-ball-fill" | "invalid-binding" | "identity-invalidated" | "launch-invalidated" | "ground-invalidated" | "invalid-frame" | "arrival-proof-required" | "arrival-proof-incompatible" | "feet-not-at-stance" | "walking-authority-required";
+export type GolferStanceReason = "invalid-identity" | "unsupported-handedness" | "unsupported-model" | "unsupported-role" | "invalid-launch" | "invalid-visual-launch" | "art-unavailable" | "invalid-ground-authority" | "surface-revision-mismatch" | "invalid-surface-sample" | "out-of-bounds" | "unsupported-footprint" | "launch-ground-mismatch" | "stance-radius-exceeded" | "contact-residual" | "tip-outside-ball-fill" | "invalid-binding" | "identity-invalidated" | "launch-invalidated" | "visual-launch-invalidated" | "ground-invalidated" | "invalid-frame" | "arrival-proof-required" | "arrival-proof-incompatible" | "feet-not-at-stance" | "walking-authority-required";
 export interface GolferStanceNeutral { readonly kind: "neutral"; readonly neutral: "non-gripping"; readonly reason: GolferStanceReason; readonly nextPlant: null }
 export type GolferStanceCreation = { readonly kind: "candidate"; readonly binding: GolferStanceBinding; readonly requiresArrivalProof: true } | GolferStanceNeutral;
 
@@ -96,7 +103,10 @@ export interface GolferStanceWalkingObservation {
 }
 export interface GolferStanceFrameRequest {
   readonly currentIdentity: GolferStanceIdentity;
+  /** Exact unchanged physical ball B. */
   readonly launch: GolferStancePoint;
+  /** Explicit G required for a distinct-height binding; omitted means B=G. */
+  readonly visualGroundLaunch?: GolferStancePoint;
   readonly ground: GolferStanceGroundAuthority;
   readonly rotation: IsoRotation;
   readonly phase: "address" | "strike" | "watch" | "release";
@@ -109,8 +119,9 @@ export interface GolferStanceFrameRequest {
   readonly hidden: boolean;
 }
 export interface GolferStanceGeometry {
-  /** Outer holder remains at authoritative launch B; all layers share localOffset. */
+  /** Existing visual holder remains at same-XY grounded G, never moves ball B. */
   readonly holderScreen: Readonly<IsoPoint>;
+  readonly physicalBallScreen: Readonly<IsoPoint>;
   readonly feetScreen: Readonly<IsoPoint>;
   readonly localOffset: Readonly<IsoPoint>;
   readonly depth: number;
@@ -184,14 +195,15 @@ function validGround(ground: GolferStanceGroundAuthority, revision: string): boo
   return !!ground && ground.surfaceRevision === revision && typeof ground.sampleFootprintAt === "function";
 }
 function geometry(binding: GolferStanceBinding, rotation: IsoRotation): GolferStanceGeometry {
-  const ball = binding.launch, feet = binding.feet, v = view(binding.targetBasisDegrees, rotation);
-  const holderScreen = freezeXY(tileCenterIso(ball.x, ball.y, ball.heightYards / ELEVATION_STEP_YARDS, rotation));
+  const ball = binding.physicalBallLaunch, launch = binding.visualGroundLaunch, feet = binding.feet, v = view(binding.targetBasisDegrees, rotation);
+  const physicalBallScreen = freezeXY(tileCenterIso(ball.x, ball.y, ball.heightYards / ELEVATION_STEP_YARDS, rotation));
+  const holderScreen = freezeXY(tileCenterIso(launch.x, launch.y, launch.heightYards / ELEVATION_STEP_YARDS, rotation));
   const feetScreen = freezeXY(tileCenterIso(feet.x, feet.y, feet.heightYards / ELEVATION_STEP_YARDS, rotation));
   const tip = modelTip(v.body, NATURAL_GOLFER_CONTACT_MODEL.height);
   const actualTip = freezeXY({ x: feetScreen.x + tip.x, y: feetScreen.y + tip.y });
-  const contactDatum = freezeXY({ x: holderScreen.x, y: holderScreen.y - NATURAL_GOLFER_CONTACT_MODEL.bodyUnitScale });
-  const glyphDistance = Math.hypot(actualTip.x - holderScreen.x, actualTip.y - holderScreen.y - GLYPHS.centerY);
-  return Object.freeze({ holderScreen, feetScreen, localOffset: freezeXY({ x: feetScreen.x - holderScreen.x, y: feetScreen.y - holderScreen.y }),
+  const contactDatum = freezeXY({ x: physicalBallScreen.x, y: physicalBallScreen.y - NATURAL_GOLFER_CONTACT_MODEL.bodyUnitScale });
+  const glyphDistance = Math.hypot(actualTip.x - physicalBallScreen.x, actualTip.y - physicalBallScreen.y - GLYPHS.centerY);
+  return Object.freeze({ holderScreen, physicalBallScreen, feetScreen, localOffset: freezeXY({ x: feetScreen.x - holderScreen.x, y: feetScreen.y - holderScreen.y }),
     depth: Math.round(entityDepth(feet.x, feet.y, feet.heightYards / ELEVATION_STEP_YARDS, rotation) * 10) / 10,
     targetDirection: v.direction, bodyAngleDegrees: v.body, contactFrame: NATURAL_GOLFER_CONTACT_MODEL.contactFrame[binding.role], contactDatum, actualTip,
     residualPx: Math.hypot(actualTip.x - contactDatum.x, actualTip.y - contactDatum.y), insideLiveBallFill: glyphDistance <= GLYPHS.liveRadius, insideControlledBallFill: glyphDistance <= GLYPHS.controlledRadius });
@@ -204,30 +216,39 @@ function contactFailure(g: GolferStanceGeometry): GolferStanceNeutral | null {
 /** Candidate only: creation never asserts that walking feet already reached F. */
 export function createGolferStanceBinding(request: GolferStanceRequest): GolferStanceCreation {
   const { identity: id, launch, ground, artIndex } = request, ownerKey = identityKey(id);
+  const visualLaunch = request.visualGroundLaunch === undefined ? launch : request.visualGroundLaunch;
   if (!ownerKey) return neutral("invalid-identity");
   if (id.handedness !== "right") return neutral("unsupported-handedness");
   if (id.modelVersion !== NATURAL_GOLFER_CONTACT_MODEL.modelVersion) return neutral("unsupported-model");
   if (id.role !== "swing" && id.role !== "putt") return neutral("unsupported-role");
   if (!point(launch)) return neutral("invalid-launch");
+  if (!point(visualLaunch) || visualLaunch.x !== launch.x || visualLaunch.y !== launch.y) return neutral("invalid-visual-launch");
   if (!validGround(ground, id.surfaceRevision)) return neutral("invalid-ground-authority");
   const basis = targetBasis(id.targetWorld), v = view(basis, 0);
   const art = resolveNaturalGolferArt(artIndex, { selection: { family: "natural-golfer-v1", identity: "primary-teal-cream-01" }, clip: id.role, direction: v.direction, col: NATURAL_GOLFER_CONTACT_MODEL.contactFrame[id.role], handedness: id.handedness });
   if (art.kind !== "frame" || !art.frame.contact || art.frame.directionRole !== "target" || art.frame.bodyUnitScale !== NATURAL_GOLFER_CONTACT_MODEL.bodyUnitScale || artIndex?.modelVersion !== id.modelVersion) return neutral("art-unavailable");
-  const ballSurface = surface(ground, launch, id.surfaceRevision);
+  const ballSurface = surface(ground, visualLaunch, id.surfaceRevision);
   if (isNeutral(ballSurface)) return ballSurface;
-  if (Math.abs(ballSurface.heightYards - launch.heightYards) > EPS) return neutral("launch-ground-mismatch");
+  if (Math.abs(ballSurface.heightYards - visualLaunch.heightYards) > EPS) return neutral("launch-ground-mismatch");
   const groundDelta = modelTip(v.body, 0);
   const deltaWorld = isoToWorld(groundDelta.x, groundDelta.y);
   if (Math.hypot(deltaWorld.x, deltaWorld.y) > GOLFER_STANCE_LIMITS.maxRadiusTiles) return neutral("stance-radius-exceeded");
-  const feetXY = { x: launch.x - deltaWorld.x, y: launch.y - deltaWorld.y, heightYards: launch.heightYards };
+  const feetXY = { x: visualLaunch.x - deltaWorld.x, y: visualLaunch.y - deltaWorld.y, heightYards: visualLaunch.heightYards };
   const feetSurface = surface(ground, feetXY, id.surfaceRevision);
   if (isNeutral(feetSurface)) return feetSurface;
-  const key = JSON.stringify([ownerKey, id.authorityRevision, id.surfaceRevision, launch.x, launch.y, launch.heightYards, id.targetWorld.x, id.targetWorld.y, id.handedness, id.modelVersion, id.role]);
+  const feet = freezePoint({ x: feetXY.x, y: feetXY.y, heightYards: feetSurface.heightYards });
+  const physicalBallLaunch = freezePoint(launch), visualGroundLaunch = freezePoint(visualLaunch);
+  const key = JSON.stringify([ownerKey, id.authorityRevision, id.surfaceRevision, launch.x, launch.y, launch.heightYards,
+    visualLaunch.x, visualLaunch.y, visualLaunch.heightYards, feet.x, feet.y, feet.heightYards,
+    id.targetWorld.x, id.targetWorld.y, id.handedness, id.modelVersion, id.role]);
   const binding: GolferStanceBinding = Object.freeze({ version: 1, key, ownerKey, authorityRevision: id.authorityRevision, surfaceRevision: id.surfaceRevision,
     targetWorld: freezeXY(id.targetWorld), targetBasisDegrees: basis, handedness: "right", modelVersion: NATURAL_GOLFER_CONTACT_MODEL.modelVersion, role: id.role,
-    launch: freezePoint(launch), feet: freezePoint({ ...feetXY, heightYards: feetSurface.heightYards }), deltaWorld: freezeXY(deltaWorld), requiresArrivalProof: true });
-  const failure = contactFailure(geometry(binding, 0));
-  if (failure) return failure;
+    launch: physicalBallLaunch, physicalBallLaunch, visualGroundLaunch, feet, deltaWorld: freezeXY(deltaWorld), requiresArrivalProof: true });
+  // Both named-datum residual and unchanged glyph fill must pass every camera.
+  for (const rotation of [0, 90, 180, 270] as const) {
+    const failure = contactFailure(geometry(binding, rotation));
+    if (failure) return failure;
+  }
   bindings.add(binding);
   return Object.freeze({ kind: "candidate", binding, requiresArrivalProof: true });
 }
@@ -251,14 +272,16 @@ export function sampleGolferStance(binding: GolferStanceBinding, f: GolferStance
   if (!bindings.has(binding)) return neutral("invalid-binding");
   if (!sameIdentity(binding, f.currentIdentity)) return neutral("identity-invalidated");
   if (!point(f.launch) || !samePoint(binding.launch, f.launch)) return neutral("launch-invalidated");
+  const visualLaunch = f.visualGroundLaunch === undefined ? f.launch : f.visualGroundLaunch;
+  if (!point(visualLaunch) || !samePoint(binding.visualGroundLaunch, visualLaunch)) return neutral("visual-launch-invalidated");
   if (!validGround(f.ground, binding.surfaceRevision)) return neutral("invalid-ground-authority");
   if (![0, 90, 180, 270].includes(f.rotation) || !["address", "strike", "watch", "release"].includes(f.phase)
     || !["continuous", "reload", "late-acquisition"].includes(f.acquisition) || typeof f.paused !== "boolean" || typeof f.hidden !== "boolean") return neutral("invalid-frame");
-  const ballSurface = surface(f.ground, binding.launch, binding.surfaceRevision);
+  const ballSurface = surface(f.ground, binding.visualGroundLaunch, binding.surfaceRevision);
   if (isNeutral(ballSurface)) return ballSurface;
   const feetSurface = surface(f.ground, binding.feet, binding.surfaceRevision);
   if (isNeutral(feetSurface)) return feetSurface;
-  if (Math.abs(ballSurface.heightYards - binding.launch.heightYards) > EPS || Math.abs(feetSurface.heightYards - binding.feet.heightYards) > EPS) return neutral("ground-invalidated");
+  if (Math.abs(ballSurface.heightYards - binding.visualGroundLaunch.heightYards) > EPS || Math.abs(feetSurface.heightYards - binding.feet.heightYards) > EPS) return neutral("ground-invalidated");
   const held = f.acquisition === "continuous" && !!f.previousPlant && plants.get(f.previousPlant) === binding;
   if (f.phase === "release" && !(held && (f.paused || f.hidden))) {
     const w = f.walking;
