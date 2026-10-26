@@ -1,4 +1,41 @@
-# ZK-1414 first review checkpoint
+# ZK-1414 visual review checkpoints
+
+## Study 02 — natural adult proportions, October 26, 2026
+
+The user requested “Make the people more detailed and less cartoon-like.”
+Study 01 below was not visually approved. Its exact checkpoint `e6e4814` was
+subsequently published to `codex/relaxed-golfers-lookdev` with the user's
+explicit approval; remote readback matched. This revision preserves that history.
+
+Study 02 uses a 6.41-head adult figure, smaller hands and shoes, longer articulated
+legs, fitted clothing, a shaped face/cap and more detailed equipment. All four
+sample identities share the revised anatomy. The gameplay size sheet remains
+13/26/52px in source-frame width; fine facial detail is inspection-only at these
+sizes. The 54-second synthetic storyboard and frozen activity contract are
+unchanged. No production art or gameplay integration is included.
+
+Final focused checks: **34 passed, 0 failed**, manifest valid with 11 clips,
+and `git diff --check` clean. An independent review found two real rig defects
+in the initial revision: collapsing upper arms and a telescoping club. One
+bounded correction replaced those with fixed-length two-bone arms and one rigid
+club with an ordered, collinear two-handed grip. A subsequent viewer-only fix
+fits every sampled action into one stable inspector scale and anchor, without
+changing the ordinary gameplay scale. Conservative bounds include actual
+rendered paths, all eight views/actions/responses and both motion settings.
+Production frame clipping remains a later export check.
+Independent Sol 6.1 xhigh re-review accepted the frozen revision with no
+actionable findings and independently reproduced all 34 passing tests.
+
+The coordinator inspected visible playback, putt/phase jumps, operating-tier,
+view, response and reduced-motion controls, then checked the complete backswing
+and normal-scale group in the rebuilt page. The inspected browser warning/error
+log was empty. Revised screenshots are separate from the retained Study 01
+image. These checks do not establish human visual acceptance or runtime quality.
+
+**Human review of Study 02 remains pending.** Keep ZK-1414 In Review and the
+downstream production packets unstarted until the planned visual decision.
+
+## Study 01 — first review checkpoint
 
 October 26, 2026. Base: `5729faf7a17dcb2c5e12c27422a8b1590d59f4d0`.
 Scope: non-shipping look development and a staging presentation contract.

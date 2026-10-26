@@ -100,6 +100,13 @@ equipment/handedness variants remain un-authored; legacy mirroring cannot
 certify handedness. The linked vector/canvas storyboard is non-shipping lookdev.
 Technical contract validation is independent of pending human art acceptance.
 
+User review on October 26 rejected the first study's cartoon-like people.
+The next **golfer look-development proposal** uses natural adult proportions
+(about 6–6.5 heads), smaller anatomical heads/hands/shoes, articulated legs,
+fitted clothing, finer local outlines and realistically scaled equipment.
+This supersedes the chibi target for the staged golfer proposal only; it does
+not certify replacement production art or change the legacy frame/anchor math.
+
 ## Asset pipeline
 
 1. Author/generate sprites as individual PNGs in `src/assets/sprites/` or,
