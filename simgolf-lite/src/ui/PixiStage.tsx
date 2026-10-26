@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Workers deployments can retain a script-src policy without 'unsafe-eval'.
 import "pixi.js/unsafe-eval";
 import { destroySceneSubtree } from "../game/render/destroySceneSubtree";
+import { releaseIdleGraphicsPools } from "../game/render/releaseIdleGraphicsPools";
 import * as PIXI from "pixi.js";
 import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../game/models/types";
 import type { ShotRoutePresentation } from "../game/presentation/shotRoutePresentation";
@@ -1943,6 +1944,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (cancelled) {
         app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
+        releaseIdleGraphicsPools(PIXI);
         return;
       }
       const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule] = await Promise.all([
@@ -1955,6 +1957,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (cancelled) {
         app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
+        releaseIdleGraphicsPools(PIXI);
         return;
       }
 
@@ -1966,6 +1969,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (cancelled) {
         app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
+        releaseIdleGraphicsPools(PIXI);
         return;
       }
       deferredWorldScenesRef.current = deferredWorldScenes;
@@ -2046,7 +2050,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (cancelled) {
         terrainWaterSceneRef.current?.destroy();
         terrainWaterSceneRef.current = null;
-        try { app.stage.removeChildren().forEach(destroySceneSubtree); app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); } catch { /* partial initialization */ }
+        try { app.stage.removeChildren().forEach(destroySceneSubtree); app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); releaseIdleGraphicsPools(PIXI); } catch { /* partial initialization */ }
         return;
       }
       console.error("[PixiStage] Course renderer initialization failed", error);
@@ -2056,7 +2060,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       setRendererError(true);
       terrainWaterSceneRef.current?.destroy();
       terrainWaterSceneRef.current = null;
-      try { app.stage.removeChildren().forEach(destroySceneSubtree); app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); } catch { /* partially initialized */ }
+      try { app.stage.removeChildren().forEach(destroySceneSubtree); app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); releaseIdleGraphicsPools(PIXI); } catch { /* partially initialized */ }
     });
 
     return () => {
@@ -2091,6 +2095,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         appRef.current.stage.removeChildren().forEach(destroySceneSubtree);
         appRef.current.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false });
         appRef.current = null;
+        releaseIdleGraphicsPools(PIXI);
       }
     };
   }, []);
