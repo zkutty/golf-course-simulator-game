@@ -1,0 +1,152 @@
+import type { Course, World } from "../models/types";
+import type { LiveAudioEvent } from "../../audio/liveEvents";
+import { PUTT_CONTACT_FRAME, SWING_CONTACT_FRAME } from "../render/golferSprites";
+import { isValidRetainedShotMotionV1, sampleRetainedShotMotion, type RetainedShotMotionV1 } from "../rules/shotMotion";
+import {
+  createShotPacingCursor, createShotPacingPlan, isShotPacingCursor, shotPacingEventProgress, shotPacingFrame,
+  type ShotPacingCursorV1, type ShotPacingPlan,
+} from "./shotPacing";
+import type { GolferRenderData, LiveState, Segment } from "./types";
+
+export interface FocusedShotScope {
+  runSeed: number;
+  week: number;
+  dayIndex: number;
+  liveSeed: number;
+  reconcileEpoch: number;
+}
+
+export interface FocusedShotSnapshotV1 {
+  version: 1;
+  scope: FocusedShotScope;
+  golferId: number;
+  segmentIndex: number;
+  segmentElapsed: number;
+  cursor: ShotPacingCursorV1;
+}
+
+export interface FocusedShotOwner {
+  readonly live: LiveState;
+  readonly scope: FocusedShotScope;
+  readonly golferId: number;
+  readonly segmentIndex: number;
+  readonly segmentElapsed: number;
+  readonly segment: Segment;
+  readonly motion: RetainedShotMotionV1;
+  readonly plan: ShotPacingPlan;
+  cursor: ShotPacingCursorV1;
+}
+
+function scopeOf(live: LiveState, world: Pick<World, "runSeed" | "week">): FocusedShotScope {
+  return { runSeed: world.runSeed ?? 0, week: world.week, dayIndex: live.dayIndex, liveSeed: live.seed, reconcileEpoch: live.reconcileEpoch };
+}
+
+const scopeId = (scope: FocusedShotScope): string => JSON.stringify(["live", scope.runSeed, scope.week, scope.dayIndex, scope.liveSeed, scope.reconcileEpoch]);
+const record = (value: unknown): value is Record<string, unknown> => value != null && typeof value === "object" && !Array.isArray(value)
+  && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+const exactKeys = (value: Record<string, unknown>, keys: readonly string[]) => Object.keys(value).length === keys.length
+  && Object.keys(value).every((key) => keys.includes(key));
+
+/** Acquires only the exact current retained flight, without stepping or reading future outcomes. */
+export function acquireFocusedShot(live: LiveState, world: Pick<World, "runSeed" | "week">, golferId: number | null | undefined): FocusedShotOwner | null {
+  if (golferId == null || !Number.isSafeInteger(golferId) || live.dayOver) return null;
+  const golfer = live.golfers.find((item) => item.id === golferId && !item.finished);
+  const segment = golfer?.segments[golfer.segIndex];
+  if (!golfer || !segment || segment.kind !== "flight" || !isValidRetainedShotMotionV1(segment.motion) || segment.shotId !== segment.motion.identity.shotId
+    || !Number.isFinite(segment.dur) || segment.dur <= 0 || segment.dur > 10
+    || !Number.isFinite(golfer.segElapsed) || golfer.segElapsed < 0 || golfer.segElapsed >= segment.dur) return null;
+  const motion = segment.motion;
+  // Retained horizontal distances only; current terrain and precomputed future outcomes are not consulted.
+  let distanceYards = Math.hypot(motion.landing.point.x - motion.from.point.x, motion.landing.point.y - motion.from.point.y) * motion.units.yardsPerTile;
+  for (let i = 1; i < motion.groundPath.length; i++) distanceYards += Math.hypot(
+    motion.groundPath[i].point.x - motion.groundPath[i - 1].point.x,
+    motion.groundPath[i].point.y - motion.groundPath[i - 1].point.y,
+  ) * motion.units.yardsPerTile;
+  const scope = scopeOf(live, world);
+  const plan = createShotPacingPlan({ scopeId: scopeId(scope), actorId: String(golferId), motion, distanceYards });
+  if (!plan) return null;
+  return { live, scope, golferId, segmentIndex: golfer.segIndex, segmentElapsed: golfer.segElapsed, segment, motion, plan, cursor: createShotPacingCursor(plan) };
+}
+
+/** A presentation hold is valid only while its authoritative cursor is still stopped. */
+export function focusedShotMatches(owner: FocusedShotOwner, live: LiveState, world: Pick<World, "runSeed" | "week">, followGolferId: number | null | undefined, draining = false): boolean {
+  const golfer = live.golfers.find((item) => item.id === owner.golferId);
+  return owner.live === live && !live.dayOver && followGolferId === owner.golferId
+    && scopeId(owner.scope) === scopeId(scopeOf(live, world)) && !!golfer && !golfer.finished
+    && golfer.segIndex === owner.segmentIndex && (draining ? golfer.segElapsed >= owner.segmentElapsed : golfer.segElapsed === owner.segmentElapsed)
+    && golfer.segments[golfer.segIndex] === owner.segment && owner.segment.motion === owner.motion
+    && Object.entries(owner.plan.identity).every(([key, value]) => owner.motion.identity[key as keyof typeof owner.motion.identity] === value);
+}
+
+export function snapshotFocusedShot(owner: FocusedShotOwner): FocusedShotSnapshotV1 {
+  const golfer = owner.live.golfers.find((item) => item.id === owner.golferId);
+  return { version: 1, scope: { ...owner.scope }, golferId: owner.golferId, segmentIndex: owner.segmentIndex,
+    segmentElapsed: golfer?.segIndex === owner.segmentIndex ? golfer.segElapsed : owner.segmentElapsed, cursor: { ...owner.cursor } };
+}
+
+/** An invalid optional carrier is discarded; legacy live authority remains valid. */
+export function restoreFocusedShot(value: unknown, live: LiveState, world?: Pick<World, "runSeed" | "week">): FocusedShotOwner | null {
+  if (!record(value) || !exactKeys(value, ["version", "scope", "golferId", "segmentIndex", "segmentElapsed", "cursor"])
+    || value.version !== 1 || !record(value.scope)
+    || !exactKeys(value.scope, ["runSeed", "week", "dayIndex", "liveSeed", "reconcileEpoch"])
+    || !Object.values(value.scope).every((part) => typeof part === "number" && Number.isSafeInteger(part) && part >= 0)
+    || !Number.isSafeInteger(value.golferId) || !Number.isSafeInteger(value.segmentIndex)
+    || typeof value.segmentElapsed !== "number" || !Number.isFinite(value.segmentElapsed)) return null;
+  const scope = value.scope as unknown as FocusedShotScope;
+  if (world && (scope.runSeed !== (world.runSeed ?? 0) || scope.week !== world.week)) return null;
+  const owner = acquireFocusedShot(live, { runSeed: scope.runSeed, week: scope.week }, value.golferId as number);
+  if (!owner || scopeId(owner.scope) !== scopeId(scope) || owner.segmentIndex !== value.segmentIndex
+    || owner.segmentElapsed !== value.segmentElapsed || !isShotPacingCursor(value.cursor, owner.plan)) return null;
+  owner.cursor = createShotPacingCursor(owner.plan, value.cursor);
+  return owner;
+}
+
+/** Only a render buffer changes. The golfer, score and saved itinerary stay stopped. */
+export function projectFocusedShot(owner: FocusedShotOwner, render: GolferRenderData[]): void {
+  const frame = shotPacingFrame(owner.plan, owner.cursor);
+  const pose = frame && sampleRetainedShotMotion(owner.motion, frame.motionProgress);
+  const golfer = render.find((item) => item.id === owner.golferId);
+  if (!frame || !pose || !golfer) return;
+  const contactFrame = owner.plan.kind === "putt" ? PUTT_CONTACT_FRAME : SWING_CONTACT_FRAME;
+  const addressProgress = Math.min(1, owner.cursor.elapsedMs / owner.plan.addressMs);
+  const beforeContact = owner.cursor.elapsedMs < owner.plan.addressMs;
+  Object.assign(golfer, {
+    x: owner.motion.from.point.x, y: owner.motion.from.point.y,
+    ballX: pose.point.x, ballY: pose.point.y,
+    ballToX: owner.motion.physicalRest.point.x, ballToY: owner.motion.physicalRest.point.y,
+    ballLandingX: owner.motion.landing.point.x, ballLandingY: owner.motion.landing.point.y,
+    ballMotion: { identity: owner.motion.identity, pose, events: owner.motion.events,
+      contactTerrain: owner.segment.motionContactTerrain ?? "unknown",
+      collisionTerrain: owner.motion.flight?.collision.kind === "terrain" ? owner.motion.flight.collision.terrain : null, active: true },
+    ballUsesResolvedRollout: true, ballRolloutStartT: owner.plan.firstContactT,
+    segKind: frame.addressing ? "pause" : "flight",
+    segT: frame.addressing ? beforeContact ? addressProgress * contactFrame / (contactFrame + 1) * .999999 : 1 : frame.motionProgress,
+    shot: owner.plan.kind,
+  });
+}
+
+/** Only newly crossed events; restoring or explicitly skipping never replays audio. */
+export function focusedShotAudioEvents(owner: FocusedShotOwner, previous: ShotPacingCursorV1, course: Course, skipped = false): LiveAudioEvent[] {
+  if (skipped) return [];
+  const before = shotPacingFrame(owner.plan, previous);
+  const after = shotPacingFrame(owner.plan, owner.cursor);
+  if (!before || !after) return [];
+  const events: LiveAudioEvent[] = [];
+  for (const event of owner.motion.events) {
+    const at = shotPacingEventProgress(owner.plan, event.time)!;
+    if (at <= before.progress || at > after.progress) continue;
+    if (event.kind === "launch") events.push({ kind: "shot", golferId: owner.golferId, shot: owner.plan.kind,
+      from: { ...owner.motion.from.point }, to: { ...owner.motion.physicalRest.point } });
+    if (event.kind === "first_contact") {
+      const x = Math.max(0, Math.min(course.width - 1, Math.round(event.point.x)));
+      const y = Math.max(0, Math.min(course.height - 1, Math.round(event.point.y)));
+      events.push({ kind: "landing", golferId: owner.golferId, surface: course.tiles[y * course.width + x] ?? "rough", at: { ...event.point } });
+    }
+    if (event.kind === "hole_out") {
+      const golfer = owner.live.golfers.find((item) => item.id === owner.golferId);
+      const hole = owner.segment.holeIndex;
+      events.push({ kind: "hole-out", golferId: owner.golferId, scoreDelta: (golfer?.holeStrokes[hole] ?? 0) - (golfer?.holePar[hole] ?? 0), at: { ...event.point } });
+    }
+  }
+  return events;
+}

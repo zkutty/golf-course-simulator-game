@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { LIVE, type SpeedName } from "../game/live/liveConfig";
 import { formatCurrency, formatDayLabel, formatWeekLabel } from "../i18n/format";
 import type { LiveStatus } from "../hooks/useLiveSimulation";
@@ -33,11 +33,20 @@ export function LiveControls(props: {
   activePinRotation?: PinRotation;
   holes?: readonly Hole[];
   onSetActivePinRotation?: (rotation: PinRotation) => void;
+  onNextEvent?: () => void;
+  onFinishDay?: () => void;
+  onCancelAdvance?: () => void;
+  advancing?: "next-event" | "finish-day" | null;
+  advanceDisabledReason?: "controlled-round" | "unopened" | "unavailable" | null;
 }) {
   const { status, speed, onSetSpeed, cash, reputation } = props;
   const last = status.lastDay;
   const pinFallbacks = dailyPinFallbacks(props.holes ?? [], props.activePinRotation ?? "A");
   const controlsRef = useRef<HTMLDivElement | null>(null);
+  const advanceDisabled = Boolean(props.advanceDisabledReason || props.advancing);
+  const advanceDisabledTitle = props.advanceDisabledReason
+    ? translateCurrent(`live.advance.disabled.${props.advanceDisabledReason}`)
+    : props.advancing ? translateCurrent("live.advance.inProgress") : undefined;
 
   useEffect(() => {
     const controls = controlsRef.current;
@@ -106,6 +115,7 @@ export function LiveControls(props: {
             <button
               key={s.key}
               onClick={() => onSetSpeed(s.key)}
+              disabled={Boolean(props.advancing)}
               title={s.key === "paused" ? (active ? "Resume" : "Pause") : `Speed ${s.key}`}
               aria-pressed={active}
               data-testid={`speed-${s.key}`}
@@ -116,9 +126,10 @@ export function LiveControls(props: {
                 border: active ? "1px solid #86efac" : "1px solid rgba(255,255,255,0.18)",
                 background: active ? "rgba(134,239,172,0.22)" : "rgba(255,255,255,0.06)",
                 color: active ? "#bbf7d0" : "#e5e7eb",
-                cursor: "pointer",
+                cursor: props.advancing ? "not-allowed" : "pointer",
                 fontSize: 12,
                 fontWeight: 700,
+                opacity: props.advancing ? 0.55 : 1,
               }}
             >
               {s.label}
@@ -126,6 +137,40 @@ export function LiveControls(props: {
           );
         })}
       </div>
+
+      {(props.onNextEvent || props.onFinishDay || props.advancing) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {props.onNextEvent && <button
+            type="button"
+            onClick={props.onNextEvent}
+            disabled={advanceDisabled}
+            title={advanceDisabled ? advanceDisabledTitle : undefined}
+            data-testid="live-next-event"
+            style={advanceButtonStyle(advanceDisabled)}
+          >{translateCurrent("live.advance.nextEvent")}</button>}
+          {props.onFinishDay && <button
+            type="button"
+            onClick={props.onFinishDay}
+            disabled={advanceDisabled}
+            title={advanceDisabled ? advanceDisabledTitle : undefined}
+            data-testid="live-finish-day"
+            style={advanceButtonStyle(advanceDisabled)}
+          >{translateCurrent("live.advance.finishDay")}</button>}
+          {props.advancing && <>
+            <span role="status" aria-live="polite" data-testid="live-advance-status" style={{ fontSize: 11 }}>
+              {translateCurrent(props.advancing === "next-event" ? "live.advance.advancingNext" : "live.advance.finishingDay")}
+            </span>
+            <button
+              type="button"
+              onClick={props.onCancelAdvance}
+              disabled={!props.onCancelAdvance}
+              title={!props.onCancelAdvance ? translateCurrent("live.advance.stopUnavailable") : undefined}
+              data-testid="live-stop-advance"
+              style={advanceButtonStyle(!props.onCancelAdvance)}
+            >{translateCurrent("live.advance.stop")}</button>
+          </>}
+        </div>
+      )}
 
       {props.onOpenPauseMenu && (
         <button onClick={props.onOpenPauseMenu} title={translateCurrent("auto.ui.livecontrols.pause.menu")} aria-label={translateCurrent("auto.ui.livecontrols.open.pause.menu")} style={{ minWidth: 34, padding: "5px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.3)", background: "rgba(255,255,255,.1)", color: "white", cursor: "pointer", fontWeight: 800 }}>☰</button>
@@ -156,6 +201,21 @@ export function LiveControls(props: {
       )}
     </div>
   );
+}
+
+function advanceButtonStyle(disabled: boolean): CSSProperties {
+  return {
+    minHeight: 30,
+    padding: "5px 8px",
+    borderRadius: 8,
+    border: "1px solid rgba(255,255,255,0.24)",
+    background: "rgba(255,255,255,0.08)",
+    color: "#f5f5f0",
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontSize: 11,
+    fontWeight: 700,
+    opacity: disabled ? 0.55 : 1,
+  };
 }
 
 function Stat(props: { label: string; value: string; accent?: string; testId?: string }) {

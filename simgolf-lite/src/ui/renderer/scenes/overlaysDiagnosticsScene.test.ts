@@ -318,6 +318,7 @@ describe("overlay and diagnostics scene ownership", () => {
     for (const [club, contact] of [["Driver", 5], ["Putter", 2]] as const) {
       expect(playerShotGolferPose(playerShotPlaybackFrame("s1", .17999), club, { x: 1, y: 0 }, 0).col).toBeLessThan(contact);
       expect(playerShotGolferPose(playerShotPlaybackFrame("s1", .18), club, { x: 1, y: 0 }, 0).col).toBe(contact);
+      expect(playerShotGolferPose({ ...playerShotPlaybackFrame("s1", .14), phase: "contact", addressing: true, addressProgress: 1 }, club, { x: 1, y: 0 }, 0).col).toBe(contact);
       expect(playerShotGolferPose(playerShotPlaybackFrame("s1", .5), club, { x: 1, y: 0 }, 90).col).toBeGreaterThan(contact);
     }
   });

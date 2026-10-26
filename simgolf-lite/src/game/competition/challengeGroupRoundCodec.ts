@@ -1,3 +1,4 @@
+import { isChallengeGroupPresentation } from "./challengeGroupPresentation";
 import type { PlayerProPoint, PlayerRoundCourseSnapshot, PlayerShotTrace } from "../models/playerProTypes";
 import { isValidSharedShotOutcome } from "../rules/contracts";
 import { decodeControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
@@ -162,6 +163,7 @@ export function validateChallengeGroupRound(round: ChallengeGroupRound): string 
   const shotIds = golfers.flatMap((golfer) => golfer.shots.map((shot) => shot.id));
   if (new Set(shotIds).size !== shotIds.length) return INVALID_SAVE;
   if (turns.some((turn) => !shotIds.includes(turn.shotId))) return groupError("turn evidence references a missing shot.");
+  if (round.presentation !== undefined && !isChallengeGroupPresentation(round.presentation, round)) return groupError("presentation cursor is invalid.");
   const sideBets = round.sideBets;
   if (!Array.isArray(sideBets) || sideBets.some((sideBet) => !validSideBet(sideBet)) || new Set(sideBets.map((sideBet) => sideBet.id)).size !== sideBets.length) return INVALID_SAVE;
   if (individualAuthority) {

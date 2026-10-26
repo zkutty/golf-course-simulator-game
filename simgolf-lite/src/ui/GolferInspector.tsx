@@ -7,6 +7,7 @@ import type { EmoteKind } from "../game/render/emotes";
 import { translateCurrent } from "../i18n/core";
 import { useI18n } from "../i18n/useI18n";
 import { currentShotEvidenceCues } from "../game/render/shotTruthCues";
+import type { ShotPacingFrame } from "../game/live/shotPacing";
 import "./GolferInspector.css";
 
 // Decorative counterparts of the on-course bubbles; feed labels carry meaning.
@@ -40,6 +41,8 @@ export function GolferInspector(props: {
   onClose: () => void;
   following?: boolean;
   onToggleFollow?: () => void;
+  playback?: Pick<ShotPacingFrame, "phase" | "progress"> | null;
+  onSkipShot?: () => void;
   setupDifficulty?: number;
 }) {
   const { selected, onClose } = props;
@@ -102,6 +105,12 @@ export function GolferInspector(props: {
         onClick={props.onToggleFollow}>
         <span aria-hidden="true">{props.following ? "◎" : "◉"}</span> {translateCurrent(props.following ? "live.following" : "live.follow")}
       </button>}
+
+      {props.following && props.playback && <div className="cc-golfer-section" data-testid="followed-shot-playback">
+        <div role="status" aria-live="polite" data-testid="followed-shot-phase">{translateCurrent(`shotPacing.phase.${props.playback.phase}`)}</div>
+        <small>{translateCurrent("shotPacing.dayHeld")}</small>
+        {props.onSkipShot && <button type="button" className="cc-golfer-playback-skip" data-testid="skip-followed-shot" onClick={props.onSkipShot}>{translateCurrent("shotPacing.skip")}</button>}
+      </div>}
 
       <div className="cc-golfer-section">
         <div className="cc-golfer-mood-label">

@@ -7,6 +7,8 @@ import "./ui/cozyLayout.css";
 import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
 import { usePlayerShotPlayback } from "./ui/playerPro/usePlayerShotPlayback";
+import { challengeGroupFeaturedShot, challengeGroupPresentationRound, checkpointChallengeGroupPresentation, createChallengeGroupPresentation, skipChallengeGroupPresentation } from "./game/competition/challengeGroupPresentation";
+import { controlledGroupTime, controlledParticipantTime, MAX_CONTROLLED_OBSERVATION_STEPS, observeControlledTime, type ControlledTimeObservation } from "./game/live/controlledTime";
 import { isValidRetainedShotMotionV1 } from "./game/rules/shotMotion";
 import type { SfxName } from "./audio/AudioManager";
 import { DesignDock } from "./ui/DesignDock";
@@ -132,7 +134,7 @@ import {
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { reservedMobilityFleetUnitIds } from "./game/m51/rentalBusiness";
 import { runLiveDaysHeadless } from "./game/live/headless";
-import { snapshotLiveSimulation } from "./game/live/persistence";
+import { restoreWeekReportPending, snapshotLiveSimulation } from "./game/live/persistence";
 import { hashGameState } from "./utils/stateHash";
 import { seasonalVisualState } from "./game/presentation/seasonalVisualState";
 import { presentCompleteShotRoute } from "./game/presentation/shotRoutePresentation";
@@ -190,7 +192,7 @@ import { newOpeningDemo, openingPlaybackFrame, openingShots, openingTargetTiles 
 import { hashCanonicalValue } from "./utils/canonical";
 import { loadAppProfile, saveAppProfile, updateAppProfile, type AppProfile } from "./game/onboarding/profile";
 import { advisorMessages, allowsMessage, type AdvisorMessage } from "./game/advisor/advisor";
-import { INITIAL_SCREEN_FLOW, reduceScreenFlow } from "./app/screenFlow";
+import { INITIAL_SCREEN_FLOW, reduceScreenFlow, type ScreenFlowEvent } from "./app/screenFlow";
 import { PauseOverlay } from "./ui/appShell/PauseOverlay";
 import { LoadingCard } from "./ui/appShell/LoadingCard";
 import { LIVE, type SpeedName } from "./game/live/liveConfig";
@@ -231,6 +233,7 @@ import { recordPaceDay } from "./game/live/paceHistory";
 import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 import { analyzeResidentialSafety, applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
 import type { PlayerCareerRound, PlayerProCareer, PlayerProPoint, PlayerShotTrace } from "./game/models/playerProTypes";
+import { completedPlayerShotCount } from "./game/playerPro/completedShotCount";
 import {
   advancePlayerRound,
   autoFinishPlayerRound,
@@ -381,7 +384,7 @@ import { CAMPAIGN_CHAPTER_BY_ID } from "./game/campaign/content";
 import { CampaignSceneModal } from "./ui/CampaignSceneModal";
 import { CampaignPanel } from "./ui/CampaignPanel";
 import { WorkspaceNav, type WorkspaceActionId, type WorkspaceId } from "./ui/WorkspaceNav";
-import { DeferredSurface } from "./app/DeferredSurface";
+import { DeferredSurface, DeferredSurfaceErrorBoundary } from "./app/DeferredSurface";
 import { DeferredHudSurface } from "./app/DeferredHudSurface";
 import { applyManualOperationsCommand } from "./game/operations/commands";
 import { ContentLibraryPanel } from "./ui/ContentLibraryPanel";
@@ -425,9 +428,39 @@ const LivingClubPanel = lazy(() => import("./ui/LivingClubPanel").then(({ Living
 const SeasonsLegacyPanel = lazy(() => import("./ui/SeasonsLegacyPanel").then(({ SeasonsLegacyPanel }) => ({ default: SeasonsLegacyPanel })));
 const QUICK_SAVE_ANNOUNCEMENT_DURATION_MS = 2_500;
 
+/** A missing historical report still requires an explicit acknowledgement. */
+function WeekReportRecoveryDialog(props: { week: number; resumeSpeed: string; onContinue: () => void }) {
+  const { t } = useI18n();
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+  return <dialog ref={dialogRef} data-testid="week-close-report" data-report-unavailable="true" data-resume-speed={props.resumeSpeed}
+    aria-labelledby="week-close-recovery-title" onCancel={(event) => event.preventDefault()}
+    style={{ position: "fixed", inset: 0, width: "100%", height: "100%", maxWidth: "none", maxHeight: "none", margin: 0, border: 0,
+      display: "grid", placeItems: "center", padding: 20, boxSizing: "border-box", background: "rgba(16,24,18,.72)" }}>
+    <section className="cc-tycoon-panel" style={{ width: "min(36rem,100%)", padding: 22, boxSizing: "border-box" }}>
+      <div>{t("weekClose.eyebrow", { week: props.week })}</div>
+      <h2 id="week-close-recovery-title">{t("weekClose.title")}</h2>
+      <p>{t("weekClose.reportUnavailable")}</p>
+      <button type="button" data-testid="week-close-continue" onClick={props.onContinue}>{t("weekClose.continue")}</button>
+    </section>
+  </dialog>;
+}
+
 export default function App() {
   const { t } = useI18n();
-  const [flow, flowDispatch] = useReducer(reduceScreenFlow, INITIAL_SCREEN_FLOW);
+  const [flow, dispatchFlow] = useReducer(reduceScreenFlow, INITIAL_SCREEN_FLOW);
+  const entryPreparationRef = useRef<AbortController | null>(null);
+  const flowDispatch = useCallback((event: ScreenFlowEvent) => {
+    if (event.type === "BEGIN_LOADING" || event.type === "BACK_TO_TITLE" || event.type === "OPEN_SETUP") {
+      entryPreparationRef.current?.abort();
+      entryPreparationRef.current = event.type === "BEGIN_LOADING" ? new AbortController() : null;
+    }
+    dispatchFlow(event);
+  }, []);
   const [showVision, setShowVision] = useState(() => new URLSearchParams(window.location.search).get("view") === "vision");
   const [appProfile, setAppProfile] = useState<AppProfile>(() => loadAppProfile());
   // M53 screenshots are evidence for an explicit renderer tier, not a
@@ -668,7 +701,7 @@ export default function App() {
 
   const [pendingWeekReport, setPendingWeekReport] = useState<{
     week: number;
-    result: WeekResult;
+    result: WeekResult | null;
     resumeSpeed: Exclude<SpeedName, "paused">;
   } | null>(null);
 
@@ -1080,6 +1113,30 @@ export default function App() {
     [playerPro, playerProSocialBuilder, world],
   );
   const activePlayerRound = playerPro.activeRound;
+  const activeChallengeGroup = playerPro.activeChallengeGroupRound;
+  const [controlledSettlementPending, setControlledSettlementPending] = useState(false);
+  const controlledSettlementDayRef = useRef<{ roundId: string; day: number } | null>(null);
+  const featuredGroupShot = useMemo(() => challengeGroupFeaturedShot(activeChallengeGroup), [activeChallengeGroup]);
+  const groupPresentationRound = useMemo(() => activeChallengeGroup ? challengeGroupPresentationRound(activeChallengeGroup) : null, [activeChallengeGroup]);
+  const controlledDisplayRound = groupPresentationRound ?? activePlayerRound;
+  const controlledTimeObservation = useMemo<ControlledTimeObservation | null>(() => {
+    if (activeChallengeGroup) {
+      const total = controlledGroupTime(activeChallengeGroup.golfers.map((golfer) => ({ shots: golfer.shots, yardsPerTile: activeChallengeGroup.course.yardsPerTile, holes: golfer.setup.holes })));
+      return total ? { scope: `challenge:${world.runSeed}`, roundId: activeChallengeGroup.id, ...total } : null;
+    }
+    if (!activePlayerRound) return null;
+    const completedShotCount = completedPlayerShotCount(activePlayerRound);
+    if (completedShotCount === null) return null;
+    const total = controlledParticipantTime(activePlayerRound.shots, activePlayerRound.course.yardsPerTile, {
+      completedShotCount, holes: activePlayerRound.course.holes,
+    });
+    return total ? { scope: `player:${world.runSeed}`, roundId: activePlayerRound.id, ...total } : null;
+  }, [activeChallengeGroup, activePlayerRound, world.runSeed]);
+  const controlledPlaybackActive = Boolean(featuredGroupShot || activePlayerRound?.phase === "flight"
+    || activeChallengeGroup?.phase === "complete" && playerPro.activeChallengeRuntime
+    || activePlayerRound?.phase === "hole_complete" && activePlayerRound.currentHoleIndex === activePlayerRound.course.holes.length - 1
+    || activePlayerRound && !activePlayerRound.rewardsApplied && (activePlayerRound.phase === "round_complete" || activePlayerRound.phase === "conceded")
+    || controlledSettlementPending);
   const playerRoundLocksEditing = (!!activePlayerRound && activePlayerRound.phase !== "round_complete" && activePlayerRound.phase !== "conceded") || Boolean(playerPro.activeChallengeGroupRound);
   const designDockVisible = workspace === "design"
     && (editorMode === "PAINT" || editorMode === "OBSTACLE" || editorMode === "DECOR")
@@ -1175,6 +1232,13 @@ export default function App() {
     world,
     setWorld,
     setCourse,
+    followSelected,
+    presentationPaused: flow.paused || Boolean(flow.modal) || Boolean(pendingWeekReport) || showPlayerPro || screen !== "game",
+    animationsEnabled: effectiveAnimations,
+    controlledRoundActive: Boolean(activeChallengeGroup || activePlayerRound && activePlayerRound.phase !== "round_complete" && activePlayerRound.phase !== "conceded"),
+    controlledPlaybackActive,
+    controlledTimeObservation,
+    getLatestWorld: () => gameSession.getState().world,
     publicThreeHoleOperation: tutorialPublicThreeHoleOperation(tutorialProgress, appProfile.tutorialCompleted, world),
     onDayCommitted: (result, liveSnapshot, completedWeek) => {
       if (completedWeek) {
@@ -1260,6 +1324,17 @@ export default function App() {
       }
     },
   });
+
+  // Loading includes the deferred authority handoff. Only its initiating entry
+  // may expose gameplay; cancelling or starting another load invalidates it.
+  const prepareLive = live.prepare;
+  const enterGame = useCallback(() => {
+    const entry = entryPreparationRef.current;
+    if (!entry) return;
+    void prepareLive(entry.signal).then((ready) => {
+      if (ready && !entry.signal.aborted && entryPreparationRef.current === entry) dispatchFlow({ type: "ENTER_GAME" });
+    });
+  }, [prepareLive]);
 
   useEffect(() => {
     let sequence = changeSequenceRef.current;
@@ -1417,10 +1492,11 @@ export default function App() {
     const current = gameSession.getState();
     const started = startPlayerProCareerRound({ course: current.course, world: current.world, layoutId, teeSet, pinRotation, day: live.status.dayIndex });
     if (!started.ok) return started.reason;
+    if (!started.career.activeRound || !live.baselineControlledRoundTime({ scope: `player:${current.world.runSeed}`, roundId: started.career.activeRound.id, shotCount: 0, totalSteps: 0 })) return t("shotPacing.waitingTime");
     updatePlayerPro(() => started.career);
     enterPlayerRoundView(started.career);
     return null;
-  }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
+  }, [enterPlayerRoundView, gameSession, live, t, updatePlayerPro]);
 
   const beginArchitectureTestRound = useCallback(async (layoutId: string): Promise<string | null> => {
     const { startArchitectureTestPlayerRound } = await import("./game/competition/equipmentMentor");
@@ -1431,10 +1507,11 @@ export default function App() {
     if (!holeId) return t("architecture.review.testNeedsHole");
     const started = startArchitectureTestPlayerRound({ course: current.course, world: current.world, layoutId, holeId, teeSet: architectureFilters.teeSet === "all" ? "member" : architectureFilters.teeSet, pinRotation: architectureFilters.pinRotation === "all" ? "A" : architectureFilters.pinRotation, day: live.status.dayIndex });
     if (!started.ok) return started.reason === "setup" ? t("architecture.review.testNeedsCompleteHole") : started.reason;
+    if (!started.career.activeRound || !live.baselineControlledRoundTime({ scope: `player:${current.world.runSeed}`, roundId: started.career.activeRound.id, shotCount: 0, totalSteps: 0 })) return t("shotPacing.waitingTime");
     setWorld(() => started.world);
     enterPlayerRoundView(started.career);
     return null;
-  }, [architectureFilters, enterPlayerRoundView, gameSession, live.status.dayIndex, setWorld, t]);
+  }, [architectureFilters, enterPlayerRoundView, gameSession, live, setWorld, t]);
 
   useEffect(() => {
     const living = normalizeLivingClub(world.livingClub);
@@ -1461,11 +1538,12 @@ export default function App() {
       if (started.reason === "points") return t("campaign.match.pointsRequired", { points: started.points ?? 0 });
       return started.reason;
     }
+    if (!started.career.activeRound || !live.baselineControlledRoundTime({ scope: `player:${current.world.runSeed}`, roundId: started.career.activeRound.id, shotCount: 0, totalSteps: 0 })) return t("shotPacing.waitingTime");
     gameSession.update((latest) => latest === current ? { ...latest, world: started.world, economyVersion: latest.economyVersion + 1 } : latest);
     enterPlayerRoundView(started.career);
     markDirty();
     return null;
-  }, [enterPlayerRoundView, gameSession, live.status.dayIndex, markDirty, t]);
+  }, [enterPlayerRoundView, gameSession, live, markDirty, t]);
 
   const trainPlayerPro = useCallback(async (option: PlayerTrainingOption): Promise<string | null> => {
     const { completePlayerTraining } = await import("./game/playerPro/playerProPanelAuthority");
@@ -1500,7 +1578,31 @@ export default function App() {
     tutorial: tutorialProgress,
   }), [live, tutorialProgress]);
 
-  const commitChallengeWorld = useCallback(async (current: GameState, nextWorld: World): Promise<boolean> => {
+  const continueWeekReport = useCallback(() => {
+    if (!pendingWeekReport) return;
+    const resumeSpeed = pendingWeekReport.resumeSpeed;
+    live.acknowledgeWeekReport();
+    setPendingWeekReport(null);
+    live.setSpeed(resumeSpeed);
+    void autosaveState(gameSession.getState());
+  }, [autosaveState, gameSession, live, pendingWeekReport]);
+
+  const commitChallengeWorld = useCallback(async (current: GameState, nextWorld: World, timeObservation?: ControlledTimeObservation): Promise<boolean> => {
+    if (timeObservation) {
+      const validated = observeControlledTime(live.getSnapshot()?.controlledTime ?? null, timeObservation);
+      if (validated.status === "invalid" || validated.status === "pending-scope") return false;
+    }
+    const previousGroup = current.world.playerPro?.activeChallengeGroupRound;
+    const nextGroup = nextWorld.playerPro?.activeChallengeGroupRound;
+    const nextRound = nextWorld.playerPro?.activeRound;
+    if (nextRound && current.world.playerPro?.activeRound?.id !== nextRound.id
+      && !live.baselineControlledRoundTime({ scope: `player:${nextWorld.runSeed}`, roundId: nextRound.id, shotCount: 0, totalSteps: 0 })) return false;
+    if (nextGroup && nextWorld.playerPro) {
+      if (previousGroup?.id !== nextGroup.id && !live.baselineControlledRoundTime({ scope: `challenge:${nextWorld.runSeed}`, roundId: nextGroup.id, shotCount: 0, totalSteps: 0 })) return false;
+      nextWorld = { ...nextWorld, playerPro: { ...nextWorld.playerPro,
+        activeChallengeGroupRound: createChallengeGroupPresentation(previousGroup ?? null, nextGroup) } };
+      if (nextGroup.phase === "complete") controlledSettlementDayRef.current = { roundId: nextGroup.id, day: live.status.dayIndex };
+    }
     const next = { ...current, world: nextWorld, economyVersion: current.economyVersion + 1 };
     let committed = false;
     gameSession.update((latest) => {
@@ -1509,10 +1611,23 @@ export default function App() {
       return next;
     });
     if (!committed) return false;
+    if (timeObservation && !live.observeControlledTimeNow(timeObservation)) {
+      // No asynchronous work separates validation, CAS and recording the debt.
+      // If this invariant ever fails, keep the proposed outcome uncommitted.
+      let rolledBack = false;
+      gameSession.update((latest) => {
+        if (latest !== next) return latest;
+        rolledBack = true;
+        return current;
+      });
+      if (!rolledBack) setControlledSettlementPending(true);
+      setA11yMessage(t("shotPacing.waitingTime"));
+      return false;
+    }
     markDirty();
     await autosaveState(next);
     return true;
-  }, [autosaveState, gameSession, markDirty]);
+  }, [autosaveState, gameSession, live, markDirty, t]);
 
   const challengePlayerPro = useCallback(async (draft: PlayerChallengeContractDraft | null): Promise<string | null> => {
     const { RETRY, tryCancel, tryStart } = await import("./game/playerPro/challengePlayerProAdapter");
@@ -1529,9 +1644,9 @@ export default function App() {
     return null;
   }, [commitChallengeWorld, enterPlayerRoundView, gameSession, live.status.dayIndex]);
 
-  const commitChallengeRound = useCallback(async (current: GameState, round: NonNullable<PlayerProCareer["activeRound"]>) => {
+  const commitChallengeRound = useCallback(async (current: GameState, round: NonNullable<PlayerProCareer["activeRound"]>, timeObservation?: ControlledTimeObservation) => {
     const { commitRound } = await import("./game/playerPro/challengePlayerProAdapter");
-    return commitChallengeWorld(current, commitRound(current.world, round, live.status.dayIndex));
+    return commitChallengeWorld(current, commitRound(current.world, round, live.status.dayIndex), timeObservation);
   }, [commitChallengeWorld, live.status.dayIndex]);
 
   const beginMentorTechniqueChallenge = useCallback(async (opponent: PlayerOpponent): Promise<string | null> => {
@@ -1540,10 +1655,11 @@ export default function App() {
     const challengeId = `mentor-${opponent.id}-${current.world.week}-${live.status.dayIndex}`;
     const started = startPlayerMentorTechniqueRound({ course: current.course, world: current.world, opponent, challengeId, layoutId: activeCourseLayout(current.course).id, day: live.status.dayIndex });
     if (!started.ok) return started.reason;
+    if (!started.career.activeRound || !live.baselineControlledRoundTime({ scope: `player:${current.world.runSeed}`, roundId: started.career.activeRound.id, shotCount: 0, totalSteps: 0 })) return t("shotPacing.waitingTime");
     updatePlayerPro(() => started.career);
     enterPlayerRoundView(started.career);
     return null;
-  }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
+  }, [enterPlayerRoundView, gameSession, live, t, updatePlayerPro]);
 
   const updatePlayerEquipmentLoadout = useCallback(async (loadout: EquipmentLoadout): Promise<string | null> => {
     const { setEquipmentLoadout } = await import("./game/competition/equipmentMentor");
@@ -1571,6 +1687,7 @@ export default function App() {
     if (!career.activeRound) return;
     const round = commitPlayerShot(career.activeRound, career.skills, selection);
     if (round === career.activeRound) return;
+    controlledSettlementDayRef.current = { roundId: round.id, day: live.status.dayIndex };
     if (!career.activeChallengeRuntime) {
       updatePlayerPro(() => ({ ...career, activeRound: round }));
       if (soundEnabled && !round.pendingShot?.sharedOutcome?.motion) void audio.playSfx(selection.club === "Putter" ? "putt" : selection.club === "Driver" ? "driver" : "iron");
@@ -1579,7 +1696,7 @@ export default function App() {
     void commitChallengeRound(current, round).then((committed) => {
       if (committed && soundEnabled && !round.pendingShot?.sharedOutcome?.motion) void audio.playSfx(selection.club === "Putter" ? "putt" : selection.club === "Driver" ? "driver" : "iron");
     });
-  }, [audio, commitChallengeRound, gameSession, soundEnabled, updatePlayerPro]);
+  }, [audio, commitChallengeRound, gameSession, live.status.dayIndex, soundEnabled, updatePlayerPro]);
 
   const advanceControlledRound = useCallback(() => {
     updatePlayerPro((career) => {
@@ -1596,13 +1713,42 @@ export default function App() {
     const current = gameSession.getState();
     const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
     if (!career.activeRound) return;
-    const round = autoFinishPlayerRound(career.activeRound, career.skills);
-    if (!career.activeChallengeRuntime) {
-      updatePlayerPro(() => ({ ...career, activeRound: round }));
+    const source = career.activeRound;
+    const completedShotCount = completedPlayerShotCount(source);
+    if (completedShotCount === null) {
+      setA11yMessage(t("shotPacing.waitingTime"));
       return;
     }
-    void commitChallengeRound(current, round);
-  }, [commitChallengeRound, gameSession, updatePlayerPro]);
+    const beforeTime = controlledParticipantTime(source.shots, source.course.yardsPerTile, { completedShotCount, holes: source.course.holes });
+    if (!beforeTime?.recentShotSteps) {
+      setA11yMessage(t("shotPacing.waitingTime"));
+      return;
+    }
+    // Keep the predecessor plus every actual finish, even after the round's
+    // retained trace array reaches 240 entries during this synchronous batch.
+    const costs = completedShotCount > 0 ? beforeTime.recentShotSteps.slice(-1) : [];
+    let valid = true;
+    const round = autoFinishPlayerRound(source, career.skills, (afterFinish) => {
+      const total = controlledParticipantTime(afterFinish.shots, afterFinish.course.yardsPerTile, {
+        completedShotCount: afterFinish.rngCursor, holes: afterFinish.course.holes,
+      });
+      const cost = total?.recentShotSteps?.at(-1);
+      if (cost === undefined) valid = false;
+      else costs.push(cost);
+    });
+    if (round === source) return;
+    if (!valid || costs.length > MAX_CONTROLLED_OBSERVATION_STEPS) {
+      setA11yMessage(t("shotPacing.waitingTime"));
+      return;
+    }
+    const timeObservation: ControlledTimeObservation = { scope: `player:${current.world.runSeed}`, roundId: round.id,
+      shotCount: round.rngCursor, totalSteps: costs.reduce((sum, cost) => sum + cost, 0), recentShotSteps: costs };
+    controlledSettlementDayRef.current = { roundId: round.id, day: live.status.dayIndex };
+    const committed = career.activeChallengeRuntime
+      ? commitChallengeRound(current, round, timeObservation)
+      : commitChallengeWorld(current, { ...current.world, playerPro: { ...career, activeRound: round } }, timeObservation);
+    void committed.then((accepted) => { if (!accepted) setA11yMessage(t("shotPacing.waitingTime")); });
+  }, [commitChallengeRound, commitChallengeWorld, gameSession, live.status.dayIndex, t]);
 
   const concedeControlledRound = useCallback(() => {
     const runtime = gameSession.getState().world.playerPro?.activeChallengeRuntime;
@@ -1616,16 +1762,27 @@ export default function App() {
   }, [challengePlayerPro, gameSession, updatePlayerPro]);
 
   const playerPlayback = usePlayerShotPlayback({
-    round: activePlayerRound,
-    paused: flow.paused || Boolean(flow.modal) || showPlayerPro || screen !== "game",
+    round: controlledDisplayRound,
+    actorId: featuredGroupShot?.golfer.id ?? playerPro.identity.id,
+    paused: live.loading || flow.paused || Boolean(flow.modal) || Boolean(pendingWeekReport) || showPlayerPro || screen !== "game",
     immediate: !effectiveAnimations,
     onCheckpoint: (roundId, cursor) => updatePlayerPro((career) => {
+      const group = career.activeChallengeGroupRound;
+      if (group?.id === roundId) {
+        const next = checkpointChallengeGroupPresentation(group, cursor.shotId, cursor.progress);
+        return next === group ? career : { ...career, activeChallengeGroupRound: next };
+      }
       const round = career.activeRound;
       if (!round || round.id !== roundId || round.phase !== "flight" || round.pendingShot?.id !== cursor.shotId
         || (round.shotPresentation?.progress ?? 0) >= cursor.progress) return career;
       return { ...career, activeRound: { ...round, shotPresentation: cursor } };
     }),
     onComplete: (roundId, shotId) => updatePlayerPro((career) => {
+      const group = career.activeChallengeGroupRound;
+      if (group?.id === roundId) {
+        const next = checkpointChallengeGroupPresentation(group, shotId, 1, true);
+        return next === group ? career : { ...career, activeChallengeGroupRound: next };
+      }
       const round = career.activeRound;
       return round?.id === roundId && round.phase === "flight" && round.pendingShot?.id === shotId
         ? { ...career, activeRound: finishPlayerShot(round) } : career;
@@ -1649,7 +1806,7 @@ export default function App() {
 
   useEffect(() => {
     const round = activePlayerRound;
-    if (!round || round.phase !== "flight" || !round.pendingShot) return;
+    if (live.loading || !round || round.phase !== "flight" || !round.pendingShot) return;
     if (isValidRetainedShotMotionV1(round.pendingShot.sharedOutcome?.motion)) return;
     const delay = appProfile.accessibility.reducedMotion ? 40 : 720;
     const timer = window.setTimeout(() => {
@@ -1663,29 +1820,37 @@ export default function App() {
       }
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [activePlayerRound, appProfile.accessibility.reducedMotion, audio, updatePlayerPro]);
+  }, [activePlayerRound, appProfile.accessibility.reducedMotion, audio, live.loading, updatePlayerPro]);
 
   useEffect(() => {
     const round = activePlayerRound;
-    if (playerPro.activeChallengeGroupRound || !round || round.rewardsApplied || (round.phase !== "round_complete" && round.phase !== "conceded")) return;
-    void import("./game/playerPro/playerProRoundLifecycle").then(async ({ settleRound }) => {
-      const currentState = gameSession.getState();
-      const nextWorld = settleRound(currentState, round, live.status.dayIndex);
-      if (!nextWorld) return;
-      await commitChallengeWorld(currentState, nextWorld);
-    });
-  }, [activePlayerRound, commitChallengeWorld, gameSession, live.status.dayIndex, playerPro.activeChallengeGroupRound]);
+    const group = activeChallengeGroup;
+    if (live.loading || controlledSettlementPending || featuredGroupShot || group && (!playerPro.activeChallengeRuntime || group.phase !== "complete")
+      || !group && (!round || round.rewardsApplied || round.phase !== "round_complete" && round.phase !== "conceded")) return;
+    const roundId = group?.id ?? round!.id;
+    const day = controlledSettlementDayRef.current?.roundId === roundId ? controlledSettlementDayRef.current.day : live.status.dayIndex;
+    setControlledSettlementPending(true);
+    void (async () => {
+      try {
+        const currentState = gameSession.getState();
+        const nextWorld = group
+          ? (await import("./game/playerPro/challengePlayerProAdapter")).settleGroup(currentState.world, day)
+          : (await import("./game/playerPro/playerProRoundLifecycle")).settleRound(currentState, round!, day);
+        if (nextWorld && nextWorld !== currentState.world) await commitChallengeWorld(currentState, nextWorld);
+      } finally { setControlledSettlementPending(false); }
+    })();
+  }, [activeChallengeGroup, activePlayerRound, commitChallengeWorld, controlledSettlementPending, featuredGroupShot, gameSession, live.loading, live.status.dayIndex, playerPro.activeChallengeRuntime]);
 
 
   useEffect(() => {
     const round = activePlayerRound;
-    if (!round || round.phase === "flight" && !round.pendingShot?.sharedOutcome?.motion) return;
+    if (!activeChallengeGroup && (!round || round.phase === "flight" && !round.pendingShot?.sharedOutcome?.motion)) return;
     const timer = window.setTimeout(() => {
       const current = gameSession.getState();
       void autosaveState(current);
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [activePlayerRound, autosaveState, gameSession]);
+  }, [activeChallengeGroup, activePlayerRound, autosaveState, gameSession]);
 
   const returnPlayerToDesign = useCallback(() => {
     const round = gameSession.getState().world.playerPro?.activeRound;
@@ -2177,9 +2342,9 @@ export default function App() {
     }
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
     setPendingLoadingContext(null);
-    flowDispatch({ type: "ENTER_GAME" });
+    enterGame();
     live.setSpeed((isPerfFixture || isM27Fixture) && !isPerfMeasurement ? "4x" : "paused");
-  }, [dispatch, gameSession, live, t]);
+  }, [dispatch, enterGame, flowDispatch, gameSession, live, t]);
 
   const resumeSpeedRef = useRef<SpeedName>(appProfile.gameplay.defaultGameSpeed);
 
@@ -2188,13 +2353,13 @@ export default function App() {
     resumeSpeedRef.current = live.speed;
     live.setSpeed("paused");
     flowDispatch({ type: "OPEN_PAUSE" });
-  }, [flow.base, flow.modal, flow.paused, live]);
+  }, [flow.base, flow.modal, flow.paused, flowDispatch, live]);
 
   const resumeFromPause = useCallback(() => {
     if (!flow.paused || flow.modal) return;
     flowDispatch({ type: "CLOSE_PAUSE" });
     live.setSpeed(resumeSpeedRef.current);
-  }, [flow.paused, flow.modal, live]);
+  }, [flow.paused, flow.modal, flowDispatch, live]);
 
   const toggleClock = useCallback(() => {
     if (flow.base !== "in-game" || flow.modal || flow.paused) return;
@@ -2265,7 +2430,7 @@ export default function App() {
     live.setSpeed("paused");
     setPendingLoadingContext(null);
     flowDispatch({ type: "BACK_TO_TITLE" });
-  }, [dirty, live, t]);
+  }, [dirty, flowDispatch, live, t]);
 
   function restartCurrentScenario() {
     const scenario = getScenario(world.scenarioId);
@@ -2317,7 +2482,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activateObstacleEditing, activateTerrainEditing, appProfile.accessibility.keybindings, flow.base, flow.modal, flow.paused, live, openPauseMenu, quickSave, resumeFromPause, toggleClock, activeTutorial]);
+  }, [activateObstacleEditing, activateTerrainEditing, appProfile.accessibility.keybindings, flow.base, flow.modal, flow.paused, flowDispatch, live, openPauseMenu, quickSave, resumeFromPause, toggleClock, activeTutorial]);
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -2935,7 +3100,7 @@ export default function App() {
       startRun(newCourse, newWorld);
       live.setSpeed(appProfile.gameplay.defaultGameSpeed);
       setPendingLoadingContext(null);
-      flowDispatch({ type: "ENTER_GAME" });
+      enterGame();
     }, 0);
   }
 
@@ -2988,13 +3153,27 @@ export default function App() {
       setPaintError(t("demo.saveRejected"));
       return false;
     }
+    const savedReportMarker = loaded.live?.weekReportPending;
+    const validatedReportMarker = restoreWeekReportPending(savedReportMarker);
+    if (savedReportMarker !== undefined && (!validatedReportMarker
+      || loaded.world.week !== validatedReportMarker.week + 1 || loaded.live?.state.dayIndex !== 0)) {
+      setPaintError(t("weekClose.restoreMismatch"));
+      return false;
+    }
     recordBugAction({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
     editorHistoryRef.current = emptyEditorEditHistory();
     gameSession.restore(loaded);
     live.restoreSnapshot(loaded.live);
-    setHistory(loaded.history ?? []);
-    setLast(loaded.history?.[loaded.history.length - 1]);
-    setPendingWeekReport(null);
+    const restoredLive = live.getSnapshot();
+    setFollowSelected(Boolean(restoredLive?.focusedShot));
+    historyRef.current = loaded.history ?? [];
+    setHistory(historyRef.current);
+    const lastReport = lastItem(historyRef.current);
+    setLast(lastReport);
+    const reportMarker = restoredLive?.weekReportPending;
+    setPendingWeekReport(reportMarker && loaded.world.week === reportMarker.week + 1
+      ? { week: reportMarker.week, result: lastReport ?? null, resumeSpeed: reportMarker.resumeSpeed }
+      : null);
     const loadedRecords = loaded.records ?? emptyCourseRecords(loaded.course.holes.length);
     recordsRef.current = loadedRecords;
     setRecords(loadedRecords);
@@ -3006,11 +3185,12 @@ export default function App() {
     setTutorialProgress(loaded.tutorial ?? null);
     saveTutorialProgress(loaded.tutorial ?? null);
     const loadedRound = loaded.world.playerPro?.activeRound;
+    const loadedGroup = loaded.world.playerPro?.activeChallengeGroupRound;
     setShowPlayerPro(false);
     setPlayerShotAim(loadedRound
       ? caddieRecommendation(loadedRound, loaded.world.playerPro!.skills).aim
-      : null);
-    if (loadedRound) {
+      : loadedGroup ? loadedGroup.course.holes[loadedGroup.currentHoleIndex].pin : null);
+    if (loadedRound || loadedGroup) {
       playerRoundResumeSpeedRef.current = loaded.live?.speed === "paused" ? "1x" : loaded.live?.speed ?? "1x";
       live.setSpeed("paused");
     }
@@ -3283,7 +3463,7 @@ export default function App() {
           expectedRotation: m52ReferenceCamera.rotation * 90,
         } : null,
       },
-      simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, weekReport: pendingWeekReport ? { week: pendingWeekReport.week, profit: pendingWeekReport.result.profit, weather: pendingWeekReport.result.weatherSummary ?? null } : null, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null, pace: live.status.pace, golfers: live.status.golfers.map((golfer) => ({ id: golfer.id, courseId: golfer.courseId, currentHoleId: golfer.currentHoleId, scoreToPar: golfer.scoreToPar })) },
+      simulation: { focusedShot: live.getFocusedShotFrame(), advancing: live.advancing, advanceDisabledReason: live.advanceDisabledReason, controlledTimePendingSteps: live.controlledTimePendingSteps, dayIndex: live.status.dayIndex, speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, weekReport: pendingWeekReport ? { week: pendingWeekReport.week, profit: pendingWeekReport.result?.profit ?? null, weather: pendingWeekReport.result?.weatherSummary ?? null } : null, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null, pace: live.status.pace, golfers: live.status.golfers.map((golfer) => ({ id: golfer.id, courseId: golfer.courseId, currentHoleId: golfer.currentHoleId, scoreToPar: golfer.scoreToPar })) },
       seasons: (() => {
         const state = seasonalState(world, course, live.status.dayIndex);
         return {
@@ -3455,6 +3635,7 @@ export default function App() {
           editingLocked: playerRoundLocksEditing,
         } : null,
         activeChallengeGroupRound: playerPro.activeChallengeGroupRound,
+        groupPresentation: featuredGroupShot ? { actorId: featuredGroupShot.golfer.id, turn: featuredGroupShot.turn.turn, frame: playerPlayback.frameRef.current } : null,
       },
       editor: {
         mode: editorMode,
@@ -3539,7 +3720,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleAuthorityCourse.activePinRotation, activeHoleAuthorityCourse.holes, activeHoleIndex, activeHoleScore?.par, activeLayout.id, activeOperatingCourse, activePlayerRound, activeShotRoute, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, openingMarker, openingPlaybackUi.following, openingPlaybackUi.running, openingPlaybackUi.speed, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, playerPlayback.frameRef, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
+  }, [activeHoleAuthorityCourse.activePinRotation, activeHoleAuthorityCourse.holes, activeHoleIndex, activeHoleScore?.par, activeLayout.id, activeOperatingCourse, activePlayerRound, activeShotRoute, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, featuredGroupShot, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, openingMarker, openingPlaybackUi.following, openingPlaybackUi.running, openingPlaybackUi.speed, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, playerPlayback.frameRef, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -3994,12 +4175,12 @@ export default function App() {
         const group = createZk758BrowserChallengeGroup(fixtureCourse, fixtureWorld, layout.id, playerPro, groupSize);
         const worldWithGroup = {
           ...fixtureWorld,
-          playerPro: { ...playerPro, activeRound: null, activeChallengeGroupRound: group },
+          playerPro: { ...playerPro, activeRound: null, activeChallengeGroupRound: createChallengeGroupPresentation(null, group) },
         };
         dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: worldWithGroup });
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, worldWithGroup, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
         setShowPlayerPro(false);
-        setPlayerShotAim(null);
+        setPlayerShotAim(group.course.holes[group.currentHoleIndex].pin);
       },
       setM39Fixture: () => {
         const fixtureCourse = createPlayerProReferenceCourse();
@@ -4434,6 +4615,7 @@ export default function App() {
         const afterHash = hashGameState(loaded);
         dispatch({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
         live.restoreSnapshot(loaded.live);
+    setFollowSelected(Boolean(live.getSnapshot()?.focusedShot));
         setHistory(loaded.history ?? []);
         recordsRef.current = loaded.records ?? emptyCourseRecords(loaded.course.holes.length);
         setRecords(recordsRef.current);
@@ -4445,7 +4627,7 @@ export default function App() {
         flowDispatch({ type: "BACK_TO_TITLE" });
         flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
         setPendingLoadingContext(null);
-        flowDispatch({ type: "ENTER_GAME" });
+        enterGame();
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         return {
           beforeHash,
@@ -4652,7 +4834,7 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, gameSession, live, pendingLoadingContext, pendingWeekReport, redoTerrainEdit, runSeasonCommand, screen, selectWorkspace, setWorld, t, tutorialProgress, undoTerrainEdit]);
+  }, [dispatch, dirty, enterGame, flow.base, flow.modal, flow.paused, flowDispatch, gameSession, live, pendingLoadingContext, pendingWeekReport, redoTerrainEdit, runSeasonCommand, screen, selectWorkspace, setWorld, t, tutorialProgress, undoTerrainEdit]);
 
   function newGameFromMenu() {
     void audio.unlock();
@@ -4677,7 +4859,7 @@ export default function App() {
       }
       live.setSpeed(openingDemo ? "paused" : appProfile.gameplay.defaultGameSpeed);
       setPendingLoadingContext(null);
-      flowDispatch({ type: "ENTER_GAME" });
+      enterGame();
     }, 0);
   }
 
@@ -4707,7 +4889,8 @@ export default function App() {
       window.setTimeout(() => {
         const applied = applyLoadedGame(loaded);
         setPendingLoadingContext(null);
-        flowDispatch({ type: applied ? "ENTER_GAME" : "BACK_TO_TITLE" });
+        if (applied) enterGame();
+        else flowDispatch({ type: "BACK_TO_TITLE" });
       }, 0);
     });
   }
@@ -5855,7 +6038,8 @@ export default function App() {
           window.setTimeout(() => {
             const applied = applyLoadedGame(payload);
             setPendingLoadingContext(null);
-            flowDispatch({ type: applied ? "ENTER_GAME" : "BACK_TO_TITLE" });
+            if (applied) enterGame();
+            else flowDispatch({ type: "BACK_TO_TITLE" });
             if (applied) setPaintError(t("save.loaded"));
           }, 0);
         });
@@ -5981,6 +6165,7 @@ export default function App() {
     setPaintError(null);
   }
 
+  function renderScreen() {
   if (screen === "setup") {
     return (
       <DeferredSurface label={t("deferredSurface.newGameSetup")}>
@@ -6285,7 +6470,7 @@ export default function App() {
                 onClickTile={(x, y) => {
                   if (openingReadOnly) return;
                   if (playerRoundLocksEditing) {
-                    if (activePlayerRound?.phase === "awaiting_shot") setPlayerShotAim({ x, y });
+                    if (!featuredGroupShot && (activePlayerRound?.phase === "awaiting_shot" || activeChallengeGroup?.phase === "awaiting_player")) setPlayerShotAim({ x, y });
                     return;
                   }
                   handleCanvasClick(x, y);
@@ -6313,7 +6498,7 @@ export default function App() {
                 showMarkers={!photoMode || photoMarkers}
                 dayMinute={live.status.dayMinute}
                 resortOperations={world.enterprise?.resort}
-                playerRound={activePlayerRound}
+                playerRound={controlledDisplayRound}
                 playerShotAim={playerShotAim}
                 playerShotPlaybackRef={playerPlayback.frameRef}
                 playerShotPreview={playerShotPreview}
@@ -6321,7 +6506,7 @@ export default function App() {
                 openingTargets={openingTargets}
                 openingFollow={openingPlaybackUi.following}
                 onOpeningFollowCanceled={() => setOpeningPlaybackUi((current) => ({ ...current, following: false }))}
-                playableShotMode={activePlayerRound?.phase === "awaiting_shot"}
+                playableShotMode={!featuredGroupShot && (activePlayerRound?.phase === "awaiting_shot" || activeChallengeGroup?.phase === "awaiting_player")}
                 playerProWorldDisplay={playerProSocialText?.worldDisplay ?? null}
                 sculptRadius={sculptRadius}
                 fineGreenBrush={fineGreenBrush}
@@ -6467,7 +6652,7 @@ export default function App() {
               onConcede={concedeControlledRound}
               onReturnToDesign={returnPlayerToDesign}
             />}
-            {playerPro.activeChallengeGroupRound && !showPlayerPro && !activeTutorial && playerShotAim && <ChallengeGroupHud career={playerPro} world={world} day={live.status.dayIndex} aim={playerShotAim} onAim={setPlayerShotAim} onWorld={(source, nextWorld) => { const current = gameSession.getState(); if (current.world === source && nextWorld !== source) void commitChallengeWorld(current, nextWorld); }} />}
+            {playerPro.activeChallengeGroupRound && !showPlayerPro && !activeTutorial && playerShotAim && <ChallengeGroupHud career={playerPro} world={world} day={live.status.dayIndex} aim={playerShotAim} onAim={setPlayerShotAim} onSkipShot={playerPlayback.skip} onSkipGroup={() => updatePlayerPro((career) => career.activeChallengeGroupRound ? { ...career, activeChallengeGroupRound: skipChallengeGroupPresentation(career.activeChallengeGroupRound) } : career)} onWorld={(source, nextWorld) => { const current = gameSession.getState(); if (current.world === source && nextWorld !== source) void commitChallengeWorld(current, nextWorld); }} />}
             </Suspense>
             {playerRoundLocksEditing && <div role="status" style={{ position: "absolute", left: "50%", top: 54, transform: "translateX(-50%)", zIndex: 112, padding: "6px 10px", borderRadius: 8, background: "rgba(54,69,48,.92)", color: "white", fontSize: 12 }}>{t("playerPro.round.editLocked")}</div>}
             {showProgression && !activeTutorial && <Suspense fallback={null}><ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} /></Suspense>}
@@ -6607,6 +6792,11 @@ export default function App() {
             /></Suspense>}
             <LiveControls
               status={live.status}
+              onNextEvent={() => live.startDayAdvance("next-event")}
+              onFinishDay={() => live.startDayAdvance("finish-day")}
+              onCancelAdvance={live.cancelDayAdvance}
+              advancing={live.advancing}
+              advanceDisabledReason={live.advanceDisabledReason}
               speed={live.speed}
               onSetSpeed={(next) => {
                 if (next === "paused") toggleClock();
@@ -6632,6 +6822,8 @@ export default function App() {
               style={{ position: "absolute", left: 14, top: 58, zIndex: 45, padding: "9px 12px", borderRadius: 10, background: "rgba(24, 33, 26, 0.92)", color: "#f5f5f0", boxShadow: "0 6px 22px rgba(0,0,0,0.35)", fontFamily: "Nunito, system-ui, sans-serif", fontSize: 12, fontWeight: 700 }}
             >{t("loading.golferInspector")}</div>}><GolferInspector
               selected={live.status.selected}
+              playback={live.focusedShot}
+              onSkipShot={live.skipFocusedShot}
               setupDifficulty={computeRatingForSetup(course, live.status.selected.teeSet, live.status.selected.pinRotation).pinDifficultyDelta}
               following={followSelected}
               onToggleFollow={() => setFollowSelected((following) => !following)}
@@ -6838,11 +7030,9 @@ export default function App() {
         </div>
         </div>
         <NewsTicker visible={!activeTutorial && !photoMode && appProfile.gameplay.tickerVisible} onJump={jumpToEvent} onHide={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: false } })} />
-        {pendingWeekReport && <DeferredSurface label={t("weekClose.title")}><WeekCloseReport week={pendingWeekReport.week} result={pendingWeekReport.result} course={course} world={world} biomeContext={contextualUiTheme} resumeSpeed={pendingWeekReport.resumeSpeed} onContinue={() => {
-          const resumeSpeed = pendingWeekReport.resumeSpeed;
-          setPendingWeekReport(null);
-          live.setSpeed(resumeSpeed);
-        }} /></DeferredSurface>}
+        {pendingWeekReport && (pendingWeekReport.result
+          ? <DeferredSurface label={t("weekClose.title")}><WeekCloseReport week={pendingWeekReport.week} result={pendingWeekReport.result} course={course} world={world} biomeContext={contextualUiTheme} resumeSpeed={pendingWeekReport.resumeSpeed} onContinue={continueWeekReport} /></DeferredSurface>
+          : <WeekReportRecoveryDialog week={pendingWeekReport.week} resumeSpeed={pendingWeekReport.resumeSpeed} onContinue={continueWeekReport} />)}
         {flow.paused && (
           <PauseOverlay
             career={world.mode === "career"}
@@ -6864,6 +7054,12 @@ export default function App() {
       </TooltipSurface>
     </div>
   );
+  }
+
+  return <DeferredSurfaceErrorBoundary label={t("live.overview")}>
+    <Suspense fallback={null}>{live.controller}</Suspense>
+    {live.loading && flow.base === "loading" ? <LoadingCard label={t("loading.restoreCourse")} context={contextualUiTheme} /> : renderScreen()}
+  </DeferredSurfaceErrorBoundary>;
 }
 
 function PwaUpdateToast(props: { onReload: () => void }) {

@@ -40,7 +40,7 @@
 .cc-golfer-accent { color: #bbf7d0; }
 .cc-golfer-section { margin-top: .75rem; }
 .cc-golfer-mobility { padding: .5rem; border-radius: .4375rem; background: #233e2b; border: 1px solid #647d6a; font-size: .75rem; }
-.cc-golfer-follow { width: 100%; min-height: 2.75rem; padding: .4375rem .5625rem; border: 1px solid #8b9b8e; background: #334438; font-weight: 800 !important; }
+.cc-golfer-follow, .cc-golfer-playback-skip { width: 100%; min-height: 2.75rem; padding: .4375rem .5625rem; border: 1px solid #8b9b8e; background: #334438; font-weight: 800 !important; }
 .cc-golfer-follow[aria-pressed="true"] { border-color: #86efac; background: #31563c; }
 .cc-golfer-mood-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem .5rem; font-size: .75rem; }
 .cc-golfer-mood-meter { height: .4375rem; border-radius: .25rem; background: #536157; margin-top: .1875rem; overflow: hidden; }

@@ -610,7 +610,7 @@ export type ChallengeGroupAction =
   | { kind: "auto" }
   | { kind: "concede" };
 
-export function applyGroupAction(world: World, day: number, action: ChallengeGroupAction): World {
+export function applyGroupAction(world: World, day: number, action: ChallengeGroupAction, options: { deferSettlement?: boolean } = {}): World {
   if (action.kind === "concede") {
     return world.playerPro?.activeChallengeRuntime?.phase === "escrowed"
       ? cancelPlayerChallengeContract({ world, day })
@@ -619,7 +619,7 @@ export function applyGroupAction(world: World, day: number, action: ChallengeGro
   const next = action.kind === "shot" ? commitGroup(world, action.selection, day)
     : action.kind === "choose" ? chooseGroupBall(world, action.playerId)
       : autoGroup(world, day);
-  return next.playerPro?.activeChallengeGroupRound?.phase === "complete" ? settleGroup(next, day) : next;
+  return !options.deferSettlement && next.playerPro?.activeChallengeGroupRound?.phase === "complete" ? settleGroup(next, day) : next;
 }
 
 export function forceTieFixture(world: World, day: number): World {

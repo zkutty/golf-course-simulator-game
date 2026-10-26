@@ -5,6 +5,8 @@ import { DEFAULT_WORLD } from "../models/defaults";
 import type { TournamentEvent } from "../tournaments/types";
 import {
   activatePlayerChallenge,
+  advancePlayerRound,
+  concedePlayerRound,
   autoFinishPlayerRound,
   caddieShotGuidance,
   caddieRecommendation,
@@ -39,6 +41,8 @@ import {
 import { calculateShotEffects } from "../rules/shotEffects";
 import { confidenceDispersionMultiplier } from "./confidence";
 import { resolveBivariateDispersion } from "../rules/dispersionModel";
+import { controlledParticipantTime, observeControlledTime } from "../live/controlledTime";
+import { completedPlayerShotCount } from "./completedShotCount";
 
 /** M36 compatibility fixtures retain their historical distance/style authority. */
 function startPlayableRound(args: Parameters<typeof startCurrentPlayableRound>[0]): ReturnType<typeof startCurrentPlayableRound> {
@@ -317,6 +321,123 @@ describe("M36 deterministic Player Pro play", () => {
     const resumed = normalizePlayerPro({ ...career, activeRound: finished }, { seed: 71 });
     expect(resumed.activeRound?.shots[0].greenPutting).toEqual(finished.shots[0].greenPutting);
   });
+  it("observes each actual auto-finish shot, including an initial pending shot, without changing the result", () => {
+    const { round, career } = started();
+    const pending = commitPlayerShot(round, career.skills, caddieRecommendation(round, career.skills));
+    expect(pending.phase).toBe("flight");
+    const atRetentionCap = { ...round, rngCursor: 240,
+      shots: Array.from({ length: 240 }, (_, index) => ({ ...pending.pendingShot!, id: `retained-prior-${index + 1}` })) };
+    for (const source of [round, pending, atRetentionCap]) {
+      const expected = autoFinishPlayerRound(source, career.skills);
+      const completed: number[] = [];
+      const shotIds: string[] = [];
+      const actual = autoFinishPlayerRound(source, career.skills, (afterFinish) => {
+        expect(afterFinish.phase).not.toBe("flight");
+        expect(afterFinish.pendingShot).toBeNull();
+        completed.push(afterFinish.rngCursor);
+        shotIds.push(afterFinish.shots[afterFinish.shots.length - 1].id);
+      });
+      expect(actual).toEqual(expected);
+      expect(completed.length).toBe(actual.rngCursor - source.rngCursor + (source.phase === "flight" ? 1 : 0));
+      expect(completed).toEqual(Array.from({ length: completed.length }, (_, index) => source.rngCursor + index + (source.phase === "flight" ? 0 : 1)));
+      expect(shotIds).toEqual(actual.shots.slice(-shotIds.length).map((shot) => shot.id));
+      const repeated: number[] = [];
+      expect(autoFinishPlayerRound(actual, career.skills, (afterFinish) => repeated.push(afterFinish.rngCursor))).toEqual(actual);
+      expect(repeated).toEqual([]);
+    }
+  });
+
+  it("accounts for shot 241 through the same retained-window inputs used by the controlled UI", () => {
+    const { round, career } = started();
+    const trace = commitPlayerShot(round, career.skills, caddieRecommendation(round, career.skills)).pendingShot!;
+    const before = { ...round, rngCursor: 240,
+      shots: Array.from({ length: 240 }, (_, index) => ({ ...trace, id: `retained-prior-${index + 1}` })) };
+    const beforeTime = controlledParticipantTime(before.shots, before.course.yardsPerTile,
+      { completedShotCount: before.rngCursor, holes: before.course.holes })!;
+    const observation = { scope: "player:consumer", roundId: before.id, ...beforeTime };
+    const baseline = observeControlledTime(null, observation).ledger!;
+    const pending = commitPlayerShot(before, career.skills, caddieRecommendation(before, career.skills));
+    const pendingTime = controlledParticipantTime(pending.shots, pending.course.yardsPerTile,
+      { completedShotCount: pending.rngCursor - 1, holes: pending.course.holes })!;
+    expect(observeControlledTime(baseline, { scope: observation.scope, roundId: pending.id, ...pendingTime }).status).toBe("unchanged");
+    const after = finishPlayerShot(pending);
+    expect(after.rngCursor).toBe(241);
+    expect(after.shots).toHaveLength(240);
+    const afterTime = controlledParticipantTime(after.shots, after.course.yardsPerTile,
+      { completedShotCount: after.rngCursor, holes: after.course.holes })!;
+    const queued = observeControlledTime(baseline, { scope: observation.scope, roundId: after.id, ...afterTime });
+    expect(queued.status).toBe("queued");
+    expect(queued.ledger!.pendingSteps).toBe(afterTime.recentShotSteps!.at(-1));
+    expect(queued.ledger!.observedShotCount).toBe(241);
+    const restored = JSON.parse(JSON.stringify(queued.ledger));
+    expect(observeControlledTime(restored, { scope: observation.scope, roundId: after.id, ...afterTime })).toMatchObject({ status: "unchanged", ledger: restored });
+  });
+
+  it.each([1, 2])("does not debit a discarded concession attempt after %i completed shots or after reload", (finishedShots) => {
+    const { round, career } = started();
+    let completed = round;
+    for (let index = 0; index < finishedShots; index++) {
+      if (completed.phase === "hole_complete") completed = advancePlayerRound(completed);
+      completed = finishPlayerShot(commitPlayerShot(completed, career.skills, caddieRecommendation(completed, career.skills)));
+    }
+    expect(completedPlayerShotCount(completed)).toBe(finishedShots);
+    const scope = "player:concession";
+    const time = (source: typeof round) => controlledParticipantTime(source.shots, source.course.yardsPerTile,
+      { completedShotCount: completedPlayerShotCount(source)!, holes: source.course.holes })!;
+    const baseline = observeControlledTime(null, { scope, roundId: round.id,
+      ...controlledParticipantTime([], round.course.yardsPerTile, { completedShotCount: 0, holes: round.course.holes })! }).ledger!;
+    const earned = observeControlledTime(baseline, { scope, roundId: completed.id, ...time(completed) }).ledger!;
+    const ready = completed.phase === "hole_complete" ? advancePlayerRound(completed) : completed;
+    const pending = commitPlayerShot(ready, career.skills, caddieRecommendation(ready, career.skills));
+    expect(pending.phase).toBe("flight");
+    expect(completedPlayerShotCount(pending)).toBe(finishedShots);
+    const conceded = concedePlayerRound(pending);
+    expect(conceded.rngCursor).toBe(finishedShots + 1);
+    expect(conceded.completedShotCount).toBe(finishedShots);
+    expect(conceded.pendingShot).toBeNull();
+    expect(conceded.shots).toEqual(completed.shots);
+    expect(conceded.scorecard).toEqual(completed.scorecard);
+    expect(conceded.strokes).toBe(completed.strokes);
+    expect(conceded.penalties).toBe(completed.penalties);
+    expect(concedePlayerRound(conceded)).toBe(conceded);
+    expect(observeControlledTime(earned, { scope, roundId: conceded.id, ...time(conceded) })).toMatchObject({ status: "unchanged", ledger: earned });
+    const restored = normalizePlayerPro(JSON.parse(JSON.stringify({ ...career, activeRound: conceded })), { seed: round.rngSeed }).activeRound!;
+    expect(restored).not.toBeNull();
+    expect(restored.completedShotCount).toBe(finishedShots);
+    expect(completedPlayerShotCount(restored)).toBe(finishedShots);
+    expect(observeControlledTime(JSON.parse(JSON.stringify(earned)), { scope, roundId: restored.id, ...time(restored) })).toMatchObject({ status: "unchanged", ledger: earned });
+    const legacy = { ...conceded, completedShotCount: undefined };
+    expect(normalizePlayerPro({ ...career, activeRound: legacy }, { seed: round.rngSeed }).activeRound).not.toBeNull();
+    expect(completedPlayerShotCount(legacy)).toBe(finishedShots);
+    const auto = autoFinishPlayerRound(pending, career.skills);
+    expect(auto.completedShotCount).toBeUndefined();
+    expect(completedPlayerShotCount(auto)).toBe(auto.rngCursor);
+    expect(completedPlayerShotCount(finishPlayerShot(pending))).toBe(finishedShots + 1);
+  });
+
+  it("validates terminal count evidence and preserves ambiguous capped legacy concessions without inventing time", () => {
+    const { round, career } = started();
+    const pending = commitPlayerShot(round, career.skills, caddieRecommendation(round, career.skills));
+    const trace = pending.pendingShot!;
+    const full = { ...pending, rngCursor: 241,
+      shots: Array.from({ length: 240 }, (_, index) => ({ ...trace, id: `prior-${index + 1}` })) };
+    const conceded = concedePlayerRound(full);
+    expect(conceded.completedShotCount).toBe(240);
+    expect(completedPlayerShotCount(conceded)).toBe(240);
+    expect(normalizePlayerPro(JSON.parse(JSON.stringify({ ...career, activeRound: conceded })), { seed: round.rngSeed }).activeRound?.completedShotCount).toBe(240);
+    const legacy = { ...conceded, completedShotCount: undefined };
+    expect(normalizePlayerPro({ ...career, activeRound: legacy }, { seed: round.rngSeed }).activeRound).not.toBeNull();
+    expect(completedPlayerShotCount(legacy)).toBeNull();
+    for (const invalid of [{ ...conceded, completedShotCount: 239 }, { ...conceded, completedShotCount: 242 },
+      { ...conceded, completedShotCount: 240.5 }, { ...conceded, completedShotCount: NaN },
+      { ...conceded, phase: "awaiting_shot" as const }, { ...conceded, pendingShot: trace }]) {
+      expect(normalizePlayerPro({ ...career, activeRound: invalid }, { seed: round.rngSeed }).activeRound).toBeNull();
+    }
+    const awaitingConcession = concedePlayerRound({ ...full, phase: "awaiting_shot", pendingShot: null });
+    expect(awaitingConcession.completedShotCount).toBe(241);
+    expect(completedPlayerShotCount(awaitingConcession)).toBe(241);
+  });
+
   it("freezes canonical biome and climate compatibility evidence in active rounds", () => {
     const { round } = started();
     expect(round.course.biomeCompatibility).toMatchObject({
