@@ -1,10 +1,15 @@
 import { createRetainedShotMotion, sampleRetainedShotMotion } from "../../../game/rules/shotMotion";
 import { resolveObstacleCollision } from "../../../game/rules/obstacleCollision";
-import { tileCenterIso, type IsoRotation } from "../../../game/render/iso";
+import { ISO_ROTATIONS, tileCenterIso, type IsoRotation } from "../../../game/render/iso";
 import { describe, expect, it, vi } from "vitest";
 import type * as PIXI from "pixi.js";
 import type { GolferRenderData } from "../../../game/live/types";
-import { DEFAULT_COURSE } from "../../../game/models/defaults";
+import { DEFAULT_COURSE, DEFAULT_WORLD } from "../../../game/models/defaults";
+import { normalizeCourseLayouts } from "../../../game/models/courseLayouts";
+import { courseWithEffectiveSurfaces } from "../../../game/conditions/surfaceCare";
+import { createM47CertificationCourse } from "../../../game/testing/m47Certification";
+import { createLiveState, stepLive } from "../../../game/live/simulation";
+import { buildLandscapeComponents, buildVisualHeightfield, type LandscapeComponent } from "../../../game/render/landscapeGeometry";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import { SceneSystemHost } from "../SceneSystemHost";
 import { captureGolferReactionSource, observeGolferReactionSource } from "../../../game/render/golferReactionSource";
@@ -355,6 +360,84 @@ function candidateTick(scene: ReturnType<typeof candidateFixture>, value: Golfer
     cullBounds: unbounded, worldPointToScreen: (x, y) => ({ x, y }), followCamera: vi.fn(), startleAtmosphere: vi.fn(), tickMobilityEntities: vi.fn(), ...patch });
 }
 
+let retainedM47: ReturnType<typeof m47Fixture> | undefined;
+function m47Fixture() {
+  const course = normalizeCourseLayouts(createM47CertificationCourse(18));
+  const world = Object.assign(structuredClone(DEFAULT_WORLD), { week: 1, cash: 250000, reputation: 95, runSeed: 12160, isBankrupt: false, distressWeeks: 0, mode: "sandbox" as const });
+  const live = createLiveState(course, world, 0);
+  for (let i = 0; i < 540; i++) stepLive(live, course, .05, world);
+  const golfer = live.golfers.find(g => g.id === 1)!, scope = liveActivityScope(live, world)!;
+  const effectiveTiles = courseWithEffectiveSurfaces(course).tiles, field = buildVisualHeightfield(course);
+  const componentsByCell: (LandscapeComponent | null)[] = Array(effectiveTiles.length).fill(null);
+  for (const component of buildLandscapeComponents(effectiveTiles, course.width, course.height, { cornerRadius: .4, cornerSegments: 4 })) {
+    for (const i of component.cells) componentsByCell[i] = component;
+  }
+  const ground = createLiveGolferGroundAuthority({ course, effectiveTiles, field, componentsByCell, quality: "high", surfaceRevision: "m47:high" });
+  return { course, world, live, golfer, scope, effectiveTiles, ground };
+}
+function m47Shot(shotNumber: number) {
+  const f = retainedM47 ??= m47Fixture(), segmentIndex = f.golfer.segments.findIndex(s => s.motion?.identity.holeId === "m47-hole-1" && s.motion.identity.shotNumber === shotNumber);
+  const segment = f.golfer.segments[segmentIndex], motion = segment.motion!, B = { ...motion.from.point, heightYards: motion.from.heightYards };
+  const G = { ...B, heightYards: f.ground.sampleFootprintAt(B.x + .5, B.y + .5).heightYards }, target = motion.flight?.geometry.to ?? motion.groundPath[1].point;
+  let distanceYards = Math.hypot(motion.landing.point.x - B.x, motion.landing.point.y - B.y) * motion.units.yardsPerTile;
+  for (let i = 1; i < motion.groundPath.length; i++) distanceYards += Math.hypot(motion.groundPath[i].point.x - motion.groundPath[i - 1].point.x, motion.groundPath[i].point.y - motion.groundPath[i - 1].point.y) * motion.units.yardsPerTile;
+  const plan = createShotPacingPlan({ scopeId: f.scope.id!, actorId: "1", motion, distanceYards })!;
+  const base = createLiveActivitySource(f.scope, { ...f.golfer, pos: motion.from.point, segIndex: segmentIndex, segElapsed: 0 }, segment)!;
+  return { ...f, motion, B, G, plan, at(elapsedMs: number): GolferRenderData {
+    const cursor = createShotPacingCursor(plan, { version: 1, key: plan.key, elapsedMs }), frame = shotPacingFrame(plan, cursor)!, pose = sampleRetainedShotMotion(motion, frame.motionProgress)!;
+    const activitySource = focusedLiveActivitySource(base, { actorId: 1, segmentIndex, segmentElapsed: 0, plan, cursor, frame, identity: motion.identity, origin: motion.from, target }, true)!;
+    return golfer(1, { x: B.x, y: B.y, segKind: "flight", shot: "swing", segT: frame.motionProgress, activitySource,
+      ballX: pose.point.x, ballY: pose.point.y, ballToX: motion.physicalRest.point.x, ballToY: motion.physicalRest.point.y,
+      ballMotion: { identity: motion.identity, pose, events: motion.events, contactTerrain: "fairway", collisionTerrain: null, active: true } });
+  } };
+}
+
+describe("real-course B/G/F scene publication", () => {
+  it.each([1, 2, 3].flatMap(shot => ISO_ROTATIONS.map(rotation => [shot, rotation] as const)))("renders M47 shot%d at camera%d with G-holder/F-offset and unchanged retained ball", (shotNumber, rotation) => {
+    const natural = candidateFixture(), legacy = fixture({ atlasReady: true }), source = m47Shot(shotNumber);
+    const before = structuredClone({ live: source.live, world: source.world, motion: source.motion });
+    const view = { course: source.course, effectiveTiles: source.effectiveTiles, rotation, surfaceHeightAt: source.ground.heightAt };
+    natural.state.ready = true;
+    natural.system.update!(snapshot(2, { ...view, naturalGolfersCandidate: true, naturalGolferGround: source.ground }));
+    legacy.system.create!(snapshot(2, view));
+    for (let t = 0; t < 1200 - .001; t += 20) candidateTick(natural, source.at(t), t, { selectedGolferId: 1 });
+    for (const offset of [-.001, 0, .001]) {
+      const t = 1200 + offset, g = source.at(t), facts = structuredClone(g);
+      candidateTick(natural, g, t, { selectedGolferId: 1 }); tick(legacy, [g]);
+      const d = JSON.parse(natural.system.naturalDiagnosticsText()), [base, tint, shadow] = natural.sprites;
+      const G = tileCenterIso(source.G.x, source.G.y, source.G.heightYards / 2.5, rotation), B = tileCenterIso(source.B.x, source.B.y, source.B.heightYards / 2.5, rotation);
+      expect(natural.objects.children[0].position).toMatchObject(G); expect(d.holder).toEqual(G);
+      expect(base.position).toMatchObject(d.offset); expect(tint.position).toMatchObject(d.offset);
+      expect(shadow.position).toMatchObject({ x: d.offset.x + 1.5, y: d.offset.y + .8 });
+      expect(base.anchor.y).toBe(83 / 96); expect(tint.tint).toBe(0x397e82);
+      expect(d.heights).toEqual({ physicalRootYards: source.B.heightYards, visualRootYards: source.G.heightYards });
+      if (shotNumber === 1) {
+        expect(d).toMatchObject({ reason: "native-neutral-contact-residual", footDomain: "visual-neutral", feet: source.G, offset: { x: 0, y: 0 }, contact: { active: false, actualTip: null, datum: null } });
+        expect(d.frame).toContain(".idle.");
+      } else {
+        expect(d.frame).toContain(".swing."); expect(d.contact.active).toBe(offset === 0); expect(d.footDomain).toBe("arrival-eligible");
+        if (offset === 0) {
+          const a = ((shotNumber === 2 ? 0 : 180) - rotation + 90) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), k = 26 / 48;
+          const tip = { x: k * (7.6 * (c + s) + 12 * (c - s)), y: k * (7.6 * (s - c) / 2 + 12 * (c + s) / 2 - 1) };
+          expect(G.x + base.position.x + tip.x).toBeCloseTo(d.contact.actualTip.x, 9);
+          expect(G.y + base.position.y + tip.y).toBeCloseTo(d.contact.actualTip.y, 9);
+          expect(d.contact.datum).toEqual({ x: B.x, y: B.y - k });
+          expect(d.contact.residualPx).toBeCloseTo(shotNumber === 2 ? .29776797146712397 : .4631428502804056, 9);
+        }
+      }
+      for (const key of ["position", "visible", "alpha", "scale"] as const) {
+        const value = (display: FakeDisplay) => key === "position" || key === "scale" ? { x: display[key].x, y: display[key].y } : display[key];
+        expect(value(natural.objects.children[1])).toEqual(value(legacy.objects.children[1]));
+        expect(value(natural.terrainDecals.children[0])).toEqual(value(legacy.terrainDecals.children[0]));
+      }
+      expect(g).toEqual(facts);
+    }
+    expect({ live: source.live, world: source.world, motion: source.motion }).toEqual(before);
+    natural.system.destroy!(); legacy.system.destroy!();
+    for (const texture of natural.textures.values()) expect(texture.destroy).not.toHaveBeenCalled();
+  });
+});
+
 describe("opt-in LIVE natural body binding", () => {
   it.each(["swing", "putt"] as const)("keeps a height-mismatched %s pilot native neutral at visual B without changing retained balls or gaining contact", kind => {
     const scene = candidateFixture(), legacy = fixture({ atlasReady: true }), source = candidateShot(kind), launch = source.plan.addressMs + source.plan.contactMs;
@@ -373,7 +456,7 @@ describe("opt-in LIVE natural body binding", () => {
       expect(scene.objects.children[1].position).toMatchObject({ x: legacy.objects.children[1].position.x, y: legacy.objects.children[1].position.y });
       expect(scene.terrainDecals.children[0].position).toMatchObject({ x: legacy.terrainDecals.children[0].position.x, y: legacy.terrainDecals.children[0].position.y });
       expect(g).toEqual(before);
-      expect(JSON.parse(scene.system.naturalDiagnosticsText())).toMatchObject({ family: "natural-golfer-v1", footDomain: "visual-neutral", reason: "native-neutral-height", heights: { physicalRootYards: 5, visualRootYards: 7.5 },
+      expect(JSON.parse(scene.system.naturalDiagnosticsText())).toMatchObject({ family: "natural-golfer-v1", footDomain: "visual-neutral", reason: "native-neutral-contact-residual", heights: { physicalRootYards: 5, visualRootYards: 7.5 },
         feet: { x: 1, y: 5, heightYards: 7.5 }, offset: { x: 0, y: 0 }, contact: { active: false, actualTip: null, datum: null } });
     }
     scene.system.update!(snapshot(3, { course: scene.course, effectiveTiles: scene.course.tiles, naturalGolfersCandidate: true, naturalGolferGround: scene.ground, surfaceHeightAt: () => 2 }));

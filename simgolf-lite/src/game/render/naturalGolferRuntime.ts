@@ -174,33 +174,46 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
         if (!projection.nextState || !projection.pose) { locals.delete(golfer.id); output.set(golfer.id, Object.freeze(frame)); continue; }
         retainedIds.add(golfer.id);
         const root = feetCopy({ x: facts.root.x, y: facts.root.y, heightYards: facts.root.heightYards }), ownerKey = projection.pose.ownerKey;
+        const pilot = golfer.id === pilotId && source.handedness === "right" && index !== null;
+        const support = pilot || reactionCue ? input.ground.sampleFootprintAt(root.x + .5, root.y + .5) : null;
+        const validVisualRoot = support?.surfaceRevision === input.ground.surfaceRevision && support.supportedFootprint === true && support.inBounds === true && Number.isFinite(support.heightYards);
+        // Physical root B remains the retained source. The visual holder and
+        // initial grounded feet use independently sampled, same-XY G.
+        const visualLaunch = validVisualRoot ? feetCopy({ x: root.x, y: root.y, heightYards: support!.heightYards }) : null;
         let local = locals.get(golfer.id);
         if (!local || local.ownerKey !== ownerKey || local.surfaceRevision !== surfaceRevision) {
-          const observed = local?.presentedFeet ?? null;
-          local = { ownerKey, surfaceRevision: surfaceRevision!, binding: null, plant: null, locomotion: null, presentedFeet: sameFeet(observed, root) ? observed : null,
+          local = { ownerKey, surfaceRevision: surfaceRevision!, binding: null, plant: null, locomotion: null, presentedFeet: null,
             late: !!source.playback && source.playback.cursor.elapsedMs > 100, pending: null };
           locals.set(golfer.id, local);
         }
-        let binding = local.binding, stanceIdentity = null;
-        const pilot = golfer.id === pilotId && source.handedness === "right" && index !== null;
-        if (pilot && source.playback && source.targetWorld) {
+        let binding = local.binding, stanceIdentity = null, stanceFailure: string | null = null;
+        if (pilot && source.playback && source.targetWorld && visualLaunch) {
           stanceIdentity = { owner: facts.owner, authorityRevision: facts.authorityRevision, surfaceRevision: input.ground.surfaceRevision,
             targetWorld: source.targetWorld, handedness: source.handedness, modelVersion: NATURAL_GOLFER_CONTACT_MODEL.modelVersion, role: source.playback.plan.kind };
           if (!binding && !reactionCue) {
-            const candidate = createGolferStanceBinding({ identity: stanceIdentity, launch: root, ground: input.ground, artIndex: index });
-            if (candidate.kind === "candidate") { binding = candidate.binding; local.binding = binding; }
+            const candidate = createGolferStanceBinding({ identity: stanceIdentity, launch: root, visualGroundLaunch: visualLaunch, ground: input.ground, artIndex: index });
+            if (candidate.kind === "candidate") {
+              binding = candidate.binding; local.binding = binding;
+              if (!local.presentedFeet) local.late = source.playback.cursor.elapsedMs > 100;
+            } else stanceFailure = candidate.reason;
+          } else if (binding) {
+            const current = sampleGolferStance(binding, { currentIdentity: stanceIdentity, launch: root, visualGroundLaunch: visualLaunch, ground: input.ground,
+              rotation: input.rotation, phase: "address", actualFeet: null, arrival: null, previousPlant: null, walking: null, acquisition: "continuous", paused: false, hidden: false });
+            if (current.kind !== "neutral" || current.reason !== "arrival-proof-required") {
+              stanceFailure = current.kind === "neutral" ? current.reason : "invalid-binding"; binding = null;
+            }
           }
         }
-        let locomotion = null, nextPlant = local.plant, feet = root;
+        let locomotion = null, nextPlant = local.plant, feet = pilot ? visualLaunch ?? root : root;
         let naturalClip: "walk" | "idle" | "swing" | "putt" | "positive" | "negative" = "idle", col = 0;
         let direction = naturalGolferWorldView(source.facingWorld ?? { x: golfer.dirX, y: golfer.dirY }, input.rotation)?.direction ?? "s";
         let geometry: NaturalGolferRuntimeFrame<T>["contactGeometry"] = null;
         if (reactionCue) {
           // A reaction can hold an already verified F plant; it cannot acquire
           // a stance/arrival or turn visual-neutral acknowledgement into proof.
-          feet = local.presentedFeet ?? root; nextPlant = null;
+          feet = local.presentedFeet ?? visualLaunch ?? root; nextPlant = null;
           if (pilot && binding && stanceIdentity && local.plant) {
-            const held = sampleGolferStance(binding, { currentIdentity: stanceIdentity, launch: root, ground: input.ground, rotation: input.rotation, phase: "watch",
+            const held = sampleGolferStance(binding, { currentIdentity: stanceIdentity, launch: root, visualGroundLaunch: visualLaunch!, ground: input.ground, rotation: input.rotation, phase: "watch",
               actualFeet: local.presentedFeet, arrival: null, previousPlant: local.plant, walking: null,
               acquisition: local.late ? "late-acquisition" : "continuous", paused: input.paused, hidden: input.hidden });
             if (held.kind === "planted") {
@@ -215,21 +228,25 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
           // Only the scene's subsequent presentation acknowledgement proves F.
           feet = binding.feet; frame = { ...frame, reason: "settled-initial-awaiting-presentation" };
           direction = naturalGolferWorldView({ x: -source.targetWorld!.y, y: source.targetWorld!.x }, input.rotation)?.direction ?? direction;
+        } else if (pilot && binding && !local.presentedFeet) {
+          // A computed G is not an observation. The complete admitted native
+          // frame must actually be applied before starting the bounded sweep.
+          feet = visualLaunch!; frame = { ...frame, reason: "ground-launch-awaiting-presentation" };
         } else {
           locomotion = projectGolferLocomotion({ owner: facts.owner, currentOwner: facts.currentOwner, authorityRevision: facts.authorityRevision,
-            currentAuthorityRevision: facts.currentAuthorityRevision, surfaceRevision: input.ground.surfaceRevision, root,
+            currentAuthorityRevision: facts.currentAuthorityRevision, surfaceRevision: input.ground.surfaceRevision, root, visualGroundLaunch: binding ? visualLaunch! : undefined,
             actualFeet: binding ? local.presentedFeet ?? root : root, live: source, stance: pilot && binding && stanceIdentity && source.playback ? { binding, identity: stanceIdentity, playback: source.playback } : null,
             ground: input.ground, presentationTimeMs: input.presentationTimeMs, paused: input.paused, hidden: input.hidden, culled: false,
             acquisition: local.late && binding ? "late-acquisition" : "continuous", motionEnabled: input.motionEnabled, rotation: input.rotation,
             quality: input.quality, operatingTier: input.operatingTier }, local.locomotion);
-          feet = locomotion.feet ?? root;
+          feet = locomotion.kind === "neutral" && pilot ? visualLaunch ?? root : locomotion.feet ?? root;
           frame = { ...frame, reason: locomotion.reason ?? frame.reason, fastForward: locomotion.fastForward };
           const heldGait = locomotion.reason === "held" && ["walk", "adjust"].includes(locomotion.nextState?.mode ?? "");
           if (locomotion.kind === "walk" || locomotion.kind === "adjust" || heldGait) { naturalClip = "walk"; col = locomotion.strideFrame; }
           if (locomotion.kind === "walk" || heldGait && locomotion.nextState?.mode === "walk") frame = { ...frame, legacyPose: { anim: "walk", ...octantRow(facing), col: locomotion.strideFrame } };
           if (pilot && binding && stanceIdentity && (locomotion.arrival || local.plant)) {
             const phase = ["contact", "backswing", "follow-through"].includes(frame.phase) ? "strike" : frame.phase === "watch" ? "watch" : "address";
-            const plant = sampleGolferStance(binding, { currentIdentity: stanceIdentity, launch: root, ground: input.ground, rotation: input.rotation, phase,
+            const plant = sampleGolferStance(binding, { currentIdentity: stanceIdentity, launch: root, visualGroundLaunch: visualLaunch!, ground: input.ground, rotation: input.rotation, phase,
               actualFeet: feet, arrival: locomotion.arrival, previousPlant: local.plant, walking: null,
               acquisition: local.late ? "late-acquisition" : "continuous", paused: input.paused, hidden: input.hidden });
             if (plant.kind === "planted") {
@@ -248,19 +265,16 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
             } else { nextPlant = null; naturalClip = "idle"; col = 0; frame = { ...frame, reason: plant.kind === "neutral" ? plant.reason : "released" }; }
           }
         }
-        const support = pilot || reactionCue ? input.ground.sampleFootprintAt(root.x + .5, root.y + .5) : null;
-        const validVisualRoot = support?.surfaceRevision === input.ground.surfaceRevision && support.supportedFootprint === true && support.inBounds === true && Number.isFinite(support.heightYards);
-        const matchingRoot = validVisualRoot && Math.abs(support!.heightYards - root.heightYards) < 1e-7;
-        const arrivalEligible = !pilot || matchingRoot;
-        if (pilot && !matchingRoot) {
-          // Visual neutral B is a separate domain. It cannot seed a later
-          // arrival, preserve a plant, or repair the retained launch height.
+        const arrivalEligible = !pilot || validVisualRoot && (!source.playback || !!binding);
+        if (pilot && !arrivalEligible) {
+          // Unsupported physical contact retains a native neutral G identity.
+          // This domain cannot seed arrival or repair retained physical B.
           local.presentedFeet = null; local.locomotion = null; local.plant = null; local.binding = null; local.late = true;
           locomotion = null; nextPlant = null; geometry = null;
           naturalClip = "idle"; col = 0;
           frame = { ...frame, phase: "watch", contact: false, plantKey: null, contactGeometry: null,
-            reason: validVisualRoot ? "native-neutral-height" : "unsupported-visual-ground" };
-          if (validVisualRoot) feet = feetCopy({ x: root.x, y: root.y, heightYards: support!.heightYards });
+            reason: validVisualRoot ? `native-neutral-${stanceFailure ?? "unplanted"}` : "unsupported-visual-ground" };
+          if (visualLaunch) feet = visualLaunch;
         }
         if (reactionCue && validVisualRoot) {
           naturalClip = facts.outcome!.result === "bad" ? "negative" : "positive"; col = 1;
@@ -274,7 +288,7 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
           if (pair.kind === "pair" && (!reactionCue || (pair.frame.clip === naturalClip && pair.frame.col === 1 && pair.frame.direction === direction
             && pair.frame.directionRole === "facing" && !pair.frame.contact && !pair.frame.mirror))) {
             const base = tileCenterIso(root.x, root.y, support!.heightYards / ELEVATION_STEP_YARDS, input.rotation), foot = tileCenterIso(feet.x, feet.y, feet.heightYards / ELEVATION_STEP_YARDS, input.rotation);
-            frame = { ...frame, natural: { pair, feet, footDomain: matchingRoot ? "arrival-eligible" : "visual-neutral",
+            frame = { ...frame, natural: { pair, feet, footDomain: arrivalEligible ? "arrival-eligible" : "visual-neutral",
               physicalRootHeightYards: source.root.heightYards, visualRootHeightYards: support!.heightYards,
               localOffset: Object.freeze({ x: foot.x - base.x, y: foot.y - base.y }), depth: Math.round(entityDepth(feet.x, feet.y, feet.heightYards / ELEVATION_STEP_YARDS, input.rotation) * 10) / 10 }, contactGeometry: geometry };
           } else frame = { ...frame, reason: pair.kind === "pair" ? "unverified-static-reaction-frame" : pair.reason };
@@ -282,8 +296,9 @@ export function createNaturalGolferRuntime<T>(atlas: () => NaturalGolferAtlas<T>
         if (!frame.natural) frame = { ...frame, contact: false, plantKey: null, contactGeometry: null };
         else if (!frame.contact) frame = { ...frame, contactGeometry: null };
         const published = Object.freeze(frame); local.pending = published;
-        publications.set(published, { local, feet: arrivalEligible ? feetCopy(frame.natural ? feet : root) : null,
-          locomotion: arrivalEligible ? locomotion?.nextState ?? null : null, plant: arrivalEligible && frame.natural ? nextPlant : null });
+        const observedEligible = arrivalEligible && (!pilot || !!frame.natural);
+        publications.set(published, { local, feet: observedEligible ? feetCopy(frame.natural ? feet : root) : null,
+          locomotion: observedEligible ? locomotion?.nextState ?? null : null, plant: observedEligible && frame.natural ? nextPlant : null });
         output.set(golfer.id, published);
       }
       for (const id of locals.keys()) if (!retainedIds.has(id)) locals.delete(id);

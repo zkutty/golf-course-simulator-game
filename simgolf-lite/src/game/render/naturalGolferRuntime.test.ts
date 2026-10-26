@@ -1,19 +1,25 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 import { createLiveActivitySource, focusedLiveActivitySource, liveActivityScope } from "../live/activitySource";
 import { createGolferCapabilities, stableGolferHandedness } from "../live/capabilities";
 import { advanceShotPacingCursor, createShotPacingCursor, createShotPacingPlan, shotPacingFrame } from "../live/shotPacing";
+import { createLiveState, stepLive } from "../live/simulation";
 import type { GolferRenderData, Segment } from "../live/types";
 import type { SharedShotOutcome } from "../rules/contracts";
 import { captureGolferReactionSource, observeGolferReactionSource } from "./golferReactionSource";
 import type { ShotMotionIdentityV1 } from "../rules/shotMotion";
 import type { Course } from "../models/types";
+import { normalizeCourseLayouts } from "../models/courseLayouts";
+import { DEFAULT_WORLD } from "../models/defaults";
 import { createRetainedShotMotion, sampleRetainedShotMotion } from "../rules/shotMotion";
 import { resolveObstacleCollision } from "../rules/obstacleCollision";
+import { createM47CertificationCourse } from "../testing/m47Certification";
 import type { NaturalGolferAtlas, NaturalGolferTextureLookup } from "../../render/naturalGolferAtlas";
 import type { NaturalGolferArtRequest } from "./naturalGolferArt";
 import { createLiveGolferGroundAuthority } from "./golferGroundAuthority";
 import { ISO_ROTATIONS, tileCenterIso } from "./iso";
+import { buildLandscapeComponents, buildVisualHeightfield, type LandscapeComponent } from "./landscapeGeometry";
 import { NATURAL_GOLFER_DIRECTIONS, parseNaturalGolferArt, resolveNaturalGolferArt } from "./naturalGolferArt";
 import { createNaturalGolferRuntime, naturalGolferCandidateEnabled, naturalGolferVerificationJSON } from "./naturalGolferRuntime";
 import type { NaturalGolferRuntimeInput } from "./naturalGolferRuntime";
@@ -105,11 +111,172 @@ function present(f: ReturnType<typeof setup>, req: NaturalGolferRuntimeInput) {
   const frames = f.runtime.tickLive(req); for (const frame of frames.values()) f.runtime.observePresented(frame); return frames;
 }
 function reach(f: ReturnType<typeof setup>, s: ReturnType<typeof shot>, target: number, patch: Partial<NaturalGolferRuntimeInput> = {}) {
-  let cursor = createShotPacingCursor(s.plan), result = present(f, input([s.at(0)], 0, patch)).get(7)!;
+  const id = Number(s.plan.actorId);
+  let cursor = createShotPacingCursor(s.plan), result = present(f, input([s.at(0)], 0, patch)).get(id)!;
   while (cursor.elapsedMs < target) { cursor = advanceShotPacingCursor(s.plan, cursor, Math.min(1000 / 60, target - cursor.elapsedMs))!;
-    result = present(f, input([s.at(cursor.elapsedMs)], cursor.elapsedMs, patch)).get(7)!; }
+    result = present(f, input([s.at(cursor.elapsedMs)], cursor.elapsedMs, patch)).get(id)!; }
   return result;
 }
+
+let m47: ReturnType<typeof m47Fixture> | undefined;
+function m47Fixture() {
+  const course = normalizeCourseLayouts(createM47CertificationCourse(18));
+  const world = Object.assign(structuredClone(DEFAULT_WORLD), { week: 1, cash: 250000, reputation: 95, runSeed: 12160, isBankrupt: false, distressWeeks: 0, mode: "sandbox" as const });
+  const live = createLiveState(course, world, 0);
+  for (let i = 0; i < 540; i++) stepLive(live, course, .05, world);
+  const golfer = live.golfers.find(g => g.id === 1)!, scope = liveActivityScope(live, world)!;
+  const effectiveTiles = courseWithEffectiveSurfaces(course).tiles, field = buildVisualHeightfield(course);
+  const componentsByCell: (LandscapeComponent | null)[] = Array(effectiveTiles.length).fill(null);
+  for (const component of buildLandscapeComponents(effectiveTiles, course.width, course.height, { cornerRadius: .4, cornerSegments: 4 })) {
+    for (const i of component.cells) componentsByCell[i] = component;
+  }
+  const ground = createLiveGolferGroundAuthority({ course, effectiveTiles, field, componentsByCell, quality: "high", surfaceRevision: "m47:high" });
+  return { course, world, live, golfer, scope, ground };
+}
+function m47Shot(shotNumber: number) {
+  const f = m47 ??= m47Fixture(), segmentIndex = f.golfer.segments.findIndex(s => s.motion?.identity.holeId === "m47-hole-1" && s.motion.identity.shotNumber === shotNumber);
+  const segment = f.golfer.segments[segmentIndex], motion = segment.motion!, B = { ...motion.from.point, heightYards: motion.from.heightYards };
+  const G = { ...B, heightYards: f.ground.sampleFootprintAt(B.x + .5, B.y + .5).heightYards }, target = motion.flight?.geometry.to ?? motion.groundPath[1].point;
+  let distanceYards = Math.hypot(motion.landing.point.x - B.x, motion.landing.point.y - B.y) * motion.units.yardsPerTile;
+  for (let i = 1; i < motion.groundPath.length; i++) distanceYards += Math.hypot(motion.groundPath[i].point.x - motion.groundPath[i - 1].point.x, motion.groundPath[i].point.y - motion.groundPath[i - 1].point.y) * motion.units.yardsPerTile;
+  const plan = createShotPacingPlan({ scopeId: f.scope.id!, actorId: "1", motion, distanceYards })!;
+  const base = createLiveActivitySource(f.scope, { ...f.golfer, pos: motion.from.point, segIndex: segmentIndex, segElapsed: 0 }, segment)!;
+  return { ...f, motion, B, G, plan, segmentIndex, at(elapsedMs: number): GolferRenderData {
+    const cursor = createShotPacingCursor(plan, { version: 1, key: plan.key, elapsedMs }), frame = shotPacingFrame(plan, cursor)!, pose = sampleRetainedShotMotion(motion, frame.motionProgress)!;
+    const activitySource = focusedLiveActivitySource(base, { actorId: 1, segmentIndex, segmentElapsed: 0, plan, cursor, frame, identity: motion.identity, origin: motion.from, target }, true)!;
+    return { ...actor(1), x: B.x, y: B.y, segKind: "flight", shot: "swing", segT: frame.motionProgress, activitySource,
+      ballX: pose.point.x, ballY: pose.point.y, ballToX: motion.physicalRest.point.x, ballToY: motion.physicalRest.point.y,
+      ballMotion: { identity: motion.identity, pose, events: motion.events, contactTerrain: "fairway", collisionTerrain: null, active: true } };
+  } };
+}
+
+describe("LIVE physical B / visual G / observed F adapter", () => {
+  it.each([1, 2, 3].flatMap(shotNumber => ISO_ROTATIONS.map(rotation => [shotNumber, rotation] as const)))("projects actual M47 shot %d at camera %d without changing B or replaying contact", (shotNumber, rotation) => {
+    const f = setup(), s = m47Shot(shotNumber), patch = { ground: s.ground, followedId: 1, rotation };
+    const before = structuredClone({ live: s.live, world: s.world, motion: s.motion });
+    let frame = present(f, input([s.at(0)], 0, patch)).get(1)!;
+    expect(frame.natural).toMatchObject({ feet: s.G, localOffset: { x: 0, y: 0 }, physicalRootHeightYards: s.B.heightYards, visualRootHeightYards: s.G.heightYards });
+    expect(frame.natural!.pair.frame.clip).toBe("idle"); expect(frame.contact).toBe(false); expect(frame.plantKey).toBeNull();
+    expect(frame.natural!.footDomain).toBe(shotNumber === 1 ? "visual-neutral" : "arrival-eligible");
+    let gait = false, awaiting = false;
+    for (let t = 20; t < 1200 - .001; t += 20) {
+      const last = frame, g = s.at(t), facts = structuredClone(g);
+      frame = present(f, input([g], t, patch)).get(1)!;
+      expect(g).toEqual(facts); expect(g.activitySource!.root.heightYards).toBe(s.B.heightYards);
+      if (frame.natural!.pair.frame.clip === "walk") {
+        gait = true;
+        for (const camera of ISO_ROTATIONS) {
+          const a = tileCenterIso(last.natural!.feet.x, last.natural!.feet.y, last.natural!.feet.heightYards / 2.5, camera);
+          const b = tileCenterIso(frame.natural!.feet.x, frame.natural!.feet.y, frame.natural!.feet.heightYards / 2.5, camera);
+          expect(Math.hypot(b.x - a.x, b.y - a.y)).toBeLessThanOrEqual(32 * .02 + 1e-7);
+        }
+      }
+      if (frame.reason === "awaiting-arrival-observation") { awaiting = true; expect(frame.plantKey).toBeNull(); }
+    }
+    expect(gait).toBe(shotNumber !== 1); expect(awaiting).toBe(shotNumber !== 1);
+    for (const offset of [-.001, 0, .001]) {
+      const g = s.at(1200 + offset), facts = structuredClone(g);
+      frame = present(f, input([g], 1200 + offset, patch)).get(1)!;
+      expect(g).toEqual(facts); expect(frame.natural!.physicalRootHeightYards).toBe(s.B.heightYards);
+      if (shotNumber === 1) {
+        expect(frame).toMatchObject({ reason: "native-neutral-contact-residual", plantKey: null, contact: false, contactGeometry: null });
+        expect(frame.natural).toMatchObject({ footDomain: "visual-neutral", feet: s.G, localOffset: { x: 0, y: 0 } });
+        expect(frame.natural!.pair.frame.clip).toBe("idle");
+      } else {
+        expect(frame.natural!.pair.frame).toMatchObject({ clip: "swing", col: offset < 0 ? 4 : offset === 0 ? 5 : 6 });
+        expect(frame.contact).toBe(offset === 0); expect(frame.plantKey).not.toBeNull();
+        if (offset === 0) {
+          const g = frame.contactGeometry!, B = tileCenterIso(s.B.x, s.B.y, s.B.heightYards / 2.5, rotation), G = tileCenterIso(s.G.x, s.G.y, s.G.heightYards / 2.5, rotation);
+          const angle = ((shotNumber === 2 ? 0 : 180) - rotation + 90) * Math.PI / 180, c = Math.cos(angle), sin = Math.sin(angle), k = 26 / 48;
+          const tip = { x: k * (7.6 * (c + sin) + 12 * (c - sin)), y: k * (7.6 * (sin - c) / 2 + 12 * (c + sin) / 2 - 1) };
+          expect(G.x + frame.natural!.localOffset.x + tip.x).toBeCloseTo(g.actualTip.x, 9);
+          expect(G.y + frame.natural!.localOffset.y + tip.y).toBeCloseTo(g.actualTip.y, 9);
+          expect(g.datum).toEqual({ x: B.x, y: B.y - k });
+          expect(g.residualPx).toBeCloseTo(shotNumber === 2 ? .29776797146712397 : .4631428502804056, 9);
+          const fillDistance = Math.hypot(g.actualTip.x - B.x, g.actualTip.y - (B.y - 2));
+          expect(fillDistance).toBeLessThan(2.2); expect(fillDistance).toBeLessThan(2.8);
+        } else expect(frame.contactGeometry).toBeNull();
+      }
+    }
+    const feet = frame.natural!.feet;
+    for (let t = 1250; t <= 2000; t += 50) frame = present(f, input([s.at(t)], t, patch)).get(1)!;
+    expect(frame.natural!.feet).toEqual(feet); expect(frame.contact).toBe(false);
+    expect(frame.natural!.pair.frame).toMatchObject({ clip: shotNumber === 1 ? "idle" : "swing", col: shotNumber === 1 ? 0 : 7 });
+    const held = present(f, input([s.at(2000)], 1000000, { ...patch, paused: true, motionEnabled: false })).get(1)!;
+    expect(held.natural!.feet).toEqual(feet); expect(held.contact).toBe(false);
+    expect({ live: s.live, world: s.world, motion: s.motion }).toEqual(before);
+  });
+
+  it("requires a current complete native G acknowledgement and subsequent F observation; stale/missing pairs cannot seed proof", () => {
+    const f = setup(), s = m47Shot(3), patch = { ground: s.ground, followedId: 1 };
+    f.state.missing = true;
+    const missing = present(f, input([s.at(0)], 0, patch)).get(1)!; expect(missing.natural).toBeNull();
+    f.state.missing = false;
+    const first = f.runtime.tickLive(input([s.at(0)], 1, patch)).get(1)!;
+    expect(first).toMatchObject({ reason: "ground-launch-awaiting-presentation", plantKey: null }); expect(first.natural!.feet).toEqual(s.G);
+    const current = f.runtime.tickLive(input([s.at(0)], 2, patch)).get(1)!;
+    f.runtime.observePresented(missing); f.runtime.observePresented(first);
+    const still = f.runtime.tickLive(input([s.at(0)], 3, patch)).get(1)!;
+    expect(still.natural!.feet).toEqual(s.G); expect(still.natural!.pair.frame.clip).toBe("idle"); expect(still.plantKey).toBeNull();
+    f.runtime.observePresented(current); f.runtime.observePresented(still);
+    const start = present(f, input([s.at(20)], 20, patch)).get(1)!;
+    expect(start.natural!.pair.frame.clip).toBe("walk"); expect(start.natural!.feet).toEqual(s.G);
+    const moving = present(f, input([s.at(40)], 40, patch)).get(1)!; expect(moving.natural!.feet).not.toEqual(s.G);
+    f.state.missing = true; const unavailable = present(f, input([s.at(60)], 60, patch)).get(1)!; expect(unavailable.natural).toBeNull();
+    f.state.missing = false;
+    const renewed = f.runtime.tickLive(input([s.at(60)], 61, patch)).get(1)!;
+    f.runtime.observePresented(moving); f.runtime.observePresented(unavailable);
+    expect(renewed.natural!.feet).toEqual(s.G); expect(renewed.natural!.pair.frame.clip).toBe("idle"); expect(renewed.plantKey).toBeNull();
+    f.runtime.observePresented(renewed);
+    let frame = present(f, input([s.at(80)], 80, patch)).get(1)!;
+    for (let t = 100; t <= 1200; t += 20) frame = present(f, input([s.at(t)], t, patch)).get(1)!;
+    expect(frame.contact).toBe(true); expect(frame.plantKey).not.toBeNull();
+  });
+
+  it.each(["high", "medium", "low"] as const)("does not animate a G→F adjustment with motion disabled at %s quality", quality => {
+    const f = setup(), s = m47Shot(3), patch = { ground: s.ground, followedId: 1, motionEnabled: false, quality };
+    for (const t of [0, 20, 40, 100, 1200]) {
+      const frame = present(f, input([s.at(t)], t, patch)).get(1)!;
+      expect(frame.natural!.feet).toEqual(s.G); expect(frame.natural!.pair.frame.clip).toBe("idle"); expect(frame.contact).toBe(false); expect(frame.plantKey).toBeNull();
+    }
+  });
+  it.each(ISO_ROTATIONS)("holds a supported non-equal-height F for reaction at camera%d, then releases only to observed walking", rotation => {
+    const f = setup(), s = evidencedShot("good"), g = ground("supported-height", .02), start = s.plan.durationMs - 600, patch = { ground: g, rotation };
+    const watch = reach(f, s, start - 1, patch), feet = watch.natural!.feet;
+    const visualHeight = g.sampleFootprintAt(12.5, 12.5).heightYards;
+    expect(watch.natural).toMatchObject({ footDomain: "arrival-eligible", physicalRootHeightYards: 0, visualRootHeightYards: visualHeight });
+    expect(watch.plantKey).not.toBeNull();
+    const source = s.at(start), before = structuredClone(source), reaction = present(f, input([source], start, patch)).get(7)!;
+    expect(reaction).toMatchObject({ phase: "reaction", plantKey: watch.plantKey, contact: false, contactGeometry: null });
+    expect(reaction.natural!.feet).toEqual(feet); expect(reaction.natural!.pair.frame).toMatchObject({ clip: "positive", col: 1, directionRole: "facing" });
+    expect(reaction.natural!.pair.frame.direction).toBe(NATURAL_GOLFER_DIRECTIONS[((90 - rotation + 360) / 45 + 7) % 8]);
+    expect(source).toEqual(before);
+    const paused = present(f, input([s.at(start)], 100000, { ...patch, paused: true })).get(7)!;
+    expect(paused.natural!.feet).toEqual(feet); expect(paused.plantKey).toBe(watch.plantKey);
+    const walking = actor(7, 12.05), walkingBefore = structuredClone(walking);
+    const released = present(f, input([walking], 100001, patch)).get(7)!;
+    expect(released.plantKey).toBeNull(); expect(released.contact).toBe(false); expect(released.natural!.feet).toEqual({ x: 12.05, y: 12, heightYards: visualHeight });
+    expect(walking).toEqual(walkingBefore); expect(f.runtime.diagnostics().pending).toBe(0);
+  });
+  it.each(["surface", "cull", "reveal", "owner", "atlas", "time"])("discards non-equal-height F proof before %s replacement or reacquisition", variant => {
+    const f = setup(), s = m47Shot(3), patch = { ground: s.ground, followedId: 1 };
+    const held = reach(f, s, 2000, patch); expect(held.plantKey).not.toBeNull();
+    let g = s.at(2000), time = 2001, next = { ...patch } as Partial<NaturalGolferRuntimeInput>;
+    if (variant === "surface") next = { ...next, ground: { ...s.ground, surfaceRevision: "replaced" } };
+    if (variant === "cull") next = { ...next, visibleIds: new Set() };
+    if (variant === "reveal") next = { ...next, visibilityEpoch: 1 };
+    if (variant === "owner") g = { ...g, activitySource: { ...g.activitySource!, authorityRevision: "stale" } };
+    if (variant === "atlas") f.state.missing = true;
+    if (variant === "time") time = 1000;
+    const frame = f.runtime.tickLive(input([g], time, { ...next, paused: true })).get(1)!;
+    expect(frame.contact).toBe(false); expect(frame.plantKey).toBeNull();
+    if (variant === "atlas") f.runtime.observePresented(frame); // The missing-pair fallback was actually applied.
+    f.runtime.observePresented(held);
+    f.state.missing = false;
+    const reacquired = f.runtime.tickLive(input([s.at(2000)], 2002, { ...patch, visibilityEpoch: variant === "reveal" ? 1 : 0 })).get(1)!;
+    expect(reacquired.contact).toBe(false); expect(reacquired.plantKey).toBeNull(); expect(reacquired.natural!.pair.frame.clip).toBe("idle");
+  });
+});
 
 describe("one opt-in LIVE pilot and accepted shared presentation store", () => {
   it("requires explicit DEV opt-in and never loads or disposes a borrowed atlas", () => {
@@ -187,7 +354,7 @@ describe("actual shared cursor, supported arrival and camera-locked contact", ()
       const frame = present(f, input([g], target + i, { ground: raised, rotation: ISO_ROTATIONS[i] })).get(7)!;
       expect(frame.natural).toMatchObject({ footDomain: "visual-neutral", feet: { x: 12, y: 12, heightYards: 2.5 }, localOffset: { x: 0, y: 0 }, physicalRootHeightYards: 0, visualRootHeightYards: 2.5 });
       expect(frame.natural?.pair.frame).toMatchObject({ clip: "idle", col: 0 });
-      expect(frame).toMatchObject({ phase: "watch", reason: "native-neutral-height", contact: false, plantKey: null, contactGeometry: null });
+      expect(frame).toMatchObject({ phase: "watch", reason: "native-neutral-contact-residual", contact: false, plantKey: null, contactGeometry: null });
       expect(f.runtime.diagnostics()).toMatchObject({ records: 1, localRecords: 1, pending: 0 });
     }
     expect(g).toEqual(before); expect(g.activitySource!.root.heightYards).toBe(0);
