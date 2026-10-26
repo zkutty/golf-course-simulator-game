@@ -21,7 +21,7 @@ for (const locale of ["en", "pseudo"] as const) for (const width of [320, 768, 1
     const after = await fonts(panel);
     const measurement = after.map((item, i) => ({ ...item, baseline: before[i].size, ratio: item.size / before[i].size }));
     measurements.push({ view, measurement });
-    writeFileSync(`/private/tmp/zk382-seasons-${locale}-${width}-${view}.json`, JSON.stringify(measurement, null, 2));
+    writeFileSync(info.outputPath(`zk382-seasons-${locale}-${width}-${view}.json`), JSON.stringify(measurement, null, 2));
     for (const item of measurement) expect(Math.abs(item.ratio - 1.3), `${item.tag} ${item.text}: ${item.baseline}→${item.size}`).toBeLessThan(.01);
     await expect(panel).toHaveAttribute("aria-modal", "false");
     for (const select of await panel.locator("select").all()) expect(await select.evaluate(el => (el as HTMLSelectElement).labels?.[0]?.textContent?.trim())).toBeTruthy();
@@ -38,7 +38,7 @@ for (const locale of ["en", "pseudo"] as const) for (const width of [320, 768, 1
       expect(await control.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
     }
   }
-  await info.attach("scaled seasons", { body: await page.screenshot({ path: `/private/tmp/golf-batch7-seasons-${locale}-${width}-green.png` }), contentType: "image/png" });
+  await info.attach("scaled seasons", { body: await page.screenshot({ path: info.outputPath(`golf-batch7-seasons-${locale}-${width}-green.png`) }), contentType: "image/png" });
   await info.attach("font measurements", { body: JSON.stringify(measurements), contentType: "application/json" });
   await expect(panel.getByRole("tab")).toHaveCount(3);
   await panel.getByRole("tab").first().focus(); await page.keyboard.press("End"); await expect(panel.getByRole("tab").nth(2)).toBeFocused();
