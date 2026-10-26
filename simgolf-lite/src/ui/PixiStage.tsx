@@ -197,6 +197,12 @@ const TERRAIN_LABEL_KEYS: Record<Terrain, MessageKey> = {
   path: "designDock.terrain.path",
 };
 
+const idleGraphicsPoolApi = {
+  BigPool: PIXI.BigPool,
+  GraphicsContextRenderData: PIXI.GraphicsContextRenderData,
+  BatchableGraphics: PIXI.BatchableGraphics,
+};
+
 const BIOME_LABEL_KEYS: Record<
   NonNullable<Course["theme"]>,
   MessageKey
@@ -1944,7 +1950,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (cancelled) {
         app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
-        releaseIdleGraphicsPools(PIXI);
+        releaseIdleGraphicsPools(idleGraphicsPoolApi);
         return;
       }
       const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule] = await Promise.all([
@@ -1957,7 +1963,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (cancelled) {
         app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
-        releaseIdleGraphicsPools(PIXI);
+        releaseIdleGraphicsPools(idleGraphicsPoolApi);
         return;
       }
 
@@ -1969,7 +1975,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (cancelled) {
         app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
-        releaseIdleGraphicsPools(PIXI);
+        releaseIdleGraphicsPools(idleGraphicsPoolApi);
         return;
       }
       deferredWorldScenesRef.current = deferredWorldScenes;
@@ -2050,7 +2056,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (cancelled) {
         terrainWaterSceneRef.current?.destroy();
         terrainWaterSceneRef.current = null;
-        try { app.stage.removeChildren().forEach(destroySceneSubtree); app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); releaseIdleGraphicsPools(PIXI); } catch { /* partial initialization */ }
+        try { app.stage.removeChildren().forEach(destroySceneSubtree); app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); releaseIdleGraphicsPools(idleGraphicsPoolApi); } catch { /* partial initialization */ }
         return;
       }
       console.error("[PixiStage] Course renderer initialization failed", error);
@@ -2060,7 +2066,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       setRendererError(true);
       terrainWaterSceneRef.current?.destroy();
       terrainWaterSceneRef.current = null;
-      try { app.stage.removeChildren().forEach(destroySceneSubtree); app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); releaseIdleGraphicsPools(PIXI); } catch { /* partially initialized */ }
+      try { app.stage.removeChildren().forEach(destroySceneSubtree); app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); releaseIdleGraphicsPools(idleGraphicsPoolApi); } catch { /* partially initialized */ }
     });
 
     return () => {
@@ -2095,7 +2101,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         appRef.current.stage.removeChildren().forEach(destroySceneSubtree);
         appRef.current.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false });
         appRef.current = null;
-        releaseIdleGraphicsPools(PIXI);
+        releaseIdleGraphicsPools(idleGraphicsPoolApi);
       }
     };
   }, []);
