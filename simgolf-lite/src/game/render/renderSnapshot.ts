@@ -11,6 +11,7 @@ import type { ArchitectureOverlayRender } from "../architecture/reviewTypes";
 import type { PaceAdvisorFinding } from "../live/paceHistory";
 import type { OpeningPlaybackFrame, OpeningTargetTile } from "../onboarding/openingDemo";
 import type { PlayerShotActivitySampleV1 } from "../playerPro/shotPlayback";
+import type { LiveGolferGroundAuthority } from "./golferGroundAuthority";
 
 /** Stable ownership boundaries for the Pixi scene-system migration. */
 export const RENDER_SYSTEMS = [
@@ -158,6 +159,9 @@ export interface RenderSnapshot {
   readonly selectedParcelId?: string | null;
   readonly worldSeed: number;
   readonly surfaceHeightAt: (x: number, y: number) => number;
+  /** Explicit DEV pilot only; this is not production family activation. */
+  readonly naturalGolfersCandidate?: boolean;
+  readonly naturalGolferGround?: LiveGolferGroundAuthority | null;
   /** Optional while older scene fixtures migrate to the editor-owned payload. */
   readonly surfaceEditor?: SurfaceEditorRenderSnapshot;
   readonly revisions: RenderRevisions;

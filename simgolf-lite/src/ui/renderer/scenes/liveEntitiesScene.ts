@@ -51,6 +51,9 @@ import {
 } from "../../../render/atlas";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import type { RenderSceneSystem } from "../SceneSystemHost";
+import { createNaturalGolferRuntime, naturalGolferVerificationJSON, NATURAL_GOLFER_PILOT_TINT } from "../../../game/render/naturalGolferRuntime";
+import type { NaturalGolferRuntimeFrame } from "../../../game/render/naturalGolferRuntime";
+import type { NaturalGolferAtlas } from "../../../render/naturalGolferAtlas";
 
 interface GolferEntry {
   holder: PIXI.Container;
@@ -85,6 +88,8 @@ interface GolferEntry {
     reaction: GolferReaction | null;
     reactionUntil: number;
     lastScored: number;
+    naturalShadow: PIXI.Sprite | null;
+    natural: boolean;
   } | null;
   dot: {
     body: PIXI.Graphics;
@@ -98,6 +103,9 @@ interface LiveEntityAuthority {
   readonly effectiveTiles: readonly Terrain[];
   readonly rotation: IsoRotation;
   readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
+  readonly candidate: boolean;
+  readonly ground: RenderSnapshot["naturalGolferGround"];
+  readonly quality: RenderSnapshot["graphicsQuality"];
 }
 
 export interface LiveEntityLayers {
@@ -117,6 +125,11 @@ export interface LiveEntityCullBounds {
 export interface LiveEntityTickInput {
   readonly nowMs: number;
   readonly animationsEnabled: boolean;
+  readonly presentationTimeMs?: number;
+  readonly presentationPaused?: boolean;
+  readonly hidden?: boolean;
+  readonly visibilityEpoch?: number;
+  readonly operatingTier?: 1 | 2 | 4;
   readonly golfers: readonly GolferRenderData[];
   readonly selectedGolferId?: number | null;
   readonly followSelected?: boolean;
@@ -153,9 +166,13 @@ export interface LiveEntitiesSceneSystem extends RenderSceneSystem {
   tickEntities(input: LiveEntityTickInput): void;
   diagnostics(): LiveEntityDiagnostics;
   golferGrounding(id: number, golfers: readonly GolferRenderData[]): GolferGroundingDiagnostics | null;
+  naturalDiagnostics(): unknown;
+  naturalDiagnosticsText(): string;
+  releaseNaturalBorrowers(): void;
 }
 
 export interface LiveEntitiesSceneDependencies {
+  readonly naturalAtlas?: () => NaturalGolferAtlas<PIXI.Texture> | null;
   readonly atlasReady?: () => boolean;
   readonly golferFrame?: (frame: string) => PIXI.Texture | undefined;
   readonly createContainer?: () => PIXI.Container;
@@ -250,6 +267,8 @@ export function createLiveEntitiesSceneSystem(
   const createSprite = dependencies.createSprite ?? (() => new PIXI.Sprite());
   const createText = dependencies.createText ?? ((options) => new PIXI.Text(options));
   const bubbleDependencies = { createContainer, createGraphics, createText };
+  const naturalRuntime = createNaturalGolferRuntime(dependencies.naturalAtlas ?? (() => null));
+  let naturalPilotDiagnostic: object | null = null;
 
   let authority: LiveEntityAuthority | null = null;
   const pool = new Map<number, GolferEntry>();
@@ -266,6 +285,9 @@ export function createLiveEntitiesSceneSystem(
       effectiveTiles: snapshot.effectiveTiles,
       rotation: snapshot.rotation,
       surfaceHeightAt: snapshot.surfaceHeightAt,
+      candidate: snapshot.naturalGolfersCandidate === true,
+      ground: snapshot.naturalGolferGround,
+      quality: snapshot.graphicsQuality,
     };
   };
 
@@ -297,6 +319,7 @@ export function createLiveEntitiesSceneSystem(
     ripples = [];
     impacts = [];
     authority = null;
+    naturalRuntime.clear(); naturalPilotDiagnostic = null;
   };
 
   const ensureEffects = () => {
@@ -353,6 +376,80 @@ export function createLiveEntitiesSceneSystem(
     }
   };
 
+  const addSprite = (entry: GolferEntry, golfer: GolferRenderData) => {
+    if (entry.sprite) return;
+    if (entry.dot) { entry.holder.removeChild(entry.dot.body); entry.dot.body.destroy(); entry.dot = null; }
+    const shadow = createGraphics();
+    shadow.label = "golfer-contact-shadow";
+    shadow.position.set(GOLFER_CONTACT_SHADOW.x, GOLFER_CONTACT_SHADOW.y);
+    shadow.ellipse(0, 0, GOLFER_CONTACT_SHADOW.radiusX, GOLFER_CONTACT_SHADOW.radiusY);
+    shadow.fill({ color: 0x000000, alpha: GOLFER_CONTACT_SHADOW.alpha });
+    const ring = createGraphics(); ring.visible = false;
+    const scale = GOLFER_DISPLAY_W / GOLFER_FRAME_W;
+    const base = createSprite(); base.anchor.set(.5, GOLFER_FEET_Y / GOLFER_FRAME_H); base.scale.set(scale);
+    const tintLayer = createSprite(); tintLayer.anchor.set(.5, GOLFER_FEET_Y / GOLFER_FRAME_H); tintLayer.scale.set(scale);
+    tintLayer.tint = golferTint(golfer.color, golfer.id);
+    entry.holder.addChild(shadow, ring, base, tintLayer);
+    entry.sprite = { shadow, ring, base, tintLayer, variant: golferVariant(golfer.archetype, golfer.id), tint: tintLayer.tint,
+      lastFrame: "", walkPhase: 0, lastPos: null, dirX: golfer.dirX, dirY: golfer.dirY,
+      reaction: null, reactionUntil: 0, lastScored: golfer.scoredHoles, naturalShadow: null, natural: false };
+  };
+  const releaseNaturalBorrowers = () => {
+    for (const entry of pool.values()) {
+      if (!entry.sprite?.natural && !entry.sprite?.naturalShadow) continue;
+      for (const child of [...entry.holder.children]) { entry.holder.removeChild(child); destroySceneSubtree(child); }
+      entry.sprite = null; entry.dot = null;
+      const body = createGraphics(); entry.holder.addChild(body); entry.dot = { body, lastColor: "", lastMoodBucket: -1 };
+    }
+    naturalRuntime.clear(); naturalPilotDiagnostic = null;
+  };
+  const applyCandidateFrame = (entry: GolferEntry, golfer: GolferRenderData, frame: NaturalGolferRuntimeFrame<PIXI.Texture>) => {
+    const sprite = entry.sprite!;
+    const natural = frame.natural;
+    if (natural) {
+      if (!sprite.naturalShadow) {
+        sprite.naturalShadow = createSprite(); sprite.naturalShadow.label = "natural-golfer-contact-shadow";
+        sprite.naturalShadow.anchor.set(.5); entry.holder.addChildAt(sprite.naturalShadow, 0);
+      }
+      sprite.base.texture = natural.pair.base; sprite.tintLayer.texture = natural.pair.tint;
+      sprite.naturalShadow.texture = natural.pair.shadow;
+      sprite.base.anchor.set(36 / 72, 83 / 96); sprite.tintLayer.anchor.set(36 / 72, 83 / 96);
+      sprite.base.scale.set(natural.pair.bodyUnitScale); sprite.tintLayer.scale.set(natural.pair.bodyUnitScale);
+      sprite.base.position.set(natural.localOffset.x, natural.localOffset.y); sprite.tintLayer.position.set(natural.localOffset.x, natural.localOffset.y);
+      sprite.tintLayer.tint = NATURAL_GOLFER_PILOT_TINT;
+      sprite.naturalShadow.position.set(natural.localOffset.x + natural.pair.shadowPlacement.worldOffset[0], natural.localOffset.y + natural.pair.shadowPlacement.worldOffset[1]);
+      sprite.naturalShadow.scale.set(1); sprite.naturalShadow.alpha = 1; sprite.naturalShadow.visible = true; sprite.shadow.visible = false;
+      sprite.base.visible = true; sprite.tintLayer.visible = true; if (entry.dot) entry.dot.body.visible = false;
+      sprite.natural = true; sprite.lastFrame = `natural:${natural.pair.generation}:${natural.pair.frame.id}`;
+      entry.holder.zIndex = natural.depth;
+      naturalPilotDiagnostic = Object.freeze({ family: "natural-golfer-v1", actorId: golfer.id, ownerKey: frame.ownerKey, frame: natural.pair.frame.id,
+        footDomain: natural.footDomain, physicalRootHeightYards: natural.physicalRootHeightYards, visualRootHeightYards: natural.visualRootHeightYards,
+        cursorMs: golfer.activitySource?.playback?.cursor.elapsedMs ?? null, phase: frame.phase, contact: frame.contact, plantKey: frame.plantKey,
+        feet: natural.feet, localOffset: natural.localOffset, depth: natural.depth, holder: { x: entry.holder.position.x, y: entry.holder.position.y },
+        sourceSize: natural.pair.frame.source, unitScale: natural.pair.bodyUnitScale, tint: sprite.tintLayer.tint,
+        shadow: { x: sprite.naturalShadow.position.x, y: sprite.naturalShadow.position.y, scale: sprite.naturalShadow.scale.x, alpha: sprite.naturalShadow.alpha, alphaBaked: true },
+        geometry: frame.contactGeometry, fastForward: frame.fastForward, reason: frame.reason });
+    } else {
+      const pose = frame.legacyPose, name = golferFrameName(sprite.variant, pose, false);
+      const base = golferFrame(name), tint = golferFrame(golferFrameName(sprite.variant, pose, true));
+      sprite.base.anchor.set(.5, GOLFER_FEET_Y / GOLFER_FRAME_H); sprite.tintLayer.anchor.set(.5, GOLFER_FEET_Y / GOLFER_FRAME_H);
+      sprite.base.position.set(0); sprite.tintLayer.position.set(0); sprite.tintLayer.tint = sprite.tint;
+      const scale = GOLFER_DISPLAY_W / GOLFER_FRAME_W;
+      sprite.base.scale.set(pose.mirror ? -scale : scale, scale); sprite.tintLayer.scale.set(pose.mirror ? -scale : scale, scale);
+      sprite.shadow.visible = !!base && !!tint; if (sprite.naturalShadow) sprite.naturalShadow.visible = false;
+      sprite.base.visible = !!base && !!tint; sprite.tintLayer.visible = !!base && !!tint;
+      if (base && tint) { sprite.base.texture = base; sprite.tintLayer.texture = tint; if (entry.dot) entry.dot.body.visible = false; }
+      else {
+        if (!entry.dot) { const body = createGraphics(); entry.holder.addChild(body); entry.dot = { body, lastColor: "", lastMoodBucket: -1 }; }
+        entry.dot.body.visible = true; entry.dot.body.clear(); entry.dot.body.circle(0, -7, 5.5); entry.dot.body.fill(golfer.color);
+      }
+      sprite.natural = false; sprite.lastFrame = name;
+      if (naturalRuntime.diagnostics().pilotId === golfer.id) naturalPilotDiagnostic = Object.freeze({ family: base && tint ? "legacy" : "dot", actorId: golfer.id,
+        ownerKey: frame.ownerKey, frame: name, phase: frame.phase, contact: false, plantKey: null, geometry: null, reason: frame.reason, fastForward: frame.fastForward });
+    }
+    sprite.reaction = null; sprite.lastScored = golfer.scoredHoles;
+    naturalRuntime.observePresented(frame);
+  };
   const tickEntities = (input: LiveEntityTickInput) => {
     if (!authority) return;
     const { course, effectiveTiles, rotation, surfaceHeightAt } = authority;
@@ -368,6 +465,14 @@ export function createLiveEntitiesSceneSystem(
       startleAtmosphere,
       tickMobilityEntities,
     } = input;
+    const candidate = authority.candidate && !!authority.ground;
+    const naturalFrames = candidate ? naturalRuntime.tickLive({ golfers, ground: authority.ground!, rotation,
+      visibleIds: new Set(golfers.filter(g => { const p = groundedGolferFrame(g.x, g.y, rotation, surfaceHeightAt).screen;
+        return p.x >= cullBounds.left && p.x <= cullBounds.right && p.y >= cullBounds.top && p.y <= cullBounds.bottom; }).map(g => g.id)),
+      presentationTimeMs: input.presentationTimeMs ?? nowMs, paused: input.presentationPaused ?? false, hidden: input.hidden ?? false,
+      visibilityEpoch: input.visibilityEpoch ?? 0, motionEnabled: animationsEnabled, quality: authority.ground ? authority.quality : "high",
+      operatingTier: input.operatingTier ?? 1, followedId: followSelected && selectedGolferId != null ? selectedGolferId : null }) : null;
+    if (!candidate) naturalPilotDiagnostic = null;
     const seen = new Set<number>();
     const golferById = new Map<number, GolferRenderData>();
     for (const golfer of golfers) {
@@ -404,40 +509,8 @@ export function createLiveEntitiesSceneSystem(
           sprite: null,
           dot: null,
         };
-        if (atlasReady()) {
-          const shadow = createGraphics();
-          shadow.label = "golfer-contact-shadow";
-          shadow.position.set(GOLFER_CONTACT_SHADOW.x, GOLFER_CONTACT_SHADOW.y);
-          shadow.ellipse(0, 0, GOLFER_CONTACT_SHADOW.radiusX, GOLFER_CONTACT_SHADOW.radiusY);
-          shadow.fill({ color: 0x000000, alpha: GOLFER_CONTACT_SHADOW.alpha });
-          const ring = createGraphics();
-          ring.visible = false;
-          const scale = GOLFER_DISPLAY_W / GOLFER_FRAME_W;
-          const base = createSprite();
-          base.anchor.set(0.5, GOLFER_FEET_Y / GOLFER_FRAME_H);
-          base.scale.set(scale);
-          const tintLayer = createSprite();
-          tintLayer.anchor.set(0.5, GOLFER_FEET_Y / GOLFER_FRAME_H);
-          tintLayer.scale.set(scale);
-          tintLayer.tint = golferTint(golfer.color, golfer.id);
-          holder.addChild(shadow, ring, base, tintLayer);
-          entry.sprite = {
-            shadow,
-            ring,
-            base,
-            tintLayer,
-            variant: golferVariant(golfer.archetype, golfer.id),
-            tint: tintLayer.tint,
-            lastFrame: "",
-            walkPhase: 0,
-            lastPos: null,
-            dirX: golfer.dirX,
-            dirY: golfer.dirY,
-            reaction: null,
-            reactionUntil: 0,
-            lastScored: golfer.scoredHoles,
-          };
-        } else {
+        if (atlasReady()) addSprite(entry, golfer);
+        else {
           const body = createGraphics();
           holder.addChild(body);
           entry.dot = { body, lastColor: "", lastMoodBucket: -1 };
@@ -485,8 +558,13 @@ export function createLiveEntitiesSceneSystem(
       entry.holder.visible = !offscreen;
       if (!offscreen && entry.holder.zIndex !== grounded.depth) entry.holder.zIndex = grounded.depth;
 
+      const candidateFrame = naturalFrames?.get(golfer.id);
+      if (candidate && !entry.sprite && (atlasReady() || candidateFrame?.natural)) addSprite(entry, golfer);
+
       if (!offscreen && entry.sprite) {
         const sprite = entry.sprite;
+        if (candidate && candidateFrame) applyCandidateFrame(entry, golfer, candidateFrame);
+        else {
         if (golfer.scoredHoles > sprite.lastScored) {
           sprite.lastScored = golfer.scoredHoles;
           const reaction = reactionFor(golfer.lastHoleDelta);
@@ -530,6 +608,7 @@ export function createLiveEntitiesSceneSystem(
           sprite.base.scale.x = Math.abs(sprite.base.scale.x) * flip;
           sprite.tintLayer.scale.x = Math.abs(sprite.tintLayer.scale.x) * flip;
         }
+        }
         if (selected) {
           const pulse = animationsEnabled ? 1 + Math.sin(nowMs * 0.006) * 0.12 : 1;
           sprite.ring.clear();
@@ -550,6 +629,7 @@ export function createLiveEntitiesSceneSystem(
           dot.body.fill(golfer.color);
           dot.body.stroke({ width: 1.5, color: `hsl(${moodBucket * 12}, 80%, 45%)` });
         }
+        if (candidateFrame) naturalRuntime.observePresented(candidateFrame);
       }
 
       const retainedMotion = golfer.ballMotion;
@@ -733,6 +813,7 @@ export function createLiveEntitiesSceneSystem(
     }
   };
 
+  const naturalDiagnostics = () => authority?.candidate ? Object.freeze({ ...naturalRuntime.diagnostics(), body: pool.has(naturalRuntime.diagnostics().pilotId ?? -1) ? naturalPilotDiagnostic : null }) : null;
   return {
     id: "liveEntities",
     create: cacheAuthority,
@@ -764,5 +845,8 @@ export function createLiveEntitiesSceneSystem(
         activeEffects: impacts.length + ripples.length,
       };
     },
+    releaseNaturalBorrowers,
+    naturalDiagnostics,
+    naturalDiagnosticsText: () => naturalGolferVerificationJSON(naturalDiagnostics()),
   };
 }

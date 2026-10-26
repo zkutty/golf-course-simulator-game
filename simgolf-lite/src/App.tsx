@@ -6491,6 +6491,8 @@ export default function App() {
                 showObstacles={showObstacles}
                 golfersRef={live.golfersRef}
                 liveActive={live.liveActive}
+                livePresentationPaused={live.speed === "paused" || flow.paused || Boolean(flow.modal) || Boolean(pendingWeekReport) || showPlayerPro || screen !== "game"}
+                liveOperatingTier={live.speed === "4x" ? 4 : live.speed === "2x" ? 2 : 1}
                 onPickGolfer={live.selectGolfer}
                 selectedGolferId={live.selectedId}
                 followSelected={followSelected}

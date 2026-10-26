@@ -158,6 +158,12 @@ function view(basis: number, rotation: IsoRotation): { direction: NaturalGolferD
   const cameraBasis = (basis - rotation + 360) % 360;
   return { direction: NATURAL_GOLFER_DIRECTIONS[(cameraBasis / 45 + 7) % 8], body: (cameraBasis + 90) % 360 };
 }
+/** Shared authored WORLD basis for facing and targets; never quantize a screen vector. */
+export function naturalGolferWorldView(direction: Readonly<IsoPoint> | null, rotation: IsoRotation): { readonly basisDegrees: number; readonly direction: NaturalGolferDirection; readonly octant: number } | null {
+  if (!direction || !finite(direction.x) || !finite(direction.y) || Math.hypot(direction.x, direction.y) <= 0 || ![0, 90, 180, 270].includes(rotation)) return null;
+  const basisDegrees = targetBasis(direction), authored = view(basisDegrees, rotation);
+  return Object.freeze({ basisDegrees, direction: authored.direction, octant: ((basisDegrees - rotation + 360) / 45 + 1) % 8 });
+}
 function modelTip(bodyDegrees: number, height: number): IsoPoint {
   const { side, forward, bodyUnitScale: k } = NATURAL_GOLFER_CONTACT_MODEL;
   const a = bodyDegrees * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);

@@ -12,6 +12,8 @@ import type { PlayerPlayableRound, PlayerProPoint } from "../game/models/playerP
 import type { PlayerShotPreview } from "../game/playerPro/playerPro";
 import type { PlayerShotActivitySampleV1, PlayerShotPlaybackFrame } from "../game/playerPro/shotPlayback";
 import type { PlayerProWorldDisplayPresentation } from "../game/playerPro/socialPresentation";
+import { createLiveGolferGroundAuthority } from "../game/render/golferGroundAuthority";
+import type { NaturalGolferAtlas } from "../render/naturalGolferAtlas";
 import type { SeasonName } from "../game/seasons/types";
 import type { SeasonalVisualState } from "../game/presentation/seasonalVisualState";
 import type { CameraState, IsoCameraSnapshot } from "../game/render/camera";
@@ -651,6 +653,8 @@ export interface PixiStageProps {
   showMarkers?: boolean;
   golfersRef?: React.RefObject<GolferRenderData[]>;
   liveActive?: boolean;
+  livePresentationPaused?: boolean;
+  liveOperatingTier?: 1 | 2 | 4;
   onPickGolfer?: (id: number | null) => void;
   selectedGolferId?: number | null;
   followSelected?: boolean;
@@ -913,6 +917,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const holeMarkersSceneRef = useRef<HoleMarkersSceneSystem | null>(null);
   const mobilityEntitiesSceneRef = useRef<MobilityEntitiesSceneSystem | null>(null);
   const liveEntitiesSceneRef = useRef<LiveEntitiesSceneSystem | null>(null);
+  const naturalGolferAtlasRef = useRef<NaturalGolferAtlas<PIXI.Texture> | null>(null);
+  const naturalDiagnosticOutputRef = useRef<HTMLOutputElement | null>(null);
+  const naturalCandidate = import.meta.env.DEV && new URLSearchParams(window.location.search).get("naturalGolfers") === "1";
+  const naturalPresentationTimeRef = useRef(0);
+  const naturalVisibilityRef = useRef({ hidden: document.hidden, epoch: 0 });
   const overlaysDiagnosticsSceneRef = useRef<OverlaysDiagnosticsSceneSystem | null>(null);
   const terrainWaterSceneRef = useRef<TerrainWaterSceneSystem | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
@@ -1116,6 +1125,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.graphicsQuality,
     visualHeightfield,
   ]);
+  // Camera is deliberately absent: F and the ground authority must survive Q/E.
+  const naturalGroundRevisionRef = useRef(0);
+  const naturalGolferGround = useMemo(() => naturalCandidate ? createLiveGolferGroundAuthority({
+    course, effectiveTiles, field: visualHeightfield, componentsByCell: landscapeComponentByCell,
+    quality: props.graphicsQuality, surfaceRevision: `live-visual-ground:${++naturalGroundRevisionRef.current}`,
+  }) : null, [naturalCandidate, course, effectiveTiles, visualHeightfield, landscapeComponentByCell, props.graphicsQuality]);
 
   // ZK-679 first slice: scene systems consume one typed snapshot. Each
   // revision list mirrors only the inputs read by that system, so unrelated
@@ -1227,7 +1242,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       rotation,
       surfaceHeightAt,
     }),
-    liveEntities: [course, effectiveTiles, rotation, surfaceHeightAt],
+    liveEntities: [course, effectiveTiles, rotation, surfaceHeightAt, naturalCandidate, naturalGolferGround],
     naturalProps: [
       atlasRevision,
       course.buildings,
@@ -1348,6 +1363,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     selectedParcelId: props.selectedParcelId,
     worldSeed: props.worldSeed,
     surfaceHeightAt,
+    naturalGolfersCandidate: naturalCandidate,
+    naturalGolferGround,
     surfaceEditor: surfaceEditorSnapshot,
     revisions: renderRevisions,
   }), [
@@ -1389,6 +1406,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     renderRevisions,
     rotation,
     surfaceHeightAt,
+    naturalCandidate,
+    naturalGolferGround,
     surfaceEditorSnapshot,
   ]);
   // ---------------------------------------------------------------------
@@ -3912,7 +3931,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       terrainDecals: layers.terrainDecals,
       fx: layers.fx,
       screenOverlay: layers.screenOverlay,
-    });
+    }, { naturalAtlas: () => naturalGolferAtlasRef.current });
     const overlaysDiagnostics = deferredWorldScenes.createOverlaysDiagnosticsSceneSystem({
       terrainDecals: layers.terrainDecals,
       fx: layers.fx,
@@ -3975,6 +3994,36 @@ export function PixiStage(requestedProps: PixiStageProps) {
   }, [appReady]);
 
   useEffect(() => {
+    if (!appReady || !naturalCandidate) return;
+    const diagnostic = document.createElement("output");
+    diagnostic.hidden = true; diagnostic.setAttribute("aria-hidden", "true"); diagnostic.setAttribute("data-natural-golfer-diagnostics", "v1");
+    containerRef.current?.appendChild(diagnostic); naturalDiagnosticOutputRef.current = diagnostic;
+    let cancelled = false;
+    let owned: NaturalGolferAtlas<PIXI.Texture> | null = null;
+    // Explicit optional family import: no JSON or asset request before opt-in.
+    void import("../render/naturalGolferAtlas").then(module => {
+      if (cancelled) return;
+      owned = module.createDefaultNaturalGolferAtlas(); naturalGolferAtlasRef.current = owned;
+      void owned.load();
+    }).catch(error => console.warn("[PixiStage] Optional golfer candidate unavailable", error));
+    return () => {
+      cancelled = true;
+      // Stop every borrower before privately owned atlas textures/sources die.
+      liveEntitiesSceneRef.current?.releaseNaturalBorrowers();
+      owned?.dispose(); if (naturalGolferAtlasRef.current === owned) naturalGolferAtlasRef.current = null;
+      delete (window as unknown as { __ccNaturalGolfers?: unknown }).__ccNaturalGolfers;
+      diagnostic.remove(); if (naturalDiagnosticOutputRef.current === diagnostic) naturalDiagnosticOutputRef.current = null;
+    };
+  }, [appReady, naturalCandidate]);
+
+  useEffect(() => {
+    if (!naturalCandidate) return;
+    const visibility = () => { naturalVisibilityRef.current = { hidden: document.hidden, epoch: naturalVisibilityRef.current.epoch + 1 }; };
+    document.addEventListener("visibilitychange", visibility);
+    return () => { document.removeEventListener("visibilitychange", visibility); };
+  }, [naturalCandidate]);
+
+  useEffect(() => {
     if (!appReady) return;
     const renderedScenes = sceneSystemHostRef.current?.sync(renderSnapshot) ?? [];
     const layers = layersRef.current;
@@ -4017,6 +4066,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const tick = (ticker: PIXI.Ticker) => {
       const dtMs = ticker.deltaMS;
       const nowMs = performance.now();
+      if (naturalCandidate && !document.hidden) naturalPresentationTimeRef.current += Math.min(100, Math.max(0, dtMs));
       tickerOnFrameTime?.(dtMs);
 
       const overlaysDiagnostics = overlaysDiagnosticsSceneRef.current;
@@ -4145,6 +4195,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
       liveEntities?.tickEntities({
         nowMs,
         animationsEnabled: tickerAnimationsEnabled,
+        presentationTimeMs: naturalPresentationTimeRef.current,
+        presentationPaused: props.livePresentationPaused,
+        hidden: naturalVisibilityRef.current.hidden,
+        visibilityEpoch: naturalVisibilityRef.current.epoch,
+        operatingTier: props.liveOperatingTier,
         golfers: list,
         selectedGolferId: tickerSelectedGolferId,
         followSelected: tickerFollowSelected,
@@ -4160,6 +4215,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
           cullBounds: { left: cullL, right: cullR, top: cullT, bottom: cullB },
         }),
       });
+      if (naturalCandidate) {
+        (window as unknown as { __ccNaturalGolfers?: unknown }).__ccNaturalGolfers = liveEntities?.naturalDiagnostics() ?? null;
+        if (naturalDiagnosticOutputRef.current) naturalDiagnosticOutputRef.current.textContent = liveEntities?.naturalDiagnosticsText() ?? "null";
+      }
 
       overlaysDiagnostics?.finishFrame(nowMs, dtMs, () => {
         const terrainDiagnostics = terrainWaterSceneRef.current?.diagnostics();
@@ -4185,7 +4244,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     return () => {
       app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, draftGreen, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, terrainStrokePreview, clickSplineDraft, clickSplineHover, tickerColorVision, tickerGraphicsQuality, tickerReducedMotion, tickerSeasonalVisualState, tickerSculptRadius, tickerSelectedDecorationKind, tickerDecorationRotation, tickerDecorationSpan, tickerAnimationsEnabled, tickerAmbienceFx, tickerWaterAnimation, tickerTreeSway, props.flagColor, tickerSelectedGolferId, tickerFollowSelected, tickerShowGolfers, tickerOnFrameTime, playerShotPlaybackRef, tickerPlayerShotPreview, clampCenter, surfaceHeightAt]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, draftGreen, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, terrainStrokePreview, clickSplineDraft, clickSplineHover, tickerColorVision, tickerGraphicsQuality, tickerReducedMotion, tickerSeasonalVisualState, tickerSculptRadius, tickerSelectedDecorationKind, tickerDecorationRotation, tickerDecorationSpan, tickerAnimationsEnabled, tickerAmbienceFx, tickerWaterAnimation, tickerTreeSway, props.flagColor, tickerSelectedGolferId, tickerFollowSelected, tickerShowGolfers, tickerOnFrameTime, playerShotPlaybackRef, tickerPlayerShotPreview, clampCenter, surfaceHeightAt, naturalCandidate, props.livePresentationPaused, props.liveOperatingTier]);
 
   // Camera and editor input listeners are owned by ViewportInputController.
 

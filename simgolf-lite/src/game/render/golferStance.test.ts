@@ -5,7 +5,7 @@ import { ELEVATION_STEP_YARDS } from "../rules/obstacleCollision";
 import { ISO_ROTATIONS, isoToWorld, tileCenterIso, worldToIso } from "./iso";
 import { groundedGolferFrame } from "./golferGrounding";
 import { NATURAL_GOLFER_DIRECTIONS, parseNaturalGolferArt, resolveNaturalGolferArt } from "./naturalGolferArt";
-import { createGolferStanceBinding, GOLFER_STANCE_LIMITS, NATURAL_GOLFER_CONTACT_MODEL, sampleGolferStance } from "./golferStance";
+import { createGolferStanceBinding, GOLFER_STANCE_LIMITS, NATURAL_GOLFER_CONTACT_MODEL, naturalGolferWorldView, sampleGolferStance } from "./golferStance";
 import type { GolferStanceArrivalProof, GolferStanceBinding, GolferStanceFrameRequest, GolferStanceGroundAuthority, GolferStanceIdentity, GolferStancePlant, GolferStancePoint, GolferStanceRequest } from "./golferStance";
 
 const manifest = JSON.parse(readFileSync(new URL("../../../art/natural-golfer-v1/manifest.json", import.meta.url), "utf8"));
@@ -42,6 +42,16 @@ function authoredTip(degrees: number, anchor = { x: 24, y: 69 }, height = 1) {
 }
 
 describe("world contact stance candidate", () => {
+  it.each(Array.from({ length: 8 }, (_, i) => i * 45))("shares authored world basis %d with all four camera views", degrees => {
+    const binding = candidate(request(degrees));
+    for (const rotation of ISO_ROTATIONS) {
+      const result = naturalGolferWorldView(direction(degrees + 7), rotation)!;
+      expect(result.basisDegrees).toBe(degrees);
+      expect(result.direction).toBe(plant(binding, { rotation }).geometry.targetDirection);
+      expect(NATURAL_GOLFER_DIRECTIONS[(result.octant + 6) % 8]).toBe(result.direction);
+    }
+    expect(naturalGolferWorldView(null, 0)).toBeNull(); expect(naturalGolferWorldView({ x: 0, y: 0 }, 0)).toBeNull();
+  });
   it.each(["swing", "putt"] as const)("pins actual %s manifest contact rigs and resolves the validated metadata only", role => {
     const b = candidate(request(45, { identity: identity(45, { role }) }));
     for (const dir of NATURAL_GOLFER_DIRECTIONS) {
