@@ -6501,6 +6501,7 @@ export default function App() {
                 playerRound={controlledDisplayRound}
                 playerShotAim={playerShotAim}
                 playerShotPlaybackRef={playerPlayback.frameRef}
+                playerShotActivityRef={playerPlayback.activitySampleRef}
                 playerShotPreview={playerShotPreview}
                 openingMarker={openingMarker}
                 openingTargets={openingTargets}

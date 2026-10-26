@@ -10,6 +10,7 @@ import type { ArchitectureWarning } from "../architecture/architecture";
 import type { ArchitectureOverlayRender } from "../architecture/reviewTypes";
 import type { PaceAdvisorFinding } from "../live/paceHistory";
 import type { OpeningPlaybackFrame, OpeningTargetTile } from "../onboarding/openingDemo";
+import type { PlayerShotActivitySampleV1 } from "../playerPro/shotPlayback";
 
 /** Stable ownership boundaries for the Pixi scene-system migration. */
 export const RENDER_SYSTEMS = [
@@ -147,6 +148,8 @@ export interface RenderSnapshot {
   readonly atlasRevision: number;
   readonly playerRound?: PlayerPlayableRound | null;
   readonly playerShotAim?: PlayerProPoint | null;
+  /** Transient source ref for a later tick consumer; coarse snapshots never own its clock. */
+  readonly playerShotActivityRef?: { readonly current: PlayerShotActivitySampleV1 | null };
   readonly openingMarker?: OpeningPlaybackFrame | null;
   readonly openingTargets?: readonly OpeningTargetTile[];
   /** Player-visible inventory projection; never raw career or rival state. */

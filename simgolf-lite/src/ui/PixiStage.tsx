@@ -10,7 +10,7 @@ import type { ShotRoutePresentation } from "../game/presentation/shotRoutePresen
 import type { GolferRenderData } from "../game/live/types";
 import type { PlayerPlayableRound, PlayerProPoint } from "../game/models/playerProTypes";
 import type { PlayerShotPreview } from "../game/playerPro/playerPro";
-import type { PlayerShotPlaybackFrame } from "../game/playerPro/shotPlayback";
+import type { PlayerShotActivitySampleV1, PlayerShotPlaybackFrame } from "../game/playerPro/shotPlayback";
 import type { PlayerProWorldDisplayPresentation } from "../game/playerPro/socialPresentation";
 import type { SeasonName } from "../game/seasons/types";
 import type { SeasonalVisualState } from "../game/presentation/seasonalVisualState";
@@ -661,6 +661,7 @@ export interface PixiStageProps {
   playerRound?: PlayerPlayableRound | null;
   playerShotAim?: PlayerProPoint | null;
   playerShotPlaybackRef?: React.RefObject<PlayerShotPlaybackFrame | null>;
+  playerShotActivityRef?: React.RefObject<PlayerShotActivitySampleV1 | null>;
   playerShotPreview?: PlayerShotPreview | null;
   openingMarker?: RenderSnapshot["openingMarker"];
   openingTargets?: RenderSnapshot["openingTargets"];
@@ -1339,6 +1340,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     atlasRevision,
     playerRound: props.playerRound,
     playerShotAim: props.playerShotAim,
+    playerShotActivityRef: props.playerShotActivityRef,
     openingMarker: props.openingMarker,
     openingTargets: props.openingTargets,
     playerProWorldDisplay: props.playerProWorldDisplay,
@@ -1361,6 +1363,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.graphicsQuality,
     props.playerRound,
     props.playerShotAim,
+    props.playerShotActivityRef,
     props.openingMarker,
     props.openingTargets,
     props.playerProWorldDisplay,

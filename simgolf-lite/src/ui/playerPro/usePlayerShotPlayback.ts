@@ -2,16 +2,19 @@ import { useCallback, useEffect, useRef } from "react";
 import type { PlayerPlayableRound, PlayerShotTrace } from "../../game/models/playerProTypes";
 import {
   isPlayerShotPresentation,
+  playerShotActivityIsCurrent,
+  playerShotActivitySample,
+  type PlayerShotActivitySampleV1,
   type PlayerShotPlaybackFrame,
   type PlayerShotPresentationV1,
 } from "../../game/playerPro/shotPlayback";
 import { advanceShotPacingCursor, createShotPacingCursor, createShotPacingPlan, shotPacingEventProgress, shotPacingFrame } from "../../game/live/shotPacing";
-import { isValidRetainedShotMotionV1, type ShotMotionEventV1 } from "../../game/rules/shotMotion";
+import { isValidRetainedShotMotionV1, type RetainedShotMotionV1, type ShotMotionEventV1 } from "../../game/rules/shotMotion";
 
 export type PlayerPlaybackEvent = { kind: "contact" } | ShotMotionEventV1;
 
 /** Presentation clock only. Completion is claimed once for this exact shot. */
-export function createPlayerShotPlaybackDriver(shot: PlayerShotTrace, saved?: PlayerShotPresentationV1, scopeId = "player", actorId = "player") {
+export function createPlayerShotPlaybackDriver(shot: PlayerShotTrace, saved?: PlayerShotPresentationV1, scopeId = "player", actorId = "player", handedness: "right" | "left" | null = null) {
   const motion = shot.sharedOutcome?.motion;
   const plan = motion && createShotPacingPlan({ scopeId, actorId, motion, distanceYards: shot.carryYards + (shot.rollYards ?? 0) });
   if (!plan) throw new Error("Player playback requires validated retained shot motion.");
@@ -33,6 +36,10 @@ export function createPlayerShotPlaybackDriver(shot: PlayerShotTrace, saved?: Pl
     cursor: presentation,
     frame,
     plan,
+    sample: (): PlayerShotActivitySampleV1 | null => {
+      const current = shotPacingFrame(plan, cursor);
+      return current && shot.id === plan.identity.shotId ? playerShotActivitySample(plan, cursor, current, motion!, scopeId, actorId, handedness) : null;
+    },
     advance(elapsedMs: number, paused = false, skip = false, hidden = false) {
       cursor = advanceShotPacingCursor(plan, cursor, elapsedMs, { paused, skip, hidden })!;
       const next = frame();
@@ -61,9 +68,16 @@ interface PlaybackOptions {
 /** A ref cursor keeps React/session updates at coarse checkpoints, not frames. */
 export function usePlayerShotPlayback(options: PlaybackOptions) {
   const frameRef = useRef<PlayerShotPlaybackFrame | null>(null);
+  const activitySampleRef = useRef<PlayerShotActivitySampleV1 | null>(null);
+  const activitySourceRef = useRef<{ shot: PlayerShotTrace; motion: RetainedShotMotionV1 } | null>(null);
   const optionsRef = useRef(options);
   const skipRef = useRef<(() => void) | null>(null);
-  useEffect(() => { optionsRef.current = options; });
+  useEffect(() => {
+    optionsRef.current = options;
+    const pending = options.round?.phase === "flight" ? options.round.pendingShot : null;
+    if (!playerShotActivityIsCurrent(activitySampleRef.current, options.round, options.actorId)
+      || activitySourceRef.current?.shot !== pending || activitySourceRef.current?.motion !== pending?.sharedOutcome?.motion) activitySampleRef.current = null;
+  });
   const shot = options.round?.phase === "flight" ? options.round.pendingShot : null;
   const retained = isValidRetainedShotMotionV1(shot?.sharedOutcome?.motion);
   const key = retained && options.round && shot ? `${options.round.id}:${options.actorId ?? "player"}:${shot.id}` : null;
@@ -73,11 +87,16 @@ export function usePlayerShotPlayback(options: PlaybackOptions) {
     const pending = round?.phase === "flight" ? round.pendingShot : null;
     if (!key || !round || !pending || !isValidRetainedShotMotionV1(pending.sharedOutcome?.motion)) {
       frameRef.current = null;
+      activitySampleRef.current = null;
+      activitySourceRef.current = null;
       skipRef.current = null;
       return;
     }
-    const driver = createPlayerShotPlaybackDriver(pending, round.shotPresentation, round.id, initial.actorId);
+    const driver = createPlayerShotPlaybackDriver(pending, round.shotPresentation, round.id, initial.actorId, round.handedness ?? null);
+    const ownedMotion = pending.sharedOutcome!.motion;
+    activitySourceRef.current = { shot: pending, motion: ownedMotion! };
     frameRef.current = driver.frame();
+    activitySampleRef.current = driver.sample();
     let lastTime: number | null = null;
     let request = 0;
     let checkpoint = Math.floor(driver.cursor().progress * 10);
@@ -88,6 +107,9 @@ export function usePlayerShotPlayback(options: PlaybackOptions) {
       const paused = current.paused;
       const result = driver.advance(elapsed, paused, skip || current.immediate && !paused, document.hidden);
       frameRef.current = result.frame;
+      const sample = driver.sample();
+      activitySampleRef.current = current.round?.pendingShot === pending && current.round.pendingShot.sharedOutcome?.motion === ownedMotion
+        && playerShotActivityIsCurrent(sample, current.round, current.actorId) ? sample : null;
       const bucket = Math.floor(result.frame.progress * 10);
       if (bucket !== checkpoint || result.events.length || result.complete) {
         checkpoint = bucket;
@@ -113,6 +135,8 @@ export function usePlayerShotPlayback(options: PlaybackOptions) {
     window.addEventListener("pagehide", checkpointVisibility);
     request = requestAnimationFrame(tick);
     return () => {
+      activitySampleRef.current = null;
+      activitySourceRef.current = null;
       cancelAnimationFrame(request);
       document.removeEventListener("visibilitychange", checkpointVisibility);
       window.removeEventListener("pagehide", checkpointVisibility);
@@ -121,5 +145,5 @@ export function usePlayerShotPlayback(options: PlaybackOptions) {
     };
   }, [key, shot]);
   const skip = useCallback(() => skipRef.current?.(), []);
-  return { frameRef, skip };
+  return { frameRef, activitySampleRef, skip };
 }
