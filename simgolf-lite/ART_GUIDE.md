@@ -90,6 +90,16 @@ Supporting colors: trunk brown `#5d4330`, canopy greens `#3f8a3f`→`#77c46a`
 - Regenerate placeholders: `npm run gen:sprites` (golfer generator is
   `scripts/gen-golfer-sprites.mjs`), then `npm run build:atlas`.
 
+### Relaxed golfer staging contract
+
+The [relaxed golfer presentation proposal](docs/relaxed-golfer-presentation.md)
+and [versioned activity manifest](art/golfer-lookdev/activity-contract.json)
+preserve the legacy 48×72 canvas, feet y=69, display width 26, five rows plus
+mirrors, swing 8f/contact 5, and putt 4f/contact 2. Optional clips and explicit
+equipment/handedness variants remain un-authored; legacy mirroring cannot
+certify handedness. The linked vector/canvas storyboard is non-shipping lookdev.
+Technical contract validation is independent of pending human art acceptance.
+
 ## Asset pipeline
 
 1. Author/generate sprites as individual PNGs in `src/assets/sprites/` or,

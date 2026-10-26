@@ -1,0 +1,143 @@
+{
+  "version": 2,
+  "id": "relaxed-golfer-activity",
+  "stage": "staging-proposal",
+  "productionArtApproved": false,
+  "compatibility": {
+    "legacyVersion": 1,
+    "framePx": { "width": 48, "height": 72 },
+    "feetPx": { "x": 24, "y": 69 },
+    "displayWidthAtZoom1": 26,
+    "layers": ["base", "tint"],
+    "tintChannels": ["shirt", "hat"],
+    "shadow": "separate-grounded-child",
+    "authoredDirections": ["s", "sw", "w", "nw", "n"],
+    "mirrors": [
+      { "target": "se", "source": "sw" },
+      { "target": "e", "source": "w" },
+      { "target": "ne", "source": "nw" }
+    ],
+    "legacyStance": "right-authored-mirror-unverified"
+  },
+  "artVariants": {
+    "handedness": ["right", "left"],
+    "equipmentClasses": ["none", "driver", "iron", "wedge", "putter"],
+    "unknownInput": null,
+    "optionalDirectionOrder": ["e", "se", "s", "sw", "w", "nw", "n", "ne"],
+    "optionalMirroring": false,
+    "missingVariant": "legacy-unverified-fallback"
+  },
+  "clips": [
+    { "id": "walk", "tier": "legacy", "assetStatus": "existing-placeholder", "frames": 6, "rows": 5, "contactFrame": null, "directionKey": "facing", "loop": "distance", "activities": ["walk", "walk-on"], "fallback": null },
+    { "id": "idle", "tier": "legacy", "assetStatus": "existing-placeholder", "frames": 2, "rows": 5, "contactFrame": null, "directionKey": "facing", "loop": "bounded-idle", "activities": ["settle", "address", "watch"], "fallback": null },
+    { "id": "swing", "tier": "legacy", "assetStatus": "existing-placeholder", "frames": 8, "rows": 5, "contactFrame": 5, "directionKey": "target", "loop": "once", "activities": ["address", "backswing", "contact", "follow", "watch"], "fallback": null },
+    { "id": "putt", "tier": "legacy", "assetStatus": "existing-placeholder", "frames": 4, "rows": 5, "contactFrame": 2, "directionKey": "target", "loop": "once", "activities": ["address", "backswing", "contact", "follow", "watch"], "fallback": null },
+    { "id": "cheer", "tier": "legacy", "assetStatus": "existing-placeholder", "frames": 4, "rows": 1, "contactFrame": null, "directionKey": "south-only", "loop": "once", "activities": ["reaction"], "fallback": null },
+    { "id": "mad", "tier": "legacy", "assetStatus": "existing-placeholder", "frames": 4, "rows": 1, "contactFrame": null, "directionKey": "south-only", "loop": "once", "activities": ["reaction"], "fallback": null },
+    { "id": "settle", "tier": "optional", "assetStatus": "not-authored", "frames": 4, "rows": 8, "contactFrame": null, "directionKey": "facing", "loop": "once", "activities": ["settle"], "fallback": "idle" },
+    { "id": "address", "tier": "optional", "assetStatus": "not-authored", "frames": 2, "rows": 8, "contactFrame": null, "directionKey": "target", "loop": "bounded-idle", "activities": ["address"], "fallback": "idle" },
+    { "id": "watch", "tier": "optional", "assetStatus": "not-authored", "frames": 2, "rows": 8, "contactFrame": null, "directionKey": "target", "loop": "bounded-idle", "activities": ["watch"], "fallback": "idle" },
+    { "id": "react-positive", "tier": "optional", "assetStatus": "not-authored", "frames": 4, "rows": 8, "contactFrame": null, "directionKey": "facing", "loop": "once", "activities": ["reaction"], "fallback": "cheer" },
+    { "id": "react-negative", "tier": "optional", "assetStatus": "not-authored", "frames": 4, "rows": 8, "contactFrame": null, "directionKey": "facing", "loop": "once", "activities": ["reaction"], "fallback": "mad" }
+  ],
+  "activityGraph": {
+    "start": "walk",
+    "nodes": ["walk", "settle", "address", "backswing", "contact", "follow", "watch", "reaction", "walk-on"],
+    "edges": [
+      ["walk", "settle"], ["settle", "address"], ["address", "backswing"],
+      ["backswing", "contact"], ["contact", "follow"], ["follow", "watch"],
+      ["watch", "reaction"], ["watch", "walk-on"], ["reaction", "walk-on"], ["walk-on", "walk"]
+    ],
+    "interruption": "discard-to-current-authority",
+    "scheduling": "observed-authority-only"
+  },
+  "pacing": {
+    "referenceRevision": "c08a5ff",
+    "referencePath": "simgolf-lite/docs/readable-shot-pacing.md",
+    "integrationState": "reference-only-on-base-5729faf",
+    "clock": "shared-shot-pacing-v1",
+    "additionalGameplayMs": 0,
+    "additionalPresentationDwellMs": 0,
+    "maxFrameDeltaMs": 100,
+    "swing": {
+      "minMs": 6000, "maxMs": 10000, "distanceCapYards": 400, "msPerYard": 10,
+      "addressMs": 1000, "settleWithinAddressMs": 250, "backswingWithinAddressMs": 450,
+      "contactMs": 200, "restMs": 900,
+      "restAllocationMs": { "watch": 300, "reaction": 450, "release": 150 }
+    },
+    "putt": {
+      "minMs": 2400, "maxMs": 4200, "distanceCapYards": 40, "msPerYard": 45,
+      "addressMs": 500, "settleWithinAddressMs": 150, "backswingWithinAddressMs": 150,
+      "contactMs": 150, "restMs": 650,
+      "restAllocationMs": { "watch": 200, "reaction": 300, "release": 150 }
+    },
+    "followWithinMovementMs": { "swing": 300, "putt": 150 },
+    "contactEvent": "retained-launch-at-contact-window-end",
+    "reactionPlayback": "static-final-pose-no-compressed-cycle",
+    "reactionProposal": {
+      "minMs": 1200, "maxMs": 2400, "active": false,
+      "decision": "review-required-exceeds-shared-rest",
+      "extraDwellMs": 0,
+      "candidatePolicies": ["reallocate-within-existing-total", "optional-outcome-dwell"],
+      "candidateMaxPresentationDwellMs": 2400,
+      "candidateGameplayMs": 0,
+      "candidateCompletionOwner": "existing-shared-caller-once"
+    }
+  },
+  "policies": {
+    "foreground": "explicit-follow-or-controlled-round-shared-clock",
+    "overview": "current-authority-or-matching-shared-frame",
+    "overviewMaxVisualLagMs": 0,
+    "overviewIndependentClocks": 0,
+    "overviewMayHoldSimulation": false,
+    "overviewFallback": "stable-current-authority-pose",
+    "catchUp": "discard-no-run-no-route-no-replay",
+    "hidden": "hold-discard-wall-time",
+    "paused": "hold-visible-explicit-skip-only",
+    "reducedMotion": "stable-pose-honor-pause",
+    "ownershipLoss": "discard-before-publish",
+    "rootMotion": "authority-only",
+    "walkStride": "authoritative-distance-only",
+    "walkStridesPerTile": 1.35,
+    "simulationWrites": false,
+    "rngReads": false,
+    "outcomeInference": false,
+    "economyDebits": false,
+    "completionOwner": "existing-shared-caller-once"
+  },
+  "limits": {
+    "maxActivityActors": 128,
+    "maxActivitiesPerActor": 1,
+    "maxForegroundShots": 1,
+    "maxPendingShots": 0,
+    "maxRetainedShotsPerActor": 1,
+    "maxActivityRetentionMs": 10000,
+    "holdersPerActor": 1,
+    "contactShadowsPerHolder": 1,
+    "newWorldEffectsPerTick": 0,
+    "overflow": "current-authority-legacy-pose-no-activity-record"
+  },
+  "ownership": {
+    "keyEncoding": "json-tuple",
+    "tupleFields": ["scopeId", "actorId", "shotId", "holeId", "shotNumber", "seed", "club", "style", "modelVersion"],
+    "scopeMustInclude": ["world-or-round", "participant-or-actor", "day-or-round-epoch", "reconcile-epoch"],
+    "compare": "full-owner-before-frame-and-completion",
+    "nonShotIdentity": null
+  },
+  "io": {
+    "version": 2,
+    "input": ["version", "mode", "owner", "currentOwner", "authority", "clock", "visibility"],
+    "output": ["version", "ownerKey", "activity", "clipId", "frame", "root", "feetPx", "renderedEquipmentClass", "renderedHandedness", "source", "degraded", "completionClaim"],
+    "unknownFacts": null,
+    "ballOutput": "none-use-retained-motion-sampler",
+    "invalidInput": "reject-no-publish",
+    "publication": "input-and-output-validated-together"
+  },
+  "review": {
+    "technicalAcceptance": "independent-of-art-approval",
+    "humanArtAcceptance": "pending",
+    "prototype": "index.html",
+    "prototypeMeaning": "non-shipping-synthetic-storyboard-no-simulation-claims",
+    "rollback": "remove-staging-files-and-art-guide-link"
+  }
+}
