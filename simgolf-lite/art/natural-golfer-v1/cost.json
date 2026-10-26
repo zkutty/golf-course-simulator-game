@@ -1,0 +1,42 @@
+{
+  "manifestBytes": 110629,
+  "runtimePNGPlusManifestBytes": 442249,
+  "allPNGPlusManifestBytes": 566121,
+  "baseline": {
+    "compressedPNGBytes": 501591,
+    "decodedRGBABytes": 12700960
+  },
+  "runtimeTextures": {
+    "compressedPNGBytes": 331620,
+    "decodedRGBABytes": 2591872,
+    "files": [
+      {
+        "file": "atlas.png",
+        "bytes": 331194,
+        "width": 1024,
+        "height": 632
+      },
+      {
+        "file": "shadow.png",
+        "bytes": 426,
+        "width": 40,
+        "height": 20
+      }
+    ]
+  },
+  "reviewOnly": {
+    "compressedPNGBytes": 123872,
+    "decodedRGBABytes": 3283200
+  },
+  "allPNGs": {
+    "compressedPNGBytes": 455492,
+    "decodedRGBABytes": 5875072
+  },
+  "withinBaseline": {
+    "runtime": true,
+    "includingReview": true
+  },
+  "frames": 224,
+  "layerFrames": 448,
+  "uniqueLayerTextures": 272
+}

@@ -107,6 +107,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.8",
     "@eslint/js": "^9.39.1",
+    "@napi-rs/canvas": "0.1.100",
     "@playwright/test": "^1.61.1",
     "@sentry/vite-plugin": "^5.4.0",
     "@types/node": "^24.10.1",

@@ -1,0 +1,15 @@
+{
+  "approvedAnatomyCommit": "aa5933d8e13d61963dc22fd640d1c7d6a52134b3",
+  "approvedModel": "art/golfer-lookdev/prototype.mjs",
+  "approvedModelSha256": "0dab6c009409cfc7e4eca0941edfd58e98570b939a1faf4b1bac03e169ae1461",
+  "paletteConceptCommit": "dafbed52120603c9a2876ba01bf5cc3a827d58f0",
+  "modelSha256": "bd5bd4c8cab2def483009b766a91d14a1c076422f10589f5cacf102dfaa2ee36",
+  "generatorSha256": "406ffbac49073c0c4d3e0811f520498383ba851fba59dbebd56506c3acf15be9",
+  "sourceType": "original code-native procedural geometry; no provider or external image assets",
+  "rasterizer": "@napi-rs/canvas@0.1.100",
+  "pngEncoder": "pngjs@7.0.0; RGBA8; zlib level9/strategy0; adaptive PNG filter",
+  "reproducibility": "PNG bytes deterministic for pinned rasterizer/platform; review text can vary across font environments",
+  "licensing": "Original CourseCraft authoring code; rasterizer MIT; no third-party character artwork",
+  "reviewer": null,
+  "approval": "pending PNG/alpha/anchor/occlusion/normal-scale human review"
+}
