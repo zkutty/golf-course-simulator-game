@@ -62,16 +62,65 @@ async function savedPendingMotion(page: Page, shotId: string): Promise<RetainedS
   }, shotId);
 }
 
-async function captureAirborne(page: Page, info: TestInfo, progress: number, index: number, phase: "airborne" | "rollout" = "airborne") {
-  await page.waitForFunction(({ target, phase }) => {
+type BackgroundResult<T> = { ok: true; value: T } | { ok: false; error: unknown };
+function settle<T>(pending: Promise<T>): Promise<BackgroundResult<T>> {
+  return pending.then((value) => ({ ok: true, value }), (error: unknown) => ({ ok: false, error }));
+}
+function resolved<T>(result: BackgroundResult<T>): T {
+  if (!result.ok) throw result.error;
+  return result.value;
+}
+function observe<T extends { dispose(): Promise<void> }>(pending: Promise<T>) {
+  const ready = settle(pending);
+  let cleanup: Promise<BackgroundResult<void>> | undefined;
+  return {
+    ready,
+    dispose: () => cleanup ??= settle(ready.then((result) => result.ok ? result.value.dispose() : undefined)),
+  };
+}
+function observePlayerPhase(page: Page, progress: number, phase: "airborne" | "rollout" = "airborne") {
+  return observe(page.waitForFunction(({ target, phase }) => {
     const frame = (window as unknown as { __ccPlayerShotPlayback?: PlayerShotRenderDiagnostics }).__ccPlayerShotPlayback;
     return frame && frame.phase === phase && frame.motionProgress >= target;
-  }, { target: progress, phase });
-  await page.getByRole("button", { name: "Open pause menu" }).click();
-  await expect(page.getByTestId("pause-overlay")).toBeVisible();
+  }, { target: progress, phase }));
+}
+async function captureAirborne(page: Page, info: TestInfo, progress: number, index: number, phase: "airborne" | "rollout" = "airborne",
+  ready = observePlayerPhase(page, progress, phase), verifySave?: () => Promise<void>) {
+  let freezeDeadline = 0;
+  try {
+    resolved(await ready.ready);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("pause-overlay")).toBeVisible();
+    freezeDeadline = performance.now() + 5000;
+  } finally {
+    resolved(await ready.dispose());
+  }
+  const remainingBudget = () => {
+    const remaining = freezeDeadline - performance.now();
+    if (remaining <= 0) throw new Error("Paused presentation readiness/freeze exceeded its original 5000ms budget");
+    return remaining;
+  };
+  // The public paused driver and the renderer's cached frame must agree before
+  // choosing a frozen target. A visible menu alone does not synchronize tickers.
+  const pausedReady = observe(page.waitForFunction(() => {
+    const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
+    const round = state.playerPro?.activeRound;
+    const driver = round?.presentation;
+    const frame = (window as unknown as { __ccPlayerShotPlayback?: PlayerShotRenderDiagnostics }).__ccPlayerShotPlayback;
+    return Boolean(state.screenBase === "in-game" && state.paused === true && state.modal === null
+      && round?.phase === "flight" && driver && frame && driver.shotId
+      && round.pendingShot?.id === driver.shotId && driver.shotId === frame.shotId
+      && Number.isFinite(driver.progress) && driver.progress === frame.progress);
+  }, undefined, { timeout: remainingBudget() }));
+  try {
+    resolved(await pausedReady.ready);
+  } finally {
+    resolved(await pausedReady.dispose());
+  }
   const frozen = await playback(page);
   if (!frozen) throw new Error("Paused committed shot has no render diagnostics");
-  await expect.poll(async () => (await playback(page))?.progress).toBe(frozen.progress);
+  await verifySave?.();
+  await expect.poll(async () => (await playback(page))?.progress, { timeout: remainingBudget() }).toBe(frozen.progress);
   await expect.poll(() => savedPendingMotion(page, frozen.shotId)).not.toBeNull();
   const motion = (await savedPendingMotion(page, frozen.shotId))!;
   const state = await textState(page);
@@ -199,14 +248,21 @@ test("shot styles commit actual UI input and retained motion owns visible airbor
   await expect(page.getByTestId("player-shot-rules-preview")).toHaveCount(0);
   await expect(page.getByTestId("player-shot-auto-putt-preview")).toHaveCount(0);
   const before = await roundState(page);
-  await page.getByTestId("commit-player-shot").click();
-  // Save the actual committed shot before pausing: global quicksave is
-  // deliberately ignored while a menu is open or a control has keyboard focus.
-  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
-  await page.keyboard.press("Control+KeyS");
-  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+  const firstPhase = observePlayerPhase(page, .12);
   const captures = [];
-  for (const [index, progress] of [.12, .32, .54].entries()) captures.push(await captureAirborne(page, info, progress, index));
+  try {
+    await page.getByTestId("commit-player-shot").click();
+    // Save the actual committed shot before pausing: global quicksave is
+    // deliberately ignored while a menu is open or a control has keyboard focus.
+    await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+    await page.keyboard.press("Control+KeyS");
+    const verifyFirstSave = () => expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+    for (const [index, progress] of [.12, .32, .54].entries()) captures.push(await captureAirborne(page, info, progress, index,
+      "airborne", index === 0 ? firstPhase : undefined, index === 0 ? verifyFirstSave : undefined));
+  } finally {
+    // Also owns a prearmed wait if commit/save fails before capture consumes it.
+    void firstPhase.dispose();
+  }
   expect(new Set(captures.map((capture) => capture.imageHash)).size).toBe(3);
   expect(new Set(captures.map((capture) => JSON.stringify(capture.frozen.point))).size).toBe(3);
   const first = await waitForCommittedStyle(page, "straight_run", before.strokes);
@@ -308,6 +364,11 @@ test("selected live golfer follows its retained current segment without revealin
   await page.goto("/?m47Fixture=1");
   await expect(page.getByTestId("speed-1x")).toBeVisible();
   await page.getByTestId("speed-1x").click();
+  // Clock shortcuts ignore controls. Establish focus before observing a flight.
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await expect.poll(() => page.evaluate(() => document.activeElement?.matches(
+    "input, textarea, select, button, a[href], [role='button'], [contenteditable='true']",
+  ) ?? false)).toBe(false);
   let actor: { id: number; ballMotion: { active: boolean } } | undefined;
   for (let step = 0; step < 100; step++) {
     await page.evaluate(() => window.__coursecraftTest!.advanceLiveClock(200, "1x"));
@@ -315,10 +376,14 @@ test("selected live golfer follows its retained current segment without revealin
     if (actor) break;
   }
   expect(actor, "an actual modern live flight is required").toBeDefined();
-  await page.getByTestId("speed-paused").click();
+  await page.keyboard.press("Space");
+  const pausedState = await textState(page);
+  expect(pausedState.simulation.speed).toBe("paused");
+  const current = pausedState.golfers.find((golfer: { id: number }) => golfer.id === actor!.id);
+  expect(current?.ballMotion?.active).toBe(true);
+  expect(current?.ballMotion?.identity).toBeTruthy();
   await page.getByRole("button", { name: "Open live overview" }).click();
   const overview = page.getByTestId("live-overview");
-  const current = (await textState(page)).golfers.find((golfer: { id: number }) => golfer.id === actor!.id);
   // The overview exposes actual golfers in the same visible row order.
   const index = (await textState(page)).golfers.findIndex((golfer: { id: number }) => golfer.id === actor!.id);
   await overview.locator("button:has(b)").nth(index).click();
@@ -355,12 +420,17 @@ test("midflight autosave reload resumes the same retained shot without rescoring
   await chooseStyle(page, "7 Iron", "straight_run");
   const before = await roundState(page);
   await page.getByTestId("commit-player-shot").click();
-  await page.waitForFunction(() => {
+  const initialFlight = observe(page.waitForFunction(() => {
     const frame = (window as unknown as { __ccPlayerShotPlayback?: PlayerShotRenderDiagnostics }).__ccPlayerShotPlayback;
     return frame?.phase === "airborne" && frame.motionProgress > .25;
-  });
-  await page.getByRole("button", { name: "Open pause menu" }).click();
-  await expect(page.getByTestId("pause-overlay")).toBeVisible();
+  }));
+  try {
+    resolved(await initialFlight.ready);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("pause-overlay")).toBeVisible();
+  } finally {
+    resolved(await initialFlight.dispose());
+  }
   const paused = await playback(page);
   if (!paused) throw new Error("Actual paused shot diagnostics are required");
   const readCheckpoint = () => page.evaluate(async (shotId) => {
@@ -383,12 +453,29 @@ test("midflight autosave reload resumes the same retained shot without rescoring
   const motion = saved.round.pendingShot.sharedOutcome.motion as RetainedShotMotionV1;
   await page.reload();
   await page.getByRole("button", { name: "Load Game", exact: true }).click();
-  await page.getByTestId(`save-slot-${saved.id}`).getByRole("button", { name: "Load", exact: true }).click();
-  await expect(page.getByTestId("player-shot-hud")).toBeVisible();
-  await expect.poll(async () => (await playback(page))?.shotId).toBe(paused.shotId);
+  const resumedIdentity = observe(page.waitForFunction((shotId) => {
+    const frame = (window as unknown as { __ccPlayerShotPlayback?: PlayerShotRenderDiagnostics }).__ccPlayerShotPlayback;
+    if (frame?.shotId !== shotId) return false;
+    const flow = window.__coursecraftTest?.state();
+    return flow?.screenBase === "in-game" && flow.modal === null && !flow.paused;
+  }, paused.shotId));
+  try {
+    await page.getByTestId(`save-slot-${saved.id}`).getByRole("button", { name: "Load", exact: true }).click();
+    resolved(await resumedIdentity.ready);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("pause-overlay")).toBeVisible();
+  } finally {
+    // A failed native Load still releases any handle that resolves before teardown.
+    void resumedIdentity.dispose();
+  }
   const resumed = await playback(page);
+  if (!resumed) throw new Error("Actual paused resumed shot diagnostics are required");
+  expect(resumed.shotId).toBe(paused.shotId);
   const resumedRound = await roundState(page);
-  expect(resumed!.progress).toBeGreaterThanOrEqual(saved.round.shotPresentation.progress);
+  expect(resumed.progress).toBeGreaterThanOrEqual(saved.round.shotPresentation.progress);
+  await expect(page.getByTestId("player-shot-hud")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("pause-overlay")).toHaveCount(0);
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.keyboard.press("Control+KeyS");
   await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
