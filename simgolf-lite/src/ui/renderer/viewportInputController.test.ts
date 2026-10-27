@@ -339,6 +339,40 @@ describe("ViewportInputController", () => {
 
 
 describe("committed rotation projection authority", () => {
+  for (const animationsEnabled of [false, true]) {
+    it(`publishes the completed rotation while the camera is stationary (${animationsEnabled ? "animated" : "instant"})`, () => {
+      const { config, controller, advance } = harness();
+      controller.update({ ...config, animationsEnabled });
+      controller.initializeDefault();
+      const camera = controller.snapshot().camera;
+      const viewChange = vi.mocked(config.onViewChange!);
+      viewChange.mockClear();
+      viewChange.mockImplementation((view) => {
+        expect(view.rotation).toBe(controller.snapshot().rotation.committed);
+        expect(view.center).toEqual(camera.center);
+        expect(controller.worldPointToScreen(camera.center.x, camera.center.y)).toEqual({ x: 400, y: 300 });
+        expect(controller.screenToTile(400, 300)).toEqual(camera.center);
+      });
+
+      window.dispatchEvent(keyEvent("e", "KeyE"));
+      if (animationsEnabled) {
+        expect(viewChange).not.toHaveBeenCalled();
+        advance(125);
+        expect(viewChange).toHaveBeenLastCalledWith(expect.objectContaining({ rotation: 0 }));
+        viewChange.mockClear();
+        // Completion falls inside the 250ms ambient-report interval.
+        advance(125);
+      }
+      expect(controller.snapshot().rotation).toMatchObject({ committed: 90, tweening: false });
+      expect(viewChange).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ rotation: 90 }));
+      const reports = controller.snapshot().counters.viewReports;
+      advance(250);
+      expect(controller.snapshot().counters.viewReports).toBe(reports);
+      expect(controller.snapshot().camera).toEqual(camera);
+      controller.destroy();
+    });
+  }
+
   for (const animationsEnabled of [false, true]) for (const direction of [-1, 1] as const) {
     it(`keeps camera, picking and culling aligned for all bearings (${animationsEnabled ? "animated" : "instant"}, ${direction})`, () => {
       const { config, controller, world, app, overlay, terrain, advance } = harness();
