@@ -2993,12 +2993,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
   // a shared visual heightfield, and world-anchored repeating materials.
   useEffect(() => {
     if (!appReady) return;
-    const rebuildStartedAt = performance.now();
     const rendererLayers = layersRef.current;
     const terrainScene = terrainWaterSceneRef.current;
     const layer = rendererLayers?.smoothSurfaces;
     if (!layer || !rendererLayers || !terrainScene) return;
     terrainScene.setRenderer("connected", () => {
+    const rebuildStartedAt = performance.now();
     layer.removeChildren().forEach(destroySceneSubtree);
     terrainScene.surfaceWaterSprites = [];
     const quality = props.graphicsQuality;
