@@ -118,7 +118,8 @@ export function createRoutingLabelOverlay(snapshot: RenderSnapshot, project: (p:
   }
   const layout = () => {
     if (!root || !canvas()) return;
-    const transform = container.worldTransform;
+    // onRender runs before Pixi refreshes cached world transforms.
+    const transform = container.getGlobalTransform();
     const signature = [transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty].join(":");
     if (signature === lastLayout && !dirty) return;
     lastLayout = signature;
@@ -127,14 +128,14 @@ export function createRoutingLabelOverlay(snapshot: RenderSnapshot, project: (p:
     const panels = Array.from(document.querySelectorAll<HTMLElement>(".cc-architecture-review, .cc-design-dock, .cc-workspace-nav, .cc-live-controls, .cc-news")).map(panel => panel.getBoundingClientRect()).filter(rect => rect.width && rect.height);
     const scale = Math.max(0.001, Math.hypot(transform.a, transform.b));
     draw(scale);
-    const screen = (p: Point) => { const global = container.toGlobal(currentProject(p)); return { x: global.x + bounds.x, y: global.y + bounds.y }; };
+    const screen = (p: Point) => { const global = transform.apply(currentProject(p)); return { x: global.x + bounds.x, y: global.y + bounds.y }; };
     for (const control of controls) control.button.hidden = false;
     const requests = controls.map(control => {
       const rect = control.button.getBoundingClientRect();
       return { id: `${control.route.holeId}:${control.role}`, center: screen(control.point), width: rect.width, height: rect.height };
     });
     const legal = (p: Point) => {
-      const local = container.toLocal({ x: p.x - bounds.x, y: p.y - bounds.y });
+      const local = transform.applyInverse({ x: p.x - bounds.x, y: p.y - bounds.y });
       const world = isoToWorld(local.x, local.y, snapshot.rotation);
       const x = Math.floor(world.x), y = Math.floor(world.y);
       return x >= 0 && y >= 0 && x < currentSnapshot.course.width && y < currentSnapshot.course.height && !["water", "wetland", "sand", "waste_area"].includes(currentSnapshot.course.tiles[y * currentSnapshot.course.width + x]);
@@ -149,8 +150,8 @@ export function createRoutingLabelOverlay(snapshot: RenderSnapshot, project: (p:
       control.button.hidden = offscreen || !placement.fits;
       control.button.dataset.fits = String(placement.fits);
       if (placement.fits && Math.hypot(placement.placed.x - placement.center.x, placement.placed.y - placement.center.y) > 2) {
-        const from = container.toLocal({ x: placement.center.x - bounds.x, y: placement.center.y - bounds.y });
-        const to = container.toLocal({ x: placement.placed.x - bounds.x, y: placement.placed.y - bounds.y });
+        const from = transform.applyInverse({ x: placement.center.x - bounds.x, y: placement.center.y - bounds.y });
+        const to = transform.applyInverse({ x: placement.placed.x - bounds.x, y: placement.placed.y - bounds.y });
         const g = graphics.get(control.route.holeId)!;
         g.moveTo(from.x, from.y); g.lineTo(to.x, to.y); g.stroke({ width: 1 / scale, color: 0x182f29, alpha: 0.8 });
       }

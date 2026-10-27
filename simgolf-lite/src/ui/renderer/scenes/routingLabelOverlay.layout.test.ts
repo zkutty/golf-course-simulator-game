@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as PIXI from "pixi.js";
 import { createRoutingLabelOverlay } from "./routingLabelOverlay";
-import { buildArchitectureRouting } from "../../../game/architecture/routingLabels";
+import { buildArchitectureRouting, placeRoutingLabels } from "../../../game/architecture/routingLabels";
 import { routingLabelFixture } from "../../../game/architecture/routingLabelFixtures";
-import { tileCenterIso } from "../../../game/render/iso";
+import { isoToWorld, tileCenterIso } from "../../../game/render/iso";
 import type { RenderSnapshot } from "../../../game/render/renderSnapshot";
 
-function harness() {
+function harness(rotation: 0 | 90 | 180 | 270 = 0) {
   let layoutDirty = false;
   let forcedLabelLayouts = 0;
   let measuredLabels = 0;
@@ -53,7 +53,7 @@ function harness() {
   const select = vi.fn();
   const snapshot: RenderSnapshot = {
     course, holes: course.holes, obstacles: course.obstacles, effectiveTiles: course.tiles,
-    rotation: 0, draftTee: null, draftGreen: null,
+    rotation, draftTee: null, draftGreen: null,
     graphicsQuality: "high", colorVision: "standard", reducedMotion: true,
     animationsEnabled: false, showObstacles: false, showMarkers: true,
     atlasRevision: 1, surveyMode: false, worldSeed: 676,
@@ -63,10 +63,11 @@ function harness() {
     onArchitectureHoleSelect: select,
   };
   const canvas = { getBoundingClientRect: () => { layoutDirty = false; return { x: 0, y: 0, width: 1400, height: 900, right: 1400, bottom: 900 }; } };
-  const overlay = createRoutingLabelOverlay(snapshot, point => tileCenterIso(point.x, point.y), () => {}, () => canvas as HTMLCanvasElement);
+  const project = (point: { x: number; y: number }) => tileCenterIso(point.x, point.y, 0, rotation);
+  const overlay = createRoutingLabelOverlay(snapshot, project, () => {}, () => canvas as HTMLCanvasElement);
   const render = () => overlay.container.onRender!({} as PIXI.Renderer);
   const placement = () => buttons.map(button => ({ id: button.dataset.testid, hidden: button.hidden, fits: button.dataset.fits, left: button.style.left, top: button.style.top }));
-  return { overlay, buttons, select, events, render, placement,
+  return { overlay, buttons, select, events, render, placement, snapshot, project,
     invalidate: () => invalidate(),
     resetMeasures() { forcedLabelLayouts = 0; measuredLabels = 0; events.length = 0; },
     measurements: () => ({ forcedLabelLayouts, measuredLabels }),
@@ -111,4 +112,100 @@ describe("routing control measurement and placement", () => {
     expect(h.measurements()).toEqual({ forcedLabelLayouts: 0, measuredLabels: 0 });
     h.overlay.dispose();
   });
+
+  it.each([0, 90, 180, 270] as const)("uses the current nested-parent transform before Pixi's transform refresh at rotation %s", rotation => {
+    const h = harness(rotation);
+    const stage = new PIXI.Container({ isRenderGroup: true });
+    const parent = new PIXI.Container(), nested = new PIXI.Container();
+    stage.addChild(parent); parent.addChild(nested); nested.addChild(h.overlay.container);
+    stage.position.set(110, 70);
+    parent.position.set(510, 160); parent.scale.set(.45, .35); parent.rotation = .12; parent.pivot.set(8, 13);
+    const pivot = h.project({ x: h.snapshot.course.width / 2, y: h.snapshot.course.height / 2 });
+    nested.position.set(17, -11); nested.rotation = -.18; nested.pivot.set(pivot.x + 4, pivot.y + 7);
+    h.overlay.container.position.set(3, 9);
+    const group = stage.renderGroup;
+    if (!group) throw new Error("Expected a real Pixi render group");
+    stage.updateLocalTransform();
+    PIXI.updateRenderGroupTransforms(group, true);
+    const courseBefore = structuredClone(h.snapshot.course);
+    const routes = h.snapshot.architectureOverlay!.routing!;
+    const routesBefore = structuredClone(routes);
+    const viewport = { x: 0, y: 0, width: 1400, height: 900 };
+    const reserved = [{ x: 600, y: 0, width: 800, height: 900 }];
+    const originalPlacement = () => {
+      const requests = h.buttons.map(button => {
+        const route = routes.find(route => route.holeId === button.dataset.holeId)!;
+        const point = button.dataset.role === "number" ? route.anchor : button.dataset.role === "tee" ? route.tee! : route.pin!;
+        const center = h.overlay.container.toGlobal(h.project(point));
+        return { id: `${route.holeId}:${button.dataset.role}`, center, width: 36 + button.textContent.length * 4, height: 36 };
+      });
+      return placeRoutingLabels(requests, viewport, reserved, point => {
+        const local = h.overlay.container.toLocal(point);
+        const world = isoToWorld(local.x, local.y, rotation);
+        const x = Math.floor(world.x), y = Math.floor(world.y), course = h.snapshot.course;
+        return x >= 0 && y >= 0 && x < course.width && y < course.height && !["water", "wetland", "sand", "waste_area"].includes(course.tiles[y * course.width + x]);
+      });
+    };
+    const freshReadsPerLayout: number[] = [];
+    const assertPlacement = () => {
+      const expected = originalPlacement();
+      const fresh = h.overlay.container.getGlobalTransform();
+      const matrixBefore = fresh.clone();
+      // Pixi invokes the actual onRender list before updating render-group transforms.
+      const freshRead = vi.spyOn(h.overlay.container, "getGlobalTransform");
+      group.runOnRender({} as PIXI.Renderer);
+      const matrices = freshRead.mock.results.map(result => result.value);
+      freshRead.mockRestore();
+      freshReadsPerLayout.push(matrices.length);
+      for (const matrix of matrices) expect(matrix).toEqual(matrixBefore);
+      h.buttons.forEach((button, index) => {
+        const placement = expected[index];
+        expect(Number.parseFloat(button.style.left)).toBeCloseTo(placement.placed.x, 9);
+        expect(Number.parseFloat(button.style.top)).toBeCloseTo(placement.placed.y, 9);
+        const offscreen = placement.center.x < 0 || placement.center.x > viewport.width || placement.center.y < 0 || placement.center.y > viewport.height;
+        expect(button.hidden).toBe(offscreen || !placement.fits);
+        expect(button.dataset.fits).toBe(String(placement.fits));
+      });
+      const scale = Math.hypot(fresh.a, fresh.b);
+      let leaderCount = 0;
+      for (const [index, route] of routes.entries()) {
+        const graphic = h.overlay.container.children[index] as PIXI.Graphics;
+        const leaders = graphic.context.instructions.filter(instruction => instruction.action === "stroke" && Math.abs(instruction.data.style.width - 1 / scale) < 1e-9);
+        const expectedLeaders = expected.filter(placement => placement.id.startsWith(`${route.holeId}:`) && placement.fits && Math.hypot(placement.placed.x - placement.center.x, placement.placed.y - placement.center.y) > 2);
+        expect(leaders).toHaveLength(expectedLeaders.length);
+        leaders.forEach((instruction, leaderIndex) => {
+          if (instruction.action !== "stroke") throw new Error("Expected leader stroke");
+          const placement = expectedLeaders[leaderIndex];
+          const from = h.overlay.container.toLocal(placement.center), to = h.overlay.container.toLocal(placement.placed);
+          const path = instruction.data.path.instructions.slice(-2);
+          expect(path.map(point => point.action)).toEqual(["moveTo", "lineTo"]);
+          expect(path[0].data[0]).toBeCloseTo(from.x, 9); expect(path[0].data[1]).toBeCloseTo(from.y, 9);
+          expect(path[1].data[0]).toBeCloseTo(to.x, 9); expect(path[1].data[1]).toBeCloseTo(to.y, 9);
+          leaderCount++;
+        });
+      }
+      expect(leaderCount).toBeGreaterThan(0);
+      expect(fresh).toEqual(matrixBefore);
+      expect(h.snapshot.course).toEqual(courseBefore); expect(routes).toEqual(routesBefore);
+    };
+    assertPlacement();
+    const cached = h.overlay.container.worldTransform.clone();
+    parent.position.set(440, 210); parent.scale.set(.35, .5); parent.rotation = -.1;
+    nested.rotation = .22; nested.pivot.set(pivot.x + 11, pivot.y + 3);
+    expect(h.overlay.container.worldTransform).toEqual(cached);
+    expect(h.overlay.container.getGlobalTransform()).not.toEqual(cached);
+    // The camera changes before the render-group transform phase. No external
+    // invalidation is sent: the current matrix must drive the layout signature.
+    assertPlacement();
+    expect(freshReadsPerLayout).toEqual([1, 1]);
+    PIXI.updateRenderGroupTransforms(group, true);
+    h.resetMeasures();
+    const idleFreshRead = vi.spyOn(h.overlay.container, "getGlobalTransform");
+    group.runOnRender({} as PIXI.Renderer);
+    expect(idleFreshRead).toHaveBeenCalledTimes(1);
+    idleFreshRead.mockRestore();
+    expect(h.measurements()).toEqual({ forcedLabelLayouts: 0, measuredLabels: 0 });
+    h.overlay.dispose(); stage.destroy({ children: true });
+  });
+
 });
