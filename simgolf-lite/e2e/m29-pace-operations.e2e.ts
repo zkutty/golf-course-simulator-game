@@ -10,7 +10,14 @@ test("pace operations presets, hospitality, and staff assignments are visible an
   await page.getByRole("tab", { name: "Pace" }).click();
   await expect(page.getByTestId("pace-operations")).toBeVisible();
   await expect(page.getByLabel("Tee interval minutes")).toHaveValue("10");
-  await page.getByRole("button", { name: "brisk", exact: true }).click();
+  const picker = page.getByTestId("pace-preset-picker");
+  await picker.getByRole("button", { name: "Brisk", exact: true }).click();
+  const preview = picker.getByTestId("pace-preset-preview");
+  await expect(preview).toBeVisible();
+  await expect(preview.getByRole("heading", { name: "Preview Brisk", exact: true })).toBeVisible();
+  await expect(preview.locator('[data-setting="teeIntervalMinutes"] dd')).toHaveText("12 min");
+  await expect(page.getByLabel("Tee interval minutes")).toHaveValue("10");
+  await preview.getByRole("button", { name: "Apply preset", exact: true }).click();
   await expect(page.getByLabel("Tee interval minutes")).toHaveValue("12");
   await page.getByLabel("Beverage service").selectOption("beer_wine");
   await expect.poll(async () => JSON.parse(await page.evaluate(() => window.render_game_to_text?.() ?? "{}"))?.simulation?.pace?.beverageMenu).toBe("beer_wine");
