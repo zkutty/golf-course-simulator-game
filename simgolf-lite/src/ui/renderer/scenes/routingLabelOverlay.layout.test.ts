@@ -50,13 +50,18 @@ function harness() {
   vi.stubGlobal("ResizeObserver", class { constructor(callback: () => void) { invalidate = callback; } observe() {} disconnect() {} });
   vi.stubGlobal("MutationObserver", undefined);
   const course = routingLabelFixture("crossing");
-  const snapshot = {
-    course, holes: course.holes, rotation: 0,
-    surfaceHeightAt: () => 0,
-    architectureOverlay: { kind: "routing", routing: buildArchitectureRouting(course, { courseId: "layout-1", teeSet: "member", pinRotation: "A" }) },
-  } as RenderSnapshot;
   const select = vi.fn();
-  snapshot.onArchitectureHoleSelect = select;
+  const snapshot: RenderSnapshot = {
+    course, holes: course.holes, obstacles: course.obstacles, effectiveTiles: course.tiles,
+    rotation: 0, draftTee: null, draftGreen: null,
+    graphicsQuality: "high", colorVision: "standard", reducedMotion: true,
+    animationsEnabled: false, showObstacles: false, showMarkers: true,
+    atlasRevision: 1, surveyMode: false, worldSeed: 676,
+    surfaceHeightAt: () => 0,
+    revisions: { atmosphere: 0, surfaceCare: 0, structuresProps: 0, playerProCollection: 0, naturalProps: 0, overlaysDiagnostics: 0, estateSurvey: 0, architectureOverlay: 1 },
+    architectureOverlay: { kind: "routing", traces: [], cells: [], points: [], routing: buildArchitectureRouting(course, { courseId: "layout-1", teeSet: "member", pinRotation: "A" }) },
+    onArchitectureHoleSelect: select,
+  };
   const canvas = { getBoundingClientRect: () => { layoutDirty = false; return { x: 0, y: 0, width: 1400, height: 900, right: 1400, bottom: 900 }; } };
   const overlay = createRoutingLabelOverlay(snapshot, point => tileCenterIso(point.x, point.y), () => {}, () => canvas as HTMLCanvasElement);
   const render = () => overlay.container.onRender!({} as PIXI.Renderer);
