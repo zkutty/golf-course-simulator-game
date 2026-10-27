@@ -378,7 +378,7 @@ export function createLiveEntitiesSceneSystem(
         const ball = createGraphics();
         ball.circle(0, -2, 2.2);
         ball.fill(0xffffff);
-        ball.stroke({ width: 0.8, color: 0x555555 });
+        ball.stroke({ width: 0.8, color: 0x555555, alignment: 0 });
         ball.visible = false;
         const ballShadow = createGraphics();
         ballShadow.ellipse(0, 0, 3.2, 1.5);
