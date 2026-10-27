@@ -58,6 +58,7 @@ export function createZk330GroundingLiveState(course: Course, world: World, prog
     ball: null,
     currentHole: -1,
     holeIds: [],
+    pinRotationsByHole: {},
     holePar: [],
     holeStrokes: [],
   };
