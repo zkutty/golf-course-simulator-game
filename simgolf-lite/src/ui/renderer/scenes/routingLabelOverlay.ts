@@ -128,8 +128,8 @@ export function createRoutingLabelOverlay(snapshot: RenderSnapshot, project: (p:
     const scale = Math.max(0.001, Math.hypot(transform.a, transform.b));
     draw(scale);
     const screen = (p: Point) => { const global = container.toGlobal(currentProject(p)); return { x: global.x + bounds.x, y: global.y + bounds.y }; };
+    for (const control of controls) control.button.hidden = false;
     const requests = controls.map(control => {
-      control.button.hidden = false;
       const rect = control.button.getBoundingClientRect();
       return { id: `${control.route.holeId}:${control.role}`, center: screen(control.point), width: rect.width, height: rect.height };
     });
