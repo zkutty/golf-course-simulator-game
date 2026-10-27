@@ -35,6 +35,12 @@ for (const locale of ["en", "pseudo"] as const) for (const width of [320, 768, 1
     }
     const body = dialog.locator(".cc-objectives-body"); await body.focus(); await expect(body).toBeFocused();
     await page.keyboard.press("PageDown"); await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    // Native keyboard scrolling must finish before exact glyph measurements.
+    await body.evaluate(el => new Promise<void>(resolve => {
+      let previous = el.scrollTop, stableFrames = 0;
+      const settle = () => { const current = el.scrollTop; stableFrames = current === previous ? stableFrames + 1 : 0; previous = current; if (stableFrames >= 5) resolve(); else requestAnimationFrame(settle); };
+      requestAnimationFrame(settle);
+    }));
     await body.evaluate((el) => el.scrollTo({ top: 0, behavior: "instant" }));
     const texts = body.locator(".cc-objective-title, .cc-objective-description, .cc-objective-deadline, .cc-objective-state, .cc-objective-metric, .cc-objective-value");
     for (let index = 0; index < await texts.count(); index++) {
