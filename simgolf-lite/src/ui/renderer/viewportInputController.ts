@@ -865,9 +865,11 @@ export class ViewportInputController {
 
   private applyExternalCamera(cameraState: CameraState | null | undefined): void {
     if (!this.camera.initialized || this.lastCameraState === cameraState) return;
+    const previousCameraState = this.lastCameraState;
     this.lastCameraState = cameraState;
     if (!cameraState) {
-      this.fitDefaultView(false);
+      // An absent camera only restores the default when leaving an actual one.
+      if (previousCameraState) this.fitDefaultView(false);
       return;
     }
     if (this.lastReportedCameraState === cameraState) return;

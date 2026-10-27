@@ -30,7 +30,7 @@ const course = {
   elevations: Array(40 * 24).fill(0),
 } as unknown as Course;
 
-function harness() {
+function harness(overrides: Partial<ViewportInputConfig> = {}) {
   const element = new FakeEventSurface();
   const windowTarget = new EventTarget();
   vi.stubGlobal("window", windowTarget);
@@ -92,6 +92,7 @@ function harness() {
     deriveFrame: (mode) => mode === "overview"
       ? { center: { x: 20, y: 12 }, zoom: 0.5 }
       : { center: { x: 12, y: 8 }, zoom: 1.25 },
+    ...overrides,
   };
   const controller = new ViewportInputController(config, {
     app,
@@ -337,6 +338,54 @@ describe("ViewportInputController", () => {
   });
 });
 
+
+describe("external camera lifecycle", () => {
+  const reference = { id: "overview-r0", center: { x: 20, y: 12 }, zoom: 0.5, rotation: 0 as const };
+
+  it("preserves a reference camera across the first initialized update with no external camera", () => {
+    const { config, controller, advance } = harness({ cameraState: null });
+    controller.initializeDefault();
+    controller.applyReferenceCamera(reference);
+    const expected = controller.snapshot().camera;
+
+    controller.update({ ...config });
+    advance(1);
+
+    expect(controller.snapshot().camera).toEqual(expected);
+    expect(config.onViewChange).toHaveBeenLastCalledWith(expect.objectContaining({ center: reference.center, zoom: reference.zoom }));
+    controller.destroy();
+  });
+
+  it("treats null and undefined as the same absence of an external camera", () => {
+    const { config, controller, advance } = harness({ cameraState: null });
+    controller.initializeDefault();
+    controller.update({ ...config });
+    controller.applyReferenceCamera(reference);
+    const expected = controller.snapshot().camera;
+
+    for (const cameraState of [undefined, null]) {
+      controller.update({ ...config, cameraState });
+      advance(1);
+      expect(controller.snapshot().camera).toEqual(expected);
+    }
+    controller.destroy();
+  });
+
+  it("restores the default frame when an actual external camera is cleared", () => {
+    const external = { mode: "hole" as const, center: { x: 20, y: 12 }, zoom: 2, rotationDeg: 0 };
+    const { config, controller, advance } = harness({ cameraState: external });
+    controller.initializeDefault();
+    controller.update({ ...config });
+    advance(1);
+    expect(controller.snapshot().camera).toMatchObject({ center: external.center, zoom: external.zoom });
+
+    controller.update({ ...config, cameraState: null });
+    advance(1);
+
+    expect(controller.snapshot().camera).toMatchObject({ center: { x: 12, y: 8 }, targetCenter: { x: 12, y: 8 }, zoom: 1.25, targetZoom: 1.25 });
+    controller.destroy();
+  });
+});
 
 describe("committed rotation projection authority", () => {
   for (const animationsEnabled of [false, true]) {
