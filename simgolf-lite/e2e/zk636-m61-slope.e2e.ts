@@ -1,5 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// createPlayerProReferenceCourse inherits this M12 scale from createRenderPerfCourse;
+// startPlayableRound freezes it into the round's course snapshot.
+const fixtureYardsPerTile = 4;
+
 type DecisionKind = "uphill" | "downhill" | "sidehill";
 
 interface DecisionTarget {
@@ -30,13 +34,15 @@ async function enterPlayerProRound(page: Page) {
     return round?.phase === "awaiting_shot" && Boolean(round.aim);
   })).toBe(true);
   await expect(hud).toBeVisible();
+  // This control is rendered only for rounds using the modern club shot model.
+  await expect(hud.getByTestId("player-shot-style")).toBeVisible();
   await expect(hud.getByTestId("commit-player-shot")).toBeEnabled();
   await expect.poll(() => page.evaluate(() => Boolean(window.__coursecraftPixiTest))).toBe(true);
   await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
 }
 
 async function decisionTargets(page: Page): Promise<Record<DecisionKind, DecisionTarget>> {
-  return page.evaluate(() => {
+  return page.evaluate((yardsPerTile) => {
     const text = JSON.parse(window.render_game_to_text?.() ?? "{}");
     const ball = text.playerPro.activeRound.ball as { x: number; y: number };
     const surface = window.__coursecraftTest!.terrainSurfaceState();
@@ -52,8 +58,6 @@ async function decisionTargets(page: Page): Promise<Record<DecisionKind, Decisio
     const gradientY = (cell(bx, by + 1) - cell(bx, by - 1))
       / Math.max(1, Math.min(surface.height - 1, by + 1) - Math.max(0, by - 1));
     const ballElevation = cell(ball.x, ball.y);
-    // createPlayerProReferenceCourse inherits the canonical M12 fixture scale.
-    const yardsPerTile = 4;
     const candidates: DecisionTarget[] = [];
     for (let y = 1; y < surface.height - 1; y++) {
       for (let x = 1; x < surface.width - 1; x++) {
@@ -91,7 +95,7 @@ async function decisionTargets(page: Page): Promise<Record<DecisionKind, Decisio
       downhill: nearest((candidate) => candidate.elevationDelta <= -2, "downhill"),
       sidehill: nearest((candidate) => Math.abs(candidate.crossTargetLine) >= 0.2, "sidehill"),
     };
-  });
+  }, fixtureYardsPerTile);
 }
 
 test("ZK-636 visibly exercises uphill, downhill, and sidehill Player Pro decisions", async ({ page }, testInfo) => {
@@ -126,18 +130,26 @@ test("ZK-636 visibly exercises uphill, downhill, and sidehill Player Pro decisio
       const aim = JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound.aim;
       return aim ? Math.hypot(aim.x - x, aim.y - y) : Number.POSITIVE_INFINITY;
     }, { x: target.x, y: target.y })).toBeLessThan(1.5);
-    const aim = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound.aim);
+    const { aim, ball } = await page.evaluate(() => {
+      const round = JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound;
+      return { aim: round.aim, ball: round.ball };
+    });
     expect(Math.hypot(aim.x - target.x, aim.y - target.y)).toBeLessThan(1.5);
 
     await page.getByTestId("player-shot-club").selectOption(controlValues[kind].club);
     await page.getByTestId("player-shot-power").fill(controlValues[kind].power);
     const preview = page.getByTestId("player-shot-preview");
-    await expect(preview).toContainText(`Target ${Math.round(target.playsLikeDistanceYards)} yd`);
+    // Modern Target is geometric distance. Slope classifications and the
+    // retained shot-slope trace remain independently checked below.
+    const actualFlatDistanceYards = Math.hypot(aim.x - ball.x, aim.y - ball.y) * fixtureYardsPerTile;
+    await expect(preview).toContainText(`Target ${Math.round(actualFlatDistanceYards)} yd`);
     const screenshot = await page.screenshot();
     await testInfo.attach(`m61-${kind}-decision`, { body: screenshot, contentType: "image/png" });
     captures.push({
       ...target,
       aim,
+      ball,
+      actualFlatDistanceYards,
       club: await page.getByTestId("player-shot-club").inputValue(),
       power: await page.getByTestId("player-shot-power").inputValue(),
       preview: await preview.innerText(),
