@@ -36,7 +36,7 @@ test("M47 Golfer Inspector exposes evidence and remains accessible/responsive", 
   await expect(followButton).not.toHaveAttribute("aria-pressed", initialFollowing!);
   await expect(inspector.locator("button")).toHaveCount(2);
 
-  const desktopShot = await page.screenshot({ path: "artifacts/m47/inspector-desktop.png", fullPage: true });
+  const desktopShot = await page.screenshot({ path: testInfo.outputPath("inspector-desktop.png"), fullPage: true });
   await testInfo.attach("m47-inspector-desktop", { body: desktopShot, contentType: "image/png" });
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -48,7 +48,7 @@ test("M47 Golfer Inspector exposes evidence and remains accessible/responsive", 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await inspector.getByTestId("golfer-shot-evidence").scrollIntoViewIfNeeded();
   await expect(inspector.getByTestId("golfer-shot-evidence")).toBeInViewport();
-  const mobileShot = await page.screenshot({ path: "artifacts/m47/inspector-mobile.png", fullPage: true });
+  const mobileShot = await page.screenshot({ path: testInfo.outputPath("inspector-mobile.png"), fullPage: true });
   await testInfo.attach("m47-inspector-mobile", { body: mobileShot, contentType: "image/png" });
 
   await page.evaluate(() => {
