@@ -166,6 +166,12 @@ async function setup(page: Page, scenario: "obstacle" | "water" | "slopes", rota
   if (!origin || !bounds) throw new Error("Missing camera projection.");
   await page.mouse.move(bounds.x + origin.x, bounds.y + origin.y);
   for (let step = 0; step < 8; step++) {
+    if (scenario === "water") {
+      await page.waitForFunction(() => {
+        const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
+        return camera && Math.abs(camera.zoom - camera.targetZoom) < .0001;
+      });
+    }
     const zoom = await page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()?.camera.zoom ?? 0);
     if (zoom >= .65) break;
     await page.mouse.wheel(0, -120);
