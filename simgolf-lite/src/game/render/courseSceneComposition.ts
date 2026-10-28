@@ -734,6 +734,7 @@ function shapeCandidates(course: Course, labels: ReadonlyMap<number, EvidenceLab
     // We inspect all local source-edge possibilities, but render only a small,
     // separated deterministic subset rather than every overlapping square.
     for (let y = 0; y < course.height; y += 1) for (let x = 0; x < course.width; x += 1) {
+      if (!has(x, y)) continue;
       // A full 3x3 square or a clipped corner needs at least eight cells.
       if (policy.maxCells >= 8) {
         const square3 = Array.from({ length: 9 }, (_, index) => ({ x: x + index % 3, y: y + Math.floor(index / 3) }));
