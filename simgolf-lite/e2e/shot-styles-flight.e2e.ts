@@ -436,6 +436,9 @@ test("selected live golfer follows its retained current segment without revealin
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto("/?m47Fixture=1");
   await expect(page.getByTestId("speed-1x")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Boolean(
+    window.__coursecraftPixiTest?.viewportInputState()?.attached && window.__coursecraftPixiTest.cameraTransform()?.camera,
+  ))).toBe(true);
   await clock.holdQuiescent("live");
   await page.getByTestId("speed-1x").click();
   // Clock shortcuts ignore controls. Establish focus before observing a flight.
