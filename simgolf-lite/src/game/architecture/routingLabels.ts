@@ -84,6 +84,19 @@ export interface RoutingLabelRect { x: number; y: number; width: number; height:
 export interface RoutingLabelRequest { id: string; center: Point; width: number; height: number }
 export interface RoutingLabelPlacement extends RoutingLabelRequest { placed: Point; fits: boolean }
 
+// Preserve the original ring/index order and floating-point operation order.
+const ROUTING_LABEL_RING_OFFSETS: readonly Point[] = (() => {
+  const offsets: Point[] = [];
+  for (let ring = 0; ring <= 12; ring++) {
+    const count = ring === 0 ? 1 : 12;
+    for (let index = 0; index < count; index++) {
+      const angle = index * Math.PI * 2 / count;
+      offsets.push({ x: Math.cos(angle) * ring * 18, y: Math.sin(angle) * ring * 18 });
+    }
+  }
+  return offsets;
+})();
+
 /** Bounded, deterministic screen-space packing, independent of camera rotation. */
 export function placeRoutingLabels(requests: readonly RoutingLabelRequest[], viewport: RoutingLabelRect, reserved: readonly RoutingLabelRect[], legal: (p: Point) => boolean = () => true): RoutingLabelPlacement[] {
   const occupied = [...reserved];
@@ -96,13 +109,9 @@ export function placeRoutingLabels(requests: readonly RoutingLabelRequest[], vie
       if (box.x < viewport.x + 5 || box.y < viewport.y + 5 || box.x + box.width > viewport.x + viewport.width - 5 || box.y + box.height > viewport.y + viewport.height - 5 || !legal(p) || occupied.some(other => overlaps(box, other))) return false;
       placed = p; fits = true; occupied.push(box); return true;
     };
-    for (let ring = 0; ring <= 12 && !fits; ring++) {
-      const count = ring === 0 ? 1 : 12;
-      for (let index = 0; index < count; index++) {
-        const angle = index * Math.PI * 2 / count;
-        const p = { x: request.center.x + Math.cos(angle) * ring * 18, y: request.center.y + Math.sin(angle) * ring * 18 };
-        if (accept(p)) break;
-      }
+    for (const offset of ROUTING_LABEL_RING_OFFSETS) {
+      const p = { x: request.center.x + offset.x, y: request.center.y + offset.y };
+      if (accept(p)) break;
     }
     // A large overlay panel can cover an endpoint farther than the local
     // midpoint search radius. Try its nearest edges without hiding a marker
