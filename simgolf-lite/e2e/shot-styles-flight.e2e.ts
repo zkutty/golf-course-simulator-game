@@ -190,10 +190,21 @@ test("shot styles commit actual UI input and retained motion owns visible airbor
   const stageBounds = await page.locator(".cc-pixi-stage").boundingBox();
   if (!origin || !stageBounds) throw new Error("Shot camera target is unavailable");
   await page.mouse.move(stageBounds.x + origin.x, stageBounds.y + origin.y);
+  const initialNativeZoom = await page.evaluate(() => {
+    const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
+    return camera ? { zoom: camera.zoom, targetZoom: camera.targetZoom } : null;
+  });
+  expect(initialNativeZoom).not.toBeNull();
+  let nativeWheelCount = 0;
   for (let notch = 0; notch < 8; notch++) {
+    await page.waitForFunction(() => {
+      const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
+      return camera && Math.abs(camera.zoom - camera.targetZoom) < .0001;
+    });
     const zoom = await page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()?.camera.zoom ?? 0);
     if (zoom >= .65) break;
     await page.mouse.wheel(0, -120);
+    nativeWheelCount++;
     await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()?.camera.zoom ?? 0)).toBeGreaterThan(zoom + .02);
   }
   await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()?.camera.zoom ?? 0)).toBeGreaterThan(.64);
@@ -205,6 +216,28 @@ test("shot styles commit actual UI input and retained motion owns visible airbor
   });
   await clock.holdQuiescent("player");
   await chooseStyle(page, "7 Iron", "straight_run");
+  const aimedRound = await roundState(page);
+  const originalTarget = { x: Math.min(54, aimedRound.ball.x + 14), y: 8 };
+  const nativeAimReadiness = await page.evaluate((target) => {
+    const stage = document.querySelector<HTMLElement>(".cc-pixi-stage");
+    const canvas = stage?.querySelector("canvas");
+    const projected = window.__coursecraftPixiTest!.tileToScreen(target.x, target.y);
+    const bounds = stage?.getBoundingClientRect();
+    const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
+    if (!stage || !canvas || !projected || !bounds || !camera) throw new Error("Native aim readiness geometry is unavailable");
+    const finite = Number.isFinite(projected.x) && Number.isFinite(projected.y);
+    const inside = finite && projected.x >= 0 && projected.x < bounds.width && projected.y >= 0 && projected.y < bounds.height;
+    const hit = inside ? document.elementFromPoint(bounds.x + projected.x, bounds.y + projected.y) : null;
+    return { originalTarget: target, projectedTarget: projected,
+      stageBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+      finalNativeZoom: { zoom: camera.zoom, targetZoom: camera.targetZoom },
+      hitIdentity: { tagName: hit?.tagName ?? null, testId: hit?.getAttribute("data-testid") ?? null,
+        ariaLabel: hit?.getAttribute("aria-label") ?? null },
+      uncovered: inside && hit === canvas };
+  }, originalTarget);
+  expect(nativeAimReadiness.uncovered, "original native aim target is uncovered by the canvas after the actual click").toBe(true);
+  await info.attach("fullstyles-native-zoom-readiness", { body: JSON.stringify({ initialNativeZoom, nativeWheelCount,
+    ...nativeAimReadiness }), contentType: "application/json" });
   await expect(page.getByTestId("player-shot-rules-preview")).toHaveCount(0);
   await expect(page.getByTestId("player-shot-auto-putt-preview")).toHaveCount(0);
   const before = await roundState(page);
