@@ -2,6 +2,7 @@ import { RecentRatingGeometry } from "./recentRatingGeometry";
 import { RecentSetupRatings } from "./recentSetupRatings";
 import type { Course, PinRotation, Point, TeeSet } from "../models/types";
 import { scoreCourseHoles } from "./holes";
+import { scorePrivateRatingSetup } from "./privateRatingScoring";
 import { getGolferProfile, type GolferProfile } from "./golferProfiles";
 import { BALANCE } from "../balance/balanceConfig";
 import { courseForCourseSetup, getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../models/courseSetup";
@@ -261,7 +262,7 @@ export function computeRatingForSetup(course: Course, teeSet: TeeSet, pinRotatio
     const cached = setups.get(cacheKey);
     if (cached) return cached;
     const setupCourse = courseForSetup(course, teeSet, pinRotation);
-    const holeSummary = scoreCourseHoles(setupCourse);
+    const holeSummary = scorePrivateRatingSetup(course, setupCourse);
     const scratch = getGolferProfile("SCRATCH", setupCourse);
     const bogey = getGolferProfile("BOGEY", setupCourse);
     const holesUsed = holeSummary.holes.length >= 18 ? 18 : 9;
