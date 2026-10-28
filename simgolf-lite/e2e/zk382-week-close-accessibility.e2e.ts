@@ -31,8 +31,18 @@ for (const locale of ["en", "pseudo"] as const) for (const width of [320, 768, 1
   const body = panel.getByTestId("week-close-body");
   expect(await body.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
   await body.focus(); await body.evaluate(el => el.scrollTop = 0); await page.keyboard.press("PageDown"); await expect.poll(() => body.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await body.evaluate(el => new Promise<void>(resolve => {
+    let previous = el.scrollTop, stableFrames = 0;
+    const settle = () => { const current = el.scrollTop; stableFrames = current === previous ? stableFrames + 1 : 0; previous = current; if (stableFrames >= 5) resolve(); else requestAnimationFrame(settle); };
+    requestAnimationFrame(settle);
+  }));
   const tableRegion = panel.getByTestId("week-close-audiences"); await tableRegion.focus(); await tableRegion.evaluate(el => el.scrollLeft = 0); await page.keyboard.press("ArrowRight");
   if (await tableRegion.evaluate(el => el.scrollWidth > el.clientWidth)) await expect.poll(() => tableRegion.evaluate(el => el.scrollLeft)).toBeGreaterThan(0);
+  await tableRegion.evaluate(el => new Promise<void>(resolve => {
+    let previous = el.scrollLeft, stableFrames = 0;
+    const settle = () => { const current = el.scrollLeft; stableFrames = current === previous ? stableFrames + 1 : 0; previous = current; if (stableFrames >= 5) resolve(); else requestAnimationFrame(settle); };
+    requestAnimationFrame(settle);
+  }));
   for (const text of await panel.locator("h2,summary,button,span,strong,th,td,.cc-week-close-management-intro,.cc-week-close-condition,.cc-week-close-alert,.cc-week-close-cause,.cc-week-close-ledger").all()) {
     if (!await text.isVisible()) continue;
     await text.evaluate(el => el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" }));
