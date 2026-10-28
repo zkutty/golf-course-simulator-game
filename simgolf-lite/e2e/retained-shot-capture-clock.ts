@@ -259,5 +259,5 @@ export async function assertUncoveredRoi(page: Page, point: { x: number; y: numb
       if (document.elementFromPoint(x, y) !== canvas) return false;
     }
     return true;
-  }, { point, radius, pixels, bounds }), "Original canonical pixel ROI must be uncovered by DOM UI").toBe(true);
+  }, { point, radius, pixels: { width: pixels.width, height: pixels.height }, bounds }), "Original canonical pixel ROI must be uncovered by DOM UI").toBe(true);
 }
