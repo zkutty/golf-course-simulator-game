@@ -1,24 +1,29 @@
 import { writeFileSync } from "node:fs";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { PNG } from "pngjs";
+import { assertUncoveredRoi, captureClock, installedCaptureClock, installCaptureClock } from "./retained-shot-capture-clock";
 import type { PlayerPlayableRound } from "../src/game/models/playerProTypes";
 import { sampleRetainedShotMotion, type RetainedShotMotionV1 } from "../src/game/rules/shotMotion";
 import { worldToIso, type IsoRotation } from "../src/game/render/iso";
 import { sampleGreenRolloutSurface } from "../src/game/greens/greenRollout";
-import type { PlayerShotRenderDiagnostics } from "../src/ui/renderer/scenes/overlaysDiagnosticsScene";
 
 // Setup-only terrain/obstacles. No round, pending shot, outcome or cursor is injected.
 const state = (page: Page) => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}"));
 const round = async (page: Page) => (await state(page)).playerPro.activeRound;
-const playback = (page: Page) => page.evaluate(() => (window as unknown as {
-  __ccPlayerShotPlayback?: PlayerShotRenderDiagnostics;
-}).__ccPlayerShotPlayback ?? null);
 async function triggerQuickSave(page: Page) {
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.keyboard.press("Control+KeyS");
 }
 async function waitForQuickSave(page: Page) {
-  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+  const clock = installedCaptureClock(page);
+  if (!clock) {
+    await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+    return;
+  }
+  await expect.poll(async () => {
+    await clock.flushTimers();
+    return page.locator('.sr-only[role="status"]').textContent();
+  }).toContain("Quick save complete");
 }
 async function quickSave(page: Page) {
   await triggerQuickSave(page);
@@ -29,20 +34,6 @@ async function savedRound(page: Page): Promise<PlayerPlayableRound | null> {
     const path = "/src/utils/saveStore.ts";
     return (await (await import(path)).loadSlot("quick-save"))?.world.playerPro?.activeRound ?? null;
   });
-}
-type BackgroundResult<T> = { ok: true; value: T } | { ok: false; error: unknown };
-function settle<T>(pending: Promise<T>): Promise<BackgroundResult<T>> {
-  return pending.then((value) => ({ ok: true, value }), (error: unknown) => ({ ok: false, error }));
-}
-function resolved<T>(result: BackgroundResult<T>): T {
-  if (!result.ok) throw result.error;
-  return result.value;
-}
-function observePhase(page: Page, progress: number, phase = "airborne") {
-  return settle(page.waitForFunction(({ progress, phase }) => {
-    const frame = (window as unknown as { __ccPlayerShotPlayback?: PlayerShotRenderDiagnostics }).__ccPlayerShotPlayback;
-    return frame && frame.motionProgress >= progress && frame.phase === phase;
-  }, { progress, phase }).then((handle) => handle.dispose()));
 }
 async function verifyCommittedShot(page: Page) {
   await waitForQuickSave(page);
@@ -136,7 +127,8 @@ function waterPauseRoiGeometry(projection: { x: number; y: number }, image: { wi
   return { roiRightCss, clearanceCss, sourceShadowMatches,
     clear: finite && dimensions && roiInside && sectionIntersects && sourceShadowMatches && clearanceCss >= 128 };
 }
-async function setup(page: Page, scenario: "obstacle" | "water" | "slopes", rotation: IsoRotation = 0) {
+async function setup(page: Page, scenario: "obstacle" | "water" | "slopes", rotation: IsoRotation = 0, controlledInfo?: TestInfo) {
+  if (controlledInfo) await installCaptureClock(page, controlledInfo, { maxRuns: 160, maxLogicalMs: 8000 });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
@@ -160,6 +152,7 @@ async function setup(page: Page, scenario: "obstacle" | "water" | "slopes", rota
   await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
   if (rotation >= 180) {
     await cameraPreflight(page, rotation);
+    if (controlledInfo) await captureClock(page).holdQuiescent("player");
     return errors;
   }
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
@@ -221,6 +214,7 @@ async function setup(page: Page, scenario: "obstacle" | "water" | "slopes", rota
       return camera && Math.abs(camera.zoom - camera.targetZoom) < .0001;
     });
   }
+  if (controlledInfo) await captureClock(page).holdQuiescent("player");
   return errors;
 }
 async function commit(page: Page, club: string, target: { x: number; y: number }, firstProgress: number, requireWaterAim = false) {
@@ -244,16 +238,16 @@ async function commit(page: Page, club: string, target: { x: number; y: number }
   await page.mouse.move(pointerExit.x, pointerExit.y);
   await expect.poll(async () => Math.hypot((await round(page)).aim.x - target.x, (await round(page)).aim.y - target.y)).toBeLessThan(1);
   await expect(page.getByTestId("commit-player-shot")).toBeEnabled();
-  // Observe before dispatch; durable save verification must not consume a brief
-  // animation phase. Native inputs still finish sequentially before pausing.
-  const firstPhase = observePhase(page, firstProgress);
+  // The held scheduler keeps native commit/save sequential without consuming
+  // the original phase. The bounded reader below owns every forward step.
+  const firstPhase = () => captureClock(page).acquire(firstProgress, "airborne");
   await page.getByTestId("commit-player-shot").click();
   await triggerQuickSave(page);
   let committed: Promise<CommittedShot> | undefined;
   const readCommitted = () => committed ??= verifyCommittedShot(page);
   return { readCommitted, firstPhase };
 }
-async function pixelEvidence(page: Page, info: TestInfo, name: string, point: { x: number; y: number }, heightYards: number, marker: "ball" | "relief" | "penalty-rest" = "ball", requireWaterClearance = false) {
+async function pixelEvidence(page: Page, info: TestInfo, name: string, point: { x: number; y: number }, heightYards: number, marker: "ball" | "relief" | "penalty-rest" = "ball", requireWaterClearance = false, pausedOverlay?: Awaited<ReturnType<ReturnType<typeof captureClock>["clearView"]>>) {
   const camera = (await state(page)).camera;
   const iso = worldToIso(point.x + .5, point.y + .5, heightYards / 2.5, camera.rotation as IsoRotation);
   const transform = await page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform());
@@ -269,18 +263,15 @@ async function pixelEvidence(page: Page, info: TestInfo, name: string, point: { 
   expect(y).toBeGreaterThan(12); expect(y).toBeLessThan(pixels.height - 12);
   let pauseGeometry: ReturnType<typeof waterPauseRoiGeometry> | undefined;
   if (requireWaterClearance) {
-    const pause = page.getByTestId("pause-overlay");
-    await expect(pause).toBeVisible();
-    const section = pause.locator("section");
-    const sectionBounds = await section.boundingBox();
-    const canvasBounds = await canvas.boundingBox();
-    if (!sectionBounds || !canvasBounds) throw new Error("Missing actual water pause/canvas geometry.");
-    const shadow = await section.evaluate((element) => getComputedStyle(element).boxShadow);
+    if (!pausedOverlay) throw new Error("Missing retained actual water pause geometry.");
+    const { sectionBounds, bounds: canvasBounds, shadow } = pausedOverlay;
+    expect(bounds).toEqual(canvasBounds);
     pauseGeometry = waterPauseRoiGeometry({ x, y }, pixels, canvasBounds, sectionBounds, shadow);
     expect(pauseGeometry.clear, "water's full PNG ROI must clear the original pause shadow by 128 CSS pixels: " + JSON.stringify(pauseGeometry)).toBe(true);
   }
   let count = 0;
   const radius = marker === "relief" ? 12 : 3;
+  await assertUncoveredRoi(page, { x, y }, radius, pixels, bounds);
   for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
     const index = (Math.round(y + dy) * pixels.width + Math.round(x + dx)) * 4;
     const [r, g, b] = [pixels.data[index], pixels.data[index + 1], pixels.data[index + 2]];
@@ -291,11 +282,10 @@ async function pixelEvidence(page: Page, info: TestInfo, name: string, point: { 
   expect(count, marker + " must occupy its canonical retained projection").toBeGreaterThan(0);
   return { point, heightYards, iso, projection: { x, y }, visiblePixels: count, camera, transform, ...(pauseGeometry ? { pauseGeometry } : {}) };
 }
-async function capture(page: Page, info: TestInfo, readCommitted: ReadCommittedShot, progress: number, name: string, phase = "airborne", ready = observePhase(page, progress, phase), requireWaterClearance = false) {
-  resolved(await ready);
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("pause-overlay")).toBeVisible();
-  const frozen = (await playback(page))!;
+async function capture(page: Page, info: TestInfo, readCommitted: ReadCommittedShot, progress: number, name: string, phase = "airborne", ready = () => captureClock(page).acquire(progress, phase), requireWaterClearance = false) {
+  await ready();
+  const pauseProof = await captureClock(page).nativePause();
+  const frozen = pauseProof.frame!;
   const { shot, motion } = await readCommitted();
   expect(frozen.shotId).toBe(shot.id);
   expect(frozen.shotId).toBe(motion.identity.shotId);
@@ -305,14 +295,15 @@ async function capture(page: Page, info: TestInfo, readCommitted: ReadCommittedS
   expect(frozen.point.x).toBeCloseTo(expected.point.x, 7);
   expect(frozen.point.y).toBeCloseTo(expected.point.y, 7);
   expect(frozen.heightYards).toBeCloseTo(expected.heightYards, 7);
-  const visible = await pixelEvidence(page, info, name, expected.point, expected.heightYards, "ball", requireWaterClearance);
+  const pausedOverlay = await captureClock(page).clearView(name, pauseProof);
+  const visible = await pixelEvidence(page, info, name, expected.point, expected.heightYards, "ball", requireWaterClearance, pausedOverlay);
   expect(frozen.ball.x).toBeCloseTo(visible.iso.x, 6);
   expect(frozen.ball.y).toBeCloseTo(visible.iso.y, 6);
-  await page.keyboard.press("Escape");
-  return { frozen, expected, visible };
+  return { frozen, expected, visible, pausedOverlay };
 }
 async function finish(page: Page, motion: RetainedShotMotionV1) {
   await page.getByTestId("skip-player-shot").click();
+  await captureClock(page).run(16, "render actual native Skip completion");
   await expect.poll(async () => (await round(page)).phase).not.toBe("flight");
   await quickSave(page);
   await expect.poll(async () => (await savedRound(page))?.pendingShot).toBeNull();
@@ -338,7 +329,7 @@ for (const rotation of [180, 270] as const) test("camera preflight only: " + rot
 });
 
 test("obstacle collision and vertical drop use committed motion before static rest", async ({ page }, info) => {
-  const errors = await setup(page, "obstacle");
+  const errors = await setup(page, "obstacle", 0, info);
   const { readCommitted, firstPhase } = await commit(page, "7 Iron", { x: 18, y: 8 }, .2);
   const airborne = await capture(page, info, readCommitted, .2, "obstacle-before-contact", "airborne", firstPhase);
   const { motion, shot } = await readCommitted();
@@ -354,10 +345,11 @@ test("obstacle collision and vertical drop use committed motion before static re
   expect(saved.penalties).toBe(0);
   writeFileSync(info.outputPath("obstacle-evidence.json"), JSON.stringify({ motion, collision, airborne, drop, rest, errors }, null, 2));
   expect(errors).toEqual([]);
+  await captureClock(page).finalize();
 });
 
 test("water physical rest and static legal relief remain distinct with one penalty", async ({ page }, info) => {
-  const errors = await setup(page, "water");
+  const errors = await setup(page, "water", 0, info);
   const { readCommitted, firstPhase } = await commit(page, "Driver", { x: 18, y: 8 }, .25, true);
   const airborne = await capture(page, info, readCommitted, .25, "water-airborne", "airborne", firstPhase, true);
   const { motion, shot } = await readCommitted();
@@ -376,6 +368,7 @@ test("water physical rest and static legal relief remain distinct with one penal
   expect(Math.hypot(rest.projection.x - relief.projection.x, rest.projection.y - relief.projection.y)).toBeGreaterThan(10);
   writeFileSync(info.outputPath("water-evidence.json"), JSON.stringify({ motion, shot, airborne, contact, rest, relief, savedPenalties: saved.penalties, errors }, null, 2));
   expect(errors).toEqual([]);
+  await captureClock(page).finalize();
 });
 
 for (const scenario of [
@@ -386,7 +379,7 @@ for (const scenario of [
   { name: "downhill-r0", target: { x: 1, y: 8 }, rotation: 0 as const },
   { name: "sidehill-r0", target: { x: 13, y: 2 }, rotation: 0 as const },
 ]) test("raised plane canonical absolute height and visible projection: " + scenario.name, async ({ page }, info) => {
-  const errors = await setup(page, "slopes", scenario.rotation);
+  const errors = await setup(page, "slopes", scenario.rotation, info);
   expect((await state(page)).camera.rotation).toBe(scenario.rotation);
   const { readCommitted, firstPhase } = await commit(page, "Pitching Wedge", scenario.target, .18);
   const first = await capture(page, info, readCommitted, .18, scenario.name + "-airborne-0", "airborne", firstPhase);
@@ -407,4 +400,5 @@ for (const scenario of [
   const rest = await pixelEvidence(page, info, scenario.name + "-rest", motion.physicalRest.point, motion.physicalRest.heightYards);
   writeFileSync(info.outputPath("slope-evidence.json"), JSON.stringify({ scenario, motion, shotSlope: shot.shotSlope, first, second, rest, errors }, null, 2));
   expect(errors).toEqual([]);
+  await captureClock(page).finalize();
 });
