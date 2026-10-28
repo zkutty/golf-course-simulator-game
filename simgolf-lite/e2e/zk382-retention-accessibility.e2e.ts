@@ -64,6 +64,12 @@ if (!baselineOnly) {
         if (await body.evaluate(el => el.scrollHeight > el.clientHeight)) {
           await body.evaluate(el => { el.scrollTop = 0; }); await page.keyboard.press("PageDown");
           await expect.poll(() => body.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+          // Finish keyboard scrolling before instant centering and strict bounds.
+          await body.evaluate(el => new Promise<void>(resolve => {
+            let previous = el.scrollTop, stableFrames = 0;
+            const settle = () => { const current = el.scrollTop; stableFrames = current === previous ? stableFrames + 1 : 0; previous = current; if (stableFrames >= 5) resolve(); else requestAnimationFrame(settle); };
+            requestAnimationFrame(settle);
+          }));
         }
         const regions = await dialog.locator(".cc-retention__panel, .cc-retention__header, .cc-retention__tabs, [role=tablist], .cc-retention__body, article").evaluateAll(elements => elements.map(el => { const e = el as HTMLElement; const r = e.getBoundingClientRect(); return { left: r.left, right: r.right, client: e.clientWidth, scroll: e.scrollWidth }; }));
         for (const region of regions) { expect(region.left).toBeGreaterThanOrEqual(0); expect(region.right).toBeLessThanOrEqual(width); expect(region.scroll).toBeLessThanOrEqual(region.client); }
