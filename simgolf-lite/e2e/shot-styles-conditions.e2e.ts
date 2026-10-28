@@ -115,6 +115,27 @@ async function cameraPreflight(page: Page, rotation: IsoRotation) {
   expect(Math.abs(at.x - 330)).toBeLessThan(30);
   expect(Math.abs(at.y - 420)).toBeLessThan(30);
 }
+function supportedWaterZoom(camera: { zoom: number; targetZoom: number } | null | undefined) {
+  return Boolean(camera && Number.isFinite(camera.zoom) && Number.isFinite(camera.targetZoom)
+    && camera.zoom > 0 && camera.targetZoom > 0 && Math.max(camera.zoom, camera.targetZoom) <= 0.8754523170304658
+    && Math.abs(camera.zoom - camera.targetZoom) < .0001);
+}
+type FramingBounds = { x: number; y: number; width: number; height: number };
+function waterPauseRoiGeometry(projection: { x: number; y: number }, image: { width: number; height: number },
+  canvas: FramingBounds, section: FramingBounds, shadow: string) {
+  const finite = [projection.x, projection.y, image.width, image.height, canvas.x, canvas.y, canvas.width, canvas.height,
+    section.x, section.y, section.width, section.height].every(Number.isFinite);
+  const dimensions = image.width > 0 && image.height > 0 && canvas.width > 0 && canvas.height > 0 && section.width > 0 && section.height > 0;
+  const roiInside = Math.round(projection.x) - 3 >= 0 && Math.round(projection.x) + 3 < image.width
+    && Math.round(projection.y) - 3 >= 0 && Math.round(projection.y) + 3 < image.height;
+  const sectionIntersects = section.x < canvas.x + canvas.width && section.x + section.width > canvas.x
+    && section.y < canvas.y + canvas.height && section.y + section.height > canvas.y;
+  const sourceShadowMatches = shadow === "rgba(0, 0, 0, 0.42) 0px 24px 64px 0px";
+  const roiRightCss = canvas.x + (Math.round(projection.x) + 3 + .5) * canvas.width / image.width;
+  const clearanceCss = section.x - roiRightCss;
+  return { roiRightCss, clearanceCss, sourceShadowMatches,
+    clear: finite && dimensions && roiInside && sectionIntersects && sourceShadowMatches && clearanceCss >= 128 };
+}
 async function setup(page: Page, scenario: "obstacle" | "water" | "slopes", rotation: IsoRotation = 0) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -157,14 +178,26 @@ async function setup(page: Page, scenario: "obstacle" | "water" | "slopes", rota
     await page.mouse.wheel(0, -120);
     await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()?.camera.zoom ?? 0)).toBeGreaterThan(zoom + .02);
   }
+  let waterTargetZoom: number | undefined;
+  if (scenario === "water") {
+    // Settle the original zoom before framing its full retained path left of the shadow.
+    await page.waitForFunction(() => {
+      const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
+      return camera && Math.abs(camera.zoom - camera.targetZoom) < .0001;
+    });
+    const camera = await page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()?.camera);
+    expect(supportedWaterZoom(camera), "water framing requires its source-bounded original zoom").toBe(true);
+    waterTargetZoom = camera!.targetZoom;
+  }
+  const launchX = scenario === "water" ? 150 : 330;
   // Real camera input keeps the shot left of the pause dialog.
   for (let step = 0; step < 5; step++) {
     const at = await page.evaluate(() => window.__coursecraftPixiTest!.tileToScreen(4, 8));
     if (!at) throw new Error("Missing launch projection.");
-    if (Math.abs(at.x - 330) < 30 && Math.abs(at.y - 420) < 30) break;
+    if (Math.abs(at.x - launchX) < 30 && Math.abs(at.y - 420) < 30) break;
     await page.mouse.move(bounds.x + 320, bounds.y + 420);
     await page.mouse.down({ button: "middle" });
-    await page.mouse.move(bounds.x + 320 + Math.max(-180, Math.min(180, 330 - at.x)),
+    await page.mouse.move(bounds.x + 320 + Math.max(-180, Math.min(180, launchX - at.x)),
       bounds.y + 420 + Math.max(-150, Math.min(150, 420 - at.y)), { steps: 4 });
     await page.mouse.up({ button: "middle" });
     await page.waitForFunction(() => {
@@ -172,21 +205,43 @@ async function setup(page: Page, scenario: "obstacle" | "water" | "slopes", rota
       return camera && Math.abs(camera.center.x - camera.targetCenter.x) < .01 && Math.abs(camera.center.y - camera.targetCenter.y) < .01;
     });
   }
-  await page.waitForFunction(() => {
-    const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
-    return camera && Math.abs(camera.zoom - camera.targetZoom) < .0001;
-  });
+  if (scenario === "water") {
+    const framing = await page.evaluate(() => ({
+      launch: window.__coursecraftPixiTest!.tileToScreen(4, 8),
+      camera: window.__coursecraftPixiTest!.cameraTransform()?.camera,
+    }));
+    if (!framing.launch) throw new Error("Missing final water launch projection.");
+    expect(Math.abs(framing.launch.x - launchX)).toBeLessThan(30);
+    expect(Math.abs(framing.launch.y - 420)).toBeLessThan(30);
+    expect(supportedWaterZoom(framing.camera)).toBe(true);
+    expect(framing.camera!.targetZoom).toBe(waterTargetZoom);
+  } else {
+    await page.waitForFunction(() => {
+      const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
+      return camera && Math.abs(camera.zoom - camera.targetZoom) < .0001;
+    });
+  }
   return errors;
 }
-async function commit(page: Page, club: string, target: { x: number; y: number }, firstProgress: number) {
+async function commit(page: Page, club: string, target: { x: number; y: number }, firstProgress: number, requireWaterAim = false) {
   await page.getByTestId("player-shot-club").selectOption(club);
   await page.getByTestId("player-shot-style").selectOption("straight_run");
   await page.getByTestId("player-shot-power").focus();
   await page.keyboard.press("Home");
   await expect(page.getByTestId("player-shot-power")).toHaveValue("25");
+  const bounds = await page.locator(".cc-pixi-stage canvas").boundingBox();
+  if (!bounds) throw new Error("Missing native canvas bounds.");
+  const pointerExit = { x: bounds.x + bounds.width * .35, y: bounds.y + bounds.height * .45 };
+  expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y) === document.querySelector(".cc-pixi-stage canvas"), pointerExit),
+    "aim pointer exit must land on uncovered interior canvas").toBe(true);
   const screen = await page.evaluate((target) => window.__coursecraftPixiTest!.tileToScreen(target.x, target.y), target);
   if (!screen) throw new Error("Missing aim projection.");
+  if (requireWaterAim) {
+    expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y) === document.querySelector(".cc-pixi-stage canvas"),
+      { x: bounds.x + screen.x, y: bounds.y + screen.y }), "water aim must hit uncovered canvas").toBe(true);
+  }
   await page.locator(".cc-pixi-stage").click({ position: screen });
+  await page.mouse.move(pointerExit.x, pointerExit.y);
   await expect.poll(async () => Math.hypot((await round(page)).aim.x - target.x, (await round(page)).aim.y - target.y)).toBeLessThan(1);
   await expect(page.getByTestId("commit-player-shot")).toBeEnabled();
   // Observe before dispatch; durable save verification must not consume a brief
@@ -198,7 +253,7 @@ async function commit(page: Page, club: string, target: { x: number; y: number }
   const readCommitted = () => committed ??= verifyCommittedShot(page);
   return { readCommitted, firstPhase };
 }
-async function pixelEvidence(page: Page, info: TestInfo, name: string, point: { x: number; y: number }, heightYards: number, marker: "ball" | "relief" | "penalty-rest" = "ball") {
+async function pixelEvidence(page: Page, info: TestInfo, name: string, point: { x: number; y: number }, heightYards: number, marker: "ball" | "relief" | "penalty-rest" = "ball", requireWaterClearance = false) {
   const camera = (await state(page)).camera;
   const iso = worldToIso(point.x + .5, point.y + .5, heightYards / 2.5, camera.rotation as IsoRotation);
   const transform = await page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform());
@@ -212,6 +267,18 @@ async function pixelEvidence(page: Page, info: TestInfo, name: string, point: { 
   const y = ((iso.y - 2 - transform.world.pivot.y) * transform.world.scale.y + transform.world.position.y) * pixels.height / bounds.height;
   expect(x).toBeGreaterThan(12); expect(x).toBeLessThan(pixels.width - 12);
   expect(y).toBeGreaterThan(12); expect(y).toBeLessThan(pixels.height - 12);
+  let pauseGeometry: ReturnType<typeof waterPauseRoiGeometry> | undefined;
+  if (requireWaterClearance) {
+    const pause = page.getByTestId("pause-overlay");
+    await expect(pause).toBeVisible();
+    const section = pause.locator("section");
+    const sectionBounds = await section.boundingBox();
+    const canvasBounds = await canvas.boundingBox();
+    if (!sectionBounds || !canvasBounds) throw new Error("Missing actual water pause/canvas geometry.");
+    const shadow = await section.evaluate((element) => getComputedStyle(element).boxShadow);
+    pauseGeometry = waterPauseRoiGeometry({ x, y }, pixels, canvasBounds, sectionBounds, shadow);
+    expect(pauseGeometry.clear, "water's full PNG ROI must clear the original pause shadow by 128 CSS pixels: " + JSON.stringify(pauseGeometry)).toBe(true);
+  }
   let count = 0;
   const radius = marker === "relief" ? 12 : 3;
   for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
@@ -222,11 +289,12 @@ async function pixelEvidence(page: Page, info: TestInfo, name: string, point: { 
       : Math.min(r, g, b) > 70 && Math.max(r, g, b) - Math.min(r, g, b) < 25) count++;
   }
   expect(count, marker + " must occupy its canonical retained projection").toBeGreaterThan(0);
-  return { point, heightYards, iso, projection: { x, y }, visiblePixels: count, camera, transform };
+  return { point, heightYards, iso, projection: { x, y }, visiblePixels: count, camera, transform, ...(pauseGeometry ? { pauseGeometry } : {}) };
 }
-async function capture(page: Page, info: TestInfo, readCommitted: ReadCommittedShot, progress: number, name: string, phase = "airborne", ready = observePhase(page, progress, phase)) {
+async function capture(page: Page, info: TestInfo, readCommitted: ReadCommittedShot, progress: number, name: string, phase = "airborne", ready = observePhase(page, progress, phase), requireWaterClearance = false) {
   resolved(await ready);
-  await page.getByRole("button", { name: "Open pause menu" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("pause-overlay")).toBeVisible();
   const frozen = (await playback(page))!;
   const { shot, motion } = await readCommitted();
   expect(frozen.shotId).toBe(shot.id);
@@ -237,7 +305,7 @@ async function capture(page: Page, info: TestInfo, readCommitted: ReadCommittedS
   expect(frozen.point.x).toBeCloseTo(expected.point.x, 7);
   expect(frozen.point.y).toBeCloseTo(expected.point.y, 7);
   expect(frozen.heightYards).toBeCloseTo(expected.heightYards, 7);
-  const visible = await pixelEvidence(page, info, name, expected.point, expected.heightYards);
+  const visible = await pixelEvidence(page, info, name, expected.point, expected.heightYards, "ball", requireWaterClearance);
   expect(frozen.ball.x).toBeCloseTo(visible.iso.x, 6);
   expect(frozen.ball.y).toBeCloseTo(visible.iso.y, 6);
   await page.keyboard.press("Escape");
@@ -290,14 +358,14 @@ test("obstacle collision and vertical drop use committed motion before static re
 
 test("water physical rest and static legal relief remain distinct with one penalty", async ({ page }, info) => {
   const errors = await setup(page, "water");
-  const { readCommitted, firstPhase } = await commit(page, "Driver", { x: 18, y: 8 }, .25);
-  const airborne = await capture(page, info, readCommitted, .25, "water-airborne", "airborne", firstPhase);
+  const { readCommitted, firstPhase } = await commit(page, "Driver", { x: 18, y: 8 }, .25, true);
+  const airborne = await capture(page, info, readCommitted, .25, "water-airborne", "airborne", firstPhase, true);
   const { motion, shot } = await readCommitted();
   expect(shot.penaltyStrokes).toBe(1);
   expect(shot.sharedOutcome!.ruling.penaltyKind).toBe("penalty_area");
   expect(motion.reliefPosition).not.toBeNull();
   expect(motion.reliefPosition).not.toEqual(motion.physicalRest.point);
-  const contact = await capture(page, info, readCommitted, .8, "water-ground-contact", "rollout");
+  const contact = await capture(page, info, readCommitted, .8, "water-ground-contact", "rollout", undefined, true);
   expect(contact.expected.point).not.toEqual(motion.reliefPosition);
   const saved = await finish(page, motion);
   expect(saved.penalties).toBe(1);
