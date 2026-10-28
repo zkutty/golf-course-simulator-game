@@ -362,12 +362,24 @@ interface HoleScoreCacheEntry {
   obstacles: Course["obstacles"];
   tileDependencies: Map<number, Terrain>;
   elevationDependencies: Map<number, number>;
+  elevationToken: object | null;
   result: HoleScore;
 }
 
 let holeScoreCache = new WeakMap<Hole, HoleScoreCacheEntry>();
 let holeScoreCacheHits = 0;
 let holeScoreCacheMisses = 0;
+// An optimized search can omit old rejected-candidate elevation reads. Keep
+// immutable elevation replacement conservative without retaining its array in
+// each Hole entry: a retained empty token has no reference back to its key.
+const elevationTokens = new WeakMap<number[], object>();
+function elevationTokenFor(values: number[]): object {
+  const cached = elevationTokens.get(values);
+  if (cached) return cached;
+  const token = {};
+  elevationTokens.set(values, token);
+  return token;
+}
 
 function numericIndex(property: string | symbol): number | null {
   if (typeof property !== "string" || property.length === 0) return null;
@@ -413,9 +425,11 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number, prepare
   const searchDomain = preparedDomain ?? prepareShotSearchDomain(course, hole);
   const cached = holeScoreCache.get(hole);
   const elevations = course.elevations ?? [];
+  const elevationToken = searchDomain.eligible ? elevationTokenFor(elevations) : null;
   if (
     cached &&
     sameShotSearchDomain(cached.searchDomain, searchDomain) &&
+    cached.elevationToken === elevationToken &&
     cached.width === course.width &&
     cached.height === course.height &&
     cached.yardsPerTile === (course.yardsPerTile ?? 10) &&
@@ -454,6 +468,7 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number, prepare
     obstacles: course.obstacles,
     tileDependencies,
     elevationDependencies,
+    elevationToken,
     result,
   });
   return result;
