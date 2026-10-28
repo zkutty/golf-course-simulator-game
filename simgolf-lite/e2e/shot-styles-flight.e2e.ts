@@ -467,6 +467,41 @@ test("selected live golfer follows its retained current segment without revealin
   const overview = page.getByTestId("live-overview");
   // The overview exposes actual golfers in the same visible row order.
   const index = (await textState(page)).golfers.findIndex((golfer: { id: number }) => golfer.id === actor!.id);
+  const overviewPublicationDeadline = performance.now() + 5000;
+  const checkOverviewPublicationDeadline = () => {
+    if (performance.now() >= overviewPublicationDeadline) throw new Error("Paused overview UI publication exceeded the original 5000ms deadline");
+  };
+  expect(Number.isInteger(index), "original live actor index is present").toBe(true);
+  expect(index).toBeGreaterThanOrEqual(0);
+  const readPausedOverviewAuthority = async () => {
+    checkOverviewPublicationDeadline();
+    const value = await textState(page);
+    checkOverviewPublicationDeadline();
+    expect(value.simulation.speed).toBe("paused");
+    expect(value.playerPro.activeRound).toBeNull();
+    const liveActor = value.golfers.find((golfer: { id: number }) => golfer.id === actor!.id);
+    expect(liveActor?.ballMotion?.active).toBe(true);
+    expect(liveActor?.ballMotion).toEqual(current.ballMotion);
+    return { golfers: value.golfers, authorityHashes: value.onboarding.authorityHashes,
+      simulationGolfers: value.simulation.golfers, speed: value.simulation.speed,
+      dayMinute: value.simulation.dayMinute, clock: value.simulation.clock, round: value.playerPro.activeRound };
+  };
+  const pausedOverviewAuthority = await readPausedOverviewAuthority();
+  let overviewRowReady = false;
+  for (let step = 0; step <= 20; step++) {
+    checkOverviewPublicationDeadline();
+    const rowCount = await overview.locator("button:has(b)").count();
+    checkOverviewPublicationDeadline();
+    expect(await readPausedOverviewAuthority()).toEqual(pausedOverviewAuthority);
+    if (rowCount > index) { overviewRowReady = true; break; }
+    if (step === 20) break;
+    checkOverviewPublicationDeadline();
+    await clock.run(16, "paused overview UI publication");
+    checkOverviewPublicationDeadline();
+    expect(await readPausedOverviewAuthority()).toEqual(pausedOverviewAuthority);
+  }
+  expect(overviewRowReady, "original overview row published within 20 normal steps").toBe(true);
+  checkOverviewPublicationDeadline();
   await overview.locator("button:has(b)").nth(index).click();
   await expect(page.locator(".cc-golfer-inspector")).toBeVisible();
   await expect.poll(async () => (await textState(page)).selectedGolferEvidence?.golferId).toBe(actor!.id);
