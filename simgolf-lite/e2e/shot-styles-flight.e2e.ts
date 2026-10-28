@@ -503,7 +503,44 @@ test("selected live golfer follows its retained current segment without revealin
   expect(overviewRowReady, "original overview row published within 20 normal steps").toBe(true);
   checkOverviewPublicationDeadline();
   await overview.locator("button:has(b)").nth(index).click();
-  await expect(page.locator(".cc-golfer-inspector")).toBeVisible();
+  const inspectorPublicationDeadline = performance.now() + 5000;
+  const remainingInspectorPublicationBudget = () => {
+    const remaining = inspectorPublicationDeadline - performance.now();
+    if (remaining <= 0) throw new Error("Paused inspector UI publication exceeded the original 5000ms deadline");
+    return remaining;
+  };
+  const readPausedInspectorAuthority = async () => {
+    remainingInspectorPublicationBudget();
+    const value = await textState(page);
+    remainingInspectorPublicationBudget();
+    expect(value.selectedGolferEvidence?.golferId).toBe(actor!.id);
+    expect(value.simulation.speed).toBe("paused");
+    expect(value.playerPro.activeRound).toBeNull();
+    const liveActor = value.golfers.find((golfer: { id: number }) => golfer.id === actor!.id);
+    expect(liveActor?.ballMotion?.active).toBe(true);
+    expect(liveActor?.ballMotion).toEqual(current.ballMotion);
+    expect({ golfers: value.golfers, authorityHashes: value.onboarding.authorityHashes,
+      simulationGolfers: value.simulation.golfers, speed: value.simulation.speed,
+      dayMinute: value.simulation.dayMinute, clock: value.simulation.clock, round: value.playerPro.activeRound }).toEqual(pausedOverviewAuthority);
+  };
+  await readPausedInspectorAuthority();
+  let inspectorAttached = false;
+  for (let step = 0; step <= 20; step++) {
+    remainingInspectorPublicationBudget();
+    const inspectorCount = await page.locator(".cc-golfer-inspector").count();
+    remainingInspectorPublicationBudget();
+    await readPausedInspectorAuthority();
+    if (inspectorCount > 0) { inspectorAttached = true; break; }
+    if (step === 20) break;
+    remainingInspectorPublicationBudget();
+    await clock.run(16, "paused inspector UI publication");
+    remainingInspectorPublicationBudget();
+    await readPausedInspectorAuthority();
+  }
+  expect(inspectorAttached, "original inspector attached within 20 normal steps").toBe(true);
+  await expect(page.locator(".cc-golfer-inspector")).toBeVisible({ timeout: remainingInspectorPublicationBudget() });
+  remainingInspectorPublicationBudget();
+  await readPausedInspectorAuthority();
   await expect.poll(async () => (await textState(page)).selectedGolferEvidence?.golferId).toBe(actor!.id);
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.keyboard.press("Control+KeyS");
