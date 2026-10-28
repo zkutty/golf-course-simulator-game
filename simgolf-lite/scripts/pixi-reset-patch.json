@@ -218,6 +218,78 @@
       "inverseByteExact": true,
       "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
       "purpose": "Forget cleared historical texture-source IDs while preserving live peer lookup tables and borrowed textures."
+    },
+    {
+      "relativePath": "lib/rendering/renderers/gl/shader/GlProgram.mjs",
+      "originalSha256": "6cd38d2da8e6e73f913a1f8451359c190f973aef4f79e96abafc45d3b881d08c",
+      "patchedSha256": "422c6440c4ea8d32f9e29b71371b19448c44a4c7c47936d7051b27b4a639863f",
+      "originalBytes": 3445,
+      "patchedBytes": 3965,
+      "edits": [
+        {
+          "before": "import { createIdFromString } from '../../shared/utils/createIdFromString.mjs';\nimport { getMaxFragmentPrecision } from './program/getMaxFragmentPrecision.mjs';",
+          "after": "import { getMaxFragmentPrecision } from './program/getMaxFragmentPrecision.mjs';"
+        },
+        {
+          "before": "const programCache = /* @__PURE__ */ Object.create(null);",
+          "after": "const programCache = /* @__PURE__ */ Object.create(null);\n// Exact source IDs are shared only while a GlProgram still owns them.\nconst programKeyRecords = /* @__PURE__ */ new Map();\nlet nextProgramKey = 0;"
+        },
+        {
+          "before": "    this._key = createIdFromString(`${this.vertex}:${this.fragment}`, \"gl-program\");",
+          "after": "    const sourceKey = `${this.vertex}:${this.fragment}`;\n    let keyRecord = programKeyRecords.get(sourceKey);\n    if (!keyRecord) {\n      keyRecord = { key: sourceKey, id: ++nextProgramKey, references: 0 };\n      programKeyRecords.set(sourceKey, keyRecord);\n    }\n    keyRecord.references++;\n    this._keyRecord = keyRecord;\n    this._key = keyRecord.id;"
+        },
+        {
+          "before": "  destroy() {\n    this.fragment = null;",
+          "after": "  destroy() {\n    const keyRecord = this._keyRecord;\n    if (keyRecord) {\n      this._keyRecord = null;\n      if (--keyRecord.references === 0) programKeyRecords.delete(keyRecord.key);\n    }\n    this.fragment = null;"
+        },
+        {
+          "before": "    programCache[this._cacheKey] = null;",
+          "after": "    if (programCache[this._cacheKey] === this) delete programCache[this._cacheKey];"
+        },
+        {
+          "before": "//# sourceMappingURL=GlProgram.mjs.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
+      "purpose": "Lease exact processed-source numeric GL IDs to live GlProgram owners; release last retired key and only owned raw cache entry. Monotonic class-local IDs preserve live source equivalence and never recycle; internal equality/order with public createIdFromString IDs is no longer preserved."
+    },
+    {
+      "relativePath": "lib/rendering/renderers/gl/shader/GlProgram.js",
+      "originalSha256": "c1acb45794ccbd0728b2e89be1db4d504f4e779501a54761419fbb01fd788d20",
+      "patchedSha256": "aa917d523b75a8c439e6561e52839b62ad3c14c0923659388f61f1be8ff31d6c",
+      "originalBytes": 3654,
+      "patchedBytes": 4158,
+      "edits": [
+        {
+          "before": "var createIdFromString = require('../../shared/utils/createIdFromString.js');\nvar getMaxFragmentPrecision = require('./program/getMaxFragmentPrecision.js');",
+          "after": "var getMaxFragmentPrecision = require('./program/getMaxFragmentPrecision.js');"
+        },
+        {
+          "before": "const programCache = /* @__PURE__ */ Object.create(null);",
+          "after": "const programCache = /* @__PURE__ */ Object.create(null);\n// Exact source IDs are shared only while a GlProgram still owns them.\nconst programKeyRecords = /* @__PURE__ */ new Map();\nlet nextProgramKey = 0;"
+        },
+        {
+          "before": "    this._key = createIdFromString.createIdFromString(`${this.vertex}:${this.fragment}`, \"gl-program\");",
+          "after": "    const sourceKey = `${this.vertex}:${this.fragment}`;\n    let keyRecord = programKeyRecords.get(sourceKey);\n    if (!keyRecord) {\n      keyRecord = { key: sourceKey, id: ++nextProgramKey, references: 0 };\n      programKeyRecords.set(sourceKey, keyRecord);\n    }\n    keyRecord.references++;\n    this._keyRecord = keyRecord;\n    this._key = keyRecord.id;"
+        },
+        {
+          "before": "  destroy() {\n    this.fragment = null;",
+          "after": "  destroy() {\n    const keyRecord = this._keyRecord;\n    if (keyRecord) {\n      this._keyRecord = null;\n      if (--keyRecord.references === 0) programKeyRecords.delete(keyRecord.key);\n    }\n    this.fragment = null;"
+        },
+        {
+          "before": "    programCache[this._cacheKey] = null;",
+          "after": "    if (programCache[this._cacheKey] === this) delete programCache[this._cacheKey];"
+        },
+        {
+          "before": "//# sourceMappingURL=GlProgram.js.map\n",
+          "after": ""
+        }
+      ],
+      "inverseByteExact": true,
+      "sourceMaps": "Stale sourceMappingURL removed; maps not modified.",
+      "purpose": "Lease exact processed-source numeric GL IDs to live GlProgram owners; release last retired key and only owned raw cache entry. Monotonic class-local IDs preserve live source equivalence and never recycle; internal equality/order with public createIdFromString IDs is no longer preserved."
     }
   ]
 }

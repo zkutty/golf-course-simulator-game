@@ -10,7 +10,7 @@ function donorOriginal(f){
  let text=raw.toString('utf8');
  // Reverse ONLY the exact edits and removed source-map comments recorded in metadata.
  for(const edit of [...f.edits].reverse()){
-  if(edit.after===''){assert.match(edit.before,/^\/\/# sourceMappingURL=(?:BatchableGraphics|AbstractText|AbstractRenderer|Batcher|BatchTextureArray)\.(?:mjs|js)\.map\n$/);text+=edit.before;}
+  if(edit.after===''){assert.match(edit.before,/^\/\/# sourceMappingURL=(?:BatchableGraphics|AbstractText|AbstractRenderer|Batcher|BatchTextureArray|GlProgram)\.(?:mjs|js)\.map\n$/);text+=edit.before;}
   else{assert.equal(text.split(edit.after).length,2,'unique patched source inverse');text=text.replace(edit.after,edit.before);}
  }
  const original=Buffer.from(text);assert.equal(hash(original),f.originalSha256,'inverse original full checksum');return original;

@@ -96,7 +96,7 @@
     "deploy:check": "WRANGLER_LOG_PATH=/tmp/coursecraft-deploy-check.log wrangler deploy --dry-run --env=\"\"",
     "deploy:check:staging": "WRANGLER_LOG_PATH=/tmp/coursecraft-deploy-check-staging.log wrangler deploy --dry-run --env staging",
     "postinstall": "node scripts/apply-pixi-reset-patch.mjs",
-    "test:pixi-patch": "node --test scripts/test-pixi-reset-patch.mjs"
+    "test:pixi-patch": "node --test --test-concurrency=1 scripts/test-pixi-reset-patch.mjs scripts/test-pixi-gl-program-lifetime.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.67.0",
