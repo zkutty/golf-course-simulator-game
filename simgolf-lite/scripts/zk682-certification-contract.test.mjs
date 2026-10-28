@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import vm from "node:vm";
 import { createPwaPersistenceReport } from "./pwa-save-evidence.mjs";
 import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence-contract.mjs";
 import { ZK682_RESOURCE_GROWTH_THRESHOLDS, createZk682ResourceGrowthReport } from "./zk682-resource-growth-contract.mjs";
@@ -388,4 +389,94 @@ test("typed stability certification validates corrected producers and rejects fa
     update(report => { report.producer.runtime.dev = true; });
     assert.ok(validateZk682EvidenceManifest(value.manifest, value.options).errors.some(error => error.includes("production-bundled e2e")));
   } finally { cleanup(value); }
+});
+
+function extractedPerfFinalDecision() {
+  const source = readFileSync(new URL("./perf-smoke.mjs", import.meta.url), "utf8");
+  const budgetDeclaration = "const FIXTURE_LOAD_BUDGET_MS = 6000;";
+  assert.equal(source.split(budgetDeclaration).length - 1, 1, "fixed fixture budget declaration must remain unique and exact");
+  const start = source.indexOf("let failed = false;");
+  assert.notEqual(start, -1, "actual final-decision anchor must exist");
+  const tail = source.slice(start).trimEnd();
+  assert.ok(tail.endsWith(");"), "actual final-decision tail must include the complete final log");
+  for (const anchor of ["const gateValidation = {", "fixtureLoadWithinBudget,", "fixtureLoadMilliseconds: FIXTURE_LOAD_BUDGET_MS", "if (failed) process.exit(1);"]) {
+    assert.ok(tail.includes(anchor), `actual final-decision tail is missing ${anchor}`);
+  }
+  return `${budgetDeclaration}\n${tail}`;
+}
+
+function runExtractedPerfFinalDecision({ fixtureLoadMs, coldStartupMs = 2930, workMs = 1.6333333333909867, p95Ms = 100, assertFrame = false }) {
+  let receiptBytes;
+  let exitCode = 0;
+  const errors = [];
+  const sandbox = {
+    fixtureLoadMs,
+    coldStartupMs,
+    perf: { workMs, p95Ms },
+    STARTUP_BUDGET_MS: 5000,
+    WORK_BUDGET_MS: 8,
+    ASSERT_FRAME: assertFrame,
+    BUDGET_MS: 33,
+    PERF_FIXTURE: "m27Fixture",
+    PERF_THEME: "parkland",
+    MEASURE_S: 20,
+    WARMUP_S: 8,
+    HEADED: false,
+    browserEvidence: { fixture: true },
+    OUTPUT_PATH: "/captured/perf-receipt.json",
+    dirname: () => "/captured",
+    mkdirSync() {},
+    writeFileSync(_path, bytes) { receiptBytes = String(bytes); },
+    console: { log() {}, error(message) { errors.push(String(message)); } },
+    process: {
+      env: {},
+      exit(code) { exitCode = code; throw Object.assign(new Error("captured process.exit"), { code }); },
+    },
+  };
+  try {
+    vm.runInNewContext(extractedPerfFinalDecision(), sandbox, { filename: "perf-smoke-actual-final-decision" });
+  } catch (error) {
+    if (error.message !== "captured process.exit") throw error;
+    exitCode = error.code;
+  }
+  assert.ok(receiptBytes, "actual final-decision tail must serialize its receipt before exit");
+  return { exitCode, receipt: JSON.parse(receiptBytes), errors };
+}
+
+test("actual perf final decision enforces the fixed unrounded fixture-load limit and reports truthful exit", () => {
+  for (const [fixtureLoadMs, expectedExit] of [
+    [5999.999, 0], [6000, 0], [6000.001, 1], [6001, 1], [239435, 1],
+    [Number.NaN, 1], [Number.POSITIVE_INFINITY, 1], [-0.001, 1],
+  ]) {
+    const { exitCode, receipt, errors } = runExtractedPerfFinalDecision({ fixtureLoadMs });
+    assert.equal(exitCode, expectedExit, `fixtureLoadMs=${String(fixtureLoadMs)}`);
+    assert.equal(receipt.gateValidation.fixtureLoadWithinBudget, expectedExit === 0);
+    assert.equal(receipt.effective.budgets.fixtureLoadMilliseconds, 6000);
+    assert.equal(receipt.gateValidation.passed, exitCode === 0);
+    assert.equal(receipt.version, 1);
+    assert.deepEqual(Object.keys(receipt), ["version", "theme", "fixture", "coldStartupMs", "fixtureLoadMs", "renderer", "effective", "physicalRun", "gateValidation"]);
+    assert.equal(receipt.effective.budgets.rendererWorkMilliseconds, 8);
+    assert.equal(receipt.effective.budgets.coldStartupMilliseconds, 5000);
+    assert.equal(receipt.effective.budgets.frameMilliseconds, 33);
+    if (expectedExit === 1 && (!Number.isFinite(fixtureLoadMs) || fixtureLoadMs < 0 || fixtureLoadMs > 6000)) {
+      assert.ok(errors.some(message => message.includes("m27Fixture load") && message.includes("budget 6000ms") || message.includes("m27Fixture load timing") && message.includes("invalid")));
+    }
+  }
+});
+
+test("actual perf final decision preserves cold/work boundaries and optional frame reporting", () => {
+  for (const [coldStartupMs, workMs, expectedExit] of [
+    [5000, 8, 0], [5000.001, 8, 1], [5000, 8.001, 1],
+  ]) {
+    const { exitCode, receipt } = runExtractedPerfFinalDecision({ fixtureLoadMs: 6000, coldStartupMs, workMs });
+    assert.equal(exitCode, expectedExit);
+    assert.equal(receipt.gateValidation.passed, exitCode === 0);
+  }
+  const reportOnlyFrame = runExtractedPerfFinalDecision({ fixtureLoadMs: 6000, p95Ms: 100, assertFrame: false });
+  assert.equal(reportOnlyFrame.exitCode, 0);
+  assert.equal(reportOnlyFrame.receipt.gateValidation.frameWithinBudget, null);
+  const assertedFrame = runExtractedPerfFinalDecision({ fixtureLoadMs: 6000, p95Ms: 100, assertFrame: true });
+  assert.equal(assertedFrame.exitCode, 1);
+  assert.equal(assertedFrame.receipt.gateValidation.frameWithinBudget, false);
+  assert.equal(assertedFrame.receipt.gateValidation.passed, false);
 });

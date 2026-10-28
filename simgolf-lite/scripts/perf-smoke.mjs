@@ -33,6 +33,7 @@ const BIOME_KEYS = loadBiomeKeys();
 const PERF_THEME = BIOME_KEYS.includes(process.env.PERF_THEME) ? process.env.PERF_THEME : BIOME_KEYS[0];
 const PERF_FIXTURE = process.env.PERF_FIXTURE === "m27" ? "m27Fixture" : "perfFixture";
 const STARTUP_BUDGET_MS = Number(process.env.PERF_STARTUP_BUDGET_MS || 5000);
+const FIXTURE_LOAD_BUDGET_MS = 6000;
 const FIXTURE_READY_TIMEOUT_MS = Number(process.env.PERF_FIXTURE_READY_TIMEOUT_MS || 120_000);
 const WARMUP_S = 8;
 const OUTPUT_PATH = process.env.PERF_OUTPUT_PATH
@@ -181,8 +182,16 @@ if (!perf) {
 console.log("[perf-smoke] result:", JSON.stringify(perf, null, 2));
 console.log(`[perf-smoke] cold startup ${coldStartupMs.toFixed(0)}ms; ${PERF_FIXTURE} load ${fixtureLoadMs.toFixed(0)}ms`);
 let failed = false;
+const fixtureLoadWithinBudget = Number.isFinite(fixtureLoadMs) && fixtureLoadMs >= 0 && fixtureLoadMs <= FIXTURE_LOAD_BUDGET_MS;
 if (coldStartupMs > STARTUP_BUDGET_MS) {
   console.error(`[perf-smoke] FAIL: cold startup ${coldStartupMs.toFixed(0)}ms > budget ${STARTUP_BUDGET_MS}ms`);
+  failed = true;
+}
+if (!Number.isFinite(fixtureLoadMs) || fixtureLoadMs < 0) {
+  console.error(`[perf-smoke] FAIL: ${PERF_FIXTURE} load timing ${String(fixtureLoadMs)}ms is invalid; expected finite non-negative timing within ${FIXTURE_LOAD_BUDGET_MS}ms`);
+  failed = true;
+} else if (fixtureLoadMs > FIXTURE_LOAD_BUDGET_MS) {
+  console.error(`[perf-smoke] FAIL: ${PERF_FIXTURE} load ${fixtureLoadMs.toFixed(3)}ms > budget ${FIXTURE_LOAD_BUDGET_MS}ms`);
   failed = true;
 }
 if (perf.workMs > WORK_BUDGET_MS) {
@@ -195,6 +204,7 @@ if (ASSERT_FRAME && perf.p95Ms > BUDGET_MS) {
 }
 const gateValidation = {
   coldStartupWithinBudget: coldStartupMs <= STARTUP_BUDGET_MS,
+  fixtureLoadWithinBudget,
   rendererWorkWithinBudget: perf.workMs <= WORK_BUDGET_MS,
   frameWithinBudget: ASSERT_FRAME ? perf.p95Ms <= BUDGET_MS : null,
   passed: !failed,
@@ -216,6 +226,7 @@ const evidence = {
     budgets: {
       rendererWorkMilliseconds: WORK_BUDGET_MS,
       coldStartupMilliseconds: STARTUP_BUDGET_MS,
+      fixtureLoadMilliseconds: FIXTURE_LOAD_BUDGET_MS,
       frameMilliseconds: BUDGET_MS,
     },
   },
