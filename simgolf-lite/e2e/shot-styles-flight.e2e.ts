@@ -604,6 +604,54 @@ test("midflight autosave reload resumes the same retained shot without rescoring
   const motion = saved.round.pendingShot.sharedOutcome.motion as RetainedShotMotionV1;
   await page.reload();
   await page.getByRole("button", { name: "Load Game", exact: true }).click();
+  const reloadPublicationDeadline = performance.now() + 5000;
+  const remainingReloadPublicationBudget = () => {
+    const remaining = reloadPublicationDeadline - performance.now();
+    if (remaining <= 0) throw new Error("Reload saved-slot UI publication exceeded the 5000ms deadline");
+    return remaining;
+  };
+  remainingReloadPublicationBudget();
+  const reloadMenuState = await textState(page);
+  remainingReloadPublicationBudget();
+  const reloadMenuAuthority = {
+    authorityHashes: reloadMenuState.onboarding.authorityHashes,
+    golfers: reloadMenuState.golfers, simulation: reloadMenuState.simulation,
+    round: reloadMenuState.playerPro.activeRound,
+  };
+  const readReloadMenuAuthority = async () => {
+    remainingReloadPublicationBudget();
+    const checkpoint = await readCheckpoint();
+    remainingReloadPublicationBudget();
+    expect(checkpoint, "Original persisted autosave checkpoint remains exact before native Load").toEqual(saved);
+    remainingReloadPublicationBudget();
+    const value = await textState(page);
+    remainingReloadPublicationBudget();
+    expect(value.screen).toBe("menu");
+    expect(value.screenBase).toBe("title");
+    expect(value.modal).toBe("save-load");
+    expect(value.paused).toBe(false);
+    expect(value.simulation.speed).toBe("paused");
+    expect(value.playerPro.activeRound).toBeNull();
+    expect(value.golfers.some((golfer: { ballMotion?: { active: boolean } }) => golfer.ballMotion?.active)).toBe(false);
+    expect({ authorityHashes: value.onboarding.authorityHashes, golfers: value.golfers,
+      simulation: value.simulation, round: value.playerPro.activeRound }).toEqual(reloadMenuAuthority);
+  };
+  await readReloadMenuAuthority();
+  let reloadSlotAttached = false;
+  for (let step = 0; step <= 20; step++) {
+    remainingReloadPublicationBudget();
+    const slotCount = await page.getByTestId(`save-slot-${saved.id}`).count();
+    remainingReloadPublicationBudget();
+    await readReloadMenuAuthority();
+    if (slotCount > 0) { reloadSlotAttached = true; break; }
+    if (step === 20) break;
+    remainingReloadPublicationBudget();
+    await clock.run(16, "reload saved-slot UI publication before native Load");
+    remainingReloadPublicationBudget();
+    await readReloadMenuAuthority();
+  }
+  expect(reloadSlotAttached, "Original saved slot attached within 20 normal steps").toBe(true);
+  remainingReloadPublicationBudget();
   await page.getByTestId(`save-slot-${saved.id}`).getByRole("button", { name: "Load", exact: true }).click();
   await clock.acquireRestoredIdentity(paused.shotId);
   const resumedPause = await clock.nativePause();
