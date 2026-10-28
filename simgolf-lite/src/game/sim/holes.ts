@@ -5,6 +5,7 @@ import { getGolferProfile } from "./golferProfiles";
 import type { ShotPlanStep } from "./shots/solveShotsToGreen";
 import { solveShotsToGreen } from "./shots/solveShotsToGreen";
 import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
+import { prepareShotSearchDomain, sameShotSearchDomain, shotSearchConfigUnchanged, withShotSearchDomain, type ShotSearchDomain } from "./shots/shotSearchDomain";
 
 export interface HoleScore {
   holeIndex: number;
@@ -351,6 +352,7 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
 }
 
 interface HoleScoreCacheEntry {
+  searchDomain: ShotSearchDomain;
   width: number;
   height: number;
   yardsPerTile: number;
@@ -406,12 +408,14 @@ function dependenciesMatch<T>(dependencies: Map<number, T>, values: T[]): boolea
  * participated in that hole's Dijkstra search, while immutable marker and
  * obstacle identities invalidate naturally.
  */
-export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleScore {
+export function scoreHole(course: Course, hole: Hole, holeIndex: number, preparedDomain?: ShotSearchDomain): HoleScore {
   course = courseWithEffectiveSurfaces(course);
+  const searchDomain = preparedDomain ?? prepareShotSearchDomain(course, hole);
   const cached = holeScoreCache.get(hole);
   const elevations = course.elevations ?? [];
   if (
     cached &&
+    sameShotSearchDomain(cached.searchDomain, searchDomain) &&
     cached.width === course.width &&
     cached.height === course.height &&
     cached.yardsPerTile === (course.yardsPerTile ?? 10) &&
@@ -435,8 +439,9 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
       ? { elevations: trackArrayReads(course.elevations, elevationDependencies) }
       : {}),
   };
-  const result = scoreHoleUncached(trackedCourse, hole, holeIndex);
+  const result = withShotSearchDomain(trackedCourse, searchDomain, () => scoreHoleUncached(trackedCourse, hole, holeIndex));
   holeScoreCache.set(hole, {
+    searchDomain,
     width: course.width,
     height: course.height,
     yardsPerTile: course.yardsPerTile ?? 10,
@@ -471,18 +476,20 @@ export function __resetHoleScoreCacheForTests(): void {
 // Whole-summary identity caching handles repeated reads in one render. The
 // per-hole dependency cache above carries expensive solves across immutable
 // course objects produced by drag painting/sculpting.
-const summaryCache = new WeakMap<Course, CourseHoleSummary>();
+const summaryCache = new WeakMap<Course, { result: CourseHoleSummary; searchDomain: ShotSearchDomain; everOptimized: boolean }>();
 
 export function scoreCourseHoles(course: Course): CourseHoleSummary {
   const cached = summaryCache.get(course);
-  if (cached) return cached;
-  const result = scoreCourseHolesUncached(courseWithEffectiveSurfaces(course));
-  summaryCache.set(course, result);
+  if (cached && shotSearchConfigUnchanged(cached.searchDomain, cached.everOptimized)) return cached.result;
+  const effectiveCourse = courseWithEffectiveSurfaces(course);
+  const searchDomain = prepareShotSearchDomain(effectiveCourse);
+  const result = scoreCourseHolesUncached(effectiveCourse, searchDomain);
+  summaryCache.set(course, { result, searchDomain, everOptimized: !!cached?.everOptimized || searchDomain.eligible });
   return result;
 }
 
-function scoreCourseHolesUncached(course: Course): CourseHoleSummary {
-  const holes = course.holes.map((h, i) => scoreHole(course, h, i));
+function scoreCourseHolesUncached(course: Course, searchDomain: ShotSearchDomain): CourseHoleSummary {
+  const holes = course.holes.map((h, i) => scoreHole(course, h, i, searchDomain));
   const scored = holes.filter((h) => h.isComplete);
   const holeQualityAvg =
     scored.length === 0 ? 0 : scored.reduce((acc, h) => acc + h.overallHoleScore, 0) / scored.length;

@@ -4,6 +4,7 @@ import { evalShotExpectedCost } from "./evalShotExpectedCost";
 import { BALANCE } from "../../balance/balanceConfig";
 import { courseWithEffectiveSurfaces } from "../../conditions/surfaceCare";
 import type { ShotSlopeContext } from "../../models/shotSlope";
+import { scoringShotFloor } from "./shotSearchDomain";
 
 export interface ShotPlanStep {
   from: Point;
@@ -111,6 +112,7 @@ export function solveShotsToGreen(args: {
   if (!candidateOK(tileAt(course, tee)) || !candidateOK(tileAt(course, green))) {
     return { reachable: false, expectedShotsToGreen: Infinity, plan: [] };
   }
+  const strokeFloor = scoringShotFloor(course, tee, green, golfer);
 
   const startK = key(tee);
   const goalK = key(green);
@@ -229,14 +231,14 @@ export function solveShotsToGreen(args: {
       }
     }
 
-    // Dijkstra can finish as soon as no unsettled state is cheaper than the
-    // best known goal. Equal-cost alternatives cannot replace the retained
-    // predecessor because relaxation above is intentionally strict (`<`).
-    // This matters on open ground where hundreds of one-stroke candidates
-    // otherwise churn before the one-stroke goal happens to leave the heap.
+    // Only internally admitted stable scoring inputs prove every remaining
+    // edge costs >=1. Monotone addition bounds every suffix by minKey+1;
+    // strict relaxation also preserves every retained predecessor on equality.
+    // Unregistered/public inputs keep the original frontier bound and order.
     const goalDistance = dist.get(goalK);
     const unsettledDistance = pq.minKey;
-    if (goalDistance != null && (unsettledDistance == null || goalDistance <= unsettledDistance)) break;
+    if (goalDistance != null && (unsettledDistance == null
+      || (strokeFloor === 1 ? goalDistance <= unsettledDistance + 1 : goalDistance <= unsettledDistance))) break;
   }
 
   const best = dist.get(goalK);
