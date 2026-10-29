@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { captureZk1205CandidateProvenance } from "../scripts/zk1205-candidate-provenance.mjs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -150,7 +151,7 @@ test("ZK-1205 exact 144-row real-pointer placement matrix", async ({ page }) => 
   if (!box) throw new Error("Canvas has no bounding box");
   const canvasOrigin = { x: box.x, y: box.y };
   const report: {
-    candidate: string;
+    candidate: ReturnType<typeof captureZk1205CandidateProvenance>;
     expectedRows: number;
     chunk: { startRow: number; maxRows: number; skipPersistence: boolean; runIntegrated: boolean };
     rows: unknown[];
@@ -159,7 +160,7 @@ test("ZK-1205 exact 144-row real-pointer placement matrix", async ({ page }) => 
     firstMismatch: unknown | null;
     errors: string[];
   } = {
-    candidate: "878cb8118cbd4d94ffb1b62285b8ee5a0c8c7327+working-tree",
+    candidate: captureZk1205CandidateProvenance(),
     expectedRows: 144,
     chunk: {
       startRow: START_ROW,
