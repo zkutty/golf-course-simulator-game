@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type * as PIXI from "pixi.js";
+import * as PIXI from "pixi.js";
 import { DEFAULT_COURSE } from "../../../game/models/defaults";
 import type { TerrainStrokePreview } from "../../../game/models/terrainStroke";
 import type { RenderSnapshot } from "../RenderSnapshot";
@@ -256,7 +256,7 @@ describe("overlay and diagnostics scene ownership", () => {
     scene.system.create!(snapshot());
     scene.system.beginFrame(1_500);
     scene.system.markPerf("hover+flags");
-    scene.system.finishFrame(1_500, 16, () => ({
+    scene.system.finishFrame(1_500, { elapsedMS: 16 }, () => ({
       golfers: 24,
       bubbles: 2,
       ripples: 1,
@@ -275,6 +275,41 @@ describe("overlay and diagnostics scene ownership", () => {
     scene.system.destroy!();
     expect(scene.texts[0].destroy).toHaveBeenCalledOnce();
     expect(scene.screenOverlay.children).toEqual([]);
+  });
+
+  it("reports raw elapsed frame time above the simulation cap and independent of ticker speed", () => {
+    const scene = fixture({ perfEnabled: true });
+    const ticker = new PIXI.Ticker();
+    ticker.autoStart = false;
+    ticker.lastTime = 0;
+    ticker.speed = 2;
+    try {
+      ticker.update(1_000);
+      expect(ticker.deltaMS).toBe(200);
+      expect(ticker.elapsedMS).toBe(1_000);
+      scene.system.create!(snapshot());
+      scene.system.beginFrame(1_500);
+      scene.system.finishFrame(1_500, ticker, () => ({
+        golfers: 0,
+        bubbles: 0,
+        ripples: 0,
+        impacts: 0,
+        ambientObjects: 0,
+        chunksVisible: 0,
+        chunksTotal: 0,
+        objects: 0,
+      }));
+      expect(scene.published).toHaveBeenCalledOnce();
+      expect(scene.published.mock.calls[0][0]).toMatchObject({
+        fps: 1,
+        meanMs: 1_000,
+        p95Ms: 1_000,
+        maxMs: 1_000,
+      });
+    } finally {
+      ticker.destroy();
+      scene.system.destroy!();
+    }
   });
 
   it("moves the light ball through frozen XYZ geometry while preserving pooled displays and hiding the future trace", () => {
