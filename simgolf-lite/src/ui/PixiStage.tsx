@@ -4169,7 +4169,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         }),
       });
 
-      overlaysDiagnostics?.finishFrame(nowMs, dtMs, () => {
+      overlaysDiagnostics?.finishFrame(nowMs, ticker, () => {
         const terrainDiagnostics = terrainWaterSceneRef.current?.diagnostics();
         return {
           ...(liveEntitiesSceneRef.current?.diagnostics() ?? {

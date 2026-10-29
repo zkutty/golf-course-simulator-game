@@ -117,7 +117,7 @@ export interface OverlaysDiagnosticsSceneSystem extends RenderSceneSystem {
   tick(input: OverlayTickInput): void;
   beginFrame(nowMs: number): void;
   markPerf(name: string): void;
-  finishFrame(nowMs: number, dtMs: number, diagnostics: () => PerfHudFrameDiagnostics): void;
+  finishFrame(nowMs: number, ticker: Pick<PIXI.Ticker, "elapsedMS">, diagnostics: () => PerfHudFrameDiagnostics): void;
   terrainPreview(): TerrainPreviewRenderDiagnostics | null;
   playerShotPlayback(): PlayerShotRenderDiagnostics | null;
 }
@@ -684,10 +684,11 @@ export function createOverlaysDiagnosticsSceneSystem(
     perf.lastMarkMs = mark;
   };
 
-  const finishFrame = (nowMs: number, dtMs: number, diagnosticsSource: () => PerfHudFrameDiagnostics) => {
+  const finishFrame = (nowMs: number, ticker: Pick<PIXI.Ticker, "elapsedMS">, diagnosticsSource: () => PerfHudFrameDiagnostics) => {
     if (!perf.enabled) return;
     markPerf("golfers+emotes");
-    perf.win.push({ totalMs: dtMs, sections: perf.sections });
+    // Use raw wall interval; deltaMS is simulation time capped/scaled by Pixi.
+    perf.win.push({ totalMs: ticker.elapsedMS, sections: perf.sections });
     if (nowMs - perf.lastHudMs <= 250) return;
     perf.lastHudMs = nowMs;
     const diagnostics = diagnosticsSource();
