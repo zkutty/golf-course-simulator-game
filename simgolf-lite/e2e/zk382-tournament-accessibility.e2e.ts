@@ -19,7 +19,7 @@ for (const locale of ["en", "pseudo"] as const) for (const width of [320, 768, 1
     await panel.locator("details").evaluateAll((items) => items.forEach((el) => (el as HTMLDetailsElement).open = true));
     const baseline = await sizes(panel); await page.evaluate(() => document.documentElement.style.fontSize = "130%"); const scaled = await sizes(panel);
     const measurements = { root: await page.locator("html").evaluate((el) => getComputedStyle(el).fontSize), panel: await bounds(panel), fonts: scaled.map((item, i) => ({ ...item, baseline: baseline[i].size, ratio: item.size / baseline[i].size })) };
-    writeFileSync(`/private/tmp/zk382-tournament-${locale}-${width}.json`, JSON.stringify(measurements, null, 2));
+    writeFileSync(testInfo.outputPath(`zk382-tournament-${locale}-${width}.json`), JSON.stringify(measurements, null, 2));
     await testInfo.attach("font-and-layout-measurements", { body: JSON.stringify(measurements), contentType: "application/json" });
     expect(measurements.root).toBe("20.8px");
     for (const item of measurements.fonts) expect(Math.abs(item.ratio - 1.3), `${item.tag} ${item.text}`).toBeLessThan(.01);
@@ -70,7 +70,7 @@ for (const locale of ["en", "pseudo"] as const) for (const width of [320, 768, 1
     await page.getByTestId("outside-after").focus(); await expect(page.getByTestId("outside-after")).toBeFocused();
     await page.keyboard.press("Escape"); await expect(panel).toBeVisible(); await expect(page.getByTestId("close-count")).toHaveText("0");
     await panel.evaluate((el) => el.scrollTo({ top: 0, behavior: "instant" }));
-    await testInfo.attach("scaled-tournament", { body: await page.screenshot({ path: `/private/tmp/zk382-tournament-${locale}-${width}-green.png` }), contentType: "image/png" });
+    await testInfo.attach("scaled-tournament", { body: await page.screenshot({ path: testInfo.outputPath(`zk382-tournament-${locale}-${width}-green.png`) }), contentType: "image/png" });
     await panel.getByRole("button", { name: locale === "en" ? "Close tournaments" : /Çlôsë tôürñámëñts/ }).click();
     await expect(panel).toHaveCount(0); await expect(page.getByTestId("close-count")).toHaveText("1");
     expect(await page.evaluate(() => JSON.stringify((window as unknown as { tournamentFixture: unknown }).tournamentFixture))).toBe(input);

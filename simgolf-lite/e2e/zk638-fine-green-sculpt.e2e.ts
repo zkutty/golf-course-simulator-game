@@ -76,14 +76,46 @@ test("ZK-638 mouse/touch fine-green strokes preview, commit, undo, and redo atom
   await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+z" : "Control+Shift+z");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState().greenSurface?.tiles.length ?? 0)).toBeGreaterThan(0);
 
-  // Pointer capture is pointer-type agnostic. A synthetic touch stroke covers
-  // the same native path without relying on a separate mobile-only handler.
+  // Drive a native Chromium touch sequence so pointer capture receives a
+  // browser-assigned pointerId. Passive listeners retain proof of the actual
+  // trusted touch and capture lifecycle without intercepting the editor.
   const touchTarget = page.locator(".cc-pixi-stage canvas");
-  await touchTarget.dispatchEvent("pointerdown", { pointerId: 42, pointerType: "touch", button: 0, clientX: start.x, clientY: start.y, bubbles: true });
-  await touchTarget.dispatchEvent("pointermove", { pointerId: 42, pointerType: "touch", button: 0, clientX: end.x, clientY: end.y, bubbles: true });
-  await expect(page.getByTestId("fine-green-stroke-preview")).toBeVisible();
-  await touchTarget.dispatchEvent("pointerup", { pointerId: 42, pointerType: "touch", button: 0, clientX: end.x, clientY: end.y, bubbles: true });
+  await page.evaluate(() => {
+    const targetWindow = window as typeof window & { __zk638TouchPointerEvents?: { type: string; isTrusted: boolean; pointerId: number; pointerType: string }[] };
+    const events: { type: string; isTrusted: boolean; pointerId: number; pointerType: string }[] = [];
+    targetWindow.__zk638TouchPointerEvents = events;
+    for (const type of ["pointerdown", "pointermove", "gotpointercapture", "pointerup", "lostpointercapture"]) {
+      window.addEventListener(type, (event) => {
+        const pointer = event as PointerEvent;
+        events.push({ type: pointer.type, isTrusted: pointer.isTrusted, pointerId: pointer.pointerId, pointerType: pointer.pointerType });
+      }, { capture: true, passive: true });
+    }
+  });
+  const touchSession = await page.context().newCDPSession(page);
+  try {
+    await touchSession.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: start.x, y: start.y }] });
+    await touchSession.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: end.x, y: end.y }] });
+    await expect(page.getByTestId("fine-green-stroke-preview")).toBeVisible();
+    await touchSession.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  } finally {
+    await touchSession.detach();
+  }
   await expect(page.getByTestId("fine-green-stroke-preview")).toHaveCount(0);
+  const touchEvents = await touchTarget.evaluate(() => {
+    const targetWindow = window as typeof window & { __zk638TouchPointerEvents?: { type: string; isTrusted: boolean; pointerId: number; pointerType: string }[] };
+    return targetWindow.__zk638TouchPointerEvents ?? [];
+  });
+  const touchDown = touchEvents.find((event) => event.type === "pointerdown");
+  const touchMove = touchEvents.find((event) => event.type === "pointermove");
+  const gotCapture = touchEvents.find((event) => event.type === "gotpointercapture");
+  const touchUp = touchEvents.find((event) => event.type === "pointerup");
+  const lostCapture = touchEvents.find((event) => event.type === "lostpointercapture");
+  await testInfo.attach("zk638-native-touch-pointer-events", { body: JSON.stringify(touchEvents, null, 2), contentType: "application/json" });
+  expect(touchDown).toMatchObject({ isTrusted: true, pointerType: "touch" });
+  expect(touchMove).toMatchObject({ isTrusted: true, pointerId: touchDown!.pointerId, pointerType: "touch" });
+  expect(gotCapture).toMatchObject({ isTrusted: true, pointerId: touchDown!.pointerId, pointerType: "touch" });
+  expect(touchUp).toMatchObject({ isTrusted: true, pointerId: touchDown!.pointerId, pointerType: "touch" });
+  expect(lostCapture).toMatchObject({ isTrusted: true, pointerId: touchDown!.pointerId, pointerType: "touch" });
 
   const screenshot = await page.screenshot({ fullPage: true });
   await testInfo.attach("zk638-fine-green-overlay", { body: screenshot, contentType: "image/png" });

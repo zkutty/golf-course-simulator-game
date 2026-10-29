@@ -656,6 +656,7 @@ export class ViewportInputController {
     const camera = this.camera;
     const world = this.ports.world;
     let moved = false;
+    let rotationCommitted = false;
     if (this.flyover) {
       const progress = (at - this.flyover.t0) / FLYOVER_DURATION_MS;
       if (progress >= 1.08) this.endFlyover();
@@ -711,16 +712,19 @@ export class ViewportInputController {
         world.rotation = 0;
         this.rotation = next;
         this.config.onRotationCommit(next);
+        rotationCommitted = true;
       }
       moved = true;
     }
     if (moved) {
       this.applyCamera();
       this.invalidateOverlay();
+      // A completed bearing is observable even if ambient reporting was recent.
+      if (rotationCommitted) this.reportView();
       if (at - this.lastAmbientReportAt >= 250) {
         this.lastAmbientReportAt = at;
         this.config.onCameraCenter?.({ x: camera.tcx, y: camera.tcy });
-        this.reportView();
+        if (!rotationCommitted) this.reportView();
       }
     }
   }
@@ -861,9 +865,11 @@ export class ViewportInputController {
 
   private applyExternalCamera(cameraState: CameraState | null | undefined): void {
     if (!this.camera.initialized || this.lastCameraState === cameraState) return;
+    const previousCameraState = this.lastCameraState;
     this.lastCameraState = cameraState;
     if (!cameraState) {
-      this.fitDefaultView(false);
+      // An absent camera only restores the default when leaving an actual one.
+      if (previousCameraState) this.fitDefaultView(false);
       return;
     }
     if (this.lastReportedCameraState === cameraState) return;
@@ -1336,6 +1342,7 @@ export class ViewportInputController {
         this.applyCamera();
         this.invalidateOverlay();
         this.config.onRotationCommit(next);
+        this.reportView();
       } else {
         this.rotationTween = { start: this.now(), toDeg: right ? -90 : 90, next };
       }

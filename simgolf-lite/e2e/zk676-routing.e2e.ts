@@ -10,11 +10,70 @@ async function ready(page: Page) {
   await expect(page.getByTestId("architecture-routing-map")).toHaveCount(1);
   await expect.poll(() => page.locator('.cc-routing-map button[data-fits="true"]').count()).toBeGreaterThan(0);
 }
+async function observeDuring<T>(command: Promise<void>, observation: Promise<T>): Promise<T> {
+  // Settle both branches even on failure before allowing another mutation.
+  const [action, observed] = await Promise.allSettled([command, observation]);
+  if (action.status === "rejected") throw action.reason;
+  if (observed.status === "rejected") throw observed.reason;
+  return observed.value;
+}
+async function readyDuring(page: Page, command: Promise<void> = Promise.resolve()) {
+  const results = await Promise.allSettled([
+    // Preserve the original post-command canvas visibility observation.
+    command.then(() => expect(page.locator(".cc-pixi-stage canvas")).toBeVisible()),
+    expect(page.getByTestId("architecture-routing-map")).toHaveCount(1),
+    expect.poll(() => page.locator('.cc-routing-map button[data-fits="true"]').count()).toBeGreaterThan(0),
+  ]);
+  for (const result of results) if (result.status === "rejected") throw result.reason;
+}
 async function verifyPlacement(page: Page, expectedNumbers: number) {
   await expect(page.locator('.cc-routing-map button[data-role="number"]')).toHaveCount(expectedNumbers);
   const boxes = await page.locator(".cc-routing-map button").evaluateAll(nodes => nodes.map(node => { const b = node.getBoundingClientRect(); return { id: (node as HTMLElement).dataset.testid, hidden: (node as HTMLButtonElement).hidden, fits: (node as HTMLElement).dataset.fits, x: b.x, y: b.y, width: b.width, height: b.height }; }).filter(b => !b.hidden));
+  verifyBoxes(boxes);
+}
+type RoutingBox = { id: string | undefined; hidden: boolean; fits: string | undefined; x: number; y: number; width: number; height: number };
+function verifyBoxes(boxes: RoutingBox[]) {
   expect(boxes.every(box => box.fits === "true"), JSON.stringify(boxes.filter(b => b.fits !== "true"))).toBe(true);
   for (const [index, a] of boxes.entries()) for (const b of boxes.slice(index + 1)) expect(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y, `${a.id} overlaps ${b.id}`).toBe(true);
+}
+function readResponsiveSnapshot() {
+  const input = window.__coursecraftPixiTest?.viewportInputState();
+  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>(".cc-routing-map button"));
+  const fontTargets = document.querySelectorAll<HTMLButtonElement>('[data-testid="routing-map-number-routing-1"]');
+  return {
+    rotation: input?.rotation.committed,
+    zoom: input?.camera.zoom,
+    numberCount: document.querySelectorAll('.cc-routing-map button[data-role="number"]').length,
+    placementPublished: buttons.length > 0 && buttons.every(button => button.dataset.fits === "true" || button.dataset.fits === "false"),
+    boxes: buttons.map(node => { const b = node.getBoundingClientRect(); return { id: node.dataset.testid, hidden: node.hidden, fits: node.dataset.fits, x: b.x, y: b.y, width: b.width, height: b.height }; }).filter(b => !b.hidden),
+    fontTargetCount: fontTargets.length,
+    fontSize: fontTargets.length === 1 ? getComputedStyle(fontTargets[0]).fontSize : null,
+  };
+}
+type ResponsiveSnapshot = ReturnType<typeof readResponsiveSnapshot>;
+async function responsiveSnapshot(page: Page, rotation: 0 | 1 | 2 | 3, zoom: number) {
+  let snapshot: ResponsiveSnapshot | undefined;
+  // Keep each original readiness stage's own default deadline and intervals.
+  const stage = (getter: (value: ResponsiveSnapshot) => number | undefined) => {
+    let first = true;
+    return expect.poll(async () => {
+      if (!first || !snapshot) snapshot = await page.evaluate(readResponsiveSnapshot);
+      first = false;
+      return getter(snapshot);
+    });
+  };
+  await stage(value => value.rotation).toBe(rotation * 90);
+  await stage(value => value.zoom).toBeCloseTo(zoom, 2);
+  await stage(value => value.placementPublished ? value.numberCount : undefined).toBe(4);
+  if (!snapshot) throw new Error("Routing snapshot unavailable after readiness checks");
+  if (snapshot.fontTargetCount !== 1) {
+    // Preserve the original strict attachment wait and remaining-test deadline.
+    expect(await page.getByTestId("routing-map-number-routing-1").evaluate(el => getComputedStyle(el).fontSize)).toBe("20.8px");
+    snapshot = await page.evaluate(readResponsiveSnapshot);
+  }
+  expect(snapshot.fontTargetCount).toBe(1);
+  expect(snapshot.placementPublished).toBe(true);
+  return snapshot;
 }
 for (const fixture of ["four", "compact", "overlapping", "crossing", "spread", "incomplete", "nine", "eighteen", "multi"]) {
   test(`ZK-676 native Pixi ${fixture} identity, selection and collision placement`, async ({ page }, info) => {
@@ -56,20 +115,27 @@ for (const biome of ["parkland", "links", "desert"] as const) {
     const errors: string[] = []; page.on("pageerror", e => errors.push(e.message)); page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
     test.setTimeout(120_000); await page.setViewportSize({ width: 1440, height: 900 });
     await page.addInitScript(() => localStorage.setItem("coursecraft_locale", "pseudo"));
-    await page.goto(`${base}?fixture=crossing&biome=${biome}`); await ready(page);
+    await page.goto(`${base}?fixture=crossing&biome=${biome}`); await readyDuring(page);
     await page.evaluate(() => { document.documentElement.style.fontSize = "130%"; });
     for (const rotation of [0, 1, 2, 3] as const) for (const zoom of [.18, .25, .45]) {
-      await page.evaluate(({ zoom, rotation }) => window.__routingFixture.camera(zoom, rotation), { zoom, rotation });
-      await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest?.viewportInputState()?.rotation.committed)).toBe(rotation * 90);
-      await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest?.viewportInputState()?.camera.zoom)).toBeCloseTo(zoom, 2);
-      await verifyPlacement(page, 4);
-      expect(await page.getByTestId("routing-map-number-routing-1").evaluate(el => getComputedStyle(el).fontSize)).toBe("20.8px");
+      const snapshot = await observeDuring(
+        page.evaluate(({ zoom, rotation }) => window.__routingFixture.camera(zoom, rotation), { zoom, rotation }),
+        responsiveSnapshot(page, rotation, zoom),
+      );
+      expect(snapshot.rotation).toBe(rotation * 90);
+      expect(snapshot.zoom).toBeCloseTo(zoom, 2);
+      expect(snapshot.numberCount).toBe(4);
+      verifyBoxes(snapshot.boxes);
+      expect(snapshot.fontSize).toBe("20.8px");
       await page.screenshot({ path: info.outputPath(`${biome}-${rotation}-${zoom}.png`) });
     }
     await expect(page.getByTestId("architecture-routing-summary")).toContainText("⟦");
-    for (let i = 0; i < 6; i++) { await page.evaluate(() => window.__routingFixture.toggle()); await expect(page.getByTestId("architecture-routing-map")).toHaveCount(0); await page.evaluate(() => window.__routingFixture.toggle()); await ready(page); }
-    await page.evaluate(() => window.__routingFixture.unmount()); await expect(page.getByTestId("architecture-routing-map")).toHaveCount(0);
-    await page.evaluate(() => window.__routingFixture.remount()); await ready(page);
+    for (let i = 0; i < 6; i++) {
+      await observeDuring(page.evaluate(() => window.__routingFixture.toggle()), expect(page.getByTestId("architecture-routing-map")).toHaveCount(0));
+      await readyDuring(page, page.evaluate(() => window.__routingFixture.toggle()));
+    }
+    await observeDuring(page.evaluate(() => window.__routingFixture.unmount()), expect(page.getByTestId("architecture-routing-map")).toHaveCount(0));
+    await readyDuring(page, page.evaluate(() => window.__routingFixture.remount()));
     expect(errors).toEqual([]);
   });
 }

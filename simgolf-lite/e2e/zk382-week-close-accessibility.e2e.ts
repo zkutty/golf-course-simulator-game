@@ -23,16 +23,26 @@ for (const locale of ["en", "pseudo"] as const) for (const width of [320, 768, 1
   expect(await page.locator("html").evaluate(el => getComputedStyle(el).fontSize)).toBe("20.8px");
   const scaled = await fonts(panel);
   const measurements = scaled.map((item, i) => ({ ...item, baseline: baseline[i].size, ratio: item.size / baseline[i].size }));
-  writeFileSync(`/private/tmp/zk382-week-close-${locale}-${width}-fonts.json`, JSON.stringify(measurements, null, 2));
+  writeFileSync(info.outputPath(`zk382-week-close-${locale}-${width}-fonts.json`), JSON.stringify(measurements, null, 2));
   await info.attach("font measurements", { body: JSON.stringify(measurements), contentType: "application/json" });
-  await info.attach("expanded report", { body: await page.screenshot({ path: `/private/tmp/zk382-week-close-${locale}-${width}.png` }), contentType: "image/png" });
+  await info.attach("expanded report", { body: await page.screenshot({ path: info.outputPath(`zk382-week-close-${locale}-${width}.png`) }), contentType: "image/png" });
   for (const item of measurements) expect(Math.abs(item.ratio - 1.3), `${item.tag} ${item.text}: ${item.baseline} → ${item.size}`).toBeLessThan(.01);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   const body = panel.getByTestId("week-close-body");
   expect(await body.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
   await body.focus(); await body.evaluate(el => el.scrollTop = 0); await page.keyboard.press("PageDown"); await expect.poll(() => body.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  await body.evaluate(el => new Promise<void>(resolve => {
+    let previous = el.scrollTop, stableFrames = 0;
+    const settle = () => { const current = el.scrollTop; stableFrames = current === previous ? stableFrames + 1 : 0; previous = current; if (stableFrames >= 5) resolve(); else requestAnimationFrame(settle); };
+    requestAnimationFrame(settle);
+  }));
   const tableRegion = panel.getByTestId("week-close-audiences"); await tableRegion.focus(); await tableRegion.evaluate(el => el.scrollLeft = 0); await page.keyboard.press("ArrowRight");
   if (await tableRegion.evaluate(el => el.scrollWidth > el.clientWidth)) await expect.poll(() => tableRegion.evaluate(el => el.scrollLeft)).toBeGreaterThan(0);
+  await tableRegion.evaluate(el => new Promise<void>(resolve => {
+    let previous = el.scrollLeft, stableFrames = 0;
+    const settle = () => { const current = el.scrollLeft; stableFrames = current === previous ? stableFrames + 1 : 0; previous = current; if (stableFrames >= 5) resolve(); else requestAnimationFrame(settle); };
+    requestAnimationFrame(settle);
+  }));
   for (const text of await panel.locator("h2,summary,button,span,strong,th,td,.cc-week-close-management-intro,.cc-week-close-condition,.cc-week-close-alert,.cc-week-close-cause,.cc-week-close-ledger").all()) {
     if (!await text.isVisible()) continue;
     await text.evaluate(el => el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" }));
@@ -41,11 +51,11 @@ for (const locale of ["en", "pseudo"] as const) for (const width of [320, 768, 1
     expect(bounds.y).toBeGreaterThanOrEqual(0); expect(bounds.y + bounds.height).toBeLessThanOrEqual((width === 320 ? 640 : 800) + 1);
     expect(await text.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
   }
-  await info.attach("management evidence", { body: await page.screenshot({ path: `/private/tmp/zk382-week-close-${locale}-${width}-management.png` }), contentType: "image/png" });
+  await info.attach("management evidence", { body: await page.screenshot({ path: info.outputPath(`zk382-week-close-${locale}-${width}-management.png`) }), contentType: "image/png" });
   await tableRegion.evaluate(el => { el.scrollIntoView({ block: "center", behavior: "instant" }); el.scrollLeft = 0; });
-  await info.attach("audience table", { body: await page.screenshot({ path: `/private/tmp/zk382-week-close-${locale}-${width}-table.png` }), contentType: "image/png" });
+  await info.attach("audience table", { body: await page.screenshot({ path: info.outputPath(`zk382-week-close-${locale}-${width}-table.png`) }), contentType: "image/png" });
   await body.evaluate(el => el.scrollTop = 0);
-  await info.attach("report heading", { body: await page.screenshot({ path: `/private/tmp/zk382-week-close-${locale}-${width}-heading.png` }), contentType: "image/png" });
+  await info.attach("report heading", { body: await page.screenshot({ path: info.outputPath(`zk382-week-close-${locale}-${width}-heading.png`) }), contentType: "image/png" });
   await expect(panel).toHaveAttribute("aria-modal", "true"); await expect(page.locator(".cc-main")).toHaveAttribute("aria-hidden", "true");
   await page.keyboard.press("Escape"); await expect(panel).toBeVisible(); await expect(page.getByTestId("log")).toHaveText("[]");
   await panel.getByTestId("week-close-continue").click(); await expect(page.getByTestId("log")).toHaveText('[{"type":"continue","resumeSpeed":"4x"}]'); await expect(page.getByTestId("opener")).toBeFocused();

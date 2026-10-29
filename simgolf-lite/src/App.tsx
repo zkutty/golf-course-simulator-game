@@ -7,9 +7,11 @@ import "./ui/cozyLayout.css";
 import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
 import { usePlayerShotPlayback } from "./ui/playerPro/usePlayerShotPlayback";
+import { createPlayerShotPreviewReceiver } from "./ui/playerPro/shotPreviewReceiver";
 import { isValidRetainedShotMotionV1 } from "./game/rules/shotMotion";
 import type { SfxName } from "./audio/AudioManager";
 import { DesignDock } from "./ui/DesignDock";
+import { createObstacleEditingAction } from "./ui/obstacleEditingAction";
 import {
   buildDesignCatalog,
   type DesignCatalogItem,
@@ -614,30 +616,6 @@ export default function App() {
     setPaintError(null);
   }, [selected, terrainTool]);
 
-  const activateObstacleEditing = useCallback((
-    nextObstacleType: ObstacleType = obstacleType,
-    requestedPlantId: PlantId | null = selectedPlantId,
-    requestedItemId?: string,
-  ) => {
-    const requestedPlant = requestedPlantId
-      ? plantDefinition(requestedPlantId)
-      : null;
-    const plantId = nextObstacleType === "rock"
-      ? null
-      : requestedPlant?.semantics.kind === "obstacle"
-          && requestedPlant.semantics.obstacleType === nextObstacleType
-        ? requestedPlantId
-        : defaultObstaclePlantId(course.theme, nextObstacleType);
-    setObstacleType(nextObstacleType);
-    setSelectedPlantId(plantId);
-    setSelectedDesignItemId(
-      requestedItemId
-        ?? (plantId ? `plant:${plantId}` : "nature:rock"),
-    );
-    setEditorMode("OBSTACLE");
-    setPaintError(null);
-  }, [course.theme, obstacleType, selectedPlantId]);
-
   const activateDecorationEditing = useCallback((
     nextDecorationKind: DecorationKind,
     requestedPlantId: PlantId | null,
@@ -675,6 +653,17 @@ export default function App() {
   // Hover state moved to refs in canvas component to avoid React re-renders
 
   const [paintError, setPaintError] = useState<string | null>(null);
+  const activateObstacleEditing = useMemo(() => createObstacleEditingAction({
+    theme: course.theme,
+    obstacleType,
+    selectedPlantId,
+    setObstacleType,
+    setSelectedPlantId,
+    setSelectedDesignItemId,
+    setEditorMode,
+    setPaintError,
+  }), [course.theme, obstacleType, selectedPlantId]);
+
   const undoTerrainEdit = useCallback(() => {
     const current = gameSession.getState();
     const result = undoEditorEdit(editorHistoryRef.current, current, capital);
@@ -957,9 +946,7 @@ export default function App() {
   const [showPlayerPro, setShowPlayerPro] = useState(false);
   const [playerShotAim, setPlayerShotAim] = useState<PlayerProPoint | null>(null);
   const [playerShotPreview, setPlayerShotPreview] = useState<PlayerShotPreview | null>(null);
-  const receivePlayerShotPreview = useCallback((preview: PlayerShotPreview) => {
-    setPlayerShotPreview((previous) => JSON.stringify(previous?.expectedFlight ?? null) === JSON.stringify(preview.expectedFlight ?? null) ? previous : preview);
-  }, []);
+  const [receivePlayerShotPreview] = useState(() => createPlayerShotPreviewReceiver(setPlayerShotPreview));
   const playerRoundResumeSpeedRef = useRef<SpeedName>("1x");
   const storyResumeSpeedRef = useRef<SpeedName>("1x");
   const majorStoryPausedRef = useRef(false);

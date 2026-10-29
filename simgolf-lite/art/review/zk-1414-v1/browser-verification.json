@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "passed": true,
+  "finalHtmlSha256": "5f4864f6b9d9bb5f0dcec94b638e05b82a276c89e44574bb56ad89968f3d2ffd",
+  "sourceSha256": "eada911c244d734a6e5c236b80b04e23202365795db0cbd5c4393a7a664bd2aa",
+  "finalChecks": [
+    "final original-raster inspection inset rendered",
+    "twelve-pose inspection opens and renders",
+    "paused by default retained",
+    "zero page/console errors"
+  ],
+  "priorContinuousPlayback": {
+    "passed": true,
+    "durationMs": 51640,
+    "checkCount": 10,
+    "recordingSha256": "3f4c75193d9321abf900e1a5286e016f421891e209b6314eea1ae0292efa5907",
+    "receipt": "browser-review.json",
+    "qualification": "Full playback verified before static-only inset/source-inspection polish. review-player.mjs, storyline, timing, controls and game-size rendering unchanged."
+  },
+  "humanAcceptance": null
+}

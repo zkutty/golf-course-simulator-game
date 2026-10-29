@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "shipping": false,
+  "productionBytesAdded": 0,
+  "reviewBytes": 7889338,
+  "files": [
+    {
+      "file": "README.md",
+      "bytes": 12595,
+      "sha256": "a63043f31ddf8c0afa8219a5d6ec5abe7febd57e4a6e43b3b01d293c822bce3d"
+    },
+    {
+      "file": "activity-contract.v1.d.ts",
+      "bytes": 2729,
+      "sha256": "8e0ae05e9342aa6edc74938c0a202e992396e3adf4b6ea4e9af5d080a6c1e319"
+    },
+    {
+      "file": "activity-manifest.v1.json",
+      "bytes": 15004,
+      "sha256": "ac7afe13efed424c5badb4b42911c971e6ffbff2f3039f7e1590950ffc3a0b96"
+    },
+    {
+      "file": "browser-verification.json",
+      "bytes": 842,
+      "sha256": "5b6c021047ac5959eb89dab8697f9051c61f124562313f26ceab2dd9c7a95475"
+    },
+    {
+      "file": "build-review.mjs",
+      "bytes": 875,
+      "sha256": "bc9319e4c0b89781d61414d0b0bab9325a21b3be619a22e6a54c3e96c327e87c"
+    },
+    {
+      "file": "golfer-look-source.png",
+      "bytes": 2064665,
+      "sha256": "eada911c244d734a6e5c236b80b04e23202365795db0cbd5c4393a7a664bd2aa"
+    },
+    {
+      "file": "imagegen-prompts.txt",
+      "bytes": 3327,
+      "sha256": "97b0e209a5f95af529f23f716f447933c90019db3ab6ac66f4b917024446797d"
+    },
+    {
+      "file": "provenance.v1.json",
+      "bytes": 767,
+      "sha256": "329d6a2e02cd0a7b759b6b7c550eac5b905faab55fcb8b8b87a3ed5a775e597e"
+    },
+    {
+      "file": "review-player.mjs",
+      "bytes": 3175,
+      "sha256": "b402dd3a1fd10f20cf2607ffcb9fb9dc8d1ba6dde972ddccf6d0d54766fcbf20"
+    },
+    {
+      "file": "review.accepted-v1.html",
+      "bytes": 2873942,
+      "sha256": "5f4864f6b9d9bb5f0dcec94b638e05b82a276c89e44574bb56ad89968f3d2ffd"
+    },
+    {
+      "file": "review.html",
+      "bytes": 2874772,
+      "sha256": "dee9a1921602839059be42d462429c0d89edd080c15366d5abd4ea6a4d067ad4"
+    },
+    {
+      "file": "review.template.html",
+      "bytes": 20614,
+      "sha256": "d1769a15420cd8bf15b5072812f40e1c02e07614cfacd2a4cbe9603c0401b4e9"
+    },
+    {
+      "file": "storyboard.v1.json",
+      "bytes": 4577,
+      "sha256": "b19258ef3a9587662e0f7aea3518e43d4bb82559df277a2d5f2b0fba209069d4"
+    },
+    {
+      "file": "validate.mjs",
+      "bytes": 11454,
+      "sha256": "ee57b16ac674bde51c247727d3927f76fee2b3969acc551cd9876e2ff2138c4b"
+    }
+  ]
+}

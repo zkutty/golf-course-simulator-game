@@ -301,6 +301,32 @@ function retainedGolfer(progress: number, terrain = "fairway", active = true): G
 }
 
 describe("retained live ball rendering", () => {
+  it("draws the ordinary AI ball with its authored fill and an outside stroke", () => {
+    const scene = fixture();
+    const host = new SceneSystemHost([scene.system]);
+    try {
+      host.sync(snapshot());
+      tick(scene, [retainedGolfer(.36)]);
+      const ball = scene.objects.children[1];
+      if (!(ball instanceof FakeGraphics)) throw new Error("The ordinary AI ball must be owned graphics");
+      expect(ball.visible).toBe(true);
+      expect(ball.alpha).toBe(1);
+      expect(ball.circle.mock.calls).toEqual([[0, -2, 2.2]]);
+      expect(ball.fill.mock.calls).toEqual([[0xffffff]]);
+      expect(ball.stroke.mock.calls).toEqual([[{ width: 0.8, color: 0x555555, alignment: 0 }]]);
+      expect(ball.circle.mock.invocationCallOrder[0]).toBeLessThan(ball.fill.mock.invocationCallOrder[0]);
+      expect(ball.fill.mock.invocationCallOrder[0]).toBeLessThan(ball.stroke.mock.invocationCallOrder[0]);
+
+      tick(scene, [retainedGolfer(.54)]);
+      expect(scene.objects.children[1]).toBe(ball);
+      expect(ball.circle).toHaveBeenCalledOnce();
+      expect(ball.fill).toHaveBeenCalledOnce();
+      expect(ball.stroke).toHaveBeenCalledOnce();
+    } finally {
+      host.dispose();
+    }
+  });
+
   it.each([0, 90, 180, 270] as IsoRotation[])("projects absolute committed heights and curved points at rotation %s without generated bounces", (rotation) => {
     const scene = fixture();
     const host = new SceneSystemHost([scene.system]);

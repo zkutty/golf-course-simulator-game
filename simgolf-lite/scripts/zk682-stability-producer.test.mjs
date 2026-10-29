@@ -5,7 +5,7 @@ import {
   createStabilityProducer, sampleRetainedHeap, stabilityProducerKind,
   validateStabilityProducer, validateStabilityRuntime, ZK682_STABILITY_FIXTURE,
 } from "./zk682-stability-producer.mjs";
-import { parseStabilityArguments, quoteStabilityShellArgument, stabilityCommands, stabilityPreviewCommand, stabilitySourceProblems, validateStabilityOutputDirectory } from "./zk682-run-stability.mjs";
+import { parseStabilityArguments, quoteStabilityShellArgument, stabilityCommands, stabilityPreviewCommand, stabilitySourceProblems, assertStabilityCandidate, validateStabilityOutputDirectory } from "./zk682-run-stability.mjs";
 
 import { e2eCommands } from "./run-e2e.mjs";
 import { realpathSync } from "node:fs";
@@ -97,7 +97,7 @@ test("actual App fixture gate excludes normal production and permits only the pr
 test("candidate provenance exempts only declared reports, never tracked or untracked source", () => {
   const prefix = "simgolf-lite/";
   assert.deepEqual(stabilitySourceProblems([prefix + "artifacts/m35/asset-audit.json", prefix + "artifacts/m28/performance-parkland.json"], [prefix + "artifacts/zk682/raw/report.json", prefix + "artifacts/zk682/raw/playwright/trace.zip"], prefix), []);
-  for (const file of ["src/App.tsx", "scripts/zk682-run-stability.mjs", "public/atlas.png", "package.json", "vite.config.ts", "artifacts/zk682/raw/tracked.json"]) {
+  for (const file of ["src/App.tsx", "scripts/zk682-run-stability.mjs", "public/atlas.png", "package.json", "package-lock.json", "vite.config.ts", "artifacts/zk682/raw/tracked.json", "artifacts/m47/inspector-desktop.png", "artifacts/m47/inspector-mobile.png"]) {
     assert.equal(stabilitySourceProblems([prefix + file], [], prefix).length, 1);
   }
   for (const file of ["src/extra.ts", "scripts/extra.mjs", "vite.stale.config.ts", "artifacts/zk682/raw/inject.js", "artifacts/elsewhere/report.json"]) {
@@ -108,6 +108,55 @@ test("candidate provenance exempts only declared reports, never tracked or untra
   assert.equal(validateStabilityOutputDirectory(app, repo, resolve(app, "artifacts/zk682/raw/run")), resolve(app, "artifacts/zk682/raw/run"));
   assert.equal(validateStabilityOutputDirectory(app, repo, resolve(realpathSync(tmpdir()), "stability-report")), resolve(realpathSync(tmpdir()), "stability-report"));
   for (const path of ["src", "scripts", "public", "configuration", "artifacts/other"]) assert.throws(() => validateStabilityOutputDirectory(app, repo, resolve(app, path)));
+});
+
+test("candidate guard accepts declared outputs and rejects dirty sources with complete diagnostics", () => {
+  const prefix = "simgolf-lite/";
+  const expected = "a".repeat(40);
+  const actual = "b".repeat(40);
+  assert.doesNotThrow(() => assertStabilityCandidate(expected, expected,
+    [prefix + "artifacts/m35/asset-audit.json", prefix + "artifacts/m28/performance-parkland.json"],
+    [prefix + "artifacts/zk682/raw/allowed-report.json", prefix + "artifacts/zk682/raw/playwright/trace.zip"], prefix));
+  const tracked = [
+    prefix + "artifacts/m47/inspector-desktop.png",
+    prefix + "artifacts/m47/inspector-mobile.png",
+    prefix + "src/App.tsx",
+    prefix + "package-lock.json",
+    prefix + "artifacts/m35/asset-audit.json",
+  ];
+  const untracked = [
+    prefix + "scripts/new-source.mjs",
+    prefix + "artifacts/zk682/raw/allowed-report.json",
+  ];
+  assert.throws(() => assertStabilityCandidate(expected, expected, tracked, untracked, prefix), error => {
+    assert.ok(error.message.startsWith("Stability build requires unchanged candidate source; only declared generated evidence outputs are permitted"));
+    assert.ok(error.message.includes(`expected candidate SHA ${expected}`));
+    assert.ok(error.message.includes(`actual candidate SHA ${expected}`));
+    const details = JSON.parse(error.message.split("; rejected paths: ")[1]);
+    assert.deepEqual(details, [
+      { path: prefix + "artifacts/m47/inspector-desktop.png", category: "tracked" },
+      { path: prefix + "artifacts/m47/inspector-mobile.png", category: "tracked" },
+      { path: prefix + "src/App.tsx", category: "tracked" },
+      { path: prefix + "package-lock.json", category: "tracked" },
+      { path: prefix + "scripts/new-source.mjs", category: "untracked" },
+    ]);
+    assert.ok(!error.message.includes("allowed-report.json"));
+    assert.ok(!error.message.includes("asset-audit.json"));
+    return true;
+  });
+  assert.throws(() => assertStabilityCandidate(expected, actual, tracked, untracked, prefix), error => {
+    assert.ok(error.message.startsWith(`Expected candidate ${expected} does not match checked-out HEAD ${actual}`));
+    assert.ok(error.message.includes(`expected candidate SHA ${expected}`));
+    assert.ok(error.message.includes(`actual candidate SHA ${actual}`));
+    assert.deepEqual(JSON.parse(error.message.split("; rejected paths: ")[1]), [
+      { path: prefix + "artifacts/m47/inspector-desktop.png", category: "tracked" },
+      { path: prefix + "artifacts/m47/inspector-mobile.png", category: "tracked" },
+      { path: prefix + "src/App.tsx", category: "tracked" },
+      { path: prefix + "package-lock.json", category: "tracked" },
+      { path: prefix + "scripts/new-source.mjs", category: "untracked" },
+    ]);
+    return true;
+  });
 });
 
 test("preview executable and arguments preserve paths with spaces on POSIX and Windows", () => {

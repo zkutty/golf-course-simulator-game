@@ -278,7 +278,20 @@ for (const locale of ["en", "pseudo"] as const) for (const scale of [100, 130]) 
     await body.focus(); await expect(body).toBeFocused();
     const metrics = await body.evaluate((node) => ({ height: node.scrollHeight, viewport: node.clientHeight }));
     const pages = Math.ceil(metrics.height / metrics.viewport), cap = pages + Math.ceil(pages * .25) + 8; expect(cap).toBeLessThanOrEqual(512);
-    const frames = () => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const frames = async () => {
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await body.evaluate((node) => new Promise<void>((resolve) => {
+        let previous = node.scrollTop, stable = 0;
+        const sample = () => {
+          const current = node.scrollTop;
+          stable = current === previous ? stable + 1 : 0;
+          previous = current;
+          if (stable >= 5) resolve();
+          else requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      }));
+    };
     let upSteps = 0;
     for (; upSteps < cap; upSteps += 1) { if (await body.evaluate((node) => node.scrollTop === 0)) break; await page.keyboard.press("PageUp"); await frames(); }
     await expect.poll(() => body.evaluate((node) => node.scrollTop)).toBe(0);

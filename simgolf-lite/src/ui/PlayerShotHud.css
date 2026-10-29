@@ -6,11 +6,12 @@
 }
 [data-testid="player-shot-hud"] h2 { font-size: 1.125rem !important; }
 [data-testid="player-shot-hud"] :is(button, select, input) { font: inherit; }
-[data-testid="player-shot-hud"] input[type="range"] { margin: 0; }
+[data-testid="player-shot-hud"] input[type="range"] { margin: 0; color: inherit; }
 [data-testid="player-shot-hud"] :is(button, summary) { white-space: normal; }
 [data-testid="player-shot-hud"] :is(
   [data-testid="player-shot-caddie-guidance"],
   [data-testid="player-shot-lie-effects"],
+  [data-testid="player-shot-expected-style"],
   [data-testid="player-shot-auto-putt-preview"],
   [data-testid="player-shot-rules-preview"],
   [data-testid="player-shot-ruling"],

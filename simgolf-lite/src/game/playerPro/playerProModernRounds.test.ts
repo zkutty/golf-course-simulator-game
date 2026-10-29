@@ -45,6 +45,25 @@ function planningRound() {
 }
 
 describe("ZK1396 modern round defaults and full-round certification", () => {
+  it("keeps modern target distance geometric while retaining the plays-like slope adjustment", () => {
+    const { round, skills } = planningRound();
+    const aim = { x: round.ball.x + 10, y: round.ball.y };
+    const elevations = round.course.elevations.slice();
+    elevations[aim.y * round.course.width + aim.x] = 4;
+    const uphillRound = { ...round, course: { ...round.course, elevations } };
+    expect(usesClubShotModel(uphillRound.course.shotModel)).toBe(true);
+    expect(uphillRound.course.yardsPerTile).toBe(4);
+
+    const preview = previewPlayableShot(uphillRound, skills, {
+      club: "7 Iron", aim, power: 1, technique: "normal", style: "straight_run",
+    });
+    expect(preview.available).toBe(true);
+    expect(preview.targetYards).toBe(40);
+    expect(preview.shotSlope).toMatchObject({
+      flatDistanceYards: 40, targetElevationDelta: 4, playsLikeDistanceYards: 50,
+    });
+  });
+
   it("keeps the unseeded preview invariant to future RNG and responds to selected shot controls", () => {
     const { round, skills } = planningRound();
     const selection = { club: "7 Iron", aim: round.course.holes[0].pin, power: .8, technique: "normal" as const,

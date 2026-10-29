@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildArchitectureRouting, placeRoutingLabels, routeMidpoint } from "./routingLabels";
+import type { RoutingLabelPlacement, RoutingLabelRect, RoutingLabelRequest } from "./routingLabels";
+import type { Point } from "../models/types";
 import { routingLabelFixture } from "./routingLabelFixtures";
 import { buildArchitectureReview, defaultArchitectureFilters } from "./review";
 import { DEFAULT_WORLD } from "../models/defaults";
@@ -97,5 +99,132 @@ describe("ZK-676 truthful routing identity", () => {
     const elapsedMs = performance.now() - start;
     console.info("ZK-676 release-estate routing x36", { elapsedMs });
     expect(elapsedMs).toBeLessThan(750);
+  });
+});
+
+// Frozen reference from routingLabels.ts SHA256 ac8b16eaceddfddb931c269eae68bdf30ffc97e2fad61f7d31132b00c07fa291.
+function referencePlaceRoutingLabels(requests: readonly RoutingLabelRequest[], viewport: RoutingLabelRect, reserved: readonly RoutingLabelRect[], legal: (p: Point) => boolean = () => true): RoutingLabelPlacement[] {
+  const occupied = [...reserved];
+  const overlaps = (a: RoutingLabelRect, b: RoutingLabelRect) => a.x < b.x + b.width + 3 && a.x + a.width + 3 > b.x && a.y < b.y + b.height + 3 && a.y + a.height + 3 > b.y;
+  return requests.map(request => {
+    let placed = request.center;
+    let fits = false;
+    const accept = (p: Point) => {
+      const box = { x: p.x - request.width / 2, y: p.y - request.height / 2, width: request.width, height: request.height };
+      if (box.x < viewport.x + 5 || box.y < viewport.y + 5 || box.x + box.width > viewport.x + viewport.width - 5 || box.y + box.height > viewport.y + viewport.height - 5 || !legal(p) || occupied.some(other => overlaps(box, other))) return false;
+      placed = p; fits = true; occupied.push(box); return true;
+    };
+    for (let ring = 0; ring <= 12 && !fits; ring++) {
+      const count = ring === 0 ? 1 : 12;
+      for (let index = 0; index < count; index++) {
+        const angle = index * Math.PI * 2 / count;
+        const p = { x: request.center.x + Math.cos(angle) * ring * 18, y: request.center.y + Math.sin(angle) * ring * 18 };
+        if (accept(p)) break;
+      }
+    }
+    // A large overlay panel can cover an endpoint farther than the local
+    // midpoint search radius. Try its nearest edges without hiding a marker
+    // underneath UI; leader lines still identify the true endpoint.
+    for (const panel of reserved) {
+      if (fits) break;
+      const seeds = [
+        { x: panel.x - request.width / 2 - 6, y: request.center.y },
+        { x: panel.x + panel.width + request.width / 2 + 6, y: request.center.y },
+        { x: request.center.x, y: panel.y - request.height / 2 - 6 },
+        { x: request.center.x, y: panel.y + panel.height + request.height / 2 + 6 },
+      ].sort((a, b) => Math.hypot(a.x - request.center.x, a.y - request.center.y) - Math.hypot(b.x - request.center.x, b.y - request.center.y));
+      for (const seed of seeds) {
+        if (fits) break;
+        for (let offset = 0; offset <= 12 && !fits; offset++) for (const direction of offset === 0 ? [0] : [-1, 1]) {
+          const vertical = seed.x !== request.center.x;
+          if (accept({ x: seed.x + (vertical ? 0 : offset * 18 * direction), y: seed.y + (vertical ? offset * 18 * direction : 0) })) break;
+        }
+      }
+    }
+    return { ...request, placed, fits };
+  });
+}
+
+type PackingFixture = {
+  id: string;
+  requests: RoutingLabelRequest[];
+  viewport: RoutingLabelRect;
+  reserved: RoutingLabelRect[];
+  legal: "all" | "none" | "stateful";
+};
+type PackingFunction = typeof placeRoutingLabels;
+function exactPackingValue(a: unknown, b: unknown): boolean {
+  if (typeof a === "number" || typeof b === "number") return Object.is(a, b);
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return a === b;
+  const left = Object.keys(a), right = Object.keys(b);
+  return left.length === right.length && left.every((key, i) => key === right[i] && exactPackingValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
+}
+function freezePackingValue(value: object, seen = new Set<object>()) {
+  if (seen.has(value)) return;
+  seen.add(value);
+  for (const child of Object.values(value)) if (child && typeof child === "object") freezePackingValue(child, seen);
+  Object.freeze(value);
+}
+function observeRoutingPacking(fn: PackingFunction, fixture: PackingFixture) {
+  const input = structuredClone(fixture), before = structuredClone(input);
+  freezePackingValue(input);
+  const points: Point[] = [], observations: { x: number; y: number; accepted: boolean }[] = [];
+  const output = fn(input.requests, input.viewport, input.reserved, point => {
+    points.push(point);
+    const accepted = input.legal === "all" || (input.legal === "stateful" && points.length % 7 === 0);
+    observations.push({ x: point.x, y: point.y, accepted });
+    return accepted;
+  });
+  return {
+    output, observations,
+    identities: output.map((item, i) => ({
+      newOutput: item !== input.requests[i],
+      sameCenter: item.center === input.requests[i].center,
+      centerAlias: input.requests.findIndex(request => request.center === item.center),
+      placedIsCenter: item.placed === input.requests[i].center,
+      placedObservation: points.indexOf(item.placed),
+    })),
+    freshLegalPoints: new Set(points).size === points.length,
+    inputUnchanged: exactPackingValue(input, before),
+  };
+}
+const packingRequest = (id: string, x: number, y: number, width = 42, height = 40): RoutingLabelRequest => ({ id, center: { x, y }, width, height });
+const packingViewport = (width = 900, height = 600, x = 0, y = 0): RoutingLabelRect => ({ x, y, width, height });
+const packingSharedCenter = { x: 310.25, y: 260.75 };
+const packingFixtures: PackingFixture[] = [
+  { id: "empty", requests: [], viewport: packingViewport(), reserved: [], legal: "all" },
+  { id: "first-center", requests: [packingRequest("free", 300, 260)], viewport: packingViewport(), reserved: [], legal: "all" },
+  { id: "viewport-edges", requests: [packingRequest("top-left", -0, -0), packingRequest("bottom-right", 899.5, 599.5), packingRequest("outside", -250, 300)], viewport: packingViewport(), reserved: [], legal: "all" },
+  { id: "dense-centers", requests: Array.from({ length: 36 }, (_, i) => packingRequest(`dense-${i}`, 300, 260)), viewport: packingViewport(), reserved: [{ x: 450, y: 0, width: 450, height: 600 }], legal: "all" },
+  { id: "panel-fallback", requests: [packingRequest("green", 900, 300, 40, 36)], viewport: packingViewport(1200, 800), reserved: [{ x: 500, y: 0, width: 650, height: 800 }], legal: "all" },
+  { id: "all-legal-false", requests: [packingRequest("reject-all", 500, 500)], viewport: packingViewport(2000, 2000), reserved: [], legal: "none" },
+  { id: "fractional-signed-zero", requests: [packingRequest("minus-zero", -0, -0, 0, 0), packingRequest("plus-zero", +0, +0, 0, 0), packingRequest("fraction", 123.45678901234567, -98.76543210987654, 17.5, 9.25), packingRequest("boundary", -974.5, -974.5, 41, 41)], viewport: packingViewport(2000, 2000, -1000, -1000), reserved: [], legal: "all" },
+  { id: "stateful-ties-panels", requests: Array.from({ length: 4 }, (_, i) => ({ id: `tie-${i}`, center: packingSharedCenter, width: 51, height: 49 })), viewport: packingViewport(620.5, 521.5), reserved: [{ x: 250.25, y: 150.75, width: 119, height: 219 }, { x: 10.25, y: 10.75, width: 51, height: 51 }], legal: "stateful" },
+];
+
+describe("ZK-676 fixed ring offset operation reduction", () => {
+  it.each(packingFixtures)("preserves exact packing behavior for $id", fixture => {
+    const expected = observeRoutingPacking(referencePlaceRoutingLabels, fixture);
+    const actual = observeRoutingPacking(placeRoutingLabels, fixture);
+    expect(exactPackingValue(actual, expected)).toBe(true);
+    expect(actual.freshLegalPoints).toBe(true);
+    expect(actual.inputUnchanged).toBe(true);
+    expect(actual.identities.every(item => item.newOutput && item.sameCenter)).toBe(true);
+    for (const [i, output] of actual.output.entries()) {
+      expect(actual.identities[i].placedIsCenter).toBe(!output.fits);
+      if (output.fits) expect(actual.identities[i].placedObservation).toBeGreaterThanOrEqual(0);
+    }
+    if (fixture.id === "all-legal-false") expect(actual.observations).toHaveLength(145);
+  });
+  it("performs no steady-state trigonometry after the 145-offset module setup", () => {
+    // The private table costs 145 sin + 145 cos calls at module initialization.
+    // Empty/first-candidate calls do not imply a universal startup benefit.
+    const sin = vi.spyOn(Math, "sin"), cos = vi.spyOn(Math, "cos");
+    try {
+      const fixture = packingFixtures[5];
+      const result = placeRoutingLabels(fixture.requests, fixture.viewport, fixture.reserved, () => false);
+      expect(result[0].fits).toBe(false);
+      expect({ sin: sin.mock.calls.length, cos: cos.mock.calls.length }).toEqual({ sin: 0, cos: 0 });
+    } finally { sin.mockRestore(); cos.mockRestore(); }
   });
 });

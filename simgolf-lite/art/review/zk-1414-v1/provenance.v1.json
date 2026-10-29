@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "stage": "candidate-review-only",
+  "provider": "OpenAI built-in image_gen",
+  "model": null,
+  "modelNote": "Built-in tool did not expose model identifier; do not infer it.",
+  "generatedAt": "2026-10-26",
+  "promptFile": "imagegen-prompts.txt",
+  "sourceSha256": "eada911c244d734a6e5c236b80b04e23202365795db0cbd5c4393a7a664bd2aa",
+  "cleanup": "One image_gen alpha cleanup edit. Original generation preserved outside repository at tool default path. No scripted pixel painting or extraction. Browser draws explicit crop rectangles into a review canvas.",
+  "reviewer": null,
+  "approval": null,
+  "licenseNotes": "Original prompted artwork; no third-party reference pixels supplied. Human originality and production licensing review pending."
+}

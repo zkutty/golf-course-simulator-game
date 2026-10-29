@@ -4,7 +4,14 @@ import type { TournamentFixtureEvidence } from "./fixtures/zk736-player-tourname
 import type { TournamentEvent } from "../src/game/tournaments/types";
 import type { TournamentRankedStanding } from "../src/game/tournaments/tournamentStandings";
 
-const evidence = process.env.TOURNAMENT_EVIDENCE_DIR ?? "/private/tmp/golf-batch20-tournament-candidate-attempt2/proof";
+const evidenceOverride = process.env.TOURNAMENT_EVIDENCE_DIR ?? null;
+const evidencePath = (info: TestInfo, filename: string) => {
+  if (evidenceOverride !== null) {
+    mkdirSync(evidenceOverride, { recursive: true });
+    return `${evidenceOverride}/${filename}`;
+  }
+  return info.outputPath(filename);
+};
 const fixture = "/e2e/fixtures/zk736-player-tournament-events.html";
 test.setTimeout(45_000);
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
@@ -46,10 +53,9 @@ async function enterTab(page: Page, query: string) {
 const snapshot = (page: Page): Promise<{ expected: TournamentFixtureEvidence["expected"]; calls: TournamentFixtureEvidence["calls"]; immutable: boolean }> => page.evaluate(() => ({ expected: window.tournamentEventFixture.expected, calls: window.tournamentEventFixture.calls,
   immutable: JSON.stringify({ course: window.tournamentEventFixture.course, world: window.tournamentEventFixture.world }) === window.tournamentEventFixture.initial }));
 async function record(page: Page, info: TestInfo, payload: unknown) {
-  mkdirSync(evidence, { recursive: true });
   const stem = info.title.replace(/[^a-zA-Z0-9]+/g, "-");
-  writeFileSync(`${evidence}/${stem}.json`, JSON.stringify(payload, null, 2));
-  await page.screenshot({ path: `${evidence}/${stem}.png` });
+  writeFileSync(evidencePath(info, `${stem}.json`), JSON.stringify(payload, null, 2));
+  await page.screenshot({ path: evidencePath(info, `${stem}.png`) });
   await info.attach("tournament acceptance evidence", { body: JSON.stringify(payload), contentType: "application/json" });
 }
 async function verifyCanonical(page: Page) {
@@ -207,7 +213,7 @@ for (const locale of ["en", "pseudo"] as const) for (const width of [320, 768, 1
 });
 
 // Alpha-compositing authority adapted from frozen Batch19 glyph/paint acceptance.
-const collectPaint = (page: Page) => page.getByTestId("player-tournament-events").evaluate((panel) => {
+const collectPaint = (page: Page, focusOnly = false) => page.getByTestId("player-tournament-events").evaluate((panel, focusOnly) => {
   type RGBA = [number, number, number, number];
   const rgba = (value: string): RGBA => { const values = value.match(/[\d.]+/g)!.map(Number); return [values[0], values[1], values[2], values[3] ?? 1]; };
   const over = (fg: RGBA, bg: RGBA): RGBA => { const alpha = fg[3] + bg[3] * (1 - fg[3]); return [0, 1, 2].map((i) => alpha ? (fg[i] * fg[3] + bg[i] * bg[3] * (1 - fg[3])) / alpha : 0).concat(alpha) as RGBA; };
@@ -225,12 +231,13 @@ const collectPaint = (page: Page) => page.getByTestId("player-tournament-events"
     pairs = pairs.map((pair) => ({ foreground: over(pair.foreground, [255, 255, 255, 1]), background: over(pair.background, [255, 255, 255, 1]) }));
     return { pairs, layers, contrast: Math.min(...pairs.map((pair) => contrast(pair.foreground, pair.background))) };
   };
-  return Array.from(panel.querySelectorAll<HTMLElement>("*")).filter((element) => element.checkVisibility() && element.getClientRects().length && (Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) || element.matches("button,summary"))).map((element, index) => {
+  return Array.from(panel.querySelectorAll<HTMLElement>("*")).filter((element) => element.checkVisibility() && element.getClientRects().length && (Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) || element.matches("button,summary"))).flatMap((element, index) => {
+    if (focusOnly && document.activeElement !== element) return [];
     const css = getComputedStyle(element), painted = paint(element);
-    return { index, tag: element.tagName, text: element.textContent, size: Number.parseFloat(css.fontSize), painted, contrast: painted.contrast,
-      focus: document.activeElement === element ? { visible: element.matches(":focus-visible"), width: Number.parseFloat(css.outlineWidth), offset: Number.parseFloat(css.outlineOffset), contrast: paint(element, css.outlineColor, true).contrast } : null };
+    return [{ index, tag: element.tagName, text: element.textContent, size: Number.parseFloat(css.fontSize), painted, contrast: painted.contrast,
+      focus: document.activeElement === element ? { visible: element.matches(":focus-visible"), width: Number.parseFloat(css.outlineWidth), offset: Number.parseFloat(css.outlineOffset), contrast: paint(element, css.outlineColor, true).contrast } : null }];
   });
-});
+}, focusOnly);
 async function glyphGeometry(page: Page) {
   return page.getByTestId("player-tournament-events").evaluate((panel) => {
     const rect = (box: DOMRect) => ({ left: box.left, right: box.right, top: box.top, bottom: box.bottom });
@@ -276,7 +283,7 @@ async function glyphGeometry(page: Page) {
     return { samples, overlaps, body: { clientWidth: body.clientWidth, scrollWidth: body.scrollWidth, clientHeight: body.clientHeight, scrollHeight: body.scrollHeight }, viewport: { width: innerWidth, height: innerHeight } };
   });
 }
-async function focusRing(page: Page, element: Locator, evidenceId: string) {
+async function focusRing(page: Page, info: TestInfo, element: Locator, evidenceId: string) {
   await element.focus(); await page.keyboard.press("Tab"); await page.keyboard.press("Shift+Tab"); await expect(element).toBeFocused();
   const ring = await element.evaluate((node) => {
     const css = getComputedStyle(node), box = node.getBoundingClientRect(), extra = Number.parseFloat(css.outlineWidth) + Number.parseFloat(css.outlineOffset);
@@ -288,10 +295,9 @@ async function focusRing(page: Page, element: Locator, evidenceId: string) {
     }
     return { paint, clips, width: Number.parseFloat(css.outlineWidth), style: css.outlineStyle, visible: node.matches(":focus-visible") };
   });
-  const sample = (await collectPaint(page)).find((item) => item.focus)!;
+  const sample = (await collectPaint(page, true)).find((item) => item.focus)!;
   const text = await element.textContent();
-  mkdirSync(evidence, { recursive: true });
-  writeFileSync(`${evidence}/focus-ring-${evidenceId}.json`, JSON.stringify({ text, ring, sample }, null, 2));
+  writeFileSync(evidencePath(info, `focus-ring-${evidenceId}.json`), JSON.stringify({ text, ring, sample }, null, 2));
   expect(ring.visible).toBe(true); expect(ring.style).toBe("solid"); expect(ring.width).toBe(3); expect(sample.focus!.contrast).toBeGreaterThanOrEqual(3);
   for (const clip of ring.clips) { expect(ring.paint.left).toBeGreaterThanOrEqual(clip.left); expect(ring.paint.right).toBeLessThanOrEqual(clip.right); expect(ring.paint.top).toBeGreaterThanOrEqual(clip.top); expect(ring.paint.bottom).toBeLessThanOrEqual(clip.bottom); }
   return { ring, sample };
@@ -323,7 +329,7 @@ async function verifyPaint(page: Page, info: TestInfo, locale: "en" | "pseudo", 
   expect(summaries.length).toBeLessThanOrEqual(128);
   for (const summary of summaries) {
     if (!await summary.evaluate((node) => node.checkVisibility())) continue;
-    focused.push(await focusRing(page, summary, `${locale}-${width}-${focused.length}`));
+    focused.push(await focusRing(page, info, summary, `${locale}-${width}-${focused.length}`));
   }
   expect(focused.length).toBeGreaterThan(1);
   await hosting.locator(":scope > summary").focus();

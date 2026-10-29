@@ -1,0 +1,577 @@
+{
+  "schema": "coursecraft.golfer-activity-review",
+  "version": 1,
+  "status": "concept-direction-accepted",
+  "shipping": false,
+  "sources": {
+    "release": "5729faf7a17dcb2c5e12c27422a8b1590d59f4d0",
+    "pacing": "c08a5ff358dcbe874796b76cdaeae96a8fa94748",
+    "pacingPath": "simgolf-lite/docs/readable-shot-pacing.md",
+    "legacyPath": "simgolf-lite/src/game/render/golferSprites.ts"
+  },
+  "legacy": {
+    "frame": [
+      48,
+      72
+    ],
+    "feetY": 69,
+    "displayWidthAt100": 26,
+    "variants": 3,
+    "layers": [
+      "base",
+      "tint"
+    ],
+    "directionRows": [
+      "s",
+      "sw",
+      "w",
+      "nw",
+      "n"
+    ],
+    "mirrors": {
+      "se": "sw",
+      "e": "w",
+      "ne": "nw"
+    },
+    "clips": {
+      "walk": {
+        "columns": 6,
+        "rows": 5,
+        "contact": null
+      },
+      "idle": {
+        "columns": 2,
+        "rows": 5,
+        "contact": null
+      },
+      "swing": {
+        "columns": 8,
+        "rows": 5,
+        "contact": 5
+      },
+      "putt": {
+        "columns": 4,
+        "rows": 5,
+        "contact": 2
+      },
+      "cheer": {
+        "columns": 4,
+        "rows": 1,
+        "contact": null
+      },
+      "mad": {
+        "columns": 4,
+        "rows": 1,
+        "contact": null
+      }
+    }
+  },
+  "look": {
+    "id": "teal-cream-01",
+    "identity": "one original adult golfer; appearance independent of skill/personality",
+    "palette": {
+      "polo": "#397e82",
+      "cap": "#e7dcc0",
+      "pants": "#c6b79a",
+      "shoes": "#253d51",
+      "bag": "#283e54"
+    },
+    "projection": "2:1 dimetric; fixed NW light; rotation 0 for matched samples",
+    "reviewCanvas": [
+      48,
+      72
+    ],
+    "sourceToFrameScale": 0.12,
+    "groundAnchor": [
+      24,
+      69
+    ],
+    "footAnchors": [
+      [
+        20,
+        69
+      ],
+      [
+        28,
+        69
+      ]
+    ],
+    "handAnchor": [
+      26.04,
+      52.8
+    ],
+    "clubContactAnchor": [
+      44.88,
+      66.12
+    ],
+    "puttContactAnchor": [
+      24.96,
+      69.96
+    ],
+    "bagAnchor": [
+      8,
+      62
+    ],
+    "anchorStatus": "visual candidates, not certified production pixel anchors",
+    "shadow": {
+      "separate": true,
+      "offset": [
+        1.5,
+        0.8
+      ],
+      "radii": [
+        8,
+        3.4
+      ],
+      "alpha": 0.18
+    },
+    "source": {
+      "file": "golfer-look-source.png",
+      "size": [
+        1536,
+        1024
+      ],
+      "sha256": "eada911c244d734a6e5c236b80b04e23202365795db0cbd5c4393a7a664bd2aa",
+      "layout": "twelve explicit pose crop rectangles; not a uniform production atlas"
+    },
+    "poses": [
+      {
+        "id": "walk-a",
+        "rect": [
+          100,
+          0,
+          250,
+          350
+        ],
+        "sourceFootPivot": [
+          238,
+          340
+        ]
+      },
+      {
+        "id": "walk-b",
+        "rect": [
+          477,
+          0,
+          250,
+          350
+        ],
+        "sourceFootPivot": [
+          620,
+          340
+        ]
+      },
+      {
+        "id": "address",
+        "rect": [
+          832,
+          0,
+          308,
+          350
+        ],
+        "sourceFootPivot": [
+          978,
+          344
+        ]
+      },
+      {
+        "id": "backswing",
+        "rect": [
+          1216,
+          0,
+          320,
+          350
+        ],
+        "sourceFootPivot": [
+          1390,
+          345
+        ]
+      },
+      {
+        "id": "contact",
+        "rect": [
+          93,
+          350,
+          350,
+          337
+        ],
+        "sourceFootPivot": [
+          244,
+          670
+        ]
+      },
+      {
+        "id": "follow",
+        "rect": [
+          470,
+          350,
+          260,
+          337
+        ],
+        "sourceFootPivot": [
+          640,
+          670
+        ]
+      },
+      {
+        "id": "watch",
+        "rect": [
+          829,
+          350,
+          260,
+          337
+        ],
+        "sourceFootPivot": [
+          978,
+          670
+        ]
+      },
+      {
+        "id": "pleased",
+        "rect": [
+          1215,
+          350,
+          300,
+          337
+        ],
+        "sourceFootPivot": [
+          1375,
+          670
+        ]
+      },
+      {
+        "id": "disappointed",
+        "rect": [
+          96,
+          687,
+          284,
+          337
+        ],
+        "sourceFootPivot": [
+          238,
+          990
+        ]
+      },
+      {
+        "id": "putt",
+        "rect": [
+          472,
+          687,
+          230,
+          337
+        ],
+        "sourceFootPivot": [
+          609,
+          990
+        ]
+      },
+      {
+        "id": "chip",
+        "rect": [
+          829,
+          687,
+          250,
+          337
+        ],
+        "sourceFootPivot": [
+          978,
+          990
+        ]
+      },
+      {
+        "id": "bunker",
+        "rect": [
+          1210,
+          687,
+          306,
+          337
+        ],
+        "sourceFootPivot": [
+          1380,
+          991
+        ]
+      }
+    ]
+  },
+  "directionPolicy": {
+    "reviewAuthored": [
+      {
+        "target": "e",
+        "handedness": "right",
+        "cameraRotation": 0
+      }
+    ],
+    "eightAuthoredDirectionsClaimed": false,
+    "legacyMirrorPreserved": true,
+    "knownHandedStrike": "Never mirror a strike to change a known player hand. Only use a clip whose declared target/hand pair is validated. Missing pair uses neutral non-gripping watch/address fallback plus retained ball and truthful Shot label.",
+    "unspecifiedLegacyHand": "Existing five-row mirrored clips remain compatibility fallback only for identities with unspecified handedness. Do not label this genuine handedness.",
+    "walkIdle": "Mirroring permitted for non-gripping neutral poses; asymmetric bag/outfit identity needs per-pose audit before production.",
+    "rotation": "Resolve world target through facingOctant at current 0/90/180/270 rotation before lookup; rotations do not rotate NW light."
+  },
+  "additiveClips": [
+    {
+      "id": "settle.v1",
+      "role": "settle",
+      "reviewPose": "address",
+      "legacyFallback": "idle",
+      "framesProposed": 2,
+      "rowsProposed": 1,
+      "contact": null,
+      "handedness": "neutral"
+    },
+    {
+      "id": "watch.v1",
+      "role": "watch",
+      "reviewPose": "watch",
+      "legacyFallback": "idle",
+      "framesProposed": 2,
+      "rowsProposed": 1,
+      "contact": null,
+      "handedness": "neutral"
+    },
+    {
+      "id": "nod.v1",
+      "role": "reaction",
+      "reviewPose": "pleased",
+      "legacyFallback": "idle",
+      "framesProposed": 4,
+      "rowsProposed": 1,
+      "contact": null,
+      "handedness": "neutral"
+    },
+    {
+      "id": "sigh.v1",
+      "role": "reaction",
+      "reviewPose": "disappointed",
+      "legacyFallback": "idle",
+      "framesProposed": 4,
+      "rowsProposed": 1,
+      "contact": null,
+      "handedness": "neutral"
+    },
+    {
+      "id": "chip.v1",
+      "role": "chip",
+      "reviewPose": "chip",
+      "legacyFallback": "swing",
+      "framesProposed": 8,
+      "rowsProposed": 1,
+      "contact": 5,
+      "handedness": "right",
+      "target": "e"
+    },
+    {
+      "id": "bunker.v1",
+      "role": "bunker",
+      "reviewPose": "bunker",
+      "legacyFallback": "swing",
+      "framesProposed": 8,
+      "rowsProposed": 1,
+      "contact": 5,
+      "handedness": "right",
+      "target": "e"
+    }
+  ],
+  "requiredPhases": [
+    "walk",
+    "settle",
+    "address",
+    "backswing",
+    "contact",
+    "follow-through",
+    "watch",
+    "reaction",
+    "walk-on",
+    "wait",
+    "putt",
+    "chip",
+    "bunker"
+  ],
+  "timing": {
+    "clock": "one published shotPacing cursor, no independent body timer",
+    "maxFrameDeltaMs": 100,
+    "swing": {
+      "minMs": 6000,
+      "maxMs": 10000,
+      "addressMs": 1000,
+      "contactMs": 200,
+      "restMs": 900,
+      "settleMs": 600,
+      "backswingMs": 200,
+      "reactionMs": 600,
+      "reactionDelayIntoRestMs": 300,
+      "addressHoldMs": 200
+    },
+    "putt": {
+      "minMs": 2400,
+      "maxMs": 4200,
+      "addressMs": 500,
+      "contactMs": 150,
+      "restMs": 650,
+      "settleMs": 300,
+      "backswingMs": 100,
+      "reactionMs": 600,
+      "reactionDelayIntoRestMs": 50,
+      "addressHoldMs": 100
+    },
+    "contactRule": "Terminal contact index at addressMs+contactMs; ball remains at retained launch anchor until that boundary; follow starts at first retained motion sample.",
+    "chipBunker": "Use swing pacing formula, even for short retained distance; shorter authored body arc, no new clock."
+  },
+  "caps": {
+    "activeShotOwnersPerActor": 1,
+    "pendingShotOwnersPerActor": 0,
+    "followShotOwnersGlobal": 1,
+    "followPendingShots": 0,
+    "maxOverviewPoseLagMs": 250,
+    "maxOverviewPoseLagLogicalPx": 16,
+    "maxNaturalWalkLogicalPxPerSec": 32,
+    "maxRoutePointsPerActor": 64,
+    "maxRetainedEventsPerActor": 16,
+    "maxReactionsPerShot": 1,
+    "reactionCooldownMs": 8000,
+    "maxReactionMs": 600,
+    "maxGroupSize": 4,
+    "maxFadeOutMs": 120,
+    "maxSavedCursorFields": 3,
+    "maxHistoricReactionReplay": 0
+  },
+  "quality": {
+    "high": {
+      "choreographedActors": 16,
+      "simultaneousReactions": 2,
+      "stance": "validated clips",
+      "fallback": "current-position idle/watch"
+    },
+    "medium": {
+      "choreographedActors": 8,
+      "simultaneousReactions": 1,
+      "stance": "validated clips",
+      "fallback": "current-position idle/watch"
+    },
+    "low": {
+      "choreographedActors": 4,
+      "simultaneousReactions": 0,
+      "stance": "key pose only",
+      "fallback": "current-position neutral"
+    },
+    "motion-off": {
+      "choreographedActors": 0,
+      "simultaneousReactions": 0,
+      "stance": "static current pose; no bob, stride, reaction or fade",
+      "fallback": "current authority position and retained ball endpoint; paused stays paused"
+    }
+  },
+  "activity": {
+    "inputRequired": [
+      "version",
+      "scopeId",
+      "actorId",
+      "appearanceId",
+      "handedness",
+      "ownerKey",
+      "authorityRevision",
+      "authorityPosition",
+      "route",
+      "shotIdentity",
+      "pacingCursor",
+      "pacingFrame",
+      "retainedEvidence",
+      "observedOutcome",
+      "observedEventIds",
+      "visibility",
+      "quality",
+      "motionEnabled",
+      "followExplicit",
+      "paused",
+      "hidden"
+    ],
+    "outputRequired": [
+      "version",
+      "ownerKey",
+      "authorityRevision",
+      "phase",
+      "clipId",
+      "frame",
+      "targetOctant",
+      "mirror",
+      "handedness",
+      "groundAnchor",
+      "footAnchors",
+      "handAnchor",
+      "clubAnchor",
+      "position",
+      "stridePhase",
+      "ballMotionProgress",
+      "reaction",
+      "consumedEventIds",
+      "fallbackReason"
+    ],
+    "unknown": "null for missing evidence; no reconstructed shot/putt/route/result",
+    "eventOwner": "JSON tuple scopeId, actorId, shotId, holeId, shotNumber, seed, club, style, modelVersion; route revision additionally invalidates route staging",
+    "outcomePriority": [
+      "confirmed-hole-out",
+      "confirmed-exceptional",
+      "confirmed-good",
+      "confirmed-bad",
+      "neutral",
+      "unknown"
+    ],
+    "reactionEvidence": "Only explicit current-owner observed classified result after retained endpoint; no distance-only score guess, last-hole delta reuse, early or repeated reaction."
+  },
+  "transitions": {
+    "pause": "Freeze body/ball cursor and stride; no reaction clock runs.",
+    "hidden": "Hidden wins skip and pause; freeze, drop wall-time debt, revalidate owner on return; no background replay.",
+    "skip": "Visible explicit skip completes only current owned presentation, even paused; no historic sound/reaction, authority advances only through existing owner completion.",
+    "reload": "Only shared {version,key,elapsedMs} optional cursor; validate exact owner and bounds; restore current pose without replaying historical contact/reaction/audio; no new activity save queue.",
+    "cancel": "Follow off/actor change/day change/reconcile invalidates owner immediately; no completion side effect from cancel.",
+    "overviewFastForward": "No global hold. If actual legal route cannot meet both natural speed and lag bounds, discard older stage and show current-position neutral with Time advanced marker for <=120ms; never interpolate through hazards or walk backwards.",
+    "selected": "HUD selection alone uses overview policy and never acquires a hold.",
+    "follow": "Only existing explicit shot follow can hold current authority for shared shot duration. All partners remain at authoritative positions. No new walk/reaction/global hold or catch-up debt.",
+    "culling": "Offscreen activity cursors are discarded; no reaction/audio replay when revealed. No actor removal from authority.",
+    "routeUnavailable": "Stand at current authoritative point; do not fabricate routing, bridge, hazard crossing, or automatic putt."
+  },
+  "atlasCost": {
+    "productionBytesAdded": 0,
+    "productionFramesAdded": 0,
+    "legacyFramesPerVariant": 108,
+    "legacyLayers": 2,
+    "legacyVariants": 3,
+    "legacySourceRgbaBytesAllVariants": 8957952,
+    "proposedAddonFramesOneDirectionPerVariant": 28,
+    "proposedAddonLayers": 2,
+    "proposedAddonRgbaBytesOneVariant": 774144,
+    "proposedAddonRgbaBytesThreeVariants": 2322432,
+    "resolutionChange": false,
+    "packingCompressionOrGpuCostMeasured": false,
+    "note": "28 proposed frame slots \u00d7 48 \u00d7 72 \u00d7 RGBA4 \u00d7 two layers. No atlas generated, loaded, expanded or approved."
+  },
+  "humanDecision": {
+    "golferLook": "accepted-as-concept-direction",
+    "fullHoleRhythm": "accepted-as-concept-direction",
+    "groupTreatment": "accepted-as-concept-direction",
+    "reviewer": "User",
+    "decidedAt": "2026-10-26",
+    "requiredBefore": [
+      "production adapter",
+      "production atlas",
+      "bulk variants"
+    ],
+    "question": "Accept teal/cream golfer, the bounded one-hole rhythm, and quiet three-person group treatment, or request specific changes?",
+    "sourceQuote": "Accept this concept direction",
+    "decisionSource": "Explicit user response to the coordinator's golfer, hole-rhythm and quiet-group concept-acceptance question.",
+    "acceptanceScope": "Direction for production animation only. Not smooth-motion, GPU, retained-physics or production certification.",
+    "acceptedReference": {
+      "file": "review.accepted-v1.html",
+      "sha256": "5f4864f6b9d9bb5f0dcec94b638e05b82a276c89e44574bb56ad89968f3d2ffd",
+      "referenceCommit": "32090a1ca2bccbf4faf060307d88fad3366a8581"
+    }
+  },
+  "deferred": [
+    "Production clean pixel-alpha and per-frame feet/hand/club anchors",
+    "A real directional and handedness atlas",
+    "Continuous production walk/strike/reaction clips",
+    "Retained physics integration and actual full-hole recording",
+    "GPU, named-device and exact-build certification",
+    "Any downstream bulk variants or release"
+  ]
+}

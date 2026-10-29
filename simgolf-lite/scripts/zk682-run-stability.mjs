@@ -49,6 +49,25 @@ export function stabilitySourceProblems(tracked, untracked, appPrefix) {
   return [...tracked.filter(path => !generated.has(path)), ...untracked.filter(path => !path.startsWith(raw) || !evidenceExtensions.has(extname(path).toLowerCase()))];
 }
 
+export function stabilityRejectedPathDetails(tracked, untracked, appPrefix) {
+  const rejected = new Set(stabilitySourceProblems(tracked, untracked, appPrefix));
+  return [
+    ...tracked.filter(path => rejected.has(path)).map(path => ({ path, category: "tracked" })),
+    ...untracked.filter(path => rejected.has(path)).map(path => ({ path, category: "untracked" })),
+  ];
+}
+
+export function stabilityRejectionSuffix(expectedCommit, actualCommit, tracked, untracked, appPrefix) {
+  const details = stabilityRejectedPathDetails(tracked, untracked, appPrefix);
+  return `; expected candidate SHA ${expectedCommit}; actual candidate SHA ${actualCommit}; rejected paths: ${JSON.stringify(details)}`;
+}
+
+export function assertStabilityCandidate(expectedCommit, actualCommit, tracked, untracked, appPrefix) {
+  const suffix = stabilityRejectionSuffix(expectedCommit, actualCommit, tracked, untracked, appPrefix);
+  if (actualCommit !== expectedCommit) throw new Error(`Expected candidate ${expectedCommit} does not match checked-out HEAD ${actualCommit}${suffix}`);
+  if (stabilitySourceProblems(tracked, untracked, appPrefix).length > 0) throw new Error(`Stability build requires unchanged candidate source; only declared generated evidence outputs are permitted${suffix}`);
+}
+
 const canonicalPath = path => existsSync(path) ? realpathSync(path) : join(canonicalPath(dirname(path)), basename(path));
 const within = (parent, child) => { const part = relative(parent, child); return part === "" || (!part.startsWith(`..${sep}`) && part !== ".." && !isAbsolute(part)); };
 export function validateStabilityOutputDirectory(appRoot, repositoryRoot, output) {
@@ -79,11 +98,11 @@ export function runStability(args = process.argv.slice(2)) {
   const appPrefix = relativeApp ? `${relativeApp}/` : "";
   const candidateCommit = flags["--expected-commit"] ?? process.env.ZK682_EXPECTED_COMMIT ?? head;
   if (!/^[0-9a-f]{40}$/.test(candidateCommit)) throw new Error("Stability certification requires a full 40-character candidate SHA");
-  if (candidateCommit !== head) throw new Error(`Expected candidate ${candidateCommit} does not match checked-out HEAD ${head}`);
   const assertCandidate = () => {
     const tracked = git("diff", "--name-only", "-z", "HEAD", "--").split("\0").filter(Boolean);
     const untracked = git("ls-files", "--others", "--exclude-standard", "-z", "--").split("\0").filter(Boolean);
-    if (git("rev-parse", "HEAD").trim() !== candidateCommit || stabilitySourceProblems(tracked, untracked, appPrefix).length > 0) throw new Error("Stability build requires unchanged candidate source; only declared generated evidence outputs are permitted");
+    const actualCommit = git("rev-parse", "HEAD").trim();
+    assertStabilityCandidate(candidateCommit, actualCommit, tracked, untracked, appPrefix);
   };
   assertCandidate();
   const runDirectory = mkdtempSync(join(tmpdir(), "coursecraft-zk682-stability-"));

@@ -1,7 +1,14 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 const fixture = "/e2e/fixtures/zk382-player-shot-hud.html";
-const evidence = process.env.HUD_EVIDENCE_DIR ?? "/private/tmp/golf-batch19-player-shot-candidate-attempt3";
+const evidenceOverride = process.env.HUD_EVIDENCE_DIR ?? null;
+const evidencePath = (info: TestInfo, filename: string) => {
+  if (evidenceOverride !== null) {
+    mkdirSync(evidenceOverride, { recursive: true });
+    return `${evidenceOverride}/${filename}`;
+  }
+  return info.outputPath(filename);
+};
 const nativeOptionText = async (page: Page, text: string) => {
   const session = await page.context().newCDPSession(page);
   try {
@@ -40,7 +47,13 @@ for (const phase of ["awaiting", "result"]) for (const locale of ["en", "pseudo"
     await page.setViewportSize({ width, height: width === 320 ? 640 : 800 });
     await page.addInitScript(value => localStorage.setItem("coursecraft_locale", value), locale);
     await page.goto(`${fixture}?phase=${phase}`);
-    const hud = page.getByTestId("player-shot-hud"); await expect(hud).toBeVisible(); await hud.locator("summary").focus(); await page.keyboard.press("Enter"); await expect(hud.locator("details")).toHaveAttribute("open", ""); await expect(hud).toHaveAttribute("role", "region"); expect(await hud.getAttribute("aria-modal")).toBeNull();
+    const hud = page.getByTestId("player-shot-hud"); await expect(hud).toBeVisible();
+    const scorecardName = await hud.getByTestId("player-round-scorecard").getAttribute("aria-label");
+    expect(scorecardName).toBeTruthy();
+    const scorecardDisclosure = hud.locator("summary").filter({ hasText: scorecardName! });
+    await expect(scorecardDisclosure).toHaveCount(1); await expect(scorecardDisclosure).toHaveText(scorecardName!);
+    await scorecardDisclosure.focus(); await page.keyboard.press("Enter");
+    await expect(scorecardDisclosure.locator("xpath=..")).toHaveAttribute("open", ""); await expect(hud).toHaveAttribute("role", "region"); expect(await hud.getAttribute("aria-modal")).toBeNull();
     await page.evaluate(() => document.documentElement.style.fontSize = "100%");
     const baseline = await collect(page); expect(await page.locator("html").evaluate(element => getComputedStyle(element).fontSize)).toBe("16px");
     await page.evaluate(() => document.documentElement.style.fontSize = "130%");
@@ -55,7 +68,7 @@ for (const phase of ["awaiting", "result"]) for (const locale of ["en", "pseudo"
         const text = node.selectedOptions[0].textContent!, textWidth = context.measureText(text).width, available = node.clientWidth - Number.parseFloat(css.paddingLeft) - Number.parseFloat(css.paddingRight) - 20;
         return { text, value: node.value, font: css.font, textWidth, available, selectedIndex: node.selectedIndex, focused: document.activeElement === node, box: node.getBoundingClientRect().toJSON() };
       }); nativeSelections.push(selected);
-      mkdirSync(evidence, { recursive: true }); await page.screenshot({ path: `${evidence}/native-value-${phase}-${locale}-${width}-${nativeSelections.length}.png` });
+      await page.screenshot({ path: evidencePath(info, `native-value-${phase}-${locale}-${width}-${nativeSelections.length}.png`) });
     }
     const geometry = [];
     for (const element of await hud.locator("*").all()) {
@@ -94,7 +107,7 @@ for (const phase of ["awaiting", "result"]) for (const locale of ["en", "pseudo"
     await expect(footer).toBeInViewport();
     const focused = await footer.evaluate(element => { const css = getComputedStyle(element); const lum = (value: string) => value.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(channel => { const v = channel / 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((sum, v, index) => sum + v * [.2126, .7152, .0722][index], 0); const outline = lum(css.outlineColor), panel = element.closest('[data-testid="player-shot-hud"]')!, gradient = getComputedStyle(panel).backgroundImage.match(/rgba?\([^)]+\)/g)!; const contrast = Math.min(...gradient.map(value => { const bg = lum(value); return (Math.max(outline, bg) + .05) / (Math.min(outline, bg) + .05); })); return { contrast, visible: element.matches(":focus-visible"), outlineColor: css.outlineColor, width: css.outlineWidth, offset: css.outlineOffset, background: css.backgroundColor, rect: element.getBoundingClientRect().toJSON() }; });
     const record = { header, nativeSelections, phase, emittedPhase: await page.getByTestId("phase").textContent(), locale, width, samples, geometry, panel, nativeTop, nativeBottom, focused, errors, immutable: await page.getByTestId("immutable").textContent(), input: JSON.parse((await page.getByTestId("input-snapshot").textContent())!) };
-    mkdirSync(evidence, { recursive: true }); const prefix = `${evidence}/${phase}-${locale}-${width}`; writeFileSync(prefix + ".json", JSON.stringify(record, null, 2)); await page.screenshot({ path: prefix + ".png" }); await info.attach("authored HUD measurements", { body: JSON.stringify(record), contentType: "application/json" });
+    writeFileSync(evidencePath(info, `${phase}-${locale}-${width}.json`), JSON.stringify(record, null, 2)); await page.screenshot({ path: evidencePath(info, `${phase}-${locale}-${width}.png`) }); await info.attach("authored HUD measurements", { body: JSON.stringify(record), contentType: "application/json" });
     await expect(page.getByTestId("immutable")).toHaveText("true"); expect(errors).toEqual([]);
     expect.soft(nativeSelections.filter(item => item.textWidth > item.available), "selected native values must fit painted font/content area; native focus screenshots retained").toEqual([]);
     expect.soft(panel.rect.left).toBeGreaterThanOrEqual(0); expect.soft(panel.rect.right).toBeLessThanOrEqual(width);
@@ -122,13 +135,13 @@ for (const locale of ["en", "pseudo"]) for (const scale of [100, 130]) {
     const initialClub = await club.inputValue(), alternateClub = await club.locator("option").nth(1).getAttribute("value");
     await club.focus(); await nativeOptionText(page, (await club.locator("option").nth(1).textContent())!); await page.keyboard.press("Enter"); await expect(club).toHaveValue(alternateClub!); expect(await club.inputValue()).not.toBe(initialClub);
     await power.focus(); await page.keyboard.press("ArrowRight");
-    const technique = hud.locator("select").nth(1); await technique.focus(); await page.keyboard.press("Home"); await page.keyboard.press("ArrowDown"); await page.keyboard.press("Tab");
-    await page.getByTestId("player-shot-flight-high").focus(); await page.keyboard.press("Enter");
-    const expected = { club: await club.inputValue(), aim: guidance.aim, power: Number(await power.inputValue()) / 100, technique: await technique.inputValue(), flightProfile: await page.getByTestId("player-shot-flight-high").getAttribute("aria-pressed") === "true" ? "high" : "low" };
+    const style = hud.getByTestId("player-shot-style"); await style.focus(); await page.keyboard.press("Home"); await page.keyboard.press("ArrowDown"); await page.keyboard.press("Tab"); await expect(style).toHaveValue("straight_run");
+    await page.getByTestId("player-shot-flight-high").focus(); await page.keyboard.press("Enter"); await expect(page.getByTestId("player-shot-flight-high")).toHaveAttribute("aria-pressed", "true");
+    const expected = { club: await club.inputValue(), aim: guidance.aim, power: Number(await power.inputValue()) / 100, technique: "normal", flightProfile: "high", style: "straight_run" };
     await page.getByTestId("commit-player-shot").focus(); await page.keyboard.press("Enter");
     await expect(page.getByTestId("calls")).toHaveText(JSON.stringify([{ name: "aim", value: guidance.aim }, { name: "commit", value: expected }]));
     await expect(page.getByTestId("immutable")).toHaveText("true"); expect(errors).toEqual([]);
-    mkdirSync(evidence, { recursive: true }); writeFileSync(`${evidence}/native-${locale}-${scale}.json`, JSON.stringify({ locale, scale, expected, guidance, errors, calls: JSON.parse((await page.getByTestId("calls").textContent())!) }, null, 2)); await page.screenshot({ path: `${evidence}/native-${locale}-${scale}.png` }); await info.attach("native callback payload", { body: JSON.stringify(expected), contentType: "application/json" });
+    writeFileSync(evidencePath(info, `native-${locale}-${scale}.json`), JSON.stringify({ locale, scale, expected, guidance, errors, calls: JSON.parse((await page.getByTestId("calls").textContent())!) }, null, 2)); await page.screenshot({ path: evidencePath(info, `native-${locale}-${scale}.png`) }); await info.attach("native callback payload", { body: JSON.stringify(expected), contentType: "application/json" });
   });
 }
 for (const phase of ["flight", "conceded"]) test(`actual emitted HUD footer ${phase}`, async ({ page }) => {
@@ -146,12 +159,12 @@ for (const locale of ["en", "pseudo"]) test(`genuine trained Punch flight state 
   const training = JSON.parse((await page.getByTestId("training-output").textContent())!) as { week: number; day: number; cost: number; available: boolean; recovery: number }[];
   expect(training.length).toBe(18); expect(training.at(-1)!.recovery).toBe(46); expect(training.every(record => record.available && record.day >= 0 && record.day <= 6 && record.cost === 60)).toBe(true);
   const dates = training.map(record => `${record.week}/${record.day}`); expect(Math.max(...dates.map(date => dates.filter(value => value === date).length))).toBe(2);
-  const hud = page.getByTestId("player-shot-hud"), technique = hud.locator("select").nth(1), low = page.getByTestId("player-shot-flight-low"), high = page.getByTestId("player-shot-flight-high");
+  const hud = page.getByTestId("player-shot-hud"), style = hud.getByTestId("player-shot-style"), low = page.getByTestId("player-shot-flight-low"), high = page.getByTestId("player-shot-flight-high");
   await high.focus(); await page.keyboard.press("Enter"); await expect(high).toHaveAttribute("aria-pressed", "true");
   const normalHigh = await collect(page);
   await low.focus(); await page.keyboard.press("Enter"); await expect(low).toHaveAttribute("aria-pressed", "true");
   const normalLow = await collect(page);
-  await technique.focus(); await nativeOptionText(page, (await technique.locator("option[value=punch]").textContent())!); await page.keyboard.press("Enter"); await expect(technique).toHaveValue("punch");
+  await style.focus(); await nativeOptionText(page, (await style.locator("option[value=punch]").textContent())!); await page.keyboard.press("Enter"); await expect(style).toHaveValue("punch");
   const unfocusedBlockedOpacity = await high.evaluate(node => getComputedStyle(node).opacity); expect(unfocusedBlockedOpacity).toBe("0.64");
   await high.focus(); await page.keyboard.press("Enter"); await expect(high).toHaveAttribute("aria-pressed", "false"); await expect(low).toHaveAttribute("aria-pressed", "true");
   const blocked = await collect(page), flightSamples = [...normalHigh, ...normalLow, ...blocked].filter(sample => sample.id.startsWith("player-shot-flight-"));
@@ -161,8 +174,8 @@ for (const locale of ["en", "pseudo"]) test(`genuine trained Punch flight state 
   expect(blocked.find(sample => sample.id === "player-shot-flight-high")!.opacity).toBe("1");
   const ringBounds = await high.evaluate(node => { const css = getComputedStyle(node), box = node.getBoundingClientRect(), panel = node.closest('[data-testid="player-shot-hud"]')!.getBoundingClientRect(), extra = Number.parseFloat(css.outlineWidth) + Number.parseFloat(css.outlineOffset); return { left: box.left - extra, right: box.right + extra, top: box.top - extra, bottom: box.bottom + extra, clip: { left: Math.max(0, panel.left), right: Math.min(innerWidth, panel.right), top: Math.max(0, panel.top), bottom: Math.min(innerHeight, panel.bottom) } }; });
   expect(ringBounds.left).toBeGreaterThanOrEqual(ringBounds.clip.left); expect(ringBounds.right).toBeLessThanOrEqual(ringBounds.clip.right); expect(ringBounds.top).toBeGreaterThanOrEqual(ringBounds.clip.top); expect(ringBounds.bottom).toBeLessThanOrEqual(ringBounds.clip.bottom);
-  const expected = { club: await page.getByTestId("player-shot-club").inputValue(), aim: JSON.parse((await page.getByTestId("aim").textContent())!), power: Number(await page.getByTestId("player-shot-power").inputValue()) / 100, technique: "punch", flightProfile: "low" };
+  const expected = { club: await page.getByTestId("player-shot-club").inputValue(), aim: JSON.parse((await page.getByTestId("aim").textContent())!), power: Number(await page.getByTestId("player-shot-power").inputValue()) / 100, technique: "punch", flightProfile: "low", style: "punch" };
   await page.getByTestId("commit-player-shot").focus(); await page.keyboard.press("Enter"); await expect(page.getByTestId("calls")).toHaveText(JSON.stringify([{ name: "commit", value: expected }]));
   await expect(page.getByTestId("immutable")).toHaveText("true"); expect(errors).toEqual([]); expect(await high.evaluate(node => getComputedStyle(node).opacity)).toBe("0.64");
-  mkdirSync(evidence, { recursive: true }); const record = { locale, training, normalHigh, normalLow, blocked, focused, ringBounds, unfocusedBlockedOpacity, expected, errors }; writeFileSync(`${evidence}/trained-${locale}.json`, JSON.stringify(record, null, 2)); await page.screenshot({ path: `${evidence}/trained-${locale}.png` }); await info.attach("genuine training/flight paint", { body: JSON.stringify(record), contentType: "application/json" });
+  const record = { locale, training, normalHigh, normalLow, blocked, focused, ringBounds, unfocusedBlockedOpacity, expected, errors }; writeFileSync(evidencePath(info, `trained-${locale}.json`), JSON.stringify(record, null, 2)); await page.screenshot({ path: evidencePath(info, `trained-${locale}.png`) }); await info.attach("genuine training/flight paint", { body: JSON.stringify(record), contentType: "application/json" });
 });

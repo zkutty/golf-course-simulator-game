@@ -32,17 +32,18 @@ for (const variant of ["deadline", "bankrupt", "victory", "victory-no-week"]) fo
   await page.evaluate(() => document.documentElement.style.fontSize = "130%");
   expect(await page.locator("html").evaluate(el => getComputedStyle(el).fontSize)).toBe("20.8px");
   const measurements = (await textFonts()).map((item, i) => ({ ...item, baseline: baseline[i].size, ratio: item.size / baseline[i].size }));
-  const evidencePath = `/private/tmp/zk382-outcomes-${variant}-${locale}-${width}-${process.env.OUTCOME_EVIDENCE_SUFFIX ?? "attempt3"}`;
-  writeFileSync(`${evidencePath}-fonts.json`, JSON.stringify(measurements, null, 2));
+  const evidenceSuffix = (process.env.OUTCOME_EVIDENCE_SUFFIX ?? "attempt3").replace(/[^a-zA-Z0-9._-]/g, "_").replace(/^\.+/, "") || "attempt3";
+  const evidencePath = (name: string) => info.outputPath(`zk382-outcomes-${variant}-${locale}-${width}-${evidenceSuffix}-${name}`);
+  writeFileSync(evidencePath("fonts.json"), JSON.stringify(measurements, null, 2));
   await info.attach("font growth", { body: JSON.stringify(measurements, null, 2), contentType: "application/json" });
-  await info.attach("expanded outcome", { body: await page.screenshot({ path: `${evidencePath}-actions.png` }), contentType: "image/png" });
+  await info.attach("expanded outcome", { body: await page.screenshot({ path: evidencePath("actions.png") }), contentType: "image/png" });
   for (const item of measurements) expect(Math.abs(item.ratio - 1.3), `${item.text}: ${item.baseline} → ${item.size}`).toBeLessThan(.01);
   const dialog = page.getByRole("dialog"); await expect(dialog).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   const body = dialog.getByTestId("outcome-body");
   expect(await dialog.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
   await body.focus(); await body.evaluate(el => el.scrollTop = 0);
-  await page.screenshot({ path: `${evidencePath}-heading.png` });
+  await page.screenshot({ path: evidencePath("heading.png") });
   if (await body.evaluate(el => el.scrollHeight > el.clientHeight)) { await page.keyboard.press("PageDown"); await expect.poll(() => body.evaluate(el => el.scrollTop)).toBeGreaterThan(0); }
   // Native PageDown can continue across animation frames. Measure only after it settles.
   await body.evaluate(el => new Promise<void>(resolve => {
@@ -71,8 +72,8 @@ for (const variant of ["deadline", "bankrupt", "victory", "victory-no-week"]) fo
   const visibleInsetWidth = inset ? shadowLengths[3] - Math.max(0, -parseFloat(focusStyle.offset)) : 0;
   const ring = luminance(indicatorColor), surface = luminance(focusStyle.background);
   const contrast = (Math.max(ring, surface) + .05) / (Math.min(ring, surface) + .05);
-  writeFileSync(`${evidencePath}-focus.json`, JSON.stringify({ ...focusStyle, indicatorColor, visibleInsetWidth, contrast }, null, 2));
-  await page.screenshot({ path: `${evidencePath}-focus.png` });
+  writeFileSync(evidencePath("focus.json"), JSON.stringify({ ...focusStyle, indicatorColor, visibleInsetWidth, contrast }, null, 2));
+  await page.screenshot({ path: evidencePath("focus.png") });
   expect(focusStyle.keyboardFocus).toBe(true);
   expect(contrast).toBeGreaterThanOrEqual(3);
   expect(visibleInsetWidth).toBeGreaterThanOrEqual(2);
@@ -137,7 +138,7 @@ for (const reducedMotion of ["reduce", "no-preference"] as const) test(`confetti
 });
 
 
-for (const timing of ["existing", "late"]) for (const interaction of ["pointer", "keyboard"]) test(`existing campaign authority ${timing} ${interaction}`, async ({ page }) => {
+for (const timing of ["existing", "late"]) for (const interaction of ["pointer", "keyboard"]) test(`existing campaign authority ${timing} ${interaction}`, async ({ page }, info) => {
   await open(page, `?variant=victory&campaign=${timing}`);
   const outcome = page.getByRole("dialog", { name: "Objectives complete!" });
   const frame = page.getByTestId("course-frame");
@@ -157,7 +158,7 @@ for (const timing of ["existing", "late"]) for (const interaction of ["pointer",
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await expect(scene.getByRole("button").last()).toBeFocused();
   await page.keyboard.press("Shift+Tab"); await expect(choice).toBeFocused();
-  await page.screenshot({ path: `/private/tmp/zk382-outcome-campaign-${timing}-${interaction}-top.png` });
+  await page.screenshot({ path: info.outputPath(`zk382-outcome-campaign-${timing}-${interaction}-top.png`) });
   await expect.poll(() => frame.evaluate(el => (el as HTMLElement).inert)).toBe(false);
   await expect.poll(() => scene.evaluate(el => { let node: HTMLElement | null = el as HTMLElement; while (node) { if (node.inert) return true; node = node.parentElement; } return false; })).toBe(false);
   for (const control of ["outside", "course-action", "course-nested-action", "campaign-sibling-action"]) {
@@ -174,7 +175,7 @@ for (const timing of ["existing", "late"]) for (const interaction of ["pointer",
   await expect(outcome).toBeVisible();
   await expect(outcome.getByRole("button", { name: "Keep playing" })).toBeFocused();
   await expect.poll(() => outcome.evaluate(el => (el as HTMLElement).inert)).toBe(false);
-  await page.screenshot({ path: `/private/tmp/zk382-outcome-campaign-${timing}-${interaction}-return.png` });
+  await page.screenshot({ path: info.outputPath(`zk382-outcome-campaign-${timing}-${interaction}-return.png`) });
   await outcome.getByRole("button", { name: "Keep playing" }).click();
   await expect(page.getByTestId("log")).toHaveText('[{"type":"continue"}]');
   await expect(page.getByTestId("opener")).toBeFocused();

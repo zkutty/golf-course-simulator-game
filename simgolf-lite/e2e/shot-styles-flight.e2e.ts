@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { PNG } from "pngjs";
+import { assertUncoveredRoi, captureClock, installCaptureClock } from "./retained-shot-capture-clock";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { sampleRetainedShotMotion, type RetainedShotMotionV1 } from "../src/game/rules/shotMotion";
 import { worldToIso, type IsoRotation } from "../src/game/render/iso";
@@ -62,16 +63,23 @@ async function savedPendingMotion(page: Page, shotId: string): Promise<RetainedS
   }, shotId);
 }
 
-async function captureAirborne(page: Page, info: TestInfo, progress: number, index: number, phase: "airborne" | "rollout" = "airborne") {
-  await page.waitForFunction(({ target, phase }) => {
-    const frame = (window as unknown as { __ccPlayerShotPlayback?: PlayerShotRenderDiagnostics }).__ccPlayerShotPlayback;
-    return frame && frame.phase === phase && frame.motionProgress >= target;
-  }, { target: progress, phase });
-  await page.getByRole("button", { name: "Open pause menu" }).click();
-  await expect(page.getByTestId("pause-overlay")).toBeVisible();
-  const frozen = await playback(page);
-  if (!frozen) throw new Error("Paused committed shot has no render diagnostics");
-  await expect.poll(async () => (await playback(page))?.progress).toBe(frozen.progress);
+type BackgroundResult<T> = { ok: true; value: T } | { ok: false; error: unknown };
+function settle<T>(pending: Promise<T>): Promise<BackgroundResult<T>> {
+  return pending.then((value) => ({ ok: true, value }), (error: unknown) => ({ ok: false, error }));
+}
+function resolved<T>(result: BackgroundResult<T>): T {
+  if (!result.ok) throw result.error;
+  return result.value;
+}
+async function captureAirborne(page: Page, info: TestInfo, progress: number, index: number, phase: "airborne" | "rollout" = "airborne",
+  ready = () => captureClock(page).acquire(progress, phase), verifySave?: () => Promise<void>) {
+  await ready();
+  const clock = captureClock(page);
+  const pauseProof = await clock.nativePause();
+  const frozen = pauseProof.frame!;
+  const remainingBudget = () => clock.remainingFreezeBudget();
+  await verifySave?.();
+  await expect.poll(async () => (await playback(page))?.progress, { timeout: remainingBudget() }).toBe(frozen.progress);
   await expect.poll(() => savedPendingMotion(page, frozen.shotId)).not.toBeNull();
   const motion = (await savedPendingMotion(page, frozen.shotId))!;
   const state = await textState(page);
@@ -90,6 +98,7 @@ async function captureAirborne(page: Page, info: TestInfo, progress: number, ind
   const canvas = page.locator(".cc-pixi-stage canvas");
   const bounds = await canvas.boundingBox();
   if (!bounds) throw new Error("Missing committed canvas");
+  const pausedOverlay = await clock.clearView(`${phase}-${index}`, pauseProof);
   const body = await canvas.screenshot({ path: info.outputPath(`${phase}-${index}.png`) });
   await info.attach(`${phase}-${index}`, { body, contentType: "image/png" });
   const pixels = PNG.sync.read(body);
@@ -99,19 +108,17 @@ async function captureAirborne(page: Page, info: TestInfo, progress: number, ind
   expect(x).toBeLessThan(pixels.width - 4);
   expect(y).toBeGreaterThan(4);
   expect(y).toBeLessThan(pixels.height - 4);
+  await assertUncoveredRoi(page, { x, y }, 3, pixels, bounds);
   let visibleBallPixels = 0;
   for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
     const offset = (Math.round(y + dy) * pixels.width + Math.round(x + dx)) * 4;
-    // This is the actual composited screenshot, including the pause menu's
-    // dim backdrop. The white ball remains a bright neutral pixel above the
-    // green background; requiring undimmed white would test the wrong image.
+    // Actual clear-view compositor pixels at the exact native-paused pose.
+    // The original radius and neutral-ball RGB predicate remain unchanged.
     const rgb = [pixels.data[offset], pixels.data[offset + 1], pixels.data[offset + 2]];
     if (Math.min(...rgb) > 70 && Math.max(...rgb) - Math.min(...rgb) < 25) visibleBallPixels++;
   }
-  expect(visibleBallPixels, "visible ball must occupy its retained projected position beneath the pause backdrop").toBeGreaterThan(0);
-  const record = { style: motion.identity.style, frozen, motion, motionIdentity: motion.identity, expected, camera: state.camera, transform, viewport: page.viewportSize(), compositedPauseBackdrop: true, visibleBallPixels, imageHash: createHash("sha256").update(body).digest("hex") };
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("pause-overlay")).toHaveCount(0);
+  expect(visibleBallPixels, "visible ball must occupy its retained projected position in the clear composited canvas").toBeGreaterThan(0);
+  const record = { style: motion.identity.style, frozen, motion, motionIdentity: motion.identity, expected, camera: state.camera, transform, viewport: page.viewportSize(), compositedPauseBackdrop: false, pausedOverlay, visibleBallPixels, imageHash: createHash("sha256").update(body).digest("hex") };
   return record;
 }
 
@@ -160,6 +167,7 @@ async function waitForCommittedStyle(page: Page, style: string, before: number) 
 
 test("shot styles commit actual UI input and retained motion owns visible airborne frames", async ({ page }, info) => {
   const errors = watchErrors(page);
+  const clock = await installCaptureClock(page, info, { maxRuns: 512, maxLogicalMs: 50000 });
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/");
   await enterRound(page);
@@ -182,10 +190,21 @@ test("shot styles commit actual UI input and retained motion owns visible airbor
   const stageBounds = await page.locator(".cc-pixi-stage").boundingBox();
   if (!origin || !stageBounds) throw new Error("Shot camera target is unavailable");
   await page.mouse.move(stageBounds.x + origin.x, stageBounds.y + origin.y);
+  const initialNativeZoom = await page.evaluate(() => {
+    const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
+    return camera ? { zoom: camera.zoom, targetZoom: camera.targetZoom } : null;
+  });
+  expect(initialNativeZoom).not.toBeNull();
+  let nativeWheelCount = 0;
   for (let notch = 0; notch < 8; notch++) {
+    await page.waitForFunction(() => {
+      const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
+      return camera && Math.abs(camera.zoom - camera.targetZoom) < .0001;
+    });
     const zoom = await page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()?.camera.zoom ?? 0);
     if (zoom >= .65) break;
     await page.mouse.wheel(0, -120);
+    nativeWheelCount++;
     await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()?.camera.zoom ?? 0)).toBeGreaterThan(zoom + .02);
   }
   await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()?.camera.zoom ?? 0)).toBeGreaterThan(.64);
@@ -195,20 +214,47 @@ test("shot styles commit actual UI input and retained motion owns visible airbor
       && Math.abs(camera.center.x - camera.targetCenter.x) < .01
       && Math.abs(camera.center.y - camera.targetCenter.y) < .01;
   });
+  await clock.holdQuiescent("player");
   await chooseStyle(page, "7 Iron", "straight_run");
+  const aimedRound = await roundState(page);
+  const originalTarget = { x: Math.min(54, aimedRound.ball.x + 14), y: 8 };
+  const nativeAimReadiness = await page.evaluate((target) => {
+    const stage = document.querySelector<HTMLElement>(".cc-pixi-stage");
+    const canvas = stage?.querySelector("canvas");
+    const projected = window.__coursecraftPixiTest!.tileToScreen(target.x, target.y);
+    const bounds = stage?.getBoundingClientRect();
+    const camera = window.__coursecraftPixiTest!.cameraTransform()?.camera;
+    if (!stage || !canvas || !projected || !bounds || !camera) throw new Error("Native aim readiness geometry is unavailable");
+    const finite = Number.isFinite(projected.x) && Number.isFinite(projected.y);
+    const inside = finite && projected.x >= 0 && projected.x < bounds.width && projected.y >= 0 && projected.y < bounds.height;
+    const hit = inside ? document.elementFromPoint(bounds.x + projected.x, bounds.y + projected.y) : null;
+    return { originalTarget: target, projectedTarget: projected,
+      stageBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+      finalNativeZoom: { zoom: camera.zoom, targetZoom: camera.targetZoom },
+      hitIdentity: { tagName: hit?.tagName ?? null, testId: hit?.getAttribute("data-testid") ?? null,
+        ariaLabel: hit?.getAttribute("aria-label") ?? null },
+      uncovered: inside && hit === canvas };
+  }, originalTarget);
+  expect(nativeAimReadiness.uncovered, "original native aim target is uncovered by the canvas after the actual click").toBe(true);
+  await info.attach("fullstyles-native-zoom-readiness", { body: JSON.stringify({ initialNativeZoom, nativeWheelCount,
+    ...nativeAimReadiness }), contentType: "application/json" });
   await expect(page.getByTestId("player-shot-rules-preview")).toHaveCount(0);
   await expect(page.getByTestId("player-shot-auto-putt-preview")).toHaveCount(0);
   const before = await roundState(page);
+  const firstPhase = () => clock.acquire(.12, "airborne");
+  const captures = [];
   await page.getByTestId("commit-player-shot").click();
-  // Save the actual committed shot before pausing: global quicksave is
-  // deliberately ignored while a menu is open or a control has keyboard focus.
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.keyboard.press("Control+KeyS");
-  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
-  const captures = [];
-  for (const [index, progress] of [.12, .32, .54].entries()) captures.push(await captureAirborne(page, info, progress, index));
+  const verifyFirstSave = () => expect.poll(async () => {
+    await clock.flushTimers();
+    return page.locator('.sr-only[role="status"]').textContent();
+  }).toContain("Quick save complete");
+  for (const [index, progress] of [.12, .32, .54].entries()) captures.push(await captureAirborne(page, info, progress, index,
+    "airborne", index === 0 ? firstPhase : undefined, index === 0 ? verifyFirstSave : undefined));
   expect(new Set(captures.map((capture) => capture.imageHash)).size).toBe(3);
   expect(new Set(captures.map((capture) => JSON.stringify(capture.frozen.point))).size).toBe(3);
+  await clock.completeNaturally();
   const first = await waitForCommittedStyle(page, "straight_run", before.strokes);
   const authority = captures[0].motion;
   expect(first.recentTrace.physicalRest).toEqual(authority.physicalRest.point);
@@ -228,6 +274,7 @@ test("shot styles commit actual UI input and retained motion owns visible airbor
       styledCaptures.push(await captureAirborne(page, info, value === "chip" ? .74 : .15, 3 + styledCaptures.length, "rollout"));
     }
     await page.getByTestId("skip-player-shot").click();
+    await clock.run(16, "render original styled native Skip");
     const result = await waitForCommittedStyle(page, value, count);
     committed.push(result.recentTrace);
   }
@@ -239,6 +286,87 @@ test("shot styles commit actual UI input and retained motion owns visible airbor
   expect(draw.motion.flight!.geometry.curve!.lateralOffsetTiles * fade.motion.flight!.geometry.curve!.lateralOffsetTiles).toBeLessThan(0);
   expect(styledCaptures.map((capture) => capture.style)).toEqual(["high_spin", "pitch", "draw", "fade", "chip", "putt"]);
   writeFileSync(info.outputPath("shot-style-evidence.json"), JSON.stringify({ setupOnlyFixture: "shotStyles", seed: 360037, viewport: page.viewportSize(), captures, styledCaptures, committed, errors }, null, 2));
+  expect(errors).toEqual([]);
+  await clock.finalize();
+});
+
+test("native real-time retained shot advances visibly and completes once", async ({ page }, info) => {
+  // Deliberately no Clock: passive browser observation spans normal native play.
+  const errors = watchErrors(page);
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto("/");
+  await enterRound(page);
+  await chooseStyle(page, "7 Iron", "straight_run");
+  const before = await roundState(page);
+  const observed = settle(page.evaluate((beforeStrokes) => new Promise<{
+    frames: PlayerShotRenderDiagnostics[];
+    shotId: string;
+    completedStrokes: number;
+  }>((resolve, reject) => {
+    const frames: PlayerShotRenderDiagnostics[] = [];
+    let shotId: string | undefined;
+    let request = 0;
+    const timeout = setTimeout(() => {
+      cancelAnimationFrame(request);
+      reject(new Error("Real-time native shot did not naturally complete within 30000ms"));
+    }, 30000);
+    const tick = () => {
+      const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
+      const round = state.playerPro?.activeRound;
+      const frame = (window as unknown as { __ccPlayerShotPlayback?: PlayerShotRenderDiagnostics }).__ccPlayerShotPlayback;
+      const driver = round?.presentation;
+      if (round?.pendingShot?.id) shotId ??= round.pendingShot.id;
+      if (shotId && frame?.shotId === shotId && driver?.shotId === shotId
+        && driver.progress === frame.progress && frame.phase !== "address"
+        && frames.at(-1)?.progress !== frame.progress) frames.push(structuredClone(frame));
+      if (shotId && round?.phase !== "flight" && round?.pendingShot === null && round?.recentTrace?.id === shotId) {
+        clearTimeout(timeout);
+        if (round.strokes !== beforeStrokes + 1) reject(new Error("Real-time completion scored a different stroke count"));
+        else resolve({ frames, shotId, completedStrokes: round.strokes });
+        return;
+      }
+      request = requestAnimationFrame(tick);
+    };
+    request = requestAnimationFrame(tick);
+  }), before.strokes));
+  let observation: Awaited<typeof observed>;
+  try {
+    await page.getByTestId("commit-player-shot").click();
+  } finally {
+    // Even a native commit failure owns and awaits its bounded observation.
+    observation = await observed;
+  }
+  const actual = resolved(observation);
+  expect(new Set(actual.frames.map((frame) => frame.progress)).size).toBeGreaterThanOrEqual(2);
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await page.keyboard.press("Control+KeyS");
+  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+  const saved = await page.evaluate(async () => {
+    const path = "/src/utils/saveStore.ts";
+    return (await import(path)).loadSlot("quick-save");
+  });
+  const completed = saved.world.playerPro.activeRound;
+  const shot = completed.shots.at(-1);
+  const motion = shot.sharedOutcome.motion as RetainedShotMotionV1;
+  expect(saved.world.runSeed).toBe(360037);
+  expect(shot.id).toBe(actual.shotId);
+  expect(motion.identity.shotId).toBe(actual.shotId);
+  expect(completed.phase).not.toBe("flight");
+  expect(completed.pendingShot).toBeNull();
+  expect(completed.strokes).toBe(before.strokes + 1);
+  expect(completed.penalties).toBe(before.penalties + shot.penaltyStrokes);
+  expect(completed.shots.filter((shot: { id: string }) => shot.id === actual.shotId)).toHaveLength(1);
+  for (const frame of actual.frames) {
+    const expected = sampleRetainedShotMotion(motion, frame.motionProgress)!;
+    expect(frame.phase).toBe(expected.phase);
+    expect(frame.point.x).toBeCloseTo(expected.point.x, 7);
+    expect(frame.point.y).toBeCloseTo(expected.point.y, 7);
+    expect(frame.heightYards).toBeCloseTo(expected.heightYards, 7);
+  }
+  const after = await waitForCommittedStyle(page, "straight_run", before.strokes);
+  expect(after.recentTrace.id).toBe(actual.shotId);
+  expect(after.strokes).toBe(actual.completedStrokes);
+  writeFileSync(info.outputPath("native-real-time-retained-shot.json"), JSON.stringify({ actual, saved, errors }, null, 2));
   expect(errors).toEqual([]);
 });
 
@@ -304,10 +432,20 @@ test.describe("touch and accessibility", () => {
 
 test("selected live golfer follows its retained current segment without revealing future motion", async ({ page }, info) => {
   const errors = watchErrors(page);
+  const clock = await installCaptureClock(page, info, { maxRuns: 160, maxLogicalMs: 2000 });
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto("/?m47Fixture=1");
   await expect(page.getByTestId("speed-1x")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Boolean(
+    window.__coursecraftPixiTest?.viewportInputState()?.attached && window.__coursecraftPixiTest.cameraTransform()?.camera,
+  ))).toBe(true);
+  await clock.holdQuiescent("live");
   await page.getByTestId("speed-1x").click();
+  // Clock shortcuts ignore controls. Establish focus before observing a flight.
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await expect.poll(() => page.evaluate(() => document.activeElement?.matches(
+    "input, textarea, select, button, a[href], [role='button'], [contenteditable='true']",
+  ) ?? false)).toBe(false);
   let actor: { id: number; ballMotion: { active: boolean } } | undefined;
   for (let step = 0; step < 100; step++) {
     await page.evaluate(() => window.__coursecraftTest!.advanceLiveClock(200, "1x"));
@@ -315,18 +453,101 @@ test("selected live golfer follows its retained current segment without revealin
     if (actor) break;
   }
   expect(actor, "an actual modern live flight is required").toBeDefined();
-  await page.getByTestId("speed-paused").click();
+  await page.keyboard.press("Space");
+  const pausedBeforeFrames = await textState(page);
+  expect(pausedBeforeFrames.simulation.speed).toBe("paused");
+  await clock.run(32, "native Space freeze proof on original live finite-step state");
+  const pausedState = await textState(page);
+  expect(pausedState.golfers).toEqual(pausedBeforeFrames.golfers);
+  expect(pausedState.simulation.speed).toBe("paused");
+  const current = pausedState.golfers.find((golfer: { id: number }) => golfer.id === actor!.id);
+  expect(current?.ballMotion?.active).toBe(true);
+  expect(current?.ballMotion?.identity).toBeTruthy();
   await page.getByRole("button", { name: "Open live overview" }).click();
   const overview = page.getByTestId("live-overview");
-  const current = (await textState(page)).golfers.find((golfer: { id: number }) => golfer.id === actor!.id);
   // The overview exposes actual golfers in the same visible row order.
   const index = (await textState(page)).golfers.findIndex((golfer: { id: number }) => golfer.id === actor!.id);
+  const overviewPublicationDeadline = performance.now() + 5000;
+  const checkOverviewPublicationDeadline = () => {
+    if (performance.now() >= overviewPublicationDeadline) throw new Error("Paused overview UI publication exceeded the original 5000ms deadline");
+  };
+  expect(Number.isInteger(index), "original live actor index is present").toBe(true);
+  expect(index).toBeGreaterThanOrEqual(0);
+  const readPausedOverviewAuthority = async () => {
+    checkOverviewPublicationDeadline();
+    const value = await textState(page);
+    checkOverviewPublicationDeadline();
+    expect(value.simulation.speed).toBe("paused");
+    expect(value.playerPro.activeRound).toBeNull();
+    const liveActor = value.golfers.find((golfer: { id: number }) => golfer.id === actor!.id);
+    expect(liveActor?.ballMotion?.active).toBe(true);
+    expect(liveActor?.ballMotion).toEqual(current.ballMotion);
+    return { golfers: value.golfers, authorityHashes: value.onboarding.authorityHashes,
+      simulationGolfers: value.simulation.golfers, speed: value.simulation.speed,
+      dayMinute: value.simulation.dayMinute, clock: value.simulation.clock, round: value.playerPro.activeRound };
+  };
+  const pausedOverviewAuthority = await readPausedOverviewAuthority();
+  let overviewRowReady = false;
+  for (let step = 0; step <= 20; step++) {
+    checkOverviewPublicationDeadline();
+    const rowCount = await overview.locator("button:has(b)").count();
+    checkOverviewPublicationDeadline();
+    expect(await readPausedOverviewAuthority()).toEqual(pausedOverviewAuthority);
+    if (rowCount > index) { overviewRowReady = true; break; }
+    if (step === 20) break;
+    checkOverviewPublicationDeadline();
+    await clock.run(16, "paused overview UI publication");
+    checkOverviewPublicationDeadline();
+    expect(await readPausedOverviewAuthority()).toEqual(pausedOverviewAuthority);
+  }
+  expect(overviewRowReady, "original overview row published within 20 normal steps").toBe(true);
+  checkOverviewPublicationDeadline();
   await overview.locator("button:has(b)").nth(index).click();
-  await expect(page.locator(".cc-golfer-inspector")).toBeVisible();
+  const inspectorPublicationDeadline = performance.now() + 5000;
+  const remainingInspectorPublicationBudget = () => {
+    const remaining = inspectorPublicationDeadline - performance.now();
+    if (remaining <= 0) throw new Error("Paused inspector UI publication exceeded the original 5000ms deadline");
+    return remaining;
+  };
+  const readPausedInspectorAuthority = async () => {
+    remainingInspectorPublicationBudget();
+    const value = await textState(page);
+    remainingInspectorPublicationBudget();
+    expect(value.selectedGolferEvidence?.golferId).toBe(actor!.id);
+    expect(value.simulation.speed).toBe("paused");
+    expect(value.playerPro.activeRound).toBeNull();
+    const liveActor = value.golfers.find((golfer: { id: number }) => golfer.id === actor!.id);
+    expect(liveActor?.ballMotion?.active).toBe(true);
+    expect(liveActor?.ballMotion).toEqual(current.ballMotion);
+    expect({ golfers: value.golfers, authorityHashes: value.onboarding.authorityHashes,
+      simulationGolfers: value.simulation.golfers, speed: value.simulation.speed,
+      dayMinute: value.simulation.dayMinute, clock: value.simulation.clock, round: value.playerPro.activeRound }).toEqual(pausedOverviewAuthority);
+  };
+  await readPausedInspectorAuthority();
+  let inspectorAttached = false;
+  for (let step = 0; step <= 20; step++) {
+    remainingInspectorPublicationBudget();
+    const inspectorCount = await page.locator(".cc-golfer-inspector").count();
+    remainingInspectorPublicationBudget();
+    await readPausedInspectorAuthority();
+    if (inspectorCount > 0) { inspectorAttached = true; break; }
+    if (step === 20) break;
+    remainingInspectorPublicationBudget();
+    await clock.run(16, "paused inspector UI publication");
+    remainingInspectorPublicationBudget();
+    await readPausedInspectorAuthority();
+  }
+  expect(inspectorAttached, "original inspector attached within 20 normal steps").toBe(true);
+  await expect(page.locator(".cc-golfer-inspector")).toBeVisible({ timeout: remainingInspectorPublicationBudget() });
+  remainingInspectorPublicationBudget();
+  await readPausedInspectorAuthority();
   await expect.poll(async () => (await textState(page)).selectedGolferEvidence?.golferId).toBe(actor!.id);
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.keyboard.press("Control+KeyS");
-  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+  await expect.poll(async () => {
+    await clock.flushTimers();
+    return page.locator('.sr-only[role="status"]').textContent();
+  }).toContain("Quick save complete");
   const saved = await page.evaluate(async () => {
     const path = "/src/utils/saveStore.ts";
     return (await import(path)).loadSlot("quick-save");
@@ -345,24 +566,24 @@ test("selected live golfer follows its retained current segment without revealin
   await page.screenshot({ path: info.outputPath("selected-live-retained-flight.png"), fullPage: true });
   writeFileSync(info.outputPath("selected-live-evidence.json"), JSON.stringify({ seed: saved.world.runSeed, actor: current, identity: motion.identity, pose, viewport: page.viewportSize(), errors }, null, 2));
   expect(errors).toEqual([]);
+  await clock.finalize();
 });
 
 test("midflight autosave reload resumes the same retained shot without rescoring", async ({ page }, info) => {
   const errors = watchErrors(page);
+  const clock = await installCaptureClock(page, info, { maxRuns: 160, maxLogicalMs: 8000 });
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/");
   await enterRound(page);
+  await clock.holdQuiescent("player");
   await chooseStyle(page, "7 Iron", "straight_run");
   const before = await roundState(page);
   await page.getByTestId("commit-player-shot").click();
-  await page.waitForFunction(() => {
-    const frame = (window as unknown as { __ccPlayerShotPlayback?: PlayerShotRenderDiagnostics }).__ccPlayerShotPlayback;
-    return frame?.phase === "airborne" && frame.motionProgress > .25;
-  });
-  await page.getByRole("button", { name: "Open pause menu" }).click();
-  await expect(page.getByTestId("pause-overlay")).toBeVisible();
-  const paused = await playback(page);
-  if (!paused) throw new Error("Actual paused shot diagnostics are required");
+  await clock.acquire(.25, "airborne", true);
+  const initialPause = await clock.nativePause();
+  const paused = initialPause.frame!;
+  const pausedBody = await page.locator(".cc-pixi-stage canvas").screenshot({ path: info.outputPath("midflight-before-reload-paused.png") });
+  await info.attach("midflight-before-reload-paused", { body: pausedBody, contentType: "image/png" });
   const readCheckpoint = () => page.evaluate(async (shotId) => {
     const path = "/src/utils/saveStore.ts";
     const repository = await import(path);
@@ -383,22 +604,79 @@ test("midflight autosave reload resumes the same retained shot without rescoring
   const motion = saved.round.pendingShot.sharedOutcome.motion as RetainedShotMotionV1;
   await page.reload();
   await page.getByRole("button", { name: "Load Game", exact: true }).click();
+  const reloadPublicationDeadline = performance.now() + 5000;
+  const remainingReloadPublicationBudget = () => {
+    const remaining = reloadPublicationDeadline - performance.now();
+    if (remaining <= 0) throw new Error("Reload saved-slot UI publication exceeded the 5000ms deadline");
+    return remaining;
+  };
+  remainingReloadPublicationBudget();
+  const reloadMenuState = await textState(page);
+  remainingReloadPublicationBudget();
+  const reloadMenuAuthority = {
+    authorityHashes: reloadMenuState.onboarding.authorityHashes,
+    golfers: reloadMenuState.golfers, simulation: reloadMenuState.simulation,
+    round: reloadMenuState.playerPro.activeRound,
+  };
+  const readReloadMenuAuthority = async () => {
+    remainingReloadPublicationBudget();
+    const checkpoint = await readCheckpoint();
+    remainingReloadPublicationBudget();
+    expect(checkpoint, "Original persisted autosave checkpoint remains exact before native Load").toEqual(saved);
+    remainingReloadPublicationBudget();
+    const value = await textState(page);
+    remainingReloadPublicationBudget();
+    expect(value.screen).toBe("menu");
+    expect(value.screenBase).toBe("title");
+    expect(value.modal).toBe("save-load");
+    expect(value.paused).toBe(false);
+    expect(value.simulation.speed).toBe("paused");
+    expect(value.playerPro.activeRound).toBeNull();
+    expect(value.golfers.some((golfer: { ballMotion?: { active: boolean } }) => golfer.ballMotion?.active)).toBe(false);
+    expect({ authorityHashes: value.onboarding.authorityHashes, golfers: value.golfers,
+      simulation: value.simulation, round: value.playerPro.activeRound }).toEqual(reloadMenuAuthority);
+  };
+  await readReloadMenuAuthority();
+  let reloadSlotAttached = false;
+  for (let step = 0; step <= 20; step++) {
+    remainingReloadPublicationBudget();
+    const slotCount = await page.getByTestId(`save-slot-${saved.id}`).count();
+    remainingReloadPublicationBudget();
+    await readReloadMenuAuthority();
+    if (slotCount > 0) { reloadSlotAttached = true; break; }
+    if (step === 20) break;
+    remainingReloadPublicationBudget();
+    await clock.run(16, "reload saved-slot UI publication before native Load");
+    remainingReloadPublicationBudget();
+    await readReloadMenuAuthority();
+  }
+  expect(reloadSlotAttached, "Original saved slot attached within 20 normal steps").toBe(true);
+  remainingReloadPublicationBudget();
   await page.getByTestId(`save-slot-${saved.id}`).getByRole("button", { name: "Load", exact: true }).click();
-  await expect(page.getByTestId("player-shot-hud")).toBeVisible();
-  await expect.poll(async () => (await playback(page))?.shotId).toBe(paused.shotId);
-  const resumed = await playback(page);
+  await clock.acquireRestoredIdentity(paused.shotId);
+  const resumedPause = await clock.nativePause();
+  const resumed = resumedPause.frame;
+  if (!resumed) throw new Error("Actual paused resumed shot diagnostics are required");
+  expect(resumed.shotId).toBe(paused.shotId);
   const resumedRound = await roundState(page);
-  expect(resumed!.progress).toBeGreaterThanOrEqual(saved.round.shotPresentation.progress);
+  expect(resumed.progress).toBeGreaterThanOrEqual(saved.round.shotPresentation.progress);
+  await expect(page.getByTestId("player-shot-hud")).toBeVisible();
+  await clock.clearView("midflight-restored", resumedPause);
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
   await page.keyboard.press("Control+KeyS");
-  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+  await expect.poll(async () => {
+    await clock.flushTimers();
+    return page.locator('.sr-only[role="status"]').textContent();
+  }).toContain("Quick save complete");
   const reloadedSave = await page.evaluate(async () => {
     const path = "/src/utils/saveStore.ts";
     return (await import(path)).loadSlot("quick-save");
   });
   expect(reloadedSave.world.playerPro.activeRound.pendingShot.sharedOutcome.motion).toEqual(motion);
+  expect(reloadedSave.world.runSeed).toBe(saved.seed);
   expect(resumedRound.strokes).toBe(before.strokes);
   await page.getByTestId("skip-player-shot").click();
+  await clock.run(16, "render original restored-shot native Skip");
   const completed = await waitForCommittedStyle(page, "straight_run", before.strokes);
   expect(completed.recentTrace.id).toBe(paused.shotId);
   await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
@@ -412,6 +690,7 @@ test("midflight autosave reload resumes the same retained shot without rescoring
   await page.screenshot({ path: info.outputPath("midflight-reloaded-rest.png"), fullPage: true });
   writeFileSync(info.outputPath("reload-evidence.json"), JSON.stringify({ saved, paused, resumed, completed, viewport: page.viewportSize(), errors }, null, 2));
   expect(errors).toEqual([]);
+  await clock.finalize();
 });
 
 test("ordinary selected AI golfer displays three canonical airborne positions", async ({ page }, info) => {
