@@ -6,7 +6,8 @@ import { courseWithEffectiveSurfaces, normalizeSurfaceCareState, surfaceCareTopo
 import * as holes from "./holes";
 import * as solver from "./shots/solveShotsToGreen";
 import * as privateScoring from "./privateRatingScoring";
-import { computeRatingForSetup } from "./courseRating";
+import { computeCourseRatingAndSlope, computeRatingForSetup } from "./courseRating";
+import { BALANCE } from "../balance/balanceConfig";
 
 // Fixed small-fixture execution ledger. No M27 constructor or full-course solve.
 // Each tuple is [actual baseline scorer entries, actual candidate scorer entries,
@@ -75,6 +76,122 @@ function pair(course: Course, tee: TeeSet = "member", pin: PinRotation = "A") {
   expect(result).toEqual(oracle);
   return { oracle, result, saved: structuredClone(result) };
 }
+
+function twoHoleEstate(): Course {
+  const base = fixture();
+  const holes = [0, 1].map((index) => {
+    const tee = { x: 2, y: 3 + index * 2 };
+    const green = { x: 13, y: 3 + index * 2 };
+    return { ...base.holes[0], id: `prefix-${index}`, tee, green,
+      teeBoxes: { member: tee }, pinPositions: { A: green } };
+  });
+  return { ...base, holes };
+}
+
+function changeSearchPenalty(): () => void {
+  const penalties = BALANCE.shots.landing.penaltyStrokes;
+  const descriptor = Object.getOwnPropertyDescriptor(penalties, "rough")!;
+  Object.defineProperty(penalties, "rough", { ...descriptor, value: descriptor.value + .125 });
+  return () => { Object.defineProperty(penalties, "rough", descriptor); };
+}
+
+describe("setup and published-rating scoring reuse", () => {
+  it("shares actual solves across UI setup, estate rating and leading operating-course rating", () => {
+    const original = twoHoleEstate();
+    const oldAdapter = vi.spyOn(privateScoring, "scorePrivateRatingSetup")
+      .mockImplementation((_source, projected) => holes.scoreCourseHoles(projected));
+    const oracleSetup = baseline(original);
+    const oracleEstate = computeCourseRatingAndSlope(original);
+    const oracleOperating = computeCourseRatingAndSlope({ ...original, holes: original.holes.slice(0, 1) });
+    expect(holes.__getHoleScoreCacheStatsForTests().misses).toBe(5);
+    expect(counts.solver).toBe(10);
+    oldAdapter.mockRestore();
+
+    holes.__resetHoleScoreCacheForTests();
+    privateScoring.__resetPrivateRatingScoringForTests();
+    counts.solver = 0;
+    const course = { ...original, tiles: original.tiles.slice(), elevations: original.elevations.slice() };
+    const setup = candidate(course);
+    const estate = computeCourseRatingAndSlope(course);
+    const operating = computeCourseRatingAndSlope({ ...course, holes: course.holes.slice(0, 1) });
+    expect(setup).toEqual(oracleSetup);
+    expect(estate).toEqual(oracleEstate);
+    expect(operating).toEqual(oracleOperating);
+    expect(holes.__getHoleScoreCacheStatsForTests().misses).toBe(2);
+    expect(counts.solver).toBe(4);
+    expect(privateScoring.__privateRatingScoringStateForTests()).toEqual({ owners: 1, entries: 1, active: false });
+  });
+
+  it("returns only current prefix holes and drops retired entries before expanding again", () => {
+    const course = twoHoleEstate();
+    const prefix = { ...course, holes: course.holes.slice(0, 1) };
+    const full = candidate(course);
+    const saved = structuredClone(full);
+    const short = candidate(prefix);
+    expect(short.holes).toHaveLength(1);
+    expect(short.holes[0]).toBe(full.holes[0]);
+    expect(privateScoring.__privateRatingScoringStateForTests().entries).toBe(1);
+    expect(holes.__getHoleScoreCacheStatsForTests().misses).toBe(2);
+    const expanded = candidate(course);
+    expect(expanded).toEqual(saved);
+    expect(expanded.holes[0]).toBe(full.holes[0]);
+    expect(expanded.holes[1]).not.toBe(full.holes[1]);
+    expect(holes.__getHoleScoreCacheStatsForTests().misses).toBe(3);
+    expect(privateScoring.__privateRatingScoringStateForTests().entries).toBe(2);
+    candidate(prefix);
+    expect(privateScoring.__privateRatingScoringStateForTests().entries).toBe(1);
+    expect(full).toEqual(saved);
+  });
+
+  it("does not score a retained inspector projection changed after its snapshot", () => {
+    const course = twoHoleEstate();
+    const view = fresh(course);
+    const held = privateScoring.scorePrivateRatingSetup(view.effective, view.projected);
+    const saved = structuredClone(held);
+    view.projected.holes[0].parManual = 5;
+    const restore = changeSearchPenalty();
+    try {
+      const result = candidate(course);
+      expect(result).toEqual(baseline(course));
+      expect(result.holes[0].par).toBe(4);
+      expect(held).toEqual(saved);
+    } finally {
+      restore();
+    }
+  });
+
+  for (const kind of ["nonleading", "reordered"] as const) it(`does not carry a ${kind} layout's entries`, () => {
+    const course = twoHoleEstate();
+    candidate(course);
+    const changed = { ...course, holes: kind === "nonleading" ? course.holes.slice(1) : [...course.holes].reverse() };
+    const before = holes.__getHoleScoreCacheStatsForTests().misses;
+    const result = candidate(changed);
+    expect(holes.__getHoleScoreCacheStatsForTests().misses - before).toBe(changed.holes.length);
+    expect(result).toEqual(baseline(changed));
+    expect(privateScoring.__privateRatingScoringStateForTests().entries).toBe(changed.holes.length);
+  });
+
+  for (const kind of ["terrain", "elevation", "point", "setup", "search configuration"] as const) it(`invalidates a leading view after ${kind} changes`, () => {
+    const course = twoHoleEstate();
+    course.holes[0].teeBoxes!.forward = { x: 3, y: 3 };
+    candidate(course);
+    const prefix = { ...course, holes: course.holes.slice(0, 1) };
+    if (kind === "terrain") prefix.tiles = prefix.tiles.slice();
+    if (kind === "elevation") prefix.elevations = prefix.elevations.slice();
+    if (kind === "point") course.holes[0].tee!.x++;
+    const restore = kind === "search configuration" ? changeSearchPenalty() : () => {};
+    try {
+      const before = holes.__getHoleScoreCacheStatsForTests().misses;
+      const tee = kind === "setup" ? "forward" : "member";
+      const result = candidate(prefix, tee);
+      expect(holes.__getHoleScoreCacheStatsForTests().misses - before).toBe(1);
+      expect(result).toEqual(baseline(prefix, tee));
+      expect(privateScoring.__privateRatingScoringStateForTests().entries).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+});
 
 describe("private rating scoring: fixed finite actual-scorer ledger", () => {
   it("reuses fallback A/B/C/A while preserving the full actual output and public fresh aliases", () => {

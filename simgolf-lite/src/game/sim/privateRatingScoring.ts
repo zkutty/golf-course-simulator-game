@@ -67,7 +67,16 @@ function samePointData(a: DataSnapshot | null, b: DataSnapshot | null): boolean 
 }
 
 function sameEntry(a: Entry, b: Entry): boolean {
-  return sameData(a.source, b.source) && sameData(a.projected, b.projected)
+  // The setup inspector retains its projection. Decline reuse if that input
+  // was changed after scoring, even when a later fresh projection matches the
+  // original snapshot. A search-config miss must never score a mutated alias.
+  const current = dataSnapshot(a.hole);
+  if (!current || !sameData(a.projected, current)) return false;
+  const tee = pointSnapshot(a.hole.tee);
+  const green = pointSnapshot(a.hole.green);
+  return tee !== undefined && green !== undefined
+    && samePointData(a.tee, tee) && samePointData(a.green, green)
+    && sameData(a.source, b.source) && sameData(a.projected, b.projected)
     && samePointData(a.tee, b.tee) && samePointData(a.green, b.green);
 }
 
@@ -100,17 +109,21 @@ function newOwner(source: Course, projected: Course): Owner | undefined {
 function sameOwner(a: Owner, b: Owner): boolean {
   const x = a.source;
   const y = b.source;
-  return x.holes === y.holes && x.tiles === y.tiles && x.elevations === y.elevations
+  // An operating course can be the exact leading holes of the estate. Carry
+  // only entries present in the new view; never retain the old larger owner.
+  // The scorer still checks each reused hole's index, footprint and domain.
+  const sharedLength = Math.min(a.holes.length, b.holes.length);
+  return x.tiles === y.tiles && x.elevations === y.elevations
     && x.obstacles === y.obstacles && Object.is(x.width, y.width) && Object.is(x.height, y.height)
     && Object.is(x.yardsPerTile, y.yardsPerTile) && Object.is(x.theme, y.theme)
-    && a.holes.length === b.holes.length && a.holes.every((hole, index) => hole === b.holes[index])
+    && a.holes.slice(0, sharedLength).every((hole, index) => hole === b.holes[index])
     && a.obstacles.length === b.obstacles.length && a.obstacles.every((item, index) => {
       const other = b.obstacles[index];
       return item.value === other.value && sameData(item.data, other.data);
     });
 }
 
-/** Scoring-only identity reuse. Never return the private Course/Hole to callers. */
+/** Shared setup/rating scoring. Never return the private Course/Hole to callers. */
 export function scorePrivateRatingSetup(
   source: Course,
   projected: Course,

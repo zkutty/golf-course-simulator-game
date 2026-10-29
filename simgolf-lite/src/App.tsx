@@ -58,6 +58,7 @@ import { greenKeepingOverview } from "./game/greens/greenMaintenance";
 import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
+import { scorePrivateRatingSetup } from "./game/sim/privateRatingScoring";
 import { computeCourseRatingAndSlope, computeRatingForSetup, computeRatingsByTee } from "./game/sim/courseRating";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "./game/sim/loanEligibility";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
@@ -258,6 +259,7 @@ import type { GreenStrategyHeatmap } from "./game/architecture/greenStrategyHeat
 import { compareM48DesignTest, refreshM48DesignTestSession } from "./game/architecture/comparison";
 import { strategicGeometryVersion } from "./game/architecture/strategic";
 import {
+  courseWithEffectiveSurfaces,
   effectiveSurfaceTiles,
   observedSurfaceCareEvidence,
   surfaceCareConditionSummary,
@@ -2371,7 +2373,10 @@ export default function App() {
   // as tutorialCanAdvance. Inspector tee/pin exploration must not change the
   // issue, overlay cells, or repair action that the guide is describing.
   const activeHoleAuthorityCourse = activeTutorial?.stage === "validate-hole" ? course : activeSetupCourse;
-  const activeSetupSummary = useMemo(() => scoreCourseHoles(activeHoleAuthorityCourse), [activeHoleAuthorityCourse]);
+  const activeSetupSummary = useMemo(
+    () => scorePrivateRatingSetup(courseWithEffectiveSurfaces(course), activeHoleAuthorityCourse),
+    [activeHoleAuthorityCourse, course],
+  );
   const activeHoleScore = activeSetupSummary.holes[activeHoleIndex];
   const activePath = activeHoleScore?.path ?? [];
   const activeShotRoute = useMemo(
