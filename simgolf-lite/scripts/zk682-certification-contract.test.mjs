@@ -423,6 +423,7 @@ function runExtractedPerfFinalDecision({ fixtureLoadMs, coldStartupMs = 2930, wo
     WARMUP_S: 8,
     HEADED: false,
     browserEvidence: { fixture: true },
+    browserSelection: { source: "playwright-channel", channel: "chromium", executablePath: null, version: "149.fixture" },
     OUTPUT_PATH: "/captured/perf-receipt.json",
     dirname: () => "/captured",
     mkdirSync() {},
@@ -454,6 +455,7 @@ test("actual perf final decision enforces the fixed unrounded fixture-load limit
     assert.equal(receipt.effective.budgets.fixtureLoadMilliseconds, 6000);
     assert.equal(receipt.gateValidation.passed, exitCode === 0);
     assert.equal(receipt.version, 1);
+    assert.deepEqual(receipt.effective.browserSelection, { source: "playwright-channel", channel: "chromium", executablePath: null, version: "149.fixture" });
     assert.deepEqual(Object.keys(receipt), ["version", "theme", "fixture", "coldStartupMs", "fixtureLoadMs", "renderer", "effective", "physicalRun", "gateValidation"]);
     assert.equal(receipt.effective.budgets.rendererWorkMilliseconds, 8);
     assert.equal(receipt.effective.budgets.coldStartupMilliseconds, 5000);
@@ -479,4 +481,68 @@ test("actual perf final decision preserves cold/work boundaries and optional fra
   assert.equal(assertedFrame.exitCode, 1);
   assert.equal(assertedFrame.receipt.gateValidation.frameWithinBudget, false);
   assert.equal(assertedFrame.receipt.gateValidation.passed, false);
+});
+
+// Execute the producer's actual launch block with filesystem/Playwright doubles.
+// This checks forwarded launch options and recorded provenance without a browser.
+async function runExtractedPerfBrowserSelection({ chromiumPath, existing = [], headed = false, launchError } = {}) {
+  const source = readFileSync(new URL("./perf-smoke.mjs", import.meta.url), "utf8");
+  const startAnchor = "const execCandidate = [";
+  const endAnchor = 'console.log("[perf-smoke] browser ready; loading fixture …");';
+  assert.equal(source.split(startAnchor).length - 1, 1);
+  assert.equal(source.split(endAnchor).length - 1, 1);
+  const start = source.indexOf(startAnchor);
+  const end = source.indexOf(endAnchor, start);
+  assert.ok(start >= 0 && end > start);
+  const calls = [];
+  const existenceChecks = [];
+  const browser = { version: () => "149.fixture" };
+  const sentinel = launchError;
+  const sandbox = {
+    process: { env: { CHROMIUM_PATH: chromiumPath } },
+    HEADED: headed,
+    existsSync(path) { existenceChecks.push(path); return existing.includes(path); },
+    chromium: { async launch(options) { calls.push(JSON.parse(JSON.stringify(options))); if (sentinel) throw sentinel; return browser; } },
+  };
+  const run = vm.runInNewContext(`(async () => {${source.slice(start, end)}\nreturn { browser, browserSelection }; })()`, sandbox, { filename: "perf-smoke-actual-browser-selection" });
+  if (sentinel) {
+    await assert.rejects(run, error => error === sentinel);
+    return { calls, existenceChecks };
+  }
+  const result = await run;
+  assert.equal(result.browser, browser);
+  return { calls, existenceChecks, selection: JSON.parse(JSON.stringify(result.browserSelection)) };
+}
+
+test("actual perf browser selection uses full Chromium in headless and headed modes", async () => {
+  for (const headed of [false, true]) {
+    const result = await runExtractedPerfBrowserSelection({ headed });
+    assert.deepEqual(result.calls, [{ channel: "chromium", headless: !headed }]);
+    assert.deepEqual(result.selection, { source: "playwright-channel", channel: "chromium", executablePath: null, version: "149.fixture" });
+    assert.deepEqual(result.existenceChecks, ["/opt/pw-browsers/chromium"]);
+  }
+});
+
+test("actual perf browser selection preserves explicit executable precedence and truthful evidence", async () => {
+  const executable = "/custom path/Chromium";
+  const result = await runExtractedPerfBrowserSelection({ chromiumPath: executable, existing: [executable, "/opt/pw-browsers/chromium"] });
+  assert.deepEqual(result.calls, [{ executablePath: executable, headless: true }]);
+  assert.deepEqual(result.existenceChecks, [executable]);
+  assert.deepEqual(result.selection, { source: "CHROMIUM_PATH", channel: null, executablePath: executable, version: "149.fixture" });
+});
+
+test("actual perf browser selection preserves fallback and ignores missing custom executables", async () => {
+  for (const chromiumPath of [undefined, "/missing/Chromium"]) {
+    const result = await runExtractedPerfBrowserSelection({ chromiumPath, existing: ["/opt/pw-browsers/chromium"], headed: true });
+    assert.deepEqual(result.calls, [{ executablePath: "/opt/pw-browsers/chromium", headless: false }]);
+    assert.deepEqual(result.selection, { source: "fallback-executable", channel: null, executablePath: "/opt/pw-browsers/chromium", version: "149.fixture" });
+  }
+  const noExecutable = await runExtractedPerfBrowserSelection({ chromiumPath: "/missing/Chromium" });
+  assert.deepEqual(noExecutable.calls, [{ channel: "chromium", headless: true }]);
+  assert.equal(noExecutable.selection.source, "playwright-channel");
+});
+
+test("actual perf browser selection propagates launch failure without retry or browser substitution", async () => {
+  const result = await runExtractedPerfBrowserSelection({ launchError: new Error("missing full Chromium") });
+  assert.deepEqual(result.calls, [{ channel: "chromium", headless: true }]);
 });
