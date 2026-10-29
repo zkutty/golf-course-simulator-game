@@ -8,13 +8,14 @@
 // varies, so the default budget is deliberately loose.
 //
 // What is asserted: the renderer's own per-tick JS work (workMs) — that is
-// stable across machines. Raw frame spacing is also reported, but headless
-// Chromium software-GL throttles rAF (~10fps regardless of our code), so
-// the frame-time budget is only enforced when PERF_ASSERT_FRAME=1 (use on
-// real hardware with a GPU).
+// stable across machines. Raw frame spacing is also reported and depends on
+// the selected browser, renderer backend, and host scheduling. The frame-time
+// budget is only enforced when PERF_ASSERT_FRAME=1 (use on real hardware
+// with a GPU).
 //
 // Usage: npm run test:perf   (requires playwright + a chromium; set
-//        CHROMIUM_PATH if the bundled browser isn't installed)
+//        CHROMIUM_PATH if the bundled browser isn't installed). The default
+//        selects full Chromium (channel: "chromium"), including when headless.
 // Env:   PERF_WORK_BUDGET_MS (default 8), PERF_BUDGET_MS (frame budget,
 //        default 33, enforced only with PERF_ASSERT_FRAME=1),
 //        PERF_MEASURE_S (default 20), PERF_HEADED=1 (visible GPU-backed run),
@@ -81,8 +82,14 @@ const execCandidate = [
   "/opt/pw-browsers/chromium",
 ].find((candidate) => candidate && existsSync(candidate));
 const browser = await chromium.launch(
-  { ...(execCandidate ? { executablePath: execCandidate } : {}), headless: !HEADED }
+  { ...(execCandidate ? { executablePath: execCandidate } : { channel: "chromium" }), headless: !HEADED }
 );
+const browserSelection = {
+  source: execCandidate ? (execCandidate === process.env.CHROMIUM_PATH ? "CHROMIUM_PATH" : "fallback-executable") : "playwright-channel",
+  channel: execCandidate ? null : "chromium",
+  executablePath: execCandidate ?? null,
+  version: browser.version(),
+};
 console.log("[perf-smoke] browser ready; loading fixture …");
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on("pageerror", (error) => console.error(`[perf-smoke] page error: ${error.message}`));
@@ -223,6 +230,7 @@ const evidence = {
     warmupSeconds: WARMUP_S,
     frameAssertion: ASSERT_FRAME,
     browserMode: HEADED ? "headed" : "headless",
+    browserSelection,
     budgets: {
       rendererWorkMilliseconds: WORK_BUDGET_MS,
       coldStartupMilliseconds: STARTUP_BUDGET_MS,
