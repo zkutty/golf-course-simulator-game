@@ -236,6 +236,61 @@ describe("CourseSceneCompositionPlanV1", () => {
     expect(plan.obstacleHash).toBe(hashCanonicalValue(course.obstacles));
   });
 
+  it("prepares whole-atlas metadata once for multiple zones and freshly on the next derivation", () => {
+    const course = evidenceCourse();
+    let enumerations = 0;
+    const atlas = {
+      ...HIGH_ATLAS,
+      frames: new Proxy(HIGH_ATLAS.frames, {
+        ownKeys(target) {
+          enumerations += 1;
+          return Reflect.ownKeys(target);
+        },
+      }),
+    };
+    const expected = deriveCourseSceneComposition({ course, seed: 1202, topologyResolver: resolveHabitatFieldTopology });
+    const actual = deriveCourseSceneComposition({ course, seed: 1202, atlas });
+    expect(actual.habitatZones.length).toBeGreaterThan(1);
+    expect(actual).toEqual(expected);
+    // Object.keys for recordCount and Object.entries for validation: once per derivation.
+    expect(enumerations).toBe(2);
+    atlas.frameCount -= 1;
+    const corrupted = deriveCourseSceneComposition({ course, seed: 1202, atlas });
+    expect(corrupted.habitatZones).toEqual([]);
+    expect(corrupted.rejectedCandidates).toHaveLength(1);
+    expect(corrupted.rejectedCandidates[0].diagnostics.some((entry) => entry.code === "invalid_atlas")).toBe(true);
+    expect(enumerations).toBe(4);
+  });
+
+  it("does no atlas preparation for no candidates or an injected resolver", () => {
+    let enumerations = 0;
+    const atlas = {
+      ...HIGH_ATLAS,
+      frames: new Proxy(HIGH_ATLAS.frames, {
+        ownKeys(target) {
+          enumerations += 1;
+          return Reflect.ownKeys(target);
+        },
+      }),
+    };
+    const empty = deriveCourseSceneComposition({ course: baseCourse(), seed: 1, atlas });
+    expect(empty.habitatZones).toEqual([]);
+    expect(enumerations).toBe(0);
+    const requests: HabitatFieldTopologyRequest[] = [];
+    const custom = deriveCourseSceneComposition({
+      course: evidenceCourse(), seed: 1202, atlas,
+      topologyResolver: (request) => {
+        requests.push(request);
+        return { ok: false, diagnostics: [{ code: "unsupported_topology", message: "custom result" }] };
+      },
+    });
+    expect(requests.length).toBeGreaterThan(1);
+    expect(requests.every((request) => request.atlas === atlas && request.seed === 1202)).toBe(true);
+    expect(custom.habitatZones).toEqual([]);
+    expect(custom.rejectedCandidates.every((entry) => entry.diagnostics[0].message === "custom result")).toBe(true);
+    expect(enumerations).toBe(0);
+  });
+
   it("emits no habitat when a course has no real ecological evidence", () => {
     const course = baseCourse();
     const plan = deriveCourseSceneComposition({ course, seed: 1 });

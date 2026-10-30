@@ -434,10 +434,12 @@ function frameMetadataError(
   return null;
 }
 
-function atlasDiagnostics(
-  atlas: ParklandHabitatAtlasCatalog,
-  family: ParklandHabitatFamily,
-): { readonly diagnostics: readonly HabitatFieldDiagnostic[]; readonly index: AtlasIndex } {
+interface PreparedAtlas {
+  readonly diagnostics: readonly HabitatFieldDiagnostic[];
+  indexForFamily(family: ParklandHabitatFamily): AtlasIndex;
+}
+
+function prepareAtlas(atlas: ParklandHabitatAtlasCatalog): PreparedAtlas {
   const messages: string[] = [];
   const byFamily = new Map<ParklandHabitatFamily, Map<string, ParklandHabitatAtlasFrame[]>>(
     PARKLAND_HABITAT_FAMILIES.map((candidate) => [candidate, new Map()]),
@@ -539,18 +541,24 @@ function atlasDiagnostics(
     }
   }
 
-  const sortedIndex = new Map<string, readonly ParklandHabitatAtlasFrame[]>();
-  for (const [key, frames] of byFamily.get(family) as Map<string, ParklandHabitatAtlasFrame[]>) {
-    sortedIndex.set(key, frames.slice().sort((left, right) => left.variant - right.variant || left.id.localeCompare(right.id)));
-  }
-  const sortedMaskIndex = new Map<number, readonly ParklandHabitatAtlasFrame[]>();
-  for (const [mask, frames] of byMaskFamily.get(family) as Map<number, ParklandHabitatAtlasFrame[]>) {
-    sortedMaskIndex.set(mask, frames.slice().sort((left, right) => left.variant - right.variant || left.id.localeCompare(right.id)));
-  }
-
+  const indexes = new Map<ParklandHabitatFamily, AtlasIndex>();
   return {
     diagnostics: [...new Set(messages)].sort().map((message) => ({ code: "invalid_atlas", message })),
-    index: { bySemantic: sortedIndex, byCanonicalMask: sortedMaskIndex },
+    indexForFamily(family) {
+      const previous = indexes.get(family);
+      if (previous) return previous;
+      const sortedIndex = new Map<string, readonly ParklandHabitatAtlasFrame[]>();
+      for (const [key, frames] of byFamily.get(family) as Map<string, ParklandHabitatAtlasFrame[]>) {
+        sortedIndex.set(key, frames.slice().sort((left, right) => left.variant - right.variant || left.id.localeCompare(right.id)));
+      }
+      const sortedMaskIndex = new Map<number, readonly ParklandHabitatAtlasFrame[]>();
+      for (const [mask, frames] of byMaskFamily.get(family) as Map<number, ParklandHabitatAtlasFrame[]>) {
+        sortedMaskIndex.set(mask, frames.slice().sort((left, right) => left.variant - right.variant || left.id.localeCompare(right.id)));
+      }
+      const index = { bySemantic: sortedIndex, byCanonicalMask: sortedMaskIndex };
+      indexes.set(family, index);
+      return index;
+    },
   };
 }
 
@@ -668,6 +676,25 @@ function selectFrame(
 export function resolveHabitatFieldTopology(
   request: HabitatFieldTopologyRequest,
 ): HabitatFieldTopologyResult {
+  return resolveWithPreparation(request, prepareAtlas);
+}
+
+/** Reuse preparation only during one synchronous derivation of an unchanged atlas. */
+export function createHabitatFieldTopologyResolver(
+  atlas: ParklandHabitatAtlasCatalog,
+): (request: HabitatFieldTopologyRequest) => HabitatFieldTopologyResult {
+  let prepared: PreparedAtlas | undefined;
+  const prepare = (candidate: ParklandHabitatAtlasCatalog) => {
+    if (candidate !== atlas) return prepareAtlas(candidate);
+    return prepared ??= prepareAtlas(atlas);
+  };
+  return (request) => resolveWithPreparation(request, prepare);
+}
+
+function resolveWithPreparation(
+  request: HabitatFieldTopologyRequest,
+  prepare: (atlas: ParklandHabitatAtlasCatalog) => PreparedAtlas,
+): HabitatFieldTopologyResult {
   const invalidOccupancy = occupancyDiagnostics(request.occupancy);
   if (invalidOccupancy.length > 0) return { ok: false, diagnostics: invalidOccupancy };
   if (!isFiniteInteger(request.seed)) {
@@ -677,8 +704,9 @@ export function resolveHabitatFieldTopology(
     };
   }
 
-  const validatedAtlas = atlasDiagnostics(request.atlas, request.family);
+  const validatedAtlas = prepare(request.atlas);
   if (validatedAtlas.diagnostics.length > 0) return { ok: false, diagnostics: validatedAtlas.diagnostics };
+  const index = validatedAtlas.indexForFamily(request.family);
 
   const tiles = request.occupancy.occupied
     .map((tile) => ({ x: tile.x, y: tile.y }))
@@ -701,7 +729,7 @@ export function resolveHabitatFieldTopology(
   const placements = classified.map(({ tile, mask }) => {
     if (denseMaskFamily) {
       const canonical = canonicalHabitatMaskTransform(mask.normalizedMask);
-      const matches = validatedAtlas.index.byCanonicalMask.get(canonical.canonicalMask) as readonly ParklandHabitatAtlasFrame[];
+      const matches = index.byCanonicalMask.get(canonical.canonicalMask) as readonly ParklandHabitatAtlasFrame[];
       const frame = selectFrame(matches, request.seed, request.family, tile);
       return {
         frameId: frame.id,
@@ -723,7 +751,7 @@ export function resolveHabitatFieldTopology(
       } satisfies HabitatFieldPlacement;
     }
     const topology = mask.topology as HabitatMaskTopology;
-    const matches = validatedAtlas.index.bySemantic.get(
+    const matches = index.bySemantic.get(
       semanticKey(topology.role, topology.direction, topology.corner),
     ) as readonly ParklandHabitatAtlasFrame[];
     const frame = selectFrame(matches, request.seed, request.family, tile);
