@@ -4,7 +4,7 @@ import { buildingTiles } from "../models/buildings";
 import { PIN_ROTATIONS, TEE_SETS } from "../models/types";
 import type { Building, Course, Hole, Obstacle, Point, Terrain } from "../models/types";
 import {
-  resolveHabitatFieldTopology,
+  createHabitatFieldTopologyResolver,
   type HabitatFieldDiagnostic,
   type HabitatFieldPlacement,
   type HabitatFieldTopologyRequest,
@@ -905,7 +905,7 @@ export function deriveCourseSceneComposition(input: CourseSceneCompositionInput)
   const course = input.course;
   const semanticSeed = Number.isSafeInteger(input.seed) ? input.seed : 0;
   const atlas = input.atlas ?? HIGH_ATLAS;
-  const resolver = input.topologyResolver ?? resolveHabitatFieldTopology;
+  const resolver = input.topologyResolver ?? createHabitatFieldTopologyResolver(atlas);
   const holes = stableHoles(course.holes);
   const composition = holeComposition(course, holes);
 

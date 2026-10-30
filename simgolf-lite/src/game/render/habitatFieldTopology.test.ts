@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import highAtlasJson from "../../assets/terrain/parkland-habitat-4x/high/habitat-atlas.json";
 import {
   canonicalHabitatMaskTransform,
+  createHabitatFieldTopologyResolver,
   classifyHabitatOccupancyMask,
   HABITAT_D4_CANONICAL_MASKS,
   HABITAT_D4_TRANSFORMS,
@@ -124,6 +125,70 @@ function occupiedNeighbors(
 }
 
 describe("Parkland habitat field occupancy topology", () => {
+  it("keeps scoped preparation lazy behind occupancy and seed diagnostics", () => {
+    let enumerations = 0;
+    const atlas = {
+      ...HIGH_ATLAS,
+      frameCount: HIGH_ATLAS.frameCount - 1,
+      frames: new Proxy(HIGH_ATLAS.frames, {
+        ownKeys(target) {
+          enumerations += 1;
+          return Reflect.ownKeys(target);
+        },
+      }),
+    };
+    const scoped = createHabitatFieldTopologyResolver(atlas);
+    const disconnected = {
+      bounds: { x: 0, y: 0, width: 3, height: 3 },
+      occupied: [{ x: 0, y: 0 }, { x: 2, y: 2 }],
+    };
+    const request = { occupancy: disconnected, family: FAMILY, atlas, seed: NaN };
+    expect(scoped(request)).toEqual(resolveHabitatFieldTopology(request));
+    expect(enumerations).toBe(0);
+    expect(scoped({ ...request, occupancy: rectangularPatch(3, 3) })).toEqual({
+      ok: false,
+      diagnostics: [{ code: "invalid_seed", message: "seed must be a finite integer" }],
+    });
+    expect(enumerations).toBe(0);
+    const invalidAtlas = scoped({ ...request, occupancy: rectangularPatch(3, 3), seed: 1 });
+    expect(invalidAtlas.ok).toBe(false);
+    if (!invalidAtlas.ok) expect(invalidAtlas.diagnostics.some((entry) => entry.code === "invalid_atlas")).toBe(true);
+    expect(enumerations).toBe(2);
+  });
+
+  it("matches standalone placements across families and seeds within one scope", () => {
+    const scoped = createHabitatFieldTopologyResolver(HIGH_ATLAS);
+    const before = structuredClone(HIGH_ATLAS);
+    for (const family of PARKLAND_HABITAT_FAMILIES) {
+      for (const seed of [0, 1202, 0x7fffffff]) {
+        const request = { occupancy: rectangularPatch(3, 3), family, atlas: HIGH_ATLAS, seed };
+        expect(scoped(request)).toEqual(resolveHabitatFieldTopology(request));
+      }
+    }
+    expect(HIGH_ATLAS).toEqual(before);
+    const unusedFrame = Object.values(HIGH_ATLAS.frames).find((frame) => frame.family !== FAMILY)!;
+    const other = {
+      ...HIGH_ATLAS,
+      frames: { ...HIGH_ATLAS.frames, [unusedFrame.id]: { ...unusedFrame, variant: -1 } },
+    };
+    const request = { occupancy: rectangularPatch(3, 3), family: FAMILY, atlas: other, seed: 1 };
+    const invalidOther = scoped(request);
+    expect(invalidOther).toEqual(resolveHabitatFieldTopology(request));
+    expect(invalidOther.ok).toBe(false);
+    if (!invalidOther.ok) expect(invalidOther.diagnostics.some((entry) => entry.message.includes(unusedFrame.id))).toBe(true);
+  });
+
+  it("keeps standalone calls and new scopes fresh after atlas mutation", () => {
+    const atlas = { ...HIGH_ATLAS };
+    const request = { occupancy: rectangularPatch(3, 3), family: FAMILY, atlas, seed: 1 };
+    expect(resolveHabitatFieldTopology(request).ok).toBe(true);
+    expect(createHabitatFieldTopologyResolver(atlas)(request).ok).toBe(true);
+    atlas.frameCount -= 1;
+    const invalid = resolveHabitatFieldTopology(request);
+    expect(invalid.ok).toBe(false);
+    expect(createHabitatFieldTopologyResolver(atlas)(request)).toEqual(invalid);
+  });
+
   it("resolves a solid 3x3 patch with every cell, exposed side, and corner derived from occupancy", () => {
     const occupancy = rectangularPatch(3, 3, 10, 20);
     const placements = successfulPlacements(occupancy);
