@@ -35,6 +35,21 @@ test("every job checks out, verifies, and binds the requested full SHA", () => {
   }
 });
 
+test("Linux stability captures pristine candidate source before browser gates", () => {
+  const linux = jobBlock("linux-evidence", "native-evidence");
+  const pristineOrder = [
+    "      - run: npx playwright install --with-deps chromium firefox webkit",
+    "      - name: Collect supplemental stability evidence",
+    "        continue-on-error: true",
+    '        run: npm run test:stability -- --expected-commit "$ZK682_EXPECTED_COMMIT"',
+    "      - name: Production build receipt",
+  ].join("\n");
+  assert.ok(linux.includes(pristineOrder), "stability must run immediately after browser installation and before build or other gates");
+  assert.equal(linux.split("- name: Collect supplemental stability evidence").length - 1, 1);
+  assert.ok(linux.indexOf("- name: Upload exact-candidate Linux evidence") > linux.indexOf("- name: Collect renderer resource-growth evidence"));
+  assert.match(linux.slice(linux.indexOf("- name: Upload exact-candidate Linux evidence")), /if: always\(\)/);
+});
+
 test("Windows disables checkout newline conversion before the native checkout", () => {
   const native = jobBlock("native-evidence", "aggregate");
   const normalization = native.indexOf("- name: Disable Windows checkout newline conversion");

@@ -41,6 +41,9 @@ jobs:
           cache-dependency-path: simgolf-lite/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Collect supplemental stability evidence
+        continue-on-error: true
+        run: npm run test:stability -- --expected-commit "$ZK682_EXPECTED_COMMIT"
       - name: Production build receipt
         run: >-
           node scripts/zk682-run-command-receipt.mjs
@@ -144,9 +147,6 @@ jobs:
       - name: Collect renderer resource-growth evidence
         continue-on-error: true
         run: npm run test:resource-growth -- --expected-commit "$ZK682_EXPECTED_COMMIT"
-      - name: Collect supplemental stability evidence
-        continue-on-error: true
-        run: npm run test:stability -- --expected-commit "$ZK682_EXPECTED_COMMIT"
       - name: Upload exact-candidate Linux evidence
         if: always()
         uses: actions/upload-artifact@v4
