@@ -50,6 +50,14 @@ test("Linux stability captures pristine candidate source before browser gates", 
   assert.match(linux.slice(linux.indexOf("- name: Upload exact-candidate Linux evidence")), /if: always\(\)/);
 });
 
+test("native darwin arm64 evidence uses the supported macOS 15 runner", () => {
+  const native = jobBlock("native-evidence", "aggregate");
+  const matrix = native.slice(native.indexOf("      matrix:\n"), native.indexOf("    steps:\n"));
+  assert.match(matrix, /- os: macos-15\n            platform: darwin\n            architecture: arm64/);
+  assert.doesNotMatch(matrix, /macos-14/);
+  assert.match(matrix, /- os: windows-2022\n            platform: win32\n            architecture: x64/);
+});
+
 test("Windows disables checkout newline conversion before the native checkout", () => {
   const native = jobBlock("native-evidence", "aggregate");
   const normalization = native.indexOf("- name: Disable Windows checkout newline conversion");
