@@ -68,6 +68,45 @@ cannot be promoted as passing.
 Their absence is not replaced with fabricated measurements; it is represented
 as a report blocker.
 
+## Schema-3 save/load criterion (ZK-1484 amendment)
+
+Only save/load changes to schema 3. Long-session and editing/overlay/sleep/recovery
+remain schema 2 with their original thresholds and paths. A schema-2 save/load
+report cannot satisfy machine acceptance, even if it passed its historical gate.
+The legacy evaluator is available only for explicit diagnostic history.
+
+The production producer captures exactly 49 contiguous samples (cycles 0–48),
+including a baseline and 48 real quick-save loads. The original fixture, paused
+canonicalization/save boundary, load-loop body and inter-cycle cadence are
+unchanged. Each measurement remains 120 ms settle → GC → immediate Chromium
+Runtime heap usage. State/hash, High renderer quality, the complete flat resource
+snapshot, console/page errors and production/build/producer provenance are
+validated from typed evidence; missing or altered evidence fails closed.
+
+Heap bounds are immutable and recomputed from raw samples:
+
+| Scope | Maximum endpoint growth | Maximum peak growth | Maximum OLS slope |
+| --- | ---: | ---: | ---: |
+| Whole curve, cycles 0–48 | 6,291,456 B | 8,388,608 B | — |
+| Rebased cycles 24–36, inclusive | 524,288 B | — | 65,536 B/sample |
+| Rebased cycles 36–48, inclusive | 524,288 B | — | 65,536 B/sample |
+
+Both late windows contain 13 samples and share cycle 36. OLS uses all samples
+in each window; endpoint growth is relative to that window's first sample.
+This finite criterion does not claim globally bounded memory or exclusive V8
+ownership. The approved endpoint envelope replaces the old 12-load machine
+criterion; it does not rewrite any historical red result.
+
+`save-load-first12-diagnostic.json` retains the schema-2 first-12 result in an
+explicit `diagnosticOnly: true`, `productionGateAcceptance: false` wrapper.
+Its first 13 raw samples, browser and producer must match the schema-3 run.
+It is hash-bound in the packet and never changes a machine criterion's status.
+A red legacy diagnostic is expected to remain red when the new criterion passes.
+
+Before release, two fresh complete production stability runs on the same exact
+committed candidate, full integration checks and the hosted ZK-682 packet must
+pass. Each run uses a fresh build/browser and zero retries.
+
 ## Commands
 
 Run the focused contract tests:
