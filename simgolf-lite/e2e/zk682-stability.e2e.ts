@@ -140,6 +140,13 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   const runtime = await page.evaluate(() => window.__coursecraftTest!.stabilityRuntime());
   const producer = createStabilityProducer(runtime, expectedCommit!, process.env.ZK682_STABILITY_BUILD_ID);
 
+  // Certify the declared High renderer path even on software-rendered CI.
+  // The private fixture hook changes only this browser session and the report
+  // still checks the actual rendered quality on every post-GC sample.
+  await page.evaluate(() => window.__coursecraftTest!.setGraphicsQualityFixture("high"));
+  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().rendered.quality)).toBe("high");
+  await waitForStableResourceTopology(page);
+
   // Repeated production quick-save loads, including real IndexedDB reads and
   // full App state restoration, are measured after a post-GC baseline.
   await pauseSimulation(page);
