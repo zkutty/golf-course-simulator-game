@@ -9,7 +9,7 @@ import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence
 import { createZk682ResourceGrowthReport, ZK682_RESOURCE_GROWTH_THRESHOLDS } from "./zk682-resource-growth-contract.mjs";
 import { buildZk682Report, sha256 } from "./zk682-certification-contract.mjs";
 import { buildZk682Packet, ZK682_PACKET_RECEIPTS } from "./zk682-build-packet.mjs";
-import { createZk682StabilityReport, ZK682_STABILITY_THRESHOLDS } from "./zk682-stability-contract.mjs";
+import { createZk682StabilityReport, createZk682LegacySaveLoadDiagnostic, ZK682_STABILITY_THRESHOLDS } from "./zk682-stability-contract.mjs";
 import { createStabilityProducer, ZK682_STABILITY_FIXTURE } from "./zk682-stability-producer.mjs";
 
 const NOW = "2026-09-29T12:00:00.000Z";
@@ -50,9 +50,9 @@ function resourceReport(commit) {
 function supplemental(gate, commit) {
   const buildId = "12345678-1234-1234-1234-123456789abc";
   const producer = createStabilityProducer({ dev: false, prod: true, mode: "e2e", commit, buildId, privatePerfFixture: true, fixture: { ...ZK682_STABILITY_FIXTURE } }, commit, buildId);
-  const measured = (index) => ({ rendererQuality: "high", resources: { displayObjects: 2000, attachedTextures: 80, attachedTextureSources: 20, managedTextureSources: 48, canvasConnected: true }, heap: { runtimeUsedBytes: 40_000_000 + index * 20_000 } });
+  const measured = (index) => ({ rendererQuality: "high", resources: { displayObjects: 2000, containers: 2000, sprites: 1200, graphics: 400, meshes: 300, text: 5, attachedTextures: 80, attachedTextureSources: 20, managedTextureSources: 48, canvasConnected: true }, heap: { runtimeUsedBytes: 40_000_000 + index * 20_000, runtimeTotalBytes: 80_000_000 } });
   const samples = gate === "save-load-resource-stability"
-    ? Array.from({ length: 13 }, (_, cycle) => ({ cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef", state: { screen: "game", week: 2, cash: 42000, terrainVersion: 7 }, ...measured(cycle) }))
+    ? Array.from({ length: 49 }, (_, cycle) => ({ cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef", state: { screen: "game", week: 2, cash: 42000, terrainCounts: { rough: 7700 } }, ...measured(cycle) }))
     : gate === "long-session-resource-stability"
       ? Array.from({ length: 7 }, (_, index) => ({ elapsedGameMinutes: index * 22.4, courseHash: index.toString(16).padStart(8, "0"), state: { dayMinute: 100 + index * 22.4, speed: "4x", onCourse: 12 }, ...measured(index) }))
       : [
@@ -61,7 +61,7 @@ function supplemental(gate, commit) {
         { scenario: "sleep-wake", passed: true, before: { courseHash: "deadbeef" }, after: { courseHash: "deadbeef", lifecycle: "active", responsive: true }, ...measured(2) },
         { scenario: "recovery", passed: true, before: { savedCourseHash: "deadbeef", mutatedCourseHash: "cafef00d" }, after: { courseHash: "deadbeef", quickSaveLoaded: true }, ...measured(3) },
       ];
-  return createZk682StabilityReport({ producer, gate, candidateCommit: commit, capturedAt: NOW, command: `fixture ${gate}`, browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_STABILITY_THRESHOLDS[gate], samples });
+  return createZk682StabilityReport({ producer, gate, candidateCommit: commit, capturedAt: NOW, command: `fixture ${gate}`, browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_STABILITY_THRESHOLDS[gate], samples, ...(gate === "save-load-resource-stability" ? { runtimeErrors: [] } : {}) });
 }
 
 function fixture() {
@@ -94,6 +94,7 @@ function fixture() {
   write(raw, "zk682-resource-growth-final.png", Buffer.from("resource screenshot"));
   write(raw, "zk682-stability-final.png", Buffer.from("stability screenshot"));
   for (const gate of ["save-load-resource-stability", "long-session-resource-stability", "editing-overlay-sleep-recovery"]) write(raw, `${gate}.json`, supplemental(gate, commit));
+  write(raw, "save-load-first12-diagnostic.json", createZk682LegacySaveLoadDiagnostic(supplemental("save-load-resource-stability", commit)));
   const assetSource = write(root, "artifacts/zk682/raw/m35-asset-audit.json", { ok: true, initialCritical: { bytes: 7_000_000 }, dist: { bundles: { parkland: { high: { bytes: 5_000_000 } } } } });
   const browserBuild = write(root, "artifacts/zk682/raw/browser-build-manifest.json", { "src/main.tsx": { file: "assets/index.js", isEntry: true } });
   write(raw, "asset-delivery.json", { schemaVersion: 1, gate: "asset-delivery", candidateCommit: commit, capturedAt: NOW, source: assetSource, browserBuild, bundles: [{ theme: "parkland", tier: "high", bytes: 5_000_000 }], atlases: [{ path: "atlases/fixture.png", bytes: 4_000_000, sha256: "a".repeat(64) }], measurements: { initialCriticalBytes: 7_000_000, selectedBiomeMaxBytes: 5_000_000, individualAtlasMaxBytes: 4_000_000 }, passed: true });
@@ -172,4 +173,32 @@ test("builder rejects stripped, false-production, and legacy supplemental proven
       );
     } finally { rmSync(value.repository, { recursive: true, force: true }); }
   }
+});
+
+for (const kind of ["legacy-schema2", "diagnostic-gating", "diagnostic-independent-run", "forged-late-summary"]) test(`builder rejects ${kind} save/load evidence`, async () => {
+  const value = fixture();
+  try {
+    const report = supplemental("save-load-resource-stability", value.commit);
+    const diagnostic = createZk682LegacySaveLoadDiagnostic(report);
+    if (kind === "legacy-schema2") write(value.raw, "save-load-resource-stability.json", diagnostic.report);
+    if (kind === "diagnostic-gating") { diagnostic.productionGateAcceptance = true; write(value.raw, "save-load-first12-diagnostic.json", diagnostic); }
+    if (kind === "diagnostic-independent-run") { diagnostic.report.samples[3].heap.runtimeUsedBytes++; write(value.raw, "save-load-first12-diagnostic.json", diagnostic); }
+    if (kind === "forged-late-summary") { report.summary.lateHeapWindows[0].endGrowth++; write(value.raw, "save-load-resource-stability.json", report); }
+    await assert.rejects(() => buildZk682Packet({ root: value.root, candidateCommit: value.commit, invokeCertification: false }), kind === "legacy-schema2" ? /identity\/schema mismatch/ : kind === "forged-late-summary" ? /does not match raw/ : /diagnostic/);
+  } finally { rmSync(value.repository, { recursive: true, force: true }); }
+});
+
+test("builder retains a red legacy first12 diagnostic without failing a green schema3 criterion", async () => {
+  const value = fixture();
+  try {
+    const input = supplemental("save-load-resource-stability", value.commit);
+    for (const sample of input.samples.slice(1)) sample.heap.runtimeUsedBytes = input.samples[0].heap.runtimeUsedBytes + 4_500_000;
+    const report = createZk682StabilityReport(input), diagnostic = createZk682LegacySaveLoadDiagnostic(report);
+    assert.equal(report.passed, true); assert.equal(diagnostic.report.passed, false);
+    write(value.raw, "save-load-resource-stability.json", report); write(value.raw, "save-load-first12-diagnostic.json", diagnostic);
+    const built = await buildZk682Packet({ root: value.root, candidateCommit: value.commit, invokeCertification: false });
+    const stability = built.gates.find(gate => gate.gateId === "stability");
+    assert.equal(stability.criteria.find(c => c.id === "save-load-resource-stability").status, "pass");
+    assert(stability.artifacts.some(a => a.path.endsWith("save-load-first12-diagnostic.json")));
+  } finally { rmSync(value.repository, { recursive: true, force: true }); }
 });

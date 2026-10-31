@@ -7,7 +7,7 @@ import vm from "node:vm";
 import { createPwaPersistenceReport } from "./pwa-save-evidence.mjs";
 import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence-contract.mjs";
 import { ZK682_RESOURCE_GROWTH_THRESHOLDS, createZk682ResourceGrowthReport } from "./zk682-resource-growth-contract.mjs";
-import { ZK682_STABILITY_THRESHOLDS, createZk682StabilityReport } from "./zk682-stability-contract.mjs";
+import { ZK682_STABILITY_THRESHOLDS, createZk682StabilityReport, createZk682LegacySaveLoadDiagnostic } from "./zk682-stability-contract.mjs";
 import { ZK682_CERTIFICATION_ID, ZK682_CRITERIA, ZK682_GATE_CONTRACTS, ZK682_SCHEMA_VERSION, buildZk682Report, sha256, validateZk682EvidenceManifest } from "./zk682-certification-contract.mjs";
 
 import { createStabilityProducer, ZK682_STABILITY_FIXTURE } from "./zk682-stability-producer.mjs";
@@ -59,9 +59,9 @@ function resourceReport() {
   return createZk682ResourceGrowthReport({ source: { commit: COMMIT, mode: "e2e" }, capturedAt: NOW, command: "fixture resource", browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_RESOURCE_GROWTH_THRESHOLDS, warmup: { baseBundles: residency.baseBundles, transitions: 9, routeTeardowns: 1 }, samples });
 }
 function supplemental(gate) {
-  const measured = (index) => ({ rendererQuality: "high", resources: { displayObjects: 2000, attachedTextures: 80, attachedTextureSources: 20, managedTextureSources: 48, canvasConnected: true }, heap: { runtimeUsedBytes: 40_000_000 + index * 20_000 } });
+  const measured = (index) => ({ rendererQuality: "high", resources: { displayObjects: 2000, containers: 2000, sprites: 1200, graphics: 400, meshes: 300, text: 5, attachedTextures: 80, attachedTextureSources: 20, managedTextureSources: 48, canvasConnected: true }, heap: { runtimeUsedBytes: 40_000_000 + index * 20_000, runtimeTotalBytes: 80_000_000 } });
   const samples = gate === "save-load-resource-stability"
-    ? Array.from({ length: 13 }, (_, cycle) => ({ cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef", state: { screen: "game", week: 2, cash: 42000, terrainVersion: 7 }, ...measured(cycle) }))
+    ? Array.from({ length: 49 }, (_, cycle) => ({ cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef", state: { screen: "game", week: 2, cash: 42000, terrainCounts: { rough: 7700 } }, ...measured(cycle) }))
     : gate === "long-session-resource-stability"
       ? Array.from({ length: 7 }, (_, index) => ({ elapsedGameMinutes: index * 22.4, courseHash: index.toString(16).padStart(8, "0"), state: { dayMinute: 100 + index * 22.4, speed: "4x", onCourse: 12 }, ...measured(index) }))
       : [
@@ -70,7 +70,7 @@ function supplemental(gate) {
         { scenario: "sleep-wake", passed: true, before: { courseHash: "deadbeef" }, after: { courseHash: "deadbeef", lifecycle: "active", responsive: true }, ...measured(2) },
         { scenario: "recovery", passed: true, before: { savedCourseHash: "deadbeef", mutatedCourseHash: "cafef00d" }, after: { courseHash: "deadbeef", quickSaveLoaded: true }, ...measured(3) },
       ];
-  return createZk682StabilityReport({ producer: stabilityProducer, gate, candidateCommit: COMMIT, capturedAt: NOW, command: `fixture ${gate}`, browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_STABILITY_THRESHOLDS[gate], samples });
+  return createZk682StabilityReport({ producer: stabilityProducer, gate, candidateCommit: COMMIT, capturedAt: NOW, command: `fixture ${gate}`, browser: { name: "chromium", version: "fixture", cdpHeap: true }, thresholds: ZK682_STABILITY_THRESHOLDS[gate], samples, ...(gate === "save-load-resource-stability" ? { runtimeErrors: [] } : {}) });
 }
 
 function commandReceipt(receiptId, passed = true) {
@@ -125,10 +125,11 @@ function fixture({ physical = false, lowEndP95 = 32, adjustment = false } = {}) 
       const longSessionReport = supplemental("long-session-resource-stability");
       const interactionReport = supplemental("editing-overlay-sleep-recovery");
       const saveLoad = write(root, "raw/save-load.json", saveLoadReport);
+      const first12Diagnostic = write(root, "raw/save-load-first12-diagnostic.json", createZk682LegacySaveLoadDiagnostic(saveLoadReport));
       const longSession = write(root, "raw/long-session.json", longSessionReport);
       const interaction = write(root, "raw/interaction.json", interactionReport);
-      artifacts = [resource, saveLoad, longSession, interaction];
-      observations = { routeChangesStable: true, saveLoadsStable: true, longSessionStable: true, interactionRecoveryPassed: true, routeChanges: 6, saveLoads: saveLoadReport.observations.saveLoads, sessionMinutes: longSessionReport.observations.sessionMinutes, resourceGrowthEvidence: resource, saveLoadEvidence: saveLoad, longSessionEvidence: longSession, interactionRecoveryEvidence: interaction };
+      artifacts = [resource, saveLoad, first12Diagnostic, longSession, interaction];
+      observations = { routeChangesStable: true, saveLoadsStable: true, longSessionStable: true, interactionRecoveryPassed: true, routeChanges: 6, saveLoads: saveLoadReport.observations.saveLoads, sessionMinutes: longSessionReport.observations.sessionMinutes, resourceGrowthEvidence: resource, saveLoadEvidence: saveLoad, saveLoadFirst12Diagnostic: first12Diagnostic, longSessionEvidence: longSession, interactionRecoveryEvidence: interaction };
     } else {
       artifacts = [write(root, `raw/${gateId}.txt`, `${gateId}\n`)];
       observations = genericObservations(gateId, lowEndP95);
@@ -320,7 +321,7 @@ test("a structurally valid typed failure produces HOLD instead of manifest inval
   } finally { cleanup(value); }
 });
 
-test("a schema-v2 supplemental stability failure produces HOLD instead of manifest invalid", () => {
+test("a schema-v3 save/load failure produces HOLD instead of manifest invalid", () => {
   const value = fixture();
   try {
     rewriteGate(value, "stability", (gate) => {
@@ -336,6 +337,7 @@ test("a schema-v2 supplemental stability failure produces HOLD instead of manife
         browser: prior.browser,
         thresholds: prior.thresholds,
         samples: prior.samples,
+        runtimeErrors: prior.runtimeErrors,
       });
       assert.equal(failed.passed, false);
       const rewritten = write(value.root, reference.path, failed);
@@ -545,4 +547,29 @@ test("actual perf browser selection preserves fallback and ignores missing custo
 test("actual perf browser selection propagates launch failure without retry or browser substitution", async () => {
   const result = await runExtractedPerfBrowserSelection({ launchError: new Error("missing full Chromium") });
   assert.deepEqual(result.calls, [{ channel: "chromium", headless: true }]);
+});
+
+for (const kind of ["legacy-schema2", "diagnostic-gating", "diagnostic-independent-run", "forged-late-summary"]) test(`certification rejects ${kind} save/load evidence`, () => {
+  const value = fixture();
+  try {
+    rewriteGate(value, "stability", gate => {
+      const diagnosticKind = kind.startsWith("diagnostic");
+      const reference = diagnosticKind ? gate.observations.saveLoadFirst12Diagnostic : gate.observations.saveLoadEvidence;
+      let report = JSON.parse(readFileSync(join(value.root, reference.path), "utf8"));
+      if (kind === "legacy-schema2") report = createZk682LegacySaveLoadDiagnostic(report).report;
+      if (kind === "diagnostic-gating") report.productionGateAcceptance = true;
+      if (kind === "diagnostic-independent-run") report.report.samples[3].heap.runtimeUsedBytes++;
+      if (kind === "forged-late-summary") report.summary.lateHeapWindows[1].endGrowth++;
+      const bound = write(value.root, reference.path, report); reference.sha256 = bound.sha256;
+      gate.artifacts.find(a => a.path === reference.path).sha256 = bound.sha256;
+    });
+    const errors = validateZk682EvidenceManifest(value.manifest, value.options).errors;
+    const expected = {
+      "legacy-schema2": "schema-3 is required for machine acceptance",
+      "diagnostic-gating": "legacy first12 diagnostic must be explicitly non-gating",
+      "diagnostic-independent-run": "legacy first12 diagnostic must bind the machine run",
+      "forged-late-summary": "declared supplemental result does not match raw samples",
+    }[kind];
+    assert(errors.some(error => error.includes(expected)), errors.join("\n"));
+  } finally { cleanup(value); }
 });

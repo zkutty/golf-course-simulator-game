@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { certifyOfflineIndexedDbSave } from "./pwa-save-evidence.mjs";
 import { validateZk682DesktopPersistenceSequence } from "./zk682-desktop-persistence-contract.mjs";
 import { evaluateZk682ResourceGrowth, ZK682_RESOURCE_GROWTH_THRESHOLDS } from "./zk682-resource-growth-contract.mjs";
+import { stabilitySchemaVersion, validateZk682LegacySaveLoadDiagnostic } from "./zk682-stability-contract.mjs";
 import { inspectZk682CommandReceipt } from "./zk682-command-receipt.mjs";
 import {
   ZK682_BUDGETS,
@@ -133,10 +134,10 @@ function inspectResource(report, candidateCommit) {
 }
 
 async function inspectSupplemental(report, expectedGate, candidateCommit, root) {
-  if (report.schemaVersion !== 2 || report.gate !== expectedGate || report.candidateCommit !== candidateCommit) throw new Error(`${expectedGate} evidence identity/schema mismatch`);
+  if (report.schemaVersion !== stabilitySchemaVersion(expectedGate) || report.gate !== expectedGate || report.candidateCommit !== candidateCommit) throw new Error(`${expectedGate} evidence identity/schema mismatch`);
   if (!isRecord(report.observations) || typeof report.passed !== "boolean") throw new Error(`${expectedGate} evidence is incomplete`);
   const contractPath = join(root, "scripts/zk682-stability-contract.mjs");
-  if (!existsSync(contractPath)) throw new Error("schema-v2 stability evidence requires scripts/zk682-stability-contract.mjs");
+  if (!existsSync(contractPath)) throw new Error("typed stability evidence requires scripts/zk682-stability-contract.mjs");
   const { validateZk682SupplementalStabilityReport } = await import(new URL(`file://${contractPath}`).href);
   const inspected = validateZk682SupplementalStabilityReport(report, expectedGate, candidateCommit);
   const structuralErrors = inspected.errors.filter((error) => error !== "supplemental stability report did not pass");
@@ -242,6 +243,9 @@ export async function buildZk682Packet({ root, candidateCommit, evidenceRoot = Z
     return [id, { ...entry, passed: await inspectSupplemental(entry.value, id, candidateCommit, ctx.root) }];
   }));
   const supplemental = new Map(supplementalEntries);
+  const first12Diagnostic = raw("save-load-first12-diagnostic.json");
+  const diagnosticErrors = validateZk682LegacySaveLoadDiagnostic(first12Diagnostic.value, supplemental.get("save-load-resource-stability").value, candidateCommit);
+  if (diagnosticErrors.length) throw new Error(`save-load-first12-diagnostic: ${diagnosticErrors.join("; ")}`);
   const asset = raw("asset-delivery.json");
   const headless = raw("headless-performance.json");
   const readBoundJson = (reference) => {
@@ -338,14 +342,14 @@ export async function buildZk682Packet({ root, candidateCommit, evidenceRoot = Z
   const saveLoad = supplemental.get("save-load-resource-stability");
   const longSession = supplemental.get("long-session-resource-stability");
   const interaction = supplemental.get("editing-overlay-sleep-recovery");
-  const stabilityArtifacts = [resource.artifact, saveLoad.artifact, longSession.artifact, interaction.artifact];
+  const stabilityArtifacts = [resource.artifact, saveLoad.artifact, first12Diagnostic.artifact, longSession.artifact, interaction.artifact];
   for (const name of ["zk682-resource-growth-final.png", "zk682-stability-final.png"]) {
     const screenshot = join(ctx.rawRoot, name);
     if (existsSync(screenshot)) stabilityArtifacts.push(ctx.bind(screenshot, true));
   }
   gates.push(gate(ctx, "stability", [
     criterion("route-change-resource-stability", resourcePassed, "Renderer samples are recomputed with pinned thresholds."),
-    criterion("save-load-resource-stability", saveLoad.passed, "Save/load samples are validated from typed evidence."),
+    criterion("save-load-resource-stability", saveLoad.passed, "Schema-3 48-load samples and both late windows are recomputed; schema-2 first12 is diagnostic only."),
     criterion("long-session-resource-stability", longSession.passed, "Long-session samples are validated from typed evidence."),
     criterion("editing-overlay-sleep-recovery", interaction.passed, "Interaction recovery samples are validated from typed evidence."),
   ], {
@@ -358,6 +362,7 @@ export async function buildZk682Packet({ root, candidateCommit, evidenceRoot = Z
     sessionMinutes: Number(longSession.value.observations?.sessionMinutes ?? 0),
     resourceGrowthEvidence: resource.artifact,
     saveLoadEvidence: saveLoad.artifact,
+    saveLoadFirst12Diagnostic: first12Diagnostic.artifact,
     longSessionEvidence: longSession.artifact,
     interactionRecoveryEvidence: interaction.artifact,
   }, stabilityArtifacts, "typed stability evidence"));

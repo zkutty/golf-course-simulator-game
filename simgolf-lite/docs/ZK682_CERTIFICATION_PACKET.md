@@ -27,7 +27,8 @@ as a failed criterion and HOLD, not misclassified as malformed evidence.
 - `desktop-darwin-arm64/` and `desktop-win32-x64/`, each containing
   `persistence.json`, `package-manifest.json`, package `app.asar`, and executable
 - `renderer-resource-growth.json`
-- `save-load-resource-stability.json`
+- `save-load-resource-stability.json` (schema 3 only: 49 samples / 48 real loads)
+- `save-load-first12-diagnostic.json` (required hash-bound, explicitly non-gating schema-2 history)
 - `long-session-resource-stability.json`
 - `editing-overlay-sleep-recovery.json`
 - `zk682-stability-final.png` when emitted by the stability producer
@@ -35,6 +36,21 @@ as a failed criterion and HOLD, not misclassified as malformed evidence.
   `browser-build-manifest.json`
 - `headless-performance.json` and `headless-performance-source.json`
 - every command receipt named by `ZK682_PACKET_RECEIPTS`
+
+Save/load machine evidence must use the approved schema-3 contract: whole-curve
+peak ≤8,388,608 B and endpoint ≤6,291,456 B; each inclusive rebased window 24–36
+and 36–48 must end ≤524,288 B above its baseline with OLS slope ≤65,536 B/sample.
+Exactly 49 contiguous samples, full canonical state/hash, High and flat resource
+snapshots, empty console/page errors and exact production producer identity are
+required. The builder and certification validator recompute every declared bound
+and reject schema-2 save/load machine evidence. Long-session/recovery remain
+schema 2. See `ZK682_CERTIFICATION_CONTRACT.md` for the full criterion.
+
+The first-12 diagnostic must bind this same run's raw samples, producer and
+browser and explicitly disclaim machine acceptance. Its historical pass/fail is
+preserved; a red diagnostic never fails or passes the schema-3 machine criterion.
+Two fresh zero-retry full stability runs and integration checks precede the
+hosted packet. Existing red reports are never rewritten.
 
 Run `node scripts/zk682-collect-linux-evidence.mjs` after the production build
 and pinned M27 performance run. The headless contract fixes renderer work at 8

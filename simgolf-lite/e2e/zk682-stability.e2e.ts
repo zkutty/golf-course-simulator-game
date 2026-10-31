@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import {
   ZK682_STABILITY_THRESHOLDS,
   createZk682StabilityReport,
+  createZk682LegacySaveLoadDiagnostic,
 } from "../scripts/zk682-stability-contract.mjs";
 
 import { createStabilityProducer, sampleRetainedHeap } from "../scripts/zk682-stability-producer.mjs";
@@ -168,8 +169,11 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true },
     thresholds: ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"],
     samples: saveLoadSamples,
+    runtimeErrors: [...errors],
   });
   await writeFile(resolve(outputDirectory, "save-load-resource-stability.json"), `${JSON.stringify(saveLoadReport, null, 2)}\n`);
+
+  await writeFile(resolve(outputDirectory, "save-load-first12-diagnostic.json"), `${JSON.stringify(createZk682LegacySaveLoadDiagnostic(saveLoadReport), null, 2)}\n`);
 
   // Run the actual mutable live simulation for at least two in-game hours.
   await page.keyboard.press("Digit3");
