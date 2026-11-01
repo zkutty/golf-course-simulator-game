@@ -503,6 +503,16 @@ export function scoreCourseHoles(course: Course): CourseHoleSummary {
   return result;
 }
 
+/** Score one inspector hole with the same effective terrain and whole-course
+ * search-domain eligibility used by scoreCourseHoles. */
+export function scoreSelectedCourseHole(course: Course, holeIndex: number): HoleScore | undefined {
+  const effectiveCourse = courseWithEffectiveSurfaces(course);
+  const hole = effectiveCourse.holes[holeIndex];
+  if (!hole) return undefined;
+  const searchDomain = prepareShotSearchDomain(effectiveCourse);
+  return scoreHole(effectiveCourse, hole, holeIndex, searchDomain);
+}
+
 function scoreCourseHolesUncached(course: Course, searchDomain: ShotSearchDomain): CourseHoleSummary {
   const holes = course.holes.map((h, i) => scoreHole(course, h, i, searchDomain));
   const scored = holes.filter((h) => h.isComplete);

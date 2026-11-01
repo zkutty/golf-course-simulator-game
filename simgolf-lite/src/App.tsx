@@ -57,7 +57,7 @@ import { normalizeGreenProgram } from "./game/greens/greenSurface";
 import { greenKeepingOverview } from "./game/greens/greenMaintenance";
 import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
-import { scoreCourseHoles } from "./game/sim/holes";
+import { scoreCourseHoles, scoreSelectedCourseHole } from "./game/sim/holes";
 import { computeCourseRatingAndSlope, computeRatingForSetup, computeRatingsByTee } from "./game/sim/courseRating";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "./game/sim/loanEligibility";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
@@ -2371,8 +2371,10 @@ export default function App() {
   // as tutorialCanAdvance. Inspector tee/pin exploration must not change the
   // issue, overlay cells, or repair action that the guide is describing.
   const activeHoleAuthorityCourse = activeTutorial?.stage === "validate-hole" ? course : activeSetupCourse;
-  const activeSetupSummary = useMemo(() => scoreCourseHoles(activeHoleAuthorityCourse), [activeHoleAuthorityCourse]);
-  const activeHoleScore = activeSetupSummary.holes[activeHoleIndex];
+  const activeHoleScore = useMemo(
+    () => scoreSelectedCourseHole(activeHoleAuthorityCourse, activeHoleIndex),
+    [activeHoleAuthorityCourse, activeHoleIndex],
+  );
   const activePath = activeHoleScore?.path ?? [];
   const activeShotRoute = useMemo(
     () => presentCompleteShotRoute(activeHoleScore),
@@ -3020,19 +3022,25 @@ export default function App() {
   }
 
   useEffect(() => {
-    const hasExpandedSetup = course.holes.some((hole) => hole.teeBoxes?.forward || hole.teeBoxes?.championship || hole.pinPositions?.B || hole.pinPositions?.C);
-    const textMemberRating = computeCourseRatingAndSlope(activeOperatingCourse);
-    const tournamentReadiness = Object.fromEntries((["local", "regional", "championship"] as const).map((tier) => {
-      const result = evaluateTournamentCourseQualification(activeOperatingCourse, tier);
-      return [tier, { eligible: result.eligible, teeSet: result.teeSet, pinRotation: result.pinRotation, rating: result.rating, slope: result.slope, completeRotations: result.completeRotations, blockers: result.requirements.filter((item) => !item.passed).map((item) => ({ id: item.id, current: item.current, required: item.required })) }];
-    }));
-    const textTeeRatings = hasExpandedSetup
-      ? computeRatingsByTee(activeOperatingCourse)
-      : {
-          forward: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
-          member: { courseRating: textMemberRating.courseRating, slope: textMemberRating.slope, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
-          championship: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
-        };
+    // The text snapshot is diagnostic-only. Keep its expensive rating work
+    // scoped to the first read of each effect generation.
+    function computeTextRatings() {
+      const hasExpandedSetup = course.holes.some((hole) => hole.teeBoxes?.forward || hole.teeBoxes?.championship || hole.pinPositions?.B || hole.pinPositions?.C);
+      const textMemberRating = computeCourseRatingAndSlope(activeOperatingCourse);
+      const tournamentReadiness = Object.fromEntries((["local", "regional", "championship"] as const).map((tier) => {
+        const result = evaluateTournamentCourseQualification(activeOperatingCourse, tier);
+        return [tier, { eligible: result.eligible, teeSet: result.teeSet, pinRotation: result.pinRotation, rating: result.rating, slope: result.slope, completeRotations: result.completeRotations, blockers: result.requirements.filter((item) => !item.passed).map((item) => ({ id: item.id, current: item.current, required: item.required })) }];
+      }));
+      const textTeeRatings = hasExpandedSetup
+        ? computeRatingsByTee(activeOperatingCourse)
+        : {
+            forward: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
+            member: { courseRating: textMemberRating.courseRating, slope: textMemberRating.slope, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
+            championship: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
+          };
+      return { tournamentReadiness, textTeeRatings };
+    }
+    let textRatings: ReturnType<typeof computeTextRatings> | null = null;
     const liveStateById = new Map((live.getSnapshot()?.state.golfers ?? []).map((golfer) => [golfer.id, golfer]));
     const textSurfaceCareSummary = surfaceCareConditionSummary(course);
     const textGreenKeeping = greenKeepingOverview(course, world);
@@ -3043,7 +3051,9 @@ export default function App() {
       seed: world.runSeed,
       reducedMotion: appProfile.accessibility.reducedMotion || !effectiveAnimations,
     });
-    const renderText = () => JSON.stringify({
+    const renderText = () => {
+      const { tournamentReadiness, textTeeRatings } = textRatings ??= computeTextRatings();
+      return JSON.stringify({
       coordinateSystem: "tile coordinates; origin top-left, +x right, +y down",
       screen,
       screenBase: flow.base,
@@ -3519,7 +3529,8 @@ export default function App() {
           latestRest: latestOutcome?.rest ?? null,
         };
       }),
-    });
+      });
+    };
     window.render_game_to_text = renderText;
     window.advanceTime = live.advanceTime;
     return () => {
@@ -5700,7 +5711,8 @@ export default function App() {
     restartRun(currentRunSetup((Date.now() % 1_000_000) | 0));
   }
 
-  const rating = useMemo(() => computeCourseRatingAndSlope(course), [course]);
+  // The full-estate rating is only needed by outcome modals and course cards.
+  const ratingForOutput = () => computeCourseRatingAndSlope(course);
   const weeksSurvived = Math.max(0, world.week - 1);
   const photoRestoreRef = useRef<{ speed: SpeedName; center: Point; camera: CameraState | null } | null>(null);
 
@@ -5751,7 +5763,7 @@ export default function App() {
   async function captureCard(download = true): Promise<Blob | null> {
     const canvas = photoCanvas();
     if (!canvas) return null;
-    const blob = await createCourseCard(canvas, course, world, recordsRef.current, rating.courseRating);
+    const blob = await createCourseCard(canvas, course, world, recordsRef.current, ratingForOutput().courseRating);
     lastCourseCardRef.current = blob;
     if (download) downloadBlob(blob, `${course.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-card.png`);
     setA11yMessage(t("photo.cardSaved"));
@@ -6178,8 +6190,8 @@ export default function App() {
           weeksSurvived={weeksSurvived}
           peakCash={peakCash}
           peakRep={peakRep}
-          courseRating={rating.courseRating}
-          slope={rating.slope}
+          courseRating={ratingForOutput().courseRating}
+          slope={ratingForOutput().slope}
           seed={world.runSeed}
           onRetrySeed={(seed) => {
             const scenario = getScenario(world.scenarioId);
@@ -6200,7 +6212,7 @@ export default function App() {
           week={world.week}
           cash={world.cash}
           reputation={world.reputation}
-          courseRating={rating.courseRating}
+          courseRating={ratingForOutput().courseRating}
           careerNote={
             world.mode === "career" && world.scenarioId
               ? world.campaign?.medal
