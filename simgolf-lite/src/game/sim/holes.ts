@@ -397,10 +397,18 @@ function numericIndex(property: string | symbol): number | null {
   return /^\d+$/.test(property) ? Number(property) : null;
 }
 
-function trackArrayReads<T>(values: T[], dependencies: Map<number, T>): T[] {
+function trackArrayReads<T>(values: T[], dependencies: Map<number, T>, readOwnArray: boolean): T[] {
   return new Proxy(values, {
     get(target, property, receiver) {
       const index = numericIndex(property);
+      // A newly prepared internal domain verified every array cell as an own
+      // data property. Reuse the dependency value for canonical in-bounds reads.
+      if (readOwnArray && index !== null && index < target.length
+        && typeof property === "string" && (property.length === 1 || property.charCodeAt(0) !== 48)) {
+        const value = target[index];
+        dependencies.set(index, value);
+        return value;
+      }
       if (index !== null) dependencies.set(index, target[index]);
       return Reflect.get(target, property, receiver);
     },
@@ -423,6 +431,12 @@ function dependenciesMatch<T>(dependencies: Map<number, T>, values: T[]): boolea
 export function scoreHole(course: Course, hole: Hole, holeIndex: number, preparedDomain?: ShotSearchDomain): HoleScore {
   course = courseWithEffectiveSurfaces(course);
   const searchDomain = preparedDomain ?? prepareShotSearchDomain(course, hole);
+  // A supplied public domain does not prove that this call's arrays were
+  // inspected. Only this module's freshly prepared paths may reuse own reads.
+  return scoreHoleWithPreparedDomain(course, hole, holeIndex, searchDomain, preparedDomain === undefined && searchDomain.eligible);
+}
+
+function scoreHoleWithPreparedDomain(course: Course, hole: Hole, holeIndex: number, searchDomain: ShotSearchDomain, readOwnArray: boolean): HoleScore {
   const cached = holeScoreCache.get(hole);
   const elevations = course.elevations ?? [];
   const elevationToken = searchDomain.eligible ? elevationTokenFor(elevations) : null;
@@ -448,9 +462,9 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number, prepare
   const elevationDependencies = new Map<number, number>();
   const trackedCourse: Course = {
     ...course,
-    tiles: trackArrayReads(course.tiles, tileDependencies),
+    tiles: trackArrayReads(course.tiles, tileDependencies, readOwnArray),
     ...(course.elevations
-      ? { elevations: trackArrayReads(course.elevations, elevationDependencies) }
+      ? { elevations: trackArrayReads(course.elevations, elevationDependencies, readOwnArray) }
       : {}),
   };
   const result = withShotSearchDomain(trackedCourse, searchDomain, () => scoreHoleUncached(trackedCourse, hole, holeIndex));
@@ -510,11 +524,15 @@ export function scoreSelectedCourseHole(course: Course, holeIndex: number): Hole
   const hole = effectiveCourse.holes[holeIndex];
   if (!hole) return undefined;
   const searchDomain = prepareShotSearchDomain(effectiveCourse);
-  return scoreHole(effectiveCourse, hole, holeIndex, searchDomain);
+  return searchDomain.eligible
+    ? scoreHoleWithPreparedDomain(effectiveCourse, hole, holeIndex, searchDomain, true)
+    : scoreHole(effectiveCourse, hole, holeIndex, searchDomain);
 }
 
 function scoreCourseHolesUncached(course: Course, searchDomain: ShotSearchDomain): CourseHoleSummary {
-  const holes = course.holes.map((h, i) => scoreHole(course, h, i, searchDomain));
+  const holes = course.holes.map((h, i) => searchDomain.eligible
+    ? scoreHoleWithPreparedDomain(course, h, i, searchDomain, true)
+    : scoreHole(course, h, i, searchDomain));
   const scored = holes.filter((h) => h.isComplete);
   const holeQualityAvg =
     scored.length === 0 ? 0 : scored.reduce((acc, h) => acc + h.overallHoleScore, 0) / scored.length;
