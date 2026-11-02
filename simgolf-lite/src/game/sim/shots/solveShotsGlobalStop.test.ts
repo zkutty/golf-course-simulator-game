@@ -40,7 +40,7 @@ beforeEach(() => {
   class ObservedMap<K, V> extends NativeMap<K, V> {
     constructor(entries?: readonly (readonly [K, V])[] | null) {
       super(entries);
-      if (/scoreHole\s*\(.*[/\\]holes\.ts:/.test(new Error().stack?.split("\n")[2] ?? "")) dependencyMaps.push(this);
+      if (/scoreHoleWithPreparedDomain\s*\(.*[/\\]holes\.ts:/.test(new Error().stack?.split("\n")[2] ?? "")) dependencyMaps.push(this);
     }
   }
   vi.stubGlobal("Map", ObservedMap);

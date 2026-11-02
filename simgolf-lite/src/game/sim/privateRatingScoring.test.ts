@@ -78,7 +78,7 @@ function pair(course: Course, tee: TeeSet = "member", pin: PinRotation = "A") {
 
 describe("private rating scoring: fixed finite actual-scorer ledger", () => {
   it("reuses fallback A/B/C/A while preserving the full actual output and public fresh aliases", () => {
-    // Observe the two actual dependency Maps allocated directly by scoreHole.
+    // Observe the two actual dependency Maps allocated directly by scoreHoleWithPreparedDomain.
     // Native Map operations are inherited unchanged. Retain these only for this
     // finite test, then release them; serialized payload is not native heap size.
     const NativeMap = Map;
@@ -87,7 +87,7 @@ describe("private rating scoring: fixed finite actual-scorer ledger", () => {
       constructor(entries?: readonly (readonly [K, V])[] | null) {
         super(entries);
         const caller = new Error().stack?.split("\n")[2] ?? "";
-        if (/scoreHole\s*\(.*[/\\]holes\.ts:/.test(caller)) dependencies.push(this);
+        if (/scoreHoleWithPreparedDomain\s*\(.*[/\\]holes\.ts:/.test(caller)) dependencies.push(this);
       }
     }
     vi.stubGlobal("Map", ObservedMap);
