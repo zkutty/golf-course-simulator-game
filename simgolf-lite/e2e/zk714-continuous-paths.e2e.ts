@@ -399,15 +399,33 @@ test("P714 [visual-matrix] 36 bounded captures at actual normal1 and close2.25",
   expect(captures).toBe(process.env.ZK714_PILOT_CAPTURE_ACCEPTED === "1" ? 35 : 36);
 });
 
+async function openDesignDock(page: Page) {
+  // Loading remounts the dock in its collapsed state. These public controls
+  // restore its workspace/mode without changing the terrain tool or draft.
+  await page.getByTestId("workspace-design").click();
+  await expect(page.getByTestId("workspace-design")).toHaveAttribute("aria-current", "page");
+  await page.locator('[data-tutorial-target="editor-tools"]').getByRole("button", { name: "Design", exact: true }).click();
+  const dock = page.getByTestId("design-dock"); await expect(dock).toBeVisible();
+  if (await dock.getAttribute("data-collapsed") === "true") await page.getByRole("button", { name: "Expand design dock", exact: true }).click();
+  await expect(dock).toHaveAttribute("data-collapsed", "false");
+}
 async function editorReady(page: Page, file: SaveFile) {
   await page.setViewportSize({ width: 1600, height: 1000 }); await boot(page); await publicLoad(page, file);
-  await page.getByRole("button", { name: "Expand design dock" }).click(); await page.getByTestId("design-card-terrain-path").click();
+  await openDesignDock(page); await page.getByTestId("design-card-terrain-path").click();
   await page.evaluate(() => window.__coursecraftPixiTest!.focusTileForTest(8, 5, 1.5)); await frame(page);
 }
 async function mousePoint(page: Page, point: Point) {
-  const p = (await project(page, [point], 0))[0]; const box = await page.locator("canvas").first().boundingBox();
+  const p = (await project(page, [point], 0))[0]; const canvas = page.locator(".cc-pixi-stage canvas").first(); const box = await canvas.boundingBox();
   expect(box).not.toBeNull(); expect(p.x >= 8 && p.y >= 8 && p.x <= box!.width - 8 && p.y <= box!.height - 8, `gesture point must be inside canvas: ${JSON.stringify({ point, projected: p, box })}`).toBe(true);
-  return { x: p.x + box!.x, y: p.y + box!.y };
+  const position = { x: p.x + box!.x, y: p.y + box!.y };
+  const target = await canvas.evaluate((node, position) => {
+    const hit = document.elementFromPoint(position.x, position.y);
+    return { isMainCanvas: hit === node, viewport: { width: window.innerWidth, height: window.innerHeight },
+      hit: hit ? { tag: hit.tagName.toLowerCase(), className: hit.getAttribute("class"), testId: hit.getAttribute("data-testid"), label: hit.getAttribute("aria-label") } : null };
+  }, position);
+  expect(position.x >= 8 && position.y >= 8 && position.x <= target.viewport.width - 8 && position.y <= target.viewport.height - 8, `gesture point must be on screen: ${JSON.stringify({ point, position, target })}`).toBe(true);
+  expect(target.isMainCanvas, `gesture must reach the actual main canvas: ${JSON.stringify({ point, position, target })}`).toBe(true);
+  return position;
 }
 async function selectS(page: Page, point = { x: 4.5, y: 3 }) {
   const before = await surface(page), beforeCash = await cash(page);
@@ -428,7 +446,7 @@ function candidateWidth(file: SaveFile, width: number, current?: Course) {
   expect(prepared.commitAllowed).toBe(true); return prepared;
 }
 
-test("P714 [ui] width draft cancel apply undo redo public reload and failed quote", async ({ page }, info) => {
+test("P714 [ui-prefix] width draft cancel apply undo redo and exact public reload", async ({ page }, info) => {
   const file = normalizedFixture(fixture("editor")); await editorReady(page, file); const initial = await surface(page); const initialCash = await cash(page);
   await selectS(page);
   const expected = candidateWidth(file, 2.5);
@@ -451,24 +469,49 @@ test("P714 [ui] width draft cancel apply undo redo public reload and failed quot
   await page.getByRole("button", { name: "Open pause menu", exact: true }).click(); await page.getByRole("button", { name: /load game/i }).click();
   await loadPublicSlot(page, page.getByTestId("save-slot-quick-save").getByRole("button", { name: "Load", exact: true }), expectedKey); await page.evaluate(() => window.__coursecraftTest!.pauseLiveSimulation());
   expect(await surface(page)).toEqual(applied); expect(await cash(page)).toBe(expected.preview.projectedCash); expect((await diagnostic(page)).planKey).toBe(draft.samples.at(-1)!.key);
-  // A narrower commit, followed by an unaffordable expansion, must not leak.
-  await selectS(page); await page.getByTestId("design-path-width").selectOption("1"); await page.getByTestId("design-path-width-apply").click();
-  const narrow = await surface(page); await page.evaluate(() => window.__coursecraftTest!.setPaintCash(0)); await page.getByTestId("design-path-width").selectOption("2.5");
-  await expect(page.getByTestId("design-path-width-apply")).toBeDisabled(); expect(await surface(page)).toEqual(narrow); expect(await cash(page)).toBe(0);
+  await info.attach("width-edit-persistence-prefix", { body: Buffer.from(JSON.stringify({ candidate, sourceHashes, fixtureHash: hash(file), expectedCash: expected.preview.projectedCash, expectedKey, draft,
+    scope: "width draft, cancel, apply, undo, redo, and exact public quick-save reload; affordability and custom load are independent tests",
+    priorRootAcceptance: { candidate: "aa9067d58738d7f28f2747ae2c9dceefdf76d836", successfulExpectSteps: 85, traceSHA256: "4a0879897caf89f2da672c37b84432f796ce28f8aeb3ee4b94712fc0804c09d0" } }, null, 2)), contentType: "application/json" });
+});
+
+test("P714 [ui-affordability] unaffordable saved-path expansion preserves authoritative state and cash", async ({ page }, info) => {
+  const file = normalizedFixture(fixture("editor")); await editorReady(page, file); await selectS(page);
+  const initial = await surface(page); const expected = candidateWidth(file, 2.5);
+  expect(expected.preview.changedCount).toBeGreaterThan(0); expect(expected.preview.net).toBeGreaterThan(0);
+  await page.getByTestId("design-path-width").selectOption("2.5"); await expect(page.getByTestId("design-path-width-apply")).toBeEnabled();
+  expect(await surface(page)).toEqual(initial); expect(await cash(page)).toBe(file.world.cash);
+  await page.evaluate(() => window.__coursecraftTest!.setPaintCash(0));
+  await expect(page.getByTestId("design-path-width-apply")).toBeDisabled(); expect(await surface(page)).toEqual(initial); expect(await cash(page)).toBe(0);
   await page.getByTestId("design-path-width-cancel").click();
-  // Public load while a same-ID width draft exists clears that draft.
-  await page.evaluate(() => window.__coursecraftTest!.setPaintCash(1_000_000)); await page.getByTestId("design-path-width").selectOption("1.5");
-  const custom = normalizedFixture(fixture("editor", "parkland", 1.7)); await publicLoad(page, custom);
+  await expect(page.getByTestId("design-path-width-apply")).toHaveCount(0); await expect(page.getByTestId("design-path-width")).toHaveValue("1");
+  expect(await surface(page)).toEqual(initial); expect(await cash(page)).toBe(0);
+  await info.attach("unaffordable-width-contract", { body: Buffer.from(JSON.stringify({ candidate, sourceHashes, fixtureHash: hash(file), positiveExpansionNet: expected.preview.net, expectedCash: 0 }, null, 2)), contentType: "application/json" });
+});
+
+test("P714 [ui-custom-load] same-ID public custom-width load clears an existing width draft", async ({ page }, info) => {
+  const file = normalizedFixture(fixture("editor")); await editorReady(page, file); await selectS(page); const initial = await surface(page);
+  await page.getByTestId("design-path-width").selectOption("1.5"); await expect(page.getByTestId("design-path-width-apply")).toBeEnabled();
+  expect(await surface(page)).toEqual(initial); expect(await cash(page)).toBe(file.world.cash);
+  const custom = normalizedFixture(fixture("editor", "parkland", 1.7));
+  expect(custom.course.surfaceIntent!.features[0].id).toBe(file.course.surfaceIntent!.features[0].id);
+  const customSaveState = await publicLoad(page, custom);
+  // Do not reselect the Path card here: that action itself clears a width
+  // draft. Opening the dock preserves the tool/draft so these checks can fail.
+  await openDesignDock(page);
   await expect(page.getByTestId("design-path-width-apply")).toHaveCount(0);
   await expect(page.getByTestId("design-tool-curve")).toHaveAttribute("aria-pressed", "true");
-  expect((await surface(page)).features[0].width).toBe(1.7);
+  expect(await surface(page)).toEqual(customSaveState); expect(await cash(page)).toBe(custom.world.cash);
+  expect(customSaveState.features[0].width).toBe(1.7);
   await selectS(page); await expect(page.getByTestId("design-path-width")).toHaveValue("1.7");
   await expect(page.getByTestId("design-path-width-apply")).toHaveCount(0);
-  await info.attach("width-contract", { body: Buffer.from(JSON.stringify({ candidate, fixtureHash: hash(file), expectedCash: expected.preview.projectedCash, draft }, null, 2)), contentType: "application/json" });
+  expect(await surface(page)).toEqual(customSaveState); expect(await cash(page)).toBe(custom.world.cash);
+  await info.attach("custom-load-width-contract", { body: Buffer.from(JSON.stringify({ candidate, sourceHashes, fixtureHash: hash(file), customFixtureHash: hash(custom), sameFeatureId: customSaveState.features[0].id, expectedWidth: 1.7 }, null, 2)), contentType: "application/json" });
 });
 
 test("P714 [ui-paint] each path width paints through actual spline UI and excludes protected gap", async ({ page }) => {
   const file = normalizedFixture(fixture("editor")); await editorReady(page, file);
+  await page.getByRole("button", { name: "Collapse course minimap", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Open course minimap", exact: true })).toBeVisible();
   let currentCourse = file.course;
   for (const [index, width] of [1, 1.5, 2.5].entries()) {
     await page.evaluate(y => window.__coursecraftPixiTest!.focusTileForTest(13, y, 1.5), 14.5 + index * 3); await frame(page);
