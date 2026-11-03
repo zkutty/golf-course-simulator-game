@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Course, Point, Terrain } from "../models/types";
 import { DEFAULT_COURSE } from "../models/defaults";
-import { findWalkPath } from "../live/walkPath";
+import { findWalkPath, walkPathAuthority } from "../live/walkPath";
 import { authoredPathFixture } from "../testing/continuousPathFixtures";
 import { buildContinuousPathPlan, classifyContinuousPathPoint } from "../paths/continuousPathPlan";
 import {
+  createMobilityPresentationCanStep,
+  MOBILITY_MODE_PROFILES,
   TimedMobilityLegCache,
   mobilityGeometryVersion,
   planTimedMobilityLeg,
@@ -290,5 +292,48 @@ describe("M3 building directly on presentation clearance", () => {
     for (const key of ["cells", "cost", "minutes", "expansions", "requestedMode", "resolvedMode", "fallback"] as const) expect(leg[key]).toEqual(baseline[key]);
     expect(leg.cells).not.toContainEqual({ x: 4, y: 2 });
     expect(leg.pathAlignment).toMatchObject({ alignedRuns: 0, fallbackRuns: 1, presentationClearanceCells: [] });
+  });
+});
+
+
+describe("M4 shared presentation predicate parity", () => {
+  it("keeps the pre-extraction terrain/weather/bridge/boardwalk/slope/diagonal decisions and walk delegation", () => {
+    const active = course(9, 7); active.tiles.fill("path");
+    active.tiles[2 * 9 + 3] = "water"; active.tiles[2 * 9 + 4] = "wetland";
+    active.tiles[3 * 9 + 4] = "green"; active.tiles[3 * 9 + 5] = "sand"; active.tiles[4 * 9 + 4] = "tee";
+    active.decorations = [{ kind: "bridge", x: 2, y: 2, rotation: 0, span: 2 }, { kind: "fence", x: 6, y: 4, rotation: 0, span: 1 }];
+    active.buildings = [{ id: "block", type: "pro_shop", x: 0, y: 4, tier: 1, price: 10 }];
+    active.elevations[3 * 9 + 6] = 3;
+    for (const conditions of [{ weather: "dry" as const }, { weather: "wet" as const }, { cartPathOnly: true }, { weather: "cart_path_only" as const }]) {
+      expect(createMobilityPresentationCanStep({ course: active, conditions }, "walk")).toBeUndefined();
+      for (const mode of ["pushcart", "riding_cart"] as const) {
+        const profile = MOBILITY_MODE_PROFILES[mode], authority = walkPathAuthority(active);
+        // Frozen old destination/diagonal-side predicate, independent of the
+        // newly extracted factory. No search or profile values are mocked.
+        const pass = (x: number, y: number, from: Point) => {
+          if (!authority.isWalkable(x, y)) return false;
+          const cell = y * 9 + x, terrain = active.tiles[cell], bridge = authority.bridges.has(cell);
+          if (["green", "tee", "sand"].includes(terrain) || terrain === "water" && !bridge || terrain === "wetland" && (!bridge || !profile.permitsBoardwalk)) return false;
+          if ((conditions.cartPathOnly || conditions.weather === "wet" || conditions.weather === "cart_path_only") && terrain !== "path" && !bridge) return false;
+          return Math.abs(active.elevations[cell] - active.elevations[from.y * 9 + from.x]) <= profile.maxSlope;
+        };
+        const current = createMobilityPresentationCanStep({ course: active, conditions }, mode)!;
+        for (let y = 0; y < active.height; y++) for (let x = 0; x < active.width; x++) for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1]]) {
+          const from = { x, y }, to = { x: x + dx, y: y + dy };
+          const old = pass(to.x, to.y, from) && (!(dx && dy) || pass(to.x, from.y, from) && pass(from.x, to.y, from));
+          expect(current(from, to), JSON.stringify({ mode, conditions, from, to })).toBe(old);
+        }
+      }
+    }
+  });
+  it("does not retain predicates/authority/traces in cached legs and preserves copied cache evidence", () => {
+    const active = course(), cache = new TimedMobilityLegCache(), input = request(active, "riding_cart");
+    const first = planTimedMobilityLeg(input, cache)!;
+    const plain = JSON.parse(JSON.stringify(first));
+    expect(Object.values(first).some(value => typeof value === "function")).toBe(false);
+    expect(Object.keys(first)).not.toContain("canStep"); expect(Object.keys(first)).not.toContain("trace");
+    first.cells[0].x = -999; first.waypoints[0].y = -999;
+    expect(planTimedMobilityLeg(input, cache)).toEqual(plain);
+    expect(createMobilityPresentationCanStep({ course: active }, "riding_cart")).not.toBe(createMobilityPresentationCanStep({ course: active }, "riding_cart"));
   });
 });

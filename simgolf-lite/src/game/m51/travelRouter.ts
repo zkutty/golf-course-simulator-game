@@ -141,7 +141,7 @@ function timedWalkLeg(request: MobilityRouteRequest, cacheKey: string): TimedMob
   return { requestedMode: request.mode, resolvedMode: "walk", cacheKey, cells, waypoints: findWalkPath(request.course, request.from, request.to, request.maxExpansions ?? MAX_EXPANSIONS) ?? simplify(cells), cost, minutes: cost * MOBILITY_MODE_PROFILES.walk.minutesPerTile, expansions: cells.length, fallback: request.mode === "walk" ? null : "walk" };
 }
 
-function cartPassable(request: MobilityRouteRequest, profile: MobilityModeProfile, authority: WalkPathAuthority, x: number, y: number, fromIndex: number | null): boolean {
+function cartPassable(request: Pick<MobilityRouteRequest, "course" | "conditions">, profile: MobilityModeProfile, authority: WalkPathAuthority, x: number, y: number, fromIndex: number | null): boolean {
   const { course, conditions } = request;
   if (!authority.isWalkable(x, y)) return false;
   const tileIndex = index(course, x, y);
@@ -197,6 +197,23 @@ function weightedCartLeg(request: MobilityRouteRequest, cacheKey: string): Timed
   return { requestedMode: request.mode, resolvedMode: request.mode, cacheKey, cells, waypoints: simplify(cells), cost: costs[goal], minutes: costs[goal], expansions, fallback: null };
 }
 
+/** Fresh call-owned presentation authority, identical to the routing adapter's
+ * existing cart predicate. Never retain this closure in a leg/cache/descriptor. */
+export function createMobilityPresentationCanStep(
+  request: Pick<MobilityRouteRequest, "course" | "conditions">,
+  resolvedMode: MobilityMode,
+): ((from: Point, to: Point) => boolean) | undefined {
+  if (resolvedMode === "walk") return undefined;
+  const authority = walkPathAuthority(request.course);
+  const profile = MOBILITY_MODE_PROFILES[resolvedMode];
+  return (from, to) => {
+    const fromIndex = index(request.course, from.x, from.y);
+    return cartPassable(request, profile, authority, to.x, to.y, fromIndex)
+      && (!(from.x !== to.x && from.y !== to.y)
+        || cartPassable(request, profile, authority, to.x, from.y, fromIndex) && cartPassable(request, profile, authority, from.x, to.y, fromIndex));
+  };
+}
+
 /** One deterministic router for all mobility modes. Walk deliberately delegates to the legacy authority. */
 export function planTimedMobilityLeg(request: MobilityRouteRequest, cache?: TimedMobilityLegCache): TimedMobilityLeg | null {
   const scoped = { ...request, geometryVersion: request.geometryVersion ?? mobilityBaseGeometryVersion(request.course) };
@@ -204,14 +221,7 @@ export function planTimedMobilityLeg(request: MobilityRouteRequest, cache?: Time
   const direct = request.mode === "walk" ? timedWalkLeg(scoped, cacheKey) : weightedCartLeg(scoped, cacheKey);
   const result = direct ?? (request.mode !== "walk" && request.allowWalkFallback !== false ? timedWalkLeg(scoped, cacheKey) : null);
   if (result) {
-    const authority = walkPathAuthority(request.course);
-    const profile = MOBILITY_MODE_PROFILES[result.resolvedMode];
-    const canStep = result.resolvedMode === "walk" ? undefined : (from: Point, to: Point) => {
-      const fromIndex = index(request.course, from.x, from.y);
-      return cartPassable(request, profile, authority, to.x, to.y, fromIndex)
-        && (!(from.x !== to.x && from.y !== to.y)
-          || cartPassable(request, profile, authority, to.x, from.y, fromIndex) && cartPassable(request, profile, authority, from.x, to.y, fromIndex));
-    };
+    const canStep = createMobilityPresentationCanStep(request, result.resolvedMode);
     const { waypoints, ...pathAlignment } = adaptPathMovementRoute({ course: request.course, cells: result.cells,
       waypoints: result.waypoints, from: request.from, to: request.to, geometryVersion: scoped.geometryVersion, canStep });
     result.waypoints = waypoints; result.pathAlignment = pathAlignment;
