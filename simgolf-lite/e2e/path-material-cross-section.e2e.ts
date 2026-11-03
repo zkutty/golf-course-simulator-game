@@ -119,33 +119,6 @@ function clipRect(input: readonly Point[], rect: WorldRect): Point[] {
 function polygonArea(points: readonly Point[]): number {
   return Math.abs(points.reduce((sum, a, index) => { const b = points[(index + 1) % points.length]; return sum + a.x * b.y - b.x * a.y; }, 0)) / 2;
 }
-function distanceToSegment(point: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
-  const t = length ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / length)) : 0;
-  return Math.hypot(point.x - a.x - t * dx, point.y - a.y - t * dy);
-}
-function corePatchClearance(station: Point, center: Point, core: readonly ProjectionTriangle[]): number {
-  const rect = { left: station.x - 1, right: station.x + 1, top: station.y - .216, bottom: station.y + .216 };
-  let area = 0; const boundary: Point[][] = [];
-  for (const triangle of core) {
-    const polygon = clipRect(triangle.world, rect); if (polygon.length < 3 || polygonArea(polygon) < 1e-12) continue;
-    area += polygonArea(polygon);
-    for (let index = 0; index < polygon.length; index++) {
-      const a = polygon[index], b = polygon[(index + 1) % polygon.length];
-      const onSide = Math.abs(a.x - rect.left) < 1e-8 && Math.abs(b.x - rect.left) < 1e-8
-        || Math.abs(a.x - rect.right) < 1e-8 && Math.abs(b.x - rect.right) < 1e-8
-        || Math.abs(a.y - rect.top) < 1e-8 && Math.abs(b.y - rect.top) < 1e-8
-        || Math.abs(a.y - rect.bottom) < 1e-8 && Math.abs(b.y - rect.bottom) < 1e-8;
-      if (onSide) boundary.push([weighted(weights(a, triangle.world)!, triangle.screen), weighted(weights(b, triangle.world)!, triangle.screen)]);
-    }
-  }
-  // G's accepted role triangles are disjoint. Full clipped area certifies this
-  // straight-lane patch has no hole; only its union perimeter limits the disk.
-  expect(area, "core triangles must cover the full straight texture patch").toBeCloseTo((rect.right - rect.left) * (rect.bottom - rect.top), 8);
-  expect(boundary.length).toBeGreaterThan(0);
-  return Math.min(...boundary.map(([a, b]) => distanceToSegment(center, a, b)));
-}
-
 async function pathDiagnostic(page: Page): Promise<PathDiagnostic> {
   return page.evaluate(() => (window.__coursecraftPixiTest!.rendererAtlasState() as unknown as { pathMaterialCrossSection: PathDiagnostic }).pathMaterialCrossSection);
 }
@@ -315,16 +288,24 @@ test("P714 [pixel] narrow original three-material vocabulary and final-triangle 
         }
         return [...found.values()];
       };
-      const certified = new Set<string>();
+      const certified = new Set<string>(), textureReads = new Set<string>();
       const certifyCore = (pixel: Pixel) => {
-        const key = `${pixel.x}:${pixel.y}`; if (certified.has(key)) return;
-        const mapping = pixelWorld({ x: pixel.x + .5, y: pixel.y + .5 }, pathTriangles);
-        if (mapping.kind !== "mapped") throw new Error(`Texture read (${pixel.x},${pixel.y}) has ${mapping.kind} projected coverage`);
-        const role = classifyContinuousPathPoint(plan, mapping.world);
-        if (!mapping.roles.includes("core") || role !== "core") {
-          throw new Error(`Texture read (${pixel.x},${pixel.y}) maps to world (${mapping.world.x},${mapping.world.y}), triangle roles ${mapping.roles.join(",")}, classified ${role}`);
+        textureReads.add(`${pixel.x}:${pixel.y}`);
+        // The luminance callback is invoked for every disk pixel and every
+        // x+1/y+1 neighbor actually read. Certify that exact finite read set
+        // plus its full1px Chebyshev guard; this is not a continuum-disk claim.
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const x = pixel.x + dx, y = pixel.y + dy, key = `${x}:${y}`;
+          if (certified.has(key)) continue;
+          if (x < 0 || x >= image.width || y < 0 || y >= image.height) throw new Error(`Texture guard (${x},${y}) for read (${pixel.x},${pixel.y}) is outside image`);
+          const mapping = pixelWorld({ x: x + .5, y: y + .5 }, pathTriangles);
+          if (mapping.kind !== "mapped") throw new Error(`Texture guard (${x},${y}) for read (${pixel.x},${pixel.y}) has ${mapping.kind} projected coverage`);
+          const role = classifyContinuousPathPoint(plan, mapping.world);
+          if (!mapping.roles.includes("core") || role !== "core") {
+            throw new Error(`Texture guard (${x},${y}) for read (${pixel.x},${pixel.y}) maps to world (${mapping.world.x},${mapping.world.y}), triangle roles ${mapping.roles.join(",")}, classified ${role}`);
+          }
+          certified.add(key);
         }
-        certified.add(key);
       };
       for (const station of stations) {
         for (const [role, from, to] of [["core", .08, .18], ["edge", .224, .258], ["shoulder", .270, .296]] as const) {
@@ -335,8 +316,9 @@ test("P714 [pixel] narrow original three-material vocabulary and final-triangle 
           expect(pixels.length, `${role} has at least one true-band pixel per station`).toBeGreaterThanOrEqual(1); rolePixels.get(role)!.push(...pixels);
         }
         turfPixels.push(...[-1, 1].flatMap(sign => band(station, sign, .35, .45, null)));
-        const center = worldScreen(station, coreTriangles), clearance = corePatchClearance(station, center, coreTriangles);
-        const radius = Math.min(9, clearance - 1); expect(radius, "insufficient core texture pixels requires a closer evidence view").toBeGreaterThanOrEqual(3);
+        const center = worldScreen(station, coreTriangles);
+        // Fixed original cap: never shrink/search the disk or select by RGB.
+        const radius = 9; expect(radius, "insufficient core texture pixels requires a closer evidence view").toBeGreaterThanOrEqual(3);
         expect(center.x - radius >= 1 && center.y - radius >= 1 && center.x + radius < image.width - 1 && center.y + radius < image.height - 1).toBe(true);
         textureCandidates.push(compactedCoreTextureStats(image, center, radius, certifyCore));
       }
@@ -354,7 +336,7 @@ test("P714 [pixel] narrow original three-material vocabulary and final-triangle 
       const changedByRole = Object.fromEntries([...rolePixels].map(([role, pixels]) => [role, pixels.filter(p => delta(image, hidden, p) > 18).length]));
       for (const role of ["core", "edge", "shoulder"]) expect(changedByRole[role]).toBeGreaterThan(0);
       expect(turfPixels.length).toBeGreaterThanOrEqual(12); expect(turfPixels.filter(p => delta(image, hidden, p) > 18)).toHaveLength(0);
-      closePixelGates.push({ rotation, stations, spans: { core, edge, shoulder }, coreTexture, changedByRole, turfSamples: turfPixels.length, roi: { kind: "projected-final-triangles", paddingPx: 2, triangles: triangles.length }, outside: { samples: outside, changed, ratio: changed / outside }, diagnostic, camera: runtime.camera, pixelScale, mapping: "actual-Float32-triangle-barycentric", certifiedCorePixels: certified.size });
+      closePixelGates.push({ rotation, stations, spans: { core, edge, shoulder }, coreTexture, changedByRole, turfSamples: turfPixels.length, roi: { kind: "projected-final-triangles", paddingPx: 2, triangles: triangles.length }, outside: { samples: outside, changed, ratio: changed / outside }, diagnostic, camera: runtime.camera, pixelScale, mapping: "actual-Float32-triangle-barycentric", certifiedCorePixels: certified.size, textureReadPixels: textureReads.size, textureCertificate: "finite-read-and-neighbor-set-plus-1px-Chebyshev-guard; no continuum claim" });
     }
   }
   expect(await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState())).toEqual(initial);
