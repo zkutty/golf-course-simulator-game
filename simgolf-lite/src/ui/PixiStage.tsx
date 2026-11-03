@@ -3258,6 +3258,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
           : (mesh, tileSubdivisions, originalUnits) => {
             boundsCohort?.registerTurf(mesh, tileSubdivisions, originalUnits);
           },
+        // This synchronous callback only registers already-built meshes;
+        // neither it nor this owned layer changes component/height inputs.
+        { reusePairedFieldCueGeometry: true },
       )
       : layer;
     if (presentationLayer !== layer) terrainScene.lowPresentationLayer = presentationLayer;

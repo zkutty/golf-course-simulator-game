@@ -59,7 +59,97 @@ function draw(quality: "high" | "medium" | "low", textures: ParklandSemanticFiel
   return { layer, diagnostics: trace.diagnostics(0) };
 }
 
+function geometryBytes(mesh: PIXI.Mesh) {
+  const geometry = mesh.geometry as PIXI.MeshGeometry;
+  const bytes = (array: Float32Array | Uint32Array) => Buffer.from(
+    array.buffer, array.byteOffset, array.byteLength,
+  ).toString("hex");
+  return {
+    positions: bytes(geometry.positions),
+    uvs: bytes(geometry.uvs),
+    indices: bytes(geometry.indices),
+    batchMode: geometry.batchMode,
+  };
+}
+
+function presentation(
+  quality: "high" | "medium",
+  rotation: 0 | 90 | 180 | 270,
+  data: ReturnType<typeof fixture>,
+  textures: ParklandSemanticFieldSources<PIXI.Texture>,
+  reuse: boolean,
+  onTileMesh?: (mesh: PIXI.Mesh, subdivisions: number, originalUnits: number) => void,
+) {
+  const layer = new PIXI.Container();
+  const sources = resolveParklandComposableSources("parkland", quality, () => PIXI.Texture.EMPTY)!;
+  const trace = createParklandComposableTrace("parkland", quality);
+  appendParklandComposablePresentation(
+    layer, sources, textures, data.components, data.course, data.tiles, data.tiles,
+    quality === "high" ? 4 : 2, data.heightfield, rotation, true, colors, trace,
+    onTileMesh, reuse ? { reusePairedFieldCueGeometry: true } : undefined,
+  );
+  return { layer, diagnostics: trace.diagnostics(0) };
+}
+
 describe("ZK-1259 redundant opaque undercoat", () => {
+  it("copies paired field geometry byte-for-byte into distinct cue owners without changing draw or callback order", () => {
+    for (const quality of ["high", "medium"] as const) for (const rotation of [0, 90, 180, 270] as const) {
+      const data = fixture();
+      const textures = fields(quality);
+      const originalCalls: string[] = [];
+      const reusedCalls: string[] = [];
+      const original = presentation(quality, rotation, data, textures, false, mesh => originalCalls.push(mesh.label));
+      const reused = presentation(quality, rotation, data, textures, true, mesh => reusedCalls.push(mesh.label));
+      const originalMeshes = original.layer.children as PIXI.Mesh[];
+      const reusedMeshes = reused.layer.children as PIXI.Mesh[];
+      expect(reused.diagnostics).toEqual(original.diagnostics);
+      expect(reusedCalls).toEqual(originalCalls);
+      expect(reusedMeshes.map(mesh => mesh.label)).toEqual(originalMeshes.map(mesh => mesh.label));
+      expect(reusedMeshes.map(mesh => ({
+        texture: mesh.texture, tint: mesh.tint, alpha: mesh.alpha,
+        blendMode: mesh.blendMode, eventMode: mesh.eventMode,
+      }))).toEqual(originalMeshes.map(mesh => ({
+        texture: mesh.texture, tint: mesh.tint, alpha: mesh.alpha,
+        blendMode: mesh.blendMode, eventMode: mesh.eventMode,
+      })));
+      expect(reusedMeshes.map(geometryBytes)).toEqual(originalMeshes.map(geometryBytes));
+      for (const role of roles) {
+        const field = reusedMeshes.find(mesh => mesh.label === `parkland-authoritative-material-field:${role}`)!;
+        const cue = reusedMeshes.find(mesh => mesh.label === `parkland-common-phase:semantic:${role}`)!;
+        const fieldGeometry = field.geometry as PIXI.MeshGeometry;
+        const cueGeometry = cue.geometry as PIXI.MeshGeometry;
+        expect(cueGeometry).not.toBe(fieldGeometry);
+        for (const key of ["positions", "uvs", "indices"] as const) {
+          expect(cueGeometry[key]).not.toBe(fieldGeometry[key]);
+          expect(cueGeometry[key].buffer).not.toBe(fieldGeometry[key].buffer);
+        }
+      }
+      destroySceneSubtree(original.layer);
+      destroySceneSubtree(reused.layer);
+      for (const texture of Object.values(textures)) {
+        expect(texture.destroyed).toBe(false);
+        texture.destroy(true);
+      }
+    }
+  });
+
+  it("keeps the default callback mutation path live when reuse is not opted in", () => {
+    const data = fixture();
+    const textures = fields("high");
+    let fieldCallbacks = 0;
+    const result = presentation("high", 0, data, textures, false, mesh => {
+      if (!mesh.label.startsWith("parkland-authoritative-material-field:")) return;
+      if (fieldCallbacks++ === 0) data.heightfield.vertices.fill(25);
+    });
+    const meshes = result.layer.children as PIXI.Mesh[];
+    const firstField = meshes.find(mesh => mesh.label === "parkland-authoritative-material-field:fairway")!;
+    const firstCue = meshes.find(mesh => mesh.label === "parkland-common-phase:semantic:fairway")!;
+    expect(fieldCallbacks).toBe(5);
+    expect(geometryBytes(firstCue).positions).not.toBe(geometryBytes(firstField).positions);
+    destroySceneSubtree(result.layer);
+    for (const texture of Object.values(textures)) texture.destroy(true);
+  });
+
   it("certifies all deployed field bytes and every alpha sample", () => {
     for (const quality of ["high", "medium"] as const) for (const role of roles) {
       const filename = `field-parkland-${quality}-${role}.${hashes[quality][role].slice(0, 12)}.png`;

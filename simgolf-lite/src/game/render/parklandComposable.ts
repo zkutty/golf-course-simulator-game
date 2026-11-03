@@ -462,6 +462,85 @@ export function createParklandComposableMesh<T>(
   return new PIXI.Mesh({ geometry, texture });
 }
 
+// Copies become cue-owned geometry within the current append only. The source
+// field mesh keeps its own buffers, and no geometry survives in a cache.
+type PairedCueGeometry = ParklandComposableMeshGeometry & {
+  readonly subdivisions: number;
+  readonly units: number;
+};
+const MAX_PAIRED_CUE_COPY_BYTES = 64 * 1024 * 1024;
+
+function copyPairedCueGeometry(mesh: PIXI.Mesh, subdivisions: number, units: number,
+  remainingBytes: number): PairedCueGeometry | null {
+  const geometry = mesh.geometry;
+  if (!(geometry instanceof PIXI.MeshGeometry)
+    || !(geometry.positions instanceof Float32Array)
+    || !(geometry.uvs instanceof Float32Array)
+    || !(geometry.indices instanceof Uint32Array)) return null;
+  const bytes = geometry.positions.byteLength + geometry.uvs.byteLength + geometry.indices.byteLength;
+  if (!Number.isSafeInteger(bytes) || bytes > remainingBytes) return null;
+  try {
+    return {
+      positions: geometry.positions.slice(),
+      uvs: geometry.uvs.slice(),
+      indices: geometry.indices.slice(),
+      subdivisions,
+      units,
+    };
+  } catch {
+    // The original tessellator remains the fallback if a speculative copy fails.
+    return null;
+  }
+}
+
+function appendParklandCuesFromCopiedFields(
+  layer: PIXI.Container,
+  cues: Readonly<Record<ParklandComposableSemantic, PIXI.Texture>>,
+  components: readonly LandscapeComponent[],
+  courseWidth: number,
+  subdivisions: number,
+  heightfield: VisualHeightfield,
+  rotation: IsoRotation,
+  tintFor: (semantic: ParklandComposableSemantic) => number,
+  onTileMesh: ((mesh: PIXI.Mesh, subdivisions: number, originalUnits: number) => void) | undefined,
+  copies: ReadonlyMap<ParklandComposableSemantic, PairedCueGeometry>,
+): readonly ParklandComposableSemantic[] {
+  const drawn: ParklandComposableSemantic[] = [];
+  for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
+    const entries = components
+      .filter((component) => component.terrain === semantic)
+      .flatMap((component) => component.cells.map((cell) => ({ cell, component })));
+    const copy = copies.get(semantic);
+    const texture = cues[semantic];
+    let mesh: PIXI.Mesh | null = null;
+    if (copy && copy.subdivisions === subdivisions && copy.units === entries.length) {
+      const geometry = new PIXI.MeshGeometry({
+        positions: copy.positions,
+        uvs: copy.uvs,
+        indices: copy.indices,
+      });
+      if (entries.length * 4 * subdivisions * subdivisions > 100) geometry.batchMode = "no-batch";
+      mesh = new PIXI.Mesh({ geometry, texture });
+    } else {
+      mesh = createParklandComposableMesh(
+        texture, entries, courseWidth, subdivisions, (entry) => entry.cell,
+        (entry, x, y) => worldToIso(
+          x, y, sampleLandscapeSurfaceHeight(heightfield, entry.component, x, y), rotation,
+        ),
+        false, true,
+      );
+    }
+    if (!mesh) continue;
+    mesh.eventMode = "none";
+    mesh.label = `parkland-common-phase:semantic:${semantic}`;
+    mesh.tint = tintFor(semantic);
+    layer.addChild(mesh);
+    onTileMesh?.(mesh, subdivisions, entries.length);
+    drawn.push(semantic);
+  }
+  return drawn;
+}
+
 export function createLandscapeRingMask(
   rings: readonly (readonly Point[])[],
   project: (point: Point) => Point,
@@ -711,7 +790,27 @@ export function appendParklandComposablePresentation(
     "recordUndercoat" | "recordSemantic" | "recordMaterialField" | "recordPairFringes"
   >,
   onTileMesh?: (mesh: PIXI.Mesh, subdivisions: number, originalUnits: number) => void,
+  // Explicit internal opt-in: the caller guarantees that its synchronous mesh
+  // callback and scene hooks do not mutate the heightfield, components, or
+  // field geometry before cue construction. Omitted means the original path.
+  options?: Readonly<{ reusePairedFieldCueGeometry?: boolean }>,
 ): PIXI.Container {
+  const reusePairedGeometry = options?.reusePairedFieldCueGeometry === true
+    && sources.quality !== "low" && semanticFields !== null
+    && (subdivisions === 2 || subdivisions === 4);
+  const copiedFields: Array<PairedCueGeometry | null> = [];
+  const cueCopies = new Map<ParklandComposableSemantic, PairedCueGeometry>();
+  let copiedBytes = 0;
+  const fieldCallback = reusePairedGeometry
+    ? (mesh: PIXI.Mesh, tileSubdivisions: number, units: number) => {
+      const copy = copyPairedCueGeometry(mesh, tileSubdivisions, units,
+        MAX_PAIRED_CUE_COPY_BYTES - copiedBytes);
+      copiedFields.push(copy);
+      if (copy) copiedBytes += copy.positions.byteLength + copy.uvs.byteLength + copy.indices.byteLength;
+      onTileMesh?.(mesh, tileSubdivisions, units);
+    }
+    : onTileMesh;
+  try {
   const presentationLayer = sources.quality === "low" ? new PIXI.Container() : layer;
   if (presentationLayer !== layer) {
     presentationLayer.eventMode = "none";
@@ -730,8 +829,12 @@ export function appendParklandComposablePresentation(
     heightfield,
     rotation,
     colors,
-    onTileMesh,
+    fieldCallback,
   );
+  if (reusePairedGeometry) semanticFieldDraws.forEach((semantic, index) => {
+    const copy = copiedFields[index];
+    if (copy) cueCopies.set(semantic, copy);
+  });
   const fieldMeshes = presentationLayer.children.slice(fieldStart) as PIXI.Mesh[];
   const omitUndercoat = canOmitParklandUndercoat(presentationLayer, sources.quality, semanticFields, fieldMeshes);
   const undercoatDrawn = !omitUndercoat && appendParklandComposableUndercoat(
@@ -747,7 +850,7 @@ export function appendParklandComposablePresentation(
   if (undercoatDrawn) presentationLayer.setChildIndex(presentationLayer.children.at(-1)!, fieldStart);
   trace.recordUndercoat(undercoatDrawn);
   if (semanticFields) for (const semantic of semanticFieldDraws) trace.recordMaterialField(semantic);
-  for (const semantic of appendParklandComposableCues(
+  const cueArgs = [
     presentationLayer,
     sources.cues,
     components,
@@ -759,9 +862,13 @@ export function appendParklandComposablePresentation(
     // tint even in the standard mode. This restores a readable maintained /
     // natural hierarchy without adding a broad role-colored mask or changing
     // the shared x/8,y/8 material phase.
-    (role) => parklandCueTint(role, colors[role], standardColorVision),
+    (role: ParklandComposableSemantic) => parklandCueTint(role, colors[role], standardColorVision),
     onTileMesh,
-  )) trace.recordSemantic(semantic);
+  ] as const;
+  const cueDraws = reusePairedGeometry && omitUndercoat
+    ? appendParklandCuesFromCopiedFields(...cueArgs, cueCopies)
+    : appendParklandComposableCues(...cueArgs);
+  for (const semantic of cueDraws) trace.recordSemantic(semantic);
   trace.recordPairFringes(appendParklandPairFringes(
     presentationLayer,
     sources.quality,
@@ -772,6 +879,10 @@ export function appendParklandComposablePresentation(
     standardColorVision,
   ));
   return presentationLayer;
+  } finally {
+    cueCopies.clear();
+    copiedFields.length = 0;
+  }
 }
 
 function fnv1aAuthority(values: readonly (string | number)[]): string {
