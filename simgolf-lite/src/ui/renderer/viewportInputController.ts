@@ -138,6 +138,7 @@ export interface ViewportInputControllerPorts {
   element: HTMLElement;
   overlay(): ViewportInputOverlayPort | null;
   terrain(): ViewportInputTerrainPort | null;
+  cullConnectedSurfaces?(): void;
   now?(): number;
   resizeObserver?: typeof ResizeObserver;
 }
@@ -603,6 +604,7 @@ export class ViewportInputController {
   }
 
   reconcileCulling(): void {
+    this.ports.cullConnectedSurfaces?.();
     const terrain = this.ports.terrain();
     if (!terrain) return;
     const world = this.ports.world;

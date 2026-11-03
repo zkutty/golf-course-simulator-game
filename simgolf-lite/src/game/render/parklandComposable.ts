@@ -548,6 +548,7 @@ export function appendParklandComposableCues(
   heightfield: VisualHeightfield,
   rotation: IsoRotation,
   tintFor: (semantic: ParklandComposableSemantic) => number,
+  onTileMesh?: (mesh: PIXI.Mesh, subdivisions: number, originalUnits: number) => void,
 ): readonly ParklandComposableSemantic[] {
   const drawn: ParklandComposableSemantic[] = [];
   for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
@@ -571,6 +572,7 @@ export function appendParklandComposableCues(
     mesh.label = `parkland-common-phase:semantic:${semantic}`;
     mesh.tint = tintFor(semantic);
     layer.addChild(mesh);
+    onTileMesh?.(mesh, subdivisions, entries.length);
     drawn.push(semantic);
   }
   return drawn;
@@ -593,6 +595,7 @@ export function appendParklandSemanticFields(
   heightfield: VisualHeightfield,
   rotation: IsoRotation,
   colors: Readonly<Record<ParklandComposableSemantic, number>>,
+  onTileMesh?: (mesh: PIXI.Mesh, subdivisions: number, originalUnits: number) => void,
 ): readonly ParklandComposableSemantic[] {
   const drawn: ParklandComposableSemantic[] = [];
   for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
@@ -631,6 +634,7 @@ export function appendParklandSemanticFields(
       mesh.blendMode = style.blendMode;
     }
     layer.addChild(mesh);
+    onTileMesh?.(mesh, subdivisions, entries.length);
     drawn.push(semantic);
   }
   return drawn;
@@ -706,6 +710,7 @@ export function appendParklandComposablePresentation(
     ReturnType<typeof createParklandComposableTrace>,
     "recordUndercoat" | "recordSemantic" | "recordMaterialField" | "recordPairFringes"
   >,
+  onTileMesh?: (mesh: PIXI.Mesh, subdivisions: number, originalUnits: number) => void,
 ): PIXI.Container {
   const presentationLayer = sources.quality === "low" ? new PIXI.Container() : layer;
   if (presentationLayer !== layer) {
@@ -725,6 +730,7 @@ export function appendParklandComposablePresentation(
     heightfield,
     rotation,
     colors,
+    onTileMesh,
   );
   const fieldMeshes = presentationLayer.children.slice(fieldStart) as PIXI.Mesh[];
   const omitUndercoat = canOmitParklandUndercoat(presentationLayer, sources.quality, semanticFields, fieldMeshes);
@@ -754,6 +760,7 @@ export function appendParklandComposablePresentation(
     // natural hierarchy without adding a broad role-colored mask or changing
     // the shared x/8,y/8 material phase.
     (role) => parklandCueTint(role, colors[role], standardColorVision),
+    onTileMesh,
   )) trace.recordSemantic(semantic);
   trace.recordPairFringes(appendParklandPairFringes(
     presentationLayer,

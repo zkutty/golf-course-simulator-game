@@ -74,6 +74,7 @@ import {
 } from "../game/render/terrainMaterials";
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
 import type { ParklandComposableDiagnostics } from "../game/render/parklandComposable";
+import { OrderedMeshBoundsCohort } from "../game/render/orderedMeshBounds";
 import { deriveTerrainDetail } from "../game/render/terrainDetails";
 import {
   seasonalTerrainTreatment,
@@ -922,6 +923,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const liveEntitiesSceneRef = useRef<LiveEntitiesSceneSystem | null>(null);
   const overlaysDiagnosticsSceneRef = useRef<OverlaysDiagnosticsSceneSystem | null>(null);
   const terrainWaterSceneRef = useRef<TerrainWaterSceneSystem | null>(null);
+  const connectedBoundsCohortRef = useRef<OrderedMeshBoundsCohort | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
   const viewportInputControllerModuleRef = useRef<ViewportInputControllerModule | null>(null);
   const sceneCameraDeriversRef = useRef<readonly [DeriveCourseSceneComposition, DeriveCourseSceneCamera] | null>(null);
@@ -1578,6 +1580,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
       app, world, element,
       overlay: () => overlaysDiagnosticsSceneRef.current,
       terrain: () => terrainWaterSceneRef.current,
+      cullConnectedSurfaces: () => {
+        if (appRef.current !== app || layersRef.current?.world !== world) return;
+        const cohort = connectedBoundsCohortRef.current;
+        cohort?.reconcile(app, world);
+      },
     });
     viewportInputControllerRef.current = controller;
     return () => {
@@ -2089,6 +2096,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
       liveEntitiesSceneRef.current = null;
       overlaysDiagnosticsSceneRef.current = null;
       terrainWaterSceneRef.current?.destroy();
+      if (appRef.current === app) {
+        connectedBoundsCohortRef.current?.dispose();
+        connectedBoundsCohortRef.current = null;
+      }
       terrainWaterSceneRef.current = null;
       deferredWorldScenesRef.current = null;
       viewportInputControllerModuleRef.current = null;
@@ -2998,8 +3009,20 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const rendererLayers = layersRef.current;
     const terrainScene = terrainWaterSceneRef.current;
     const layer = rendererLayers?.smoothSurfaces;
-    if (!layer || !rendererLayers || !terrainScene) return;
+    const app = appRef.current;
+    if (!layer || !rendererLayers || !terrainScene || !app) return;
     terrainScene.setRenderer("connected", () => {
+    if (appRef.current !== app || layersRef.current !== rendererLayers) return;
+    // The phase cleanup normally disposes the previous cohort first. This is
+    // also the backstop after an interrupted/partial connected rebuild.
+    connectedBoundsCohortRef.current?.dispose();
+    const boundsCohort = new OrderedMeshBoundsCohort();
+    connectedBoundsCohortRef.current = boundsCohort;
+    const releaseBoundsCohort = () => {
+      boundsCohort.dispose();
+      if (connectedBoundsCohortRef.current === boundsCohort) connectedBoundsCohortRef.current = null;
+    };
+    try {
     layer.removeChildren().forEach(destroySceneSubtree);
     terrainScene.surfaceWaterSprites = [];
     const quality = props.graphicsQuality;
@@ -3145,7 +3168,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       stampAtlasGeneration(rendererLayers.terrain, atlasRevision);
       stampAtlasGeneration(layer, atlasRevision);
       recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
-      return;
+      return releaseBoundsCohort;
     }
 
     const bandLayer = new PIXI.Container();
@@ -3224,6 +3247,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
         props.colorVision === "standard",
         themedColors,
         composableTrace,
+        quality === "low" ? undefined
+          : (mesh, tileSubdivisions, originalUnits) => {
+            boundsCohort.registerTurf(mesh, tileSubdivisions, originalUnits);
+          },
       )
       : layer;
     if (presentationLayer !== layer) terrainScene.lowPresentationLayer = presentationLayer;
@@ -3363,7 +3390,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       stampAtlasGeneration(rendererLayers.terrain, atlasRevision);
       stampAtlasGeneration(layer, atlasRevision);
       recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
-      return;
+      return releaseBoundsCohort;
     }
     for (const component of sortedComponents) {
       const presentationTerrain = component.terrain;
@@ -3779,6 +3806,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       shadow.label = "macro-landform-shadow";
       shadow.blendMode = "multiply";
       landformLayer.addChild(shadow);
+      if (quality !== "low") boundsCohort.registerMacro(
+        shadow, course.width * macroSubdivisions, course.height * macroSubdivisions,
+      );
     }
     const highlightTexture = textureFromRgba(macroRaster.highlight);
     if (highlightTexture) {
@@ -3788,6 +3818,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       highlight.label = "macro-landform-highlight";
       highlight.blendMode = "screen";
       landformLayer.addChild(highlight);
+      if (quality !== "low") boundsCohort.registerMacro(
+        highlight, course.width * macroSubdivisions, course.height * macroSubdivisions,
+      );
     }
 
     // Boundaries are provenance only; the broad material field above owns
@@ -3851,10 +3884,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
     };
     sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
     stampAtlasGeneration(layer, atlasRevision);
+    // The stage's first populated draw must already use the current camera.
+    boundsCohort.reconcile(app, rendererLayers.world);
     recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
     return () => {
+      releaseBoundsCohort();
       for (const texture of generatedMacroTextures) terrainScene.releaseGeneratedTexture(texture);
     };
+    } catch (error) {
+      releaseBoundsCohort();
+      throw error;
+    }
     });
   }, [
     appReady,

@@ -118,6 +118,29 @@ describe("ZK-1259 turf vertex indexing", () => {
     }
   });
 
+  it("reports natural field and cue units from the emitter, without including the undercoat", () => {
+    const { width, components, field } = fixture();
+    const layer = new PIXI.Container();
+    const reported: Array<{ mesh: PIXI.Mesh; subdivisions: number; units: number }> = [];
+    const onTileMesh = (mesh: PIXI.Mesh, subdivisions: number, units: number) => {
+      reported.push({ mesh, subdivisions, units });
+    };
+    expect(appendParklandComposableUndercoat(layer, PIXI.Texture.EMPTY,
+      components, width, 4, field, 0, 0xffffff)).toBe(true);
+    appendParklandSemanticFields(layer, PIXI.Texture.EMPTY, textures, "high",
+      components, width, 4, field, 0, colors, onTileMesh);
+    appendParklandComposableCues(layer, textures, components, width, 4, field, 0,
+      () => 0xffffff, onTileMesh);
+    expect(reported).toHaveLength(10);
+    expect(reported.every(({ mesh, subdivisions, units }) =>
+      layer.children.includes(mesh) && subdivisions === 4
+      && units > 0 && mesh.geometry.indices.length === units * 96)).toBe(true);
+    expect(reported.some(({ mesh }) => mesh === layer.children[0])).toBe(false);
+    const geometries = (layer.children as PIXI.Mesh[]).map(mesh => mesh.geometry);
+    destroySceneSubtree(layer);
+    for (const geometry of geometries) geometry.destroy();
+  });
+
   it("reduces vertices for the full unchanged M27 turf workload without removing triangles", () => {
     const course = createM27ReleaseReferenceCourse("parkland");
     const cells = course.tiles.flatMap((terrain, cell) => roles.includes(terrain as typeof roles[number]) ? [cell] : []);

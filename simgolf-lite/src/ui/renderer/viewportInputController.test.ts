@@ -30,7 +30,7 @@ const course = {
   elevations: Array(40 * 24).fill(0),
 } as unknown as Course;
 
-function harness() {
+function harness(connectedCull = false, terrainAbsent = false) {
   const element = new FakeEventSurface();
   const windowTarget = new EventTarget();
   vi.stubGlobal("window", windowTarget);
@@ -71,6 +71,7 @@ function harness() {
   } satisfies ViewportWorldPort;
   const overlay = { invalidate: vi.fn(), setHover: vi.fn(() => true) };
   const terrain = { cull: vi.fn(() => 4), diagnostics: vi.fn(() => ({ chunksVisible: 4 })) };
+  const connectedPositions: { x: number; y: number }[] = [];
   let now = 1000;
   const config: ViewportInputConfig = {
     course,
@@ -98,12 +99,15 @@ function harness() {
     world,
     element: element as unknown as HTMLElement,
     overlay: () => overlay,
-    terrain: () => terrain,
+    terrain: () => terrainAbsent ? null : terrain,
+    cullConnectedSurfaces: connectedCull ? () => {
+      connectedPositions.push({ x: world.position.x, y: world.position.y });
+    } : undefined,
     now: () => now,
     resizeObserver: FakeResizeObserver as unknown as typeof ResizeObserver,
   });
   return {
-    app, config, controller, element, overlay, terrain, windowTarget, world, stageListeners,
+    app, config, controller, element, overlay, terrain, connectedPositions, windowTarget, world, stageListeners,
     advance(ms: number) { now += ms; ticker?.({ deltaMS: ms }); },
     resize(width: number, height: number) {
       element.clientWidth = width;
@@ -130,6 +134,14 @@ function keyEvent(key: string, code: string): Event {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("ViewportInputController", () => {
+  it("runs the optional connected cull after the fresh camera even without a terrain port", () => {
+    const { controller, connectedPositions, terrain } = harness(true, true);
+    controller.initializeDefault();
+    expect(connectedPositions.at(-1)).toEqual({ x: 400, y: 300 });
+    expect(terrain.cull).not.toHaveBeenCalled();
+    controller.destroy();
+  });
+
   it("fits the same tile bounds deterministically at every cardinal rotation", () => {
     const results = ([0, 90, 180, 270] as const).map((rotation) =>
       fitViewportZoomForTileBounds(0, 0, 39, 23, 800, 600, rotation));
