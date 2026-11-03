@@ -590,16 +590,47 @@ interface FlatGroup {
   priority: number;
 }
 
+function flatTerrainCellGroups(course: Course): Pick<LandscapeComponent, "terrain" | "cells">[] {
+  const { tiles, width, height } = course;
+  const size = width * height;
+  if (!Number.isSafeInteger(width) || width <= 0 || !Number.isSafeInteger(height) || height <= 0
+    || !Number.isSafeInteger(size) || tiles.length !== size) {
+    // Retain the original component path for malformed runtime dimensions.
+    return buildLandscapeComponents(tiles, width, height, { cornerRadius: 0 })
+      .filter((component) => component.terrain === "water" || component.terrain === "wetland");
+  }
+
+  const visited = new Uint8Array(size);
+  const groups: Pick<LandscapeComponent, "terrain" | "cells">[] = [];
+  for (let seed = 0; seed < size; seed++) {
+    if (visited[seed]) continue;
+    const terrain = tiles[seed];
+    if (terrain !== "water" && terrain !== "wetland") continue;
+    const cells = [seed];
+    visited[seed] = 1;
+    for (let cursor = 0; cursor < cells.length; cursor++) {
+      const index = cells[cursor];
+      const x = index % width;
+      const y = Math.floor(index / width);
+      for (const { dx, dy } of CARDINALS) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbor = ny * width + nx;
+        if (visited[neighbor] || tiles[neighbor] !== terrain) continue;
+        visited[neighbor] = 1;
+        cells.push(neighbor);
+      }
+    }
+    cells.sort((left, right) => left - right);
+    groups.push({ terrain, cells });
+  }
+  return groups;
+}
+
 function deriveFlatGroups(course: Course): FlatGroup[] {
   const groups: FlatGroup[] = [];
-  const components = buildLandscapeComponents(course.tiles, course.width, course.height, {
-    cornerRadius: 0,
-  });
-  for (const component of components) {
-    if (
-      component.terrain !== "water" &&
-      component.terrain !== "wetland"
-    ) continue;
+  for (const component of flatTerrainCellGroups(course)) {
     const elevations = component.cells.map((index) => course.elevations[index] ?? 0);
     const inset = terrainSurfaceInsetPx(component.terrain) / ELEVATION_STEP_PX;
     groups.push({

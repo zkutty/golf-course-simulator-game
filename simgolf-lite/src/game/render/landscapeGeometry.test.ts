@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Course, Terrain } from "../models/types";
+import { emptyPropertyCourse } from "../property/property";
+import { createM27ReleaseReferenceCourse } from "../testing/referenceCourse";
 import {
   buildLandscapeComponents,
   buildHazardDepthSections,
@@ -34,6 +37,37 @@ function courseWith(
     condition: 1,
     theme: "parkland",
   };
+}
+
+function flatGroupBoundaryCourse(): Course {
+  const width = 7; const height = 5;
+  const tiles = new Array<Terrain>(width * height).fill("rough");
+  for (const [x, y, terrain] of [
+    [1, 1, "water"], [1, 2, "water"], [2, 2, "water"],
+    [3, 2, "wetland"], [3, 3, "wetland"],
+    [6, 2, "water"], [0, 3, "water"], [0, 4, "water"],
+  ] as const) tiles[y * width + x] = terrain;
+  return courseWith(width, height, tiles,
+    Array.from({ length: width * height }, (_, index) => (index * 7 + Math.floor(index / width)) % 11));
+}
+
+function flatGroupPriorityCourse(): Course {
+  const width = 8; const height = 8;
+  const tiles = new Array<Terrain>(width * height).fill("rough");
+  for (const [x, y, terrain] of [
+    [1, 1, "water"], [2, 1, "water"], [1, 2, "water"],
+    [5, 4, "wetland"], [5, 5, "wetland"],
+  ] as const) tiles[y * width + x] = terrain;
+  const course = courseWith(width, height, tiles,
+    Array.from({ length: width * height }, (_, index) => (index * 3 + Math.floor(index / width)) % 13));
+  course.buildings = [{ id: "clubhouse", type: "clubhouse", x: 1, y: 1, tier: 1 }];
+  course.property = { ...emptyPropertyCourse(), assets: [
+    { id: "enabled", kind: "road", name: "Enabled pad", category: "access", tier: 1,
+      x: 1.2, y: 1.4, width: 2.1, height: 1.2, capacity: 0, condition: 1, price: 0, enabled: true },
+    { id: "disabled", kind: "road", name: "Disabled pad", category: "access", tier: 1,
+      x: 4, y: 4, width: 2, height: 2, capacity: 0, condition: 1, price: 0, enabled: false },
+  ] };
+  return course;
 }
 
 describe("connected landscape geometry", () => {
@@ -163,6 +197,27 @@ describe("connected landscape geometry", () => {
 });
 
 describe("shared visual heightfield", () => {
+  it("preserves frozen water/wetland flat-group vertex bytes across boundaries, property priorities and M27", () => {
+    // SHA-256 values come from the unchanged 67e full-component implementation.
+    const priorities = flatGroupPriorityCourse();
+    const swapped = structuredClone(priorities);
+    swapped.property!.assets[0].enabled = false;
+    swapped.property!.assets[1].enabled = true;
+    for (const [course, theme, expected] of [
+      [createM27ReleaseReferenceCourse("parkland"), "parkland", "f9af1f39182bf5ffbe93309afa920d47d96a9b4b03e4eea9e8678f0ae459433a"],
+      [flatGroupBoundaryCourse(), "links", "8592b8686b29390bd60f5a17668eaecddc6aece520a14770efaf3c13ca33d446"],
+      [priorities, "desert", "8def0526c2cb271e0e99160a3a3d55b350b60308c57ef8799c5bd8418c349e7e"],
+      [swapped, "parkland", "46c40e715bff4a36e423af62f5283f0e7dc5e3f1618f2097477aa3e1c2002874"],
+    ] as const) {
+      const before = structuredClone(course);
+      const field = buildVisualHeightfield(course, theme);
+      const bytes = Buffer.from(field.vertices.buffer, field.vertices.byteOffset, field.vertices.byteLength);
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(expected);
+      expect(field.vertices.length).toBe((course.width + 1) * (course.height + 1));
+      expect(course).toEqual(before);
+    }
+  });
+
   it("uses neutral ground below Low joined maintained masks", () => {
     for (const terrain of ["green", "tee", "fairway"] as const) {
       expect(maintainedChunkUnderlay(terrain, true)).toBe("rough");
