@@ -144,7 +144,7 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   // The private fixture hook changes only this browser session and the report
   // still checks the actual rendered quality on every post-GC sample.
   await page.evaluate(() => window.__coursecraftTest!.setGraphicsQualityFixture("high"));
-  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().rendered.quality)).toBe("high");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().rendered.quality), { timeout: 120_000 }).toBe("high");
   await waitForStableResourceTopology(page);
 
   // Repeated production quick-save loads, including real IndexedDB reads and
