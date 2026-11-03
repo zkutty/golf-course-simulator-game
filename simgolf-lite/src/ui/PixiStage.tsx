@@ -1,3 +1,4 @@
+import { createPathPreviewMeasurement, pathPreviewTelemetrySnapshot } from "../game/render/pathPreviewTelemetry";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Pixi's strict-CSP adapter replaces runtime-generated shader/uniform
 // functions with static implementations. Keep this before renderer startup so
@@ -1148,8 +1149,16 @@ export function PixiStage(requestedProps: PixiStageProps) {
   // Rebuild the ghost only for a valid changed post-edit geometry input.
   // Camera/quality/ticker updates reuse this same accepted G footprint.
   const pathPreviewSource = terrainStrokePreview?.pathSource;
-  const resolvePathPreview = useMemo(() => createSurfacePathPreviewResolver(), []);
-  const pathPreviewPlan = useMemo(() => resolvePathPreview(pathPreviewSource), [pathPreviewSource, resolvePathPreview]);
+  const pathPreviewMeasurement = useMemo(() => createPathPreviewMeasurement(), []);
+  const resolvePathPreview = useMemo(() => createSurfacePathPreviewResolver(undefined, pathPreviewMeasurement.observe), [pathPreviewMeasurement]);
+  const pathPreviewResult = useMemo(() => {
+    const plan = resolvePathPreview(pathPreviewSource);
+    if (!plan) pathPreviewMeasurement.clear();
+    // A second same-key calculation (including StrictMode) keeps the first
+    // actual build's scalar receipt until that candidate successfully draws.
+    return { plan, receipt: plan ? pathPreviewMeasurement.receipt(terrainStrokePreview?.pathQuoteMs) : null };
+  }, [pathPreviewMeasurement, pathPreviewSource, resolvePathPreview, terrainStrokePreview?.pathQuoteMs]);
+  const pathPreviewPlan = pathPreviewResult.plan;
   const surfaceEditorSnapshot = useMemo(() => ({
     width: course.width,
     height: course.height,
@@ -1169,6 +1178,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     pathPreview: pathPreviewPlan,
     pathPreviewAffordable: terrainStrokePreview?.affordable,
     pathPreviewCoverage: terrainStrokePreview?.pathAffectedCoverage,
+    pathPreviewReceipt: pathPreviewResult.receipt,
     rotation,
     surfaceHeightAt,
   }), [
@@ -1188,6 +1198,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     selectedSurfaceFeature,
     selectedSurfaceNode,
     pathPreviewPlan,
+    pathPreviewResult.receipt,
     terrainStrokePreview?.affordable,
     terrainStrokePreview?.pathAffectedCoverage,
     surfaceHeightAt,
@@ -1813,6 +1824,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
             targetZoom: viewportCamera().tzoom,
             groundCoverTier: coverTier,
           },
+          pathPreviewCompute: pathPreviewTelemetrySnapshot(),
           pathMaterialCrossSection: {
             ...pathMaterialDiagnosticsRef.current,
             commit: __COMMIT_SHA__,

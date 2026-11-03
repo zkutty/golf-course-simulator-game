@@ -1,3 +1,4 @@
+import type { PathPreviewComputeReceipt, PathPreviewResolution } from "./pathPreviewTelemetry";
 import { buildContinuousPathPlan, continuousPathPlanKey, type ContinuousPathInput, type ContinuousPathPlan } from "../paths/continuousPathPlan";
 import type { TerrainStrokePreview } from "../models/terrainStroke";
 import type { GameState } from "../gameState";
@@ -306,19 +307,38 @@ export type SurfaceEditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" 
 export type SurfaceEditorTerrainPreview = TerrainStrokePreview & {
   readonly surfaceFeature?: SurfaceFeature;
   readonly pathSource?: ContinuousPathInput;
+  readonly pathQuoteMs?: number;
   /** Old/new accepted coverage touched by this edit, never the whole network. */
   readonly pathAffectedCoverage?: readonly number[];
   readonly surfaceCommitAllowed?: boolean;
 };
 
 /** Cache only geometry inputs; camera, ticker and affordability never rebuild G. */
-export function createSurfacePathPreviewResolver(build = buildContinuousPathPlan) {
+export function createSurfacePathPreviewResolver(
+  build = buildContinuousPathPlan,
+  observe?: (resolution: PathPreviewResolution) => void,
+  now: () => number = () => performance.now(),
+) {
   let previous: ContinuousPathPlan | null = null;
   return (source: ContinuousPathInput | undefined): ContinuousPathPlan | null => {
     if (!source) { previous = null; return null; }
-    // Quotes may clone identical geometry as cash/weather changes.
-    if (previous?.key !== continuousPathPlanKey(source)) previous = build(source);
-    return previous;
+    const keyStartedAt = observe ? now() : 0;
+    const key = continuousPathPlanKey(source);
+    const keyMs = observe ? now() - keyStartedAt : 0;
+    if (previous?.key === key) {
+      observe?.({ key, keyMs, buildMs: 0, built: false, succeeded: true });
+      return previous;
+    }
+    const buildStartedAt = observe ? now() : 0;
+    let succeeded = false;
+    try {
+      previous = build(source);
+      succeeded = true;
+      return previous;
+    } finally {
+      // Count real invocations even when a build throws or its render is discarded.
+      observe?.({ key, keyMs, buildMs: now() - buildStartedAt, built: true, succeeded });
+    }
   };
 }
 
@@ -342,6 +362,7 @@ export interface SurfaceEditorRenderSnapshot {
   readonly pathPreview?: ContinuousPathPlan | null;
   readonly pathPreviewAffordable?: boolean;
   readonly pathPreviewCoverage?: readonly number[];
+  readonly pathPreviewReceipt?: PathPreviewComputeReceipt | null;
   readonly rotation: IsoRotation;
   readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
 }
@@ -370,6 +391,7 @@ export function surfaceEditorRevisionDependencies(
     input.pathPreview,
     input.pathPreviewAffordable,
     input.pathPreviewCoverage,
+    input.pathPreviewReceipt,
     input.rotation,
     input.surfaceHeightAt,
   ];

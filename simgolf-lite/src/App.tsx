@@ -1,3 +1,4 @@
+import { resetPathPreviewTelemetry } from "./game/render/pathPreviewTelemetry";
 import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState, useCallback, type CSSProperties } from "react";
 import { formatCurrency } from "./i18n/format";
 import { useI18n } from "./i18n/useI18n";
@@ -3780,7 +3781,7 @@ export default function App() {
         };
       },
       m35Metrics: m35TelemetrySnapshot,
-      resetM35Metrics: resetM35Telemetry,
+      resetM35Metrics: () => { resetM35Telemetry(); resetPathPreviewTelemetry(); },
       setPaintCash: (cash: number) => {
         gameSession.update((current) => ({ ...current, world: { ...current.world, cash } }));
       },
@@ -4852,6 +4853,7 @@ export default function App() {
   }, [course, selected, terrainBrushWidth, terrainTool]);
 
   const getTerrainStrokePreview = useCallback((points: Point[]): SurfaceEditorTerrainPreview => {
+    const startedAt = selected === "path" ? performance.now() : 0;
     const { feature, coveragePoints } = buildTerrainSurfaceFeature(points, openingPaintTargetIds ?? undefined);
     const preview = previewTerrainStroke(
       course,
@@ -4873,8 +4875,9 @@ export default function App() {
     const clipped = rasterizeSurfaceFeatureDetailed(feature, course.width, course.height, accepted);
     const acceptedFeature: SurfaceFeature = { ...feature, coverage: clipped.tiles.map((point) => point.y * course.width + point.x), renderRings: clipped.rings };
     const tiles = [...course.tiles]; for (const point of preview.acceptedTiles) tiles[point.y * course.width + point.x] = point.terrain;
+    const pathSource = { width: course.width, height: course.height, tiles, surfaceIntent: appendSurfaceFeature({ ...course, tiles }, acceptedFeature) };
     return { ...preview, surfaceFeature: acceptedFeature, surfaceCommitAllowed: accepted.size > 0, pathAffectedCoverage: acceptedFeature.coverage,
-      pathSource: { width: course.width, height: course.height, tiles, surfaceIntent: appendSurfaceFeature({ ...course, tiles }, acceptedFeature) } };
+      pathSource, pathQuoteMs: performance.now() - startedAt };
   }, [
     buildTerrainSurfaceFeature,
     openingPaintTargetIds,
@@ -5009,13 +5012,14 @@ export default function App() {
         waterPolicy: world.seasonal?.operations.waterPolicy,
       },
     );
-    recordM35Metric("surfacePreview", performance.now() - startedAt);
+    if (feature.terrain !== "path") recordM35Metric("surfacePreview", performance.now() - startedAt);
     if (!prepared) return null;
     if (feature.terrain !== "path") return prepared.preview;
     const originalCoverage = course.surfaceIntent?.features.find((current) => current.id === feature.id)?.coverage ?? [];
     const pathAffectedCoverage = [...new Set([...originalCoverage, ...prepared.feature.coverage])].sort((a, b) => a - b);
+    const pathSource = { width: course.width, height: course.height, tiles: prepared.tiles, surfaceIntent: prepared.intent };
     return { ...prepared.preview, surfaceFeature: prepared.feature, surfaceCommitAllowed: prepared.commitAllowed, pathAffectedCoverage,
-      pathSource: { width: course.width, height: course.height, tiles: prepared.tiles, surfaceIntent: prepared.intent } };
+      pathSource, pathQuoteMs: performance.now() - startedAt };
   }, [course, world.cash, world.reputation, world.constraints?.protectedTrees, world.seasonal?.forecast, world.seasonal?.operations.waterPolicy, costMult, seasonalPresentation.climate.calendar.season, seasonalPresentation.weather]);
 
   const commitSurfaceFeatureEdit = useCallback((feature: SurfaceFeature) => {

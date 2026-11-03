@@ -1,3 +1,5 @@
+import { m35TelemetrySnapshot, resetM35Telemetry } from "../../../game/render/m35Telemetry";
+import { createPathPreviewMeasurement, pathPreviewTelemetrySnapshot, resetPathPreviewTelemetry } from "../../../game/render/pathPreviewTelemetry";
 import { describe, expect, it, vi } from "vitest";
 import type * as PIXI from "pixi.js";
 import { DEFAULT_STATE } from "../../../game/gameState";
@@ -350,5 +352,42 @@ describe("continuous path editor preview", () => {
     const scene = createSurfaceEditorSceneSystem(container() as unknown as PIXI.Container, () => owned as unknown as PIXI.Graphics);
     scene.create?.(snapshot(1, editor({ width: source.width, height: source.height, tiles: source.tiles, pathPreview: plan, pathPreviewCoverage: plan.coverage, pathPreviewAffordable: false })));
     expect(owned.operations).toContainEqual(["fill", { color: 0xff7664, alpha: .38 }]); expect(owned.poly).toHaveBeenCalled();
+  });
+});
+
+
+describe("measured path preview scene completion", () => {
+  it("adds clip and projection/draw compute once and retains the receipt after a failed draw", () => {
+    resetM35Telemetry(); resetPathPreviewTelemetry();
+    const source = continuousPathFixture("straight"); const plan = buildContinuousPathPlan(source);
+    const measurement = createPathPreviewMeasurement(); measurement.observe({ key: plan.key, keyMs: 2, buildMs: 7, built: true, succeeded: true });
+    const receipt = measurement.receipt(3)!;
+    const owned = graphics(); const layer = container(); let tick = 0;
+    const scene = createSurfaceEditorSceneSystem(layer as unknown as PIXI.Container, () => owned as unknown as PIXI.Graphics, () => tick += 2);
+    const host = new SceneSystemHost([scene]); host.sync(snapshot(1));
+    const state = editor({ width: source.width, height: source.height, tiles: source.tiles, pathPreview: plan, pathPreviewCoverage: plan.coverage, pathPreviewReceipt: receipt });
+    owned.fill.mockImplementationOnce(() => { throw new Error("draw failed"); });
+    expect(() => host.sync(snapshot(2, state))).toThrow("draw failed");
+    expect(pathPreviewTelemetrySnapshot().completedCount).toBe(0); expect(m35TelemetrySnapshot().surfacePreview.count).toBe(0);
+    expect(host.sync(snapshot(2, state))).toEqual(["surfaceEditor"]);
+    expect(pathPreviewTelemetrySnapshot().samples).toEqual([{ ...receipt, clipMs: 2, drawMs: 2, totalMs: 16 }]);
+    expect(m35TelemetrySnapshot().surfacePreview).toEqual({ count: 1, meanMs: 16, p95Ms: 16, maxMs: 16 });
+    host.sync(snapshot(3, { ...state, rotation: 90, graphicsQuality: "low" }));
+    expect(pathPreviewTelemetrySnapshot().completedCount).toBe(1);
+    host.dispose(); host.dispose();
+    expect(owned.destroy).toHaveBeenCalledTimes(1);
+    const recreated = graphics(); const next = createSurfaceEditorSceneSystem(layer as unknown as PIXI.Container, () => recreated as unknown as PIXI.Graphics, () => tick += 2);
+    next.create?.(snapshot(4, state));
+    expect(pathPreviewTelemetrySnapshot().completedCount).toBe(1); next.destroy?.();
+  });
+
+  it("does not complete mismatched or nonpaint candidates", () => {
+    resetM35Telemetry(); resetPathPreviewTelemetry();
+    const source = continuousPathFixture("straight"); const plan = buildContinuousPathPlan(source);
+    const measurement = createPathPreviewMeasurement(); measurement.observe({ key: "different", keyMs: 2, buildMs: 7, built: true, succeeded: true });
+    const owned = graphics(); const scene = createSurfaceEditorSceneSystem(container() as unknown as PIXI.Container, () => owned as unknown as PIXI.Graphics);
+    const state = editor({ width: source.width, height: source.height, tiles: source.tiles, pathPreview: plan, pathPreviewCoverage: plan.coverage, pathPreviewReceipt: measurement.receipt(3) });
+    scene.create?.(snapshot(1, state)); scene.update?.(snapshot(2, { ...state, editorMode: "BUILDING" }));
+    expect(pathPreviewTelemetrySnapshot().completedCount).toBe(0); expect(m35TelemetrySnapshot().surfacePreview.count).toBe(0); scene.destroy?.();
   });
 });

@@ -1,3 +1,4 @@
+import { completePathPreviewCompute } from "../../../game/render/pathPreviewTelemetry";
 import * as PIXI from "pixi.js";
 import { buildGreenSurfaceOverlayCommands } from "../../../game/greens/greenSurfaceRender";
 import type { Course, Point, SurfaceFeature } from "../../../game/models/types";
@@ -227,18 +228,31 @@ function drawSurfaceEditor(
 export function createSurfaceEditorSceneSystem(
   layer: PIXI.Container,
   createGraphics: () => PIXI.Graphics = () => new PIXI.Graphics(),
+  now: () => number = () => performance.now(),
 ): RenderSceneSystem {
   let graphics: PIXI.Graphics | null = null;
   let previousPlan: ContinuousPathPlan | null | undefined;
   let previousFootprint = "";
   let previewPolygons: readonly (readonly Point[])[] = [];
+  let previewClipMs = 0;
   const resolvePreview = (state: SurfaceEditorRenderSnapshot | undefined) => {
+    const startedAt = state?.pathPreview ? now() : 0;
     const footprint = `${state?.width}:${state?.height}:${state?.pathPreviewCoverage?.join(",") ?? ""}`;
     if (previousPlan !== state?.pathPreview || previousFootprint !== footprint) {
+      const polygons = surfacePathPreviewPolygons(state?.pathPreview, state?.pathPreviewCoverage, state?.width ?? 0, state?.height ?? 0);
+      previewClipMs = state?.pathPreview ? now() - startedAt : 0;
       previousPlan = state?.pathPreview; previousFootprint = footprint;
-      previewPolygons = surfacePathPreviewPolygons(previousPlan, state?.pathPreviewCoverage, state?.width ?? 0, state?.height ?? 0);
+      previewPolygons = polygons;
     }
     return previewPolygons;
+  };
+
+  const draw = (owned: PIXI.Graphics, state: SurfaceEditorRenderSnapshot | undefined) => {
+    const polygons = resolvePreview(state);
+    const receipt = state?.editorMode === "PAINT" && state.pathPreview?.key === state.pathPreviewReceipt?.key ? state.pathPreviewReceipt : null;
+    const startedAt = receipt ? now() : 0;
+    drawSurfaceEditor(owned, state, polygons);
+    if (receipt) completePathPreviewCompute(receipt, previewClipMs, now() - startedAt);
   };
 
   return {
@@ -247,11 +261,11 @@ export function createSurfaceEditorSceneSystem(
       const next = createGraphics();
       layer.addChild(next);
       graphics = next;
-      drawSurfaceEditor(next, snapshot.surfaceEditor, resolvePreview(snapshot.surfaceEditor));
+      draw(next, snapshot.surfaceEditor);
     },
     update(snapshot: RenderSnapshot) {
       if (!graphics) throw new Error("Surface editor scene updated before creation");
-      drawSurfaceEditor(graphics, snapshot.surfaceEditor, resolvePreview(snapshot.surfaceEditor));
+      draw(graphics, snapshot.surfaceEditor);
     },
     destroy() {
       const owned = graphics;
@@ -259,6 +273,7 @@ export function createSurfaceEditorSceneSystem(
       previousPlan = undefined;
       previousFootprint = "";
       previewPolygons = [];
+      previewClipMs = 0;
       if (!owned) return;
       if (owned.parent) owned.parent.removeChild(owned);
       owned.destroy();
