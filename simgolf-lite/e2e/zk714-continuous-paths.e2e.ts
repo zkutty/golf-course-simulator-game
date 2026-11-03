@@ -197,14 +197,25 @@ async function publicLoad(page: Page, file: SaveFile) {
 }
 async function rotate(page: Page, rotation: IsoRotation) {
   const before = await surface(page), beforeCash = await cash(page);
+  const rotationState = () => page.evaluate(() => {
+    const api = window.__coursecraftPixiTest;
+    const input = api?.viewportInputState();
+    const material = (api?.rendererAtlasState() as unknown as { pathMaterialCrossSection?: PathDiagnostic } | undefined)?.pathMaterialCrossSection;
+    return { attached: input?.attached ?? false, committed: input?.rotation.committed ?? null,
+      tweening: input?.rotation.tweening ?? true, rendered: material?.camera.rotation ?? null };
+  });
+  // App's minimap camera report can lag immediate reduced-motion rotation.
+  // Wait for the actual controller and renderer to agree before native input.
+  await expect.poll(async () => { const state = await rotationState(); return state.attached && !state.tweening && state.committed !== null && state.rendered === state.committed; }).toBe(true);
   for (let i = 0; i < 4; i++) {
-    const current = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation);
+    const current = (await rotationState()).committed;
+    if (current === null) throw new Error("Missing committed controller rotation");
     if (current === rotation) return;
     // Focus a public workspace button: a canvas click is an editor gesture.
     // Selecting this workspace changes only workspace/URL, never the tool.
     await page.getByTestId("workspace-design").click();
     await page.keyboard.press("e");
-    await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation)).toBe((current + 90) % 360);
+    await expect.poll(rotationState).toEqual({ attached: true, committed: (current + 90) % 360, tweening: false, rendered: (current + 90) % 360 });
     expect(await surface(page), "rotation must preserve all authoritative surface state").toEqual(before);
     expect(await cash(page), "rotation must preserve cash").toBe(beforeCash);
   }

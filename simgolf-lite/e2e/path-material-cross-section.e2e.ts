@@ -197,7 +197,16 @@ async function acceptPixelRotation(page: Page, rotation: IsoRotation): Promise<v
     expect(actual.cash, `${step}: cash is unchanged`).toBe(initialCash);
     expect((await pathDiagnostic(page)).planKey, `${step}: original plan identity is unchanged`).toBe(plan.key);
   };
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation)).toBe(0);
+  const assertActualRotation = async (expected: IsoRotation) => {
+    // Reduced-motion commits update the controller/Pixi rotation immediately;
+    // App's minimap publication can remain unchanged until later camera motion.
+    await expect.poll(() => page.evaluate(() => {
+      const state = window.__coursecraftPixiTest!.viewportInputState();
+      return { attached: state?.attached, committed: state?.rotation.committed, tweening: state?.rotation.tweening };
+    })).toEqual({ attached: true, committed: expected, tweening: false });
+    await expect.poll(async () => (await pathDiagnostic(page)).camera.rotation).toBe(expected);
+  };
+  await assertActualRotation(0);
   await expect.poll(async () => (await pathDiagnostic(page)).planKey).toBe(plan.key);
   // Public WorkspaceNav button calls only selectWorkspace (workspace state/URL).
   // Its focus receives the existing window keyboard binding without painting.
@@ -205,7 +214,7 @@ async function acceptPixelRotation(page: Page, rotation: IsoRotation): Promise<v
   await assertRotationIdentity("workspace design focus");
   for (let step = 90; step <= rotation; step += 90) {
     await page.keyboard.press("e");
-    await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation)).toBe(step);
+    await assertActualRotation(step as IsoRotation);
     await assertRotationIdentity(`rotation ${step}`);
   }
     for (const view of [{ label: "normal", quality: "medium" as const, zoom: 1, focus: { x: 24, y: 18 } }, { label: "close", quality: "high" as const, zoom: 2.25, focus: { x: 9, y: 12.5 } }]) {
