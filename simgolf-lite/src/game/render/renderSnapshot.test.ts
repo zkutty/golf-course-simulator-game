@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { buildContinuousPathPlan } from "../paths/continuousPathPlan";
+import { continuousPathFixture } from "../testing/continuousPathFixtures";
+import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_STATE, type GameState } from "../gameState";
 import type { PlayerProWorldDisplayPresentation } from "../playerPro/socialPresentation";
 import {
   architectureOverlayRevisionDependencies,
   changedRenderSystems,
   createRenderSnapshot,
+  createSurfacePathPreviewResolver,
   habitatFieldRevisionDependencies,
   holeMarkersRevisionDependencies,
   mobilityEntitiesRevisionDependencies,
@@ -480,6 +483,10 @@ describe("RenderSnapshot invalidation contract", () => {
       .toBe((initial.surfaceEditor ?? 0) + 3);
     expect(tracker.update(dependencies({ elevations: [...course.elevations] })).surfaceEditor)
       .toBe((initial.surfaceEditor ?? 0) + 4);
+    const preview = buildContinuousPathPlan(continuousPathFixture("straight"));
+    expect(tracker.update(dependencies({ pathPreview: preview })).surfaceEditor).toBe((initial.surfaceEditor ?? 0) + 5);
+    expect(tracker.update(dependencies({ pathPreview: preview, pathPreviewAffordable: false })).surfaceEditor).toBe((initial.surfaceEditor ?? 0) + 6);
+    expect(tracker.update(dependencies({ pathPreview: preview, pathPreviewAffordable: false, pathPreviewCoverage: [66] })).surfaceEditor).toBe((initial.surfaceEditor ?? 0) + 7);
   });
 
   it("isolates editor, terrain, marker, live, atmosphere, and viewport revisions", () => {
@@ -513,5 +520,24 @@ describe("RenderSnapshot invalidation contract", () => {
 
     const viewport = snapshot(DEFAULT_STATE, { viewportInputRevision: 1 });
     expect(changedRenderSystems(first, viewport)).toEqual(["viewport-input"]);
+  });
+});
+
+
+describe("surface path preview geometry cache", () => {
+  it("reuses identical inputs across frame, camera, quality and quote-only renders", () => {
+    const source = continuousPathFixture("straight");
+    const build = vi.fn(buildContinuousPathPlan);
+    const resolve = createSurfacePathPreviewResolver(build);
+    const first = resolve(source);
+    for (const rotation of [0, 1, 2, 3] as const) {
+      const snapshot = { rotation, quality: "low", cash: rotation * 100, source: { ...source, tiles: [...source.tiles] } };
+      expect(resolve(snapshot.source)).toBe(first);
+    }
+    expect(build).toHaveBeenCalledTimes(1);
+    const changed = { ...source, tiles: [...source.tiles] }; changed.tiles[4 * source.width + 11] = "path";
+    expect(resolve(changed)).not.toBe(first); expect(build).toHaveBeenCalledTimes(2);
+    expect(resolve(undefined)).toBeNull();
+    expect(resolve(changed)).not.toBe(first); expect(build).toHaveBeenCalledTimes(3);
   });
 });

@@ -6,6 +6,9 @@ import {
   GREEN_SURFACE_SAMPLES_PER_AXIS,
   type GreenSurfaceV1,
 } from "../../../game/greens/greenSurface";
+import { buildContinuousPathPlan } from "../../../game/paths/continuousPathPlan";
+import { continuousPathFixture } from "../../../game/testing/continuousPathFixtures";
+import { pointInLandscapeRing, ringSignedArea } from "../../../game/render/landscapeGeometry";
 import type { SurfaceFeature } from "../../../game/models/types";
 import { worldToIso } from "../../../game/render/iso";
 import type {
@@ -13,7 +16,7 @@ import type {
   SurfaceEditorRenderSnapshot,
 } from "../../../game/render/renderSnapshot";
 import { SceneSystemHost } from "../SceneSystemHost";
-import { createSurfaceEditorSceneSystem } from "./surfaceEditorScene";
+import { createSurfaceEditorSceneSystem, surfacePathPreviewPolygons } from "./surfaceEditorScene";
 
 type Operation = readonly [string, ...unknown[]];
 
@@ -34,6 +37,7 @@ interface FakeGraphics extends FakeDisplay {
   clearCount: number;
   clear: ReturnType<typeof vi.fn>;
   poly: ReturnType<typeof vi.fn>;
+  cut: ReturnType<typeof vi.fn>;
   fill: ReturnType<typeof vi.fn>;
   stroke: ReturnType<typeof vi.fn>;
   circle: ReturnType<typeof vi.fn>;
@@ -78,6 +82,7 @@ function graphics(): FakeGraphics {
     return value;
   });
   value.poly = record("poly");
+  value.cut = record("cut");
   value.fill = record("fill");
   value.stroke = record("stroke");
   value.circle = record("circle");
@@ -185,6 +190,29 @@ describe("surface editor scene ownership", () => {
     expect(sibling.destroy).not.toHaveBeenCalled();
   });
 
+  it("releases the derived preview cache on idempotent teardown and rebuilds after recreation", () => {
+    const source = continuousPathFixture("straight"); const plan = buildContinuousPathPlan(source);
+    const readLayers = vi.fn(() => plan.layers);
+    const observedPlan = { ...plan, get layers() { return readLayers(); } };
+    const state = editor({ width: source.width, height: source.height, tiles: source.tiles, pathPreview: observedPlan, pathPreviewCoverage: plan.coverage });
+    const first = graphics(); const second = graphics(); const layer = container();
+    const factory = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const scene = createSurfaceEditorSceneSystem(layer as unknown as PIXI.Container, factory);
+    scene.create?.(snapshot(1, state));
+    const firstPolygons = first.operations.filter(([name]) => name === "poly");
+    expect(readLayers).toHaveBeenCalledTimes(1);
+    scene.update?.(snapshot(2, { ...state, rotation: 90, graphicsQuality: "low" }));
+    expect(readLayers).toHaveBeenCalledTimes(1);
+    scene.destroy?.(); scene.destroy?.();
+    expect(first.destroy).toHaveBeenCalledTimes(1); expect(layer.children).toEqual([]);
+    scene.create?.(snapshot(3, state));
+    expect(readLayers).toHaveBeenCalledTimes(2);
+    expect(second.operations.filter(([name]) => name === "poly")).toEqual(firstPolygons);
+    expect(layer.children).toEqual([second]);
+    scene.destroy?.(); scene.destroy?.();
+    expect(second.destroy).toHaveBeenCalledTimes(1); expect(layer.children).toEqual([]);
+  });
+
   it("preserves green shading, contour, fall-line, arrow, palette, quality, and exact projection behavior", () => {
     const layer = container();
     const owned = graphics();
@@ -275,5 +303,52 @@ describe("surface editor scene ownership", () => {
       && (options as { color?: number }).color === 0x5ea8ff)).toHaveLength(2);
     expect(owned.operations.filter(([name, options]) => name === "stroke"
       && (options as { color?: number }).color === 0xfff0b0)).toHaveLength(2);
+  });
+});
+
+describe("continuous path editor preview", () => {
+  it("projects the final G triangles while retaining a loop's empty interior", () => {
+    const source = continuousPathFixture("loop"); const plan = buildContinuousPathPlan(source); const layer = container(); const owned = graphics();
+    const polygons = surfacePathPreviewPolygons(plan, plan.coverage, source.width, source.height);
+    const scene = createSurfaceEditorSceneSystem(layer as unknown as PIXI.Container, () => owned as unknown as PIXI.Graphics);
+    scene.create?.(snapshot(1, editor({ width: source.width, height: source.height, tiles: source.tiles, pathPreview: plan, pathPreviewCoverage: plan.coverage, pathPreviewAffordable: true })));
+    expect(polygons.length).toBeGreaterThan(0);
+    expect(polygons.some((polygon) => pointInLandscapeRing(polygon, { x: 7.5, y: 7.5 }))).toBe(false);
+    expect(owned.operations.filter(([name]) => name === "poly")).toEqual(polygons.map((polygon) => ["poly", polygon.flatMap((point) => { const p = worldToIso(point.x, point.y, 0, 0); return [p.x, p.y]; })]));
+    let finalArea = 0;
+    for (const mesh of plan.layers) for (let index = 0; index < mesh.indices.length; index += 3) {
+      const triangle = mesh.indices.slice(index, index + 3).map((vertex) => ({ x: mesh.positions[vertex * 2], y: mesh.positions[vertex * 2 + 1] }));
+      finalArea += Math.abs(ringSignedArea(triangle));
+    }
+    expect(polygons.reduce((sum, polygon) => sum + Math.abs(ringSignedArea(polygon)), 0)).toBeCloseTo(finalArea, 10);
+    expect(owned.operations).toContainEqual(["fill", { color: 0xffe28a, alpha: .38 }]);
+  });
+  it("does not highlight an unrelated path in the final post-edit plan", () => {
+    const source = continuousPathFixture("straight");
+    const affected = source.tiles.flatMap((terrain, index) => terrain === "path" ? [index] : []);
+    for (let x = 2; x <= 10; x++) source.tiles[10 * source.width + x] = "path";
+    const plan = buildContinuousPathPlan(source);
+    const polygons = surfacePathPreviewPolygons(plan, affected, source.width, source.height);
+    expect(plan.coverage.some((index) => Math.floor(index / source.width) === 10)).toBe(true);
+    expect(polygons.length).toBeGreaterThan(0);
+    expect(polygons.every((polygon) => polygon.every((point) => point.y >= 4 && point.y <= 5))).toBe(true);
+    const owned = graphics();
+    const scene = createSurfaceEditorSceneSystem(container() as unknown as PIXI.Container, () => owned as unknown as PIXI.Graphics);
+    scene.create?.(snapshot(1, editor({ width: source.width, height: source.height, tiles: source.tiles, pathPreview: plan, pathPreviewCoverage: affected })));
+    expect(owned.poly).toHaveBeenCalledTimes(polygons.length);
+  });
+  it("clips a crossing final triangle to affected coverage instead of selecting its centroid", () => {
+    const source = continuousPathFixture("empty"); const plan = buildContinuousPathPlan(source);
+    const crossing = { ...plan, layers: [{ role: "core" as const, rings: [], positions: [0, 0, 2, 0, 0, 2], indices: [0, 1, 2] }] };
+    const polygons = surfacePathPreviewPolygons(crossing, [0], source.width, source.height);
+    expect(polygons.reduce((sum, polygon) => sum + Math.abs(ringSignedArea(polygon)), 0)).toBeCloseTo(1, 10);
+    expect(polygons.flat().every((point) => point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1)).toBe(true);
+    expect(surfacePathPreviewPolygons(crossing, [], source.width, source.height)).toEqual([]);
+  });
+  it("uses unaffordable feedback while preserving the identical clipped footprint", () => {
+    const source = continuousPathFixture("straight"); const plan = buildContinuousPathPlan(source); const owned = graphics();
+    const scene = createSurfaceEditorSceneSystem(container() as unknown as PIXI.Container, () => owned as unknown as PIXI.Graphics);
+    scene.create?.(snapshot(1, editor({ width: source.width, height: source.height, tiles: source.tiles, pathPreview: plan, pathPreviewCoverage: plan.coverage, pathPreviewAffordable: false })));
+    expect(owned.operations).toContainEqual(["fill", { color: 0xff7664, alpha: .38 }]); expect(owned.poly).toHaveBeenCalled();
   });
 });

@@ -40,7 +40,6 @@ import {
   supersedePendingAtlasLoad,
   type AtlasRenderContext,
 } from "../render/atlas";
-import type { TerrainStrokePreview } from "../game/models/terrainStroke";
 import type {
   FineGreenBrush,
   FineGreenRadius,
@@ -141,6 +140,8 @@ import {
   surfaceCareVisualSignatures,
 } from "../game/conditions/surfaceCare";
 import {
+  type SurfaceEditorTerrainPreview,
+  createSurfacePathPreviewResolver,
   RenderRevisionTracker,
   architectureOverlayRevisionDependencies,
   habitatFieldRevisionDependencies,
@@ -622,10 +623,12 @@ export interface PixiStageProps {
   draftTee: Point | null;
   draftGreen: Point | null;
   onClickTile: (x: number, y: number) => void;
-  onPreviewTerrainStroke?: (points: Point[]) => TerrainStrokePreview;
+  onPreviewTerrainStroke?: (points: Point[]) => SurfaceEditorTerrainPreview;
   onCommitTerrainStroke?: (points: Point[]) => void;
   terrainTool?: TerrainAuthoringTool;
-  onPreviewSurfaceFeatureEdit?: (feature: SurfaceFeature) => TerrainStrokePreview | null;
+  onPreviewSurfaceFeatureEdit?: (feature: SurfaceFeature) => SurfaceEditorTerrainPreview | null;
+  surfaceWidthPreview?: SurfaceEditorTerrainPreview | null;
+  onSurfaceFeatureSelectionChange?: (featureId: string | null, dragging: boolean) => void;
   onCommitSurfaceFeatureEdit?: (feature: SurfaceFeature) => void;
   onPreviewFineGreenStroke?: (points: Point[]) => FineGreenSculptPreview;
   onCommitFineGreenStroke?: (points: Point[]) => void;
@@ -971,7 +974,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const viewportInputControllerRef = useRef<ViewportInputController | null>(null);
   const [flyoverCard, setFlyoverCard] = useState<{ hole: number; par: number; yards: number } | null>(null);
   const [rendererError, setRendererError] = useState(false);
-  const [terrainStrokePreview, setTerrainStrokePreview] = useState<TerrainStrokePreview | null>(null);
+  const [controllerTerrainStrokePreview, setTerrainStrokePreview] = useState<SurfaceEditorTerrainPreview | null>(null);
+  const terrainStrokePreview = props.surfaceWidthPreview ?? controllerTerrainStrokePreview;
   const [fineGreenStrokePreview, setFineGreenStrokePreview] = useState<FineGreenSculptPreview | null>(null);
   const [clickSplineDraft, setClickSplineDraft] = useState<Point[]>([]);
   const [clickSplineHover, setClickSplineHover] = useState<Point | null>(null);
@@ -990,6 +994,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     onCommitTerrainStroke,
     onPreviewSurfaceFeatureEdit,
     onCommitSurfaceFeatureEdit,
+    onSurfaceFeatureSelectionChange,
     onPreviewFineGreenStroke,
     onCommitFineGreenStroke,
     selectedTerrain,
@@ -1065,9 +1070,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const terrainTool = props.terrainTool ?? "curve";
   const selectedSurfaceFeature = useMemo(() => (
     surfaceEditDraft
+    ?? props.surfaceWidthPreview?.surfaceFeature
     ?? course.surfaceIntent?.features.find((feature) => feature.id === selectedSurfaceFeatureId)
     ?? null
-  ), [course.surfaceIntent, selectedSurfaceFeatureId, surfaceEditDraft]);
+  ), [course.surfaceIntent, props.surfaceWidthPreview, selectedSurfaceFeatureId, surfaceEditDraft]);
 
   const visualHeightfield = useMemo(() => visualHeightfieldForRenderer(
     course.tiles,
@@ -1139,6 +1145,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
   // ZK-679 first slice: scene systems consume one typed snapshot. Each
   // revision list mirrors only the inputs read by that system, so unrelated
   // React renders no longer imply that every extracted layer must rebuild.
+  // Rebuild the ghost only for a valid changed post-edit geometry input.
+  // Camera/quality/ticker updates reuse this same accepted G footprint.
+  const pathPreviewSource = terrainStrokePreview?.pathSource;
+  const resolvePathPreview = useMemo(() => createSurfacePathPreviewResolver(), []);
+  const pathPreviewPlan = useMemo(() => resolvePathPreview(pathPreviewSource), [pathPreviewSource, resolvePathPreview]);
   const surfaceEditorSnapshot = useMemo(() => ({
     width: course.width,
     height: course.height,
@@ -1155,6 +1166,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     splineHover: clickSplineHover,
     selectedFeature: selectedSurfaceFeature,
     selectedNode: selectedSurfaceNode,
+    pathPreview: pathPreviewPlan,
+    pathPreviewAffordable: terrainStrokePreview?.affordable,
+    pathPreviewCoverage: terrainStrokePreview?.pathAffectedCoverage,
     rotation,
     surfaceHeightAt,
   }), [
@@ -1173,6 +1187,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     rotation,
     selectedSurfaceFeature,
     selectedSurfaceNode,
+    pathPreviewPlan,
+    terrainStrokePreview?.affordable,
+    terrainStrokePreview?.pathAffectedCoverage,
     surfaceHeightAt,
     terrainTool,
   ]);
@@ -1559,6 +1576,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         setSelectedSurfaceFeatureId(presentation.selectedFeatureId);
         setSelectedSurfaceNode(presentation.selectedNode);
         setSurfaceEditDraft(presentation.surfaceDraft);
+        onSurfaceFeatureSelectionChange?.(presentation.selectedFeatureId, presentation.surfaceDraft !== null);
       },
     },
     deriveFrame: (mode, viewport, nextRotation) => {
@@ -1572,7 +1590,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     onCommitTerrainStroke, onPreviewFineGreenStroke, onPreviewSurfaceFeatureEdit,
     onPreviewTerrainStroke, onViewChange, onPickGolfer, props.animationsEnabled, props.cameraSmoothing, props.edgeScroll,
     props.edgeScrollSpeed, props.graphicsQuality, props.keybindings, props.onCameraUpdate,
-    props.onOpeningFollowCanceled, props.openingFollow, props.openingMarker,
+    props.onOpeningFollowCanceled, onSurfaceFeatureSelectionChange, props.openingFollow, props.openingMarker,
     props.playableShotMode, props.resolutionScale, props.showGolfers, rotation,
     selectedTeeSet, selectedTerrain, showGridOverlays, surfaceHeightAt, terrainTool,
     liveActive, golfersRef, worldCash]);

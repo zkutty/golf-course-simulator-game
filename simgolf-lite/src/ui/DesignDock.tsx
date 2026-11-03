@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from "react";
+import { PATH_WIDTH_PRESETS } from "../game/paths/continuousPathPlan";
 import type { Texture } from "pixi.js";
 import type { ResolvedGraphicsQuality } from "../game/render/graphicsQuality";
 import type {
@@ -55,6 +56,12 @@ interface DesignDockProps {
   onTerrainTool: (tool: TerrainAuthoringTool) => void;
   terrainBrushWidth: number;
   onTerrainBrushWidth: (width: number) => void;
+  pathEditWidth?: number | null;
+  pathWidthDraft?: number | null;
+  pathWidthCanApply?: boolean;
+  onPathWidthPreview?: (width: number) => void;
+  onPathWidthApply?: () => void;
+  onPathWidthCancel?: () => void;
   onUndo: () => void;
   onRedo: () => void;
   collapseSignal?: number;
@@ -277,6 +284,37 @@ function itemAriaLabel(
   ].filter(Boolean).join(". ");
 }
 
+interface PathWidthControlProps {
+  width: number;
+  disabled?: boolean;
+  pending?: boolean;
+  canApply?: boolean;
+  onChange: (width: number) => void;
+  onApply?: () => void;
+  onCancel?: () => void;
+}
+const PATH_WIDTH_LABEL_KEYS = { walking: "designDock.pathWidth.walking", cart: "designDock.pathWidth.cart", wide: "designDock.pathWidth.wide" } as const;
+
+/** Shared saved envelope presets; a pending change remains an editor draft. */
+export function PathWidthControl(props: PathWidthControlProps) {
+  const t = useContext(I18nContext)?.t ?? translateCurrent;
+  const custom = !PATH_WIDTH_PRESETS.some((preset) => preset.envelopeWidth === props.width);
+  return <>
+    <label className="cc-design-toolbar__width" style={{ gridTemplateColumns: "auto minmax(90px, 1fr)" }}>
+      <span>{t("designDock.pathWidth")}</span>
+      <select aria-label={t("designDock.pathWidth")} data-testid="design-path-width" value={props.width}
+        disabled={props.disabled} onChange={(event) => props.onChange(Number(event.target.value))}>
+        {custom && <option value={props.width}>{t("designDock.pathWidth.custom")}</option>}
+        {PATH_WIDTH_PRESETS.map((preset) => <option key={preset.id} value={preset.envelopeWidth}>{t(PATH_WIDTH_LABEL_KEYS[preset.id])}</option>)}
+      </select>
+    </label>
+    {props.pending && <div className="cc-design-toolbar__history">
+      <button type="button" data-testid="design-path-width-apply" disabled={props.disabled || !props.canApply} onClick={props.onApply}>{t("designDock.pathWidth.apply")}</button>
+      <button type="button" data-testid="design-path-width-cancel" onClick={props.onCancel}>{t("designDock.pathWidth.cancel")}</button>
+    </div>}
+  </>;
+}
+
 export function DesignDock(props: DesignDockProps) {
   const t = useContext(I18nContext)?.t ?? translateCurrent;
   const selectedCategory = DESIGN_CATEGORIES.find((category) =>
@@ -456,7 +494,14 @@ export function DesignDock(props: DesignDockProps) {
                   </button>
                 ))}
               </div>
-              <label className="cc-design-toolbar__width">
+              {(props.selectedItemId === "terrain:path" || props.pathEditWidth != null) ? <PathWidthControl
+                width={props.terrainTool === "edit" ? props.pathWidthDraft ?? props.pathEditWidth ?? props.terrainBrushWidth : props.terrainBrushWidth}
+                disabled={props.terrainTool === "area" || (props.terrainTool === "edit" && props.pathEditWidth == null)}
+                pending={props.terrainTool === "edit" && props.pathWidthDraft != null}
+                canApply={props.pathWidthCanApply}
+                onChange={(width) => props.terrainTool === "edit" ? props.onPathWidthPreview?.(width) : props.onTerrainBrushWidth(width)}
+                onApply={props.onPathWidthApply} onCancel={props.onPathWidthCancel}
+              /> : <label className="cc-design-toolbar__width">
                 <span>{t("designDock.width")}</span>
                 <input
                   aria-label={t("designDock.widthAria")}
@@ -469,7 +514,7 @@ export function DesignDock(props: DesignDockProps) {
                   onChange={(event) => props.onTerrainBrushWidth(Number(event.target.value))}
                 />
                 <output>{props.terrainBrushWidth}</output>
-              </label>
+              </label>}
               <div className="cc-design-toolbar__history" role="group" aria-label={t("designDock.historyAria")} data-tutorial-target="terrain-history">
                 <button type="button" aria-label={t("terrainEdit.undo")} onClick={props.onUndo}>↶</button>
                 <button type="button" aria-label={t("terrainEdit.redo")} onClick={props.onRedo}>↷</button>

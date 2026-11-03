@@ -1,3 +1,5 @@
+import { buildContinuousPathPlan, continuousPathPlanKey, type ContinuousPathInput, type ContinuousPathPlan } from "../paths/continuousPathPlan";
+import type { TerrainStrokePreview } from "../models/terrainStroke";
 import type { GameState } from "../gameState";
 import type { ColorVisionMode } from "../onboarding/profile";
 import type { Course, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../models/types";
@@ -300,6 +302,26 @@ export function terrainWaterRevisionDependencies(
 
 export type SurfaceEditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 
+/** Existing tile quote plus the exact post-edit path input; transient, never saved. */
+export type SurfaceEditorTerrainPreview = TerrainStrokePreview & {
+  readonly surfaceFeature?: SurfaceFeature;
+  readonly pathSource?: ContinuousPathInput;
+  /** Old/new accepted coverage touched by this edit, never the whole network. */
+  readonly pathAffectedCoverage?: readonly number[];
+  readonly surfaceCommitAllowed?: boolean;
+};
+
+/** Cache only geometry inputs; camera, ticker and affordability never rebuild G. */
+export function createSurfacePathPreviewResolver(build = buildContinuousPathPlan) {
+  let previous: ContinuousPathPlan | null = null;
+  return (source: ContinuousPathInput | undefined): ContinuousPathPlan | null => {
+    if (!source) { previous = null; return null; }
+    // Quotes may clone identical geometry as cash/weather changes.
+    if (previous?.key !== continuousPathPlanKey(source)) previous = build(source);
+    return previous;
+  };
+}
+
 /** Exact persisted, preview, editor, and projection inputs read by the surface-editor scene. */
 export interface SurfaceEditorRenderSnapshot {
   readonly width: number;
@@ -317,6 +339,9 @@ export interface SurfaceEditorRenderSnapshot {
   readonly splineHover: Point | null;
   readonly selectedFeature: SurfaceFeature | null;
   readonly selectedNode: number | null;
+  readonly pathPreview?: ContinuousPathPlan | null;
+  readonly pathPreviewAffordable?: boolean;
+  readonly pathPreviewCoverage?: readonly number[];
   readonly rotation: IsoRotation;
   readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
 }
@@ -342,6 +367,9 @@ export function surfaceEditorRevisionDependencies(
     input.splineHover,
     input.selectedFeature,
     input.selectedNode,
+    input.pathPreview,
+    input.pathPreviewAffordable,
+    input.pathPreviewCoverage,
     input.rotation,
     input.surfaceHeightAt,
   ];
