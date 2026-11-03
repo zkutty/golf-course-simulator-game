@@ -196,12 +196,17 @@ async function publicLoad(page: Page, file: SaveFile) {
   return loaded;
 }
 async function rotate(page: Page, rotation: IsoRotation) {
+  const before = await surface(page), beforeCash = await cash(page);
   for (let i = 0; i < 4; i++) {
     const current = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation);
     if (current === rotation) return;
-    await page.locator("canvas").first().click({ position: { x: 12, y: 12 } });
+    // Focus a public workspace button: a canvas click is an editor gesture.
+    // Selecting this workspace changes only workspace/URL, never the tool.
+    await page.getByTestId("workspace-design").click();
     await page.keyboard.press("e");
     await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation)).toBe((current + 90) % 360);
+    expect(await surface(page), "rotation must preserve all authoritative surface state").toEqual(before);
+    expect(await cash(page), "rotation must preserve cash").toBe(beforeCash);
   }
   throw new Error(`Unable to reach rotation ${rotation}`);
 }

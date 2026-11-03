@@ -166,7 +166,7 @@ function median(values: readonly number[]) {
 }
 
 
-test("P714 [pixel] narrow original three-material vocabulary and final-triangle confinement through four rotations", async ({ page }) => {
+async function acceptPixelRotation(page: Page, rotation: IsoRotation): Promise<void> {
   test.setTimeout(480_000); expect(commit).toMatch(/^[a-f0-9]{40}$/); await mkdir(outputRoot, { recursive: true });
   await page.addInitScript(() => localStorage.setItem("coursecraft_app_profile_v5", JSON.stringify({ version: 5, tutorialOffered: true, tutorialCompleted: true, accessibility: { reducedMotion: true } })));
   await page.emulateMedia({ reducedMotion: "reduce" }); await page.setViewportSize({ width: 1440, height: 900 }); await page.goto("/?m19Fixture=1");
@@ -179,6 +179,7 @@ test("P714 [pixel] narrow original three-material vocabulary and final-triangle 
     // predates that read-only field. Keep this verified projection test-local.
     return actual as typeof actual & { effectiveTiles: typeof actual.tiles };
   }); expect(initial.tiles).toEqual(course.tiles); expect(Array.isArray(initial.effectiveTiles)).toBe(true);
+  const initialCash = await page.evaluate(() => window.__coursecraftTest!.state().cash);
   const canvas = page.locator("canvas").first(); await expect(canvas).toBeVisible();
   const captures: unknown[] = [], closePixelGates: unknown[] = [];
   // Six separated stations inside the straight run. Authored coarse elevation
@@ -190,8 +191,23 @@ test("P714 [pixel] narrow original three-material vocabulary and final-triangle 
     expect(classifyContinuousPathPoint(plan, { x: station.x + 1, y: station.y })).toBe("core");
     for (const sign of [-1, 1]) for (const [role, offset] of [["core", .13], ["edge", .241], ["shoulder", .283]] as const) expect(classifyContinuousPathPoint(plan, { x: station.x, y: station.y + sign * offset })).toBe(role);
   }
-  for (const rotation of [0, 90, 180, 270] as const) {
-    if (rotation > 0) { await canvas.click({ position: { x: 8, y: 8 } }); await page.keyboard.press("e"); await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation)).toBe(rotation); }
+  const assertRotationIdentity = async (step: string) => {
+    const actual = await page.evaluate(() => ({ surface: window.__coursecraftTest!.terrainSurfaceState(), cash: window.__coursecraftTest!.state().cash }));
+    expect(actual.surface, `${step}: authoritative surface is unchanged`).toEqual(initial);
+    expect(actual.cash, `${step}: cash is unchanged`).toBe(initialCash);
+    expect((await pathDiagnostic(page)).planKey, `${step}: original plan identity is unchanged`).toBe(plan.key);
+  };
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation)).toBe(0);
+  await expect.poll(async () => (await pathDiagnostic(page)).planKey).toBe(plan.key);
+  // Public WorkspaceNav button calls only selectWorkspace (workspace state/URL).
+  // Its focus receives the existing window keyboard binding without painting.
+  await page.getByTestId("workspace-design").click();
+  await assertRotationIdentity("workspace design focus");
+  for (let step = 90; step <= rotation; step += 90) {
+    await page.keyboard.press("e");
+    await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera?.rotation)).toBe(step);
+    await assertRotationIdentity(`rotation ${step}`);
+  }
     for (const view of [{ label: "normal", quality: "medium" as const, zoom: 1, focus: { x: 24, y: 18 } }, { label: "close", quality: "high" as const, zoom: 2.25, focus: { x: 9, y: 12.5 } }]) {
       await page.evaluate(({ quality, focus, zoom }) => { window.__coursecraftTest!.setGraphicsQualityFixture(quality); window.__coursecraftPixiTest!.focusTileForTest(focus.x, focus.y, zoom); }, view);
       await expect.poll(async () => { const d = await pathDiagnostic(page); return d.active && d.quality === view.quality && d.camera.rotation === rotation && Math.abs(d.camera.zoom - view.zoom) < .001; }, { timeout: 30_000 }).toBe(true);
@@ -338,7 +354,14 @@ test("P714 [pixel] narrow original three-material vocabulary and final-triangle 
       expect(turfPixels.length).toBeGreaterThanOrEqual(12); expect(turfPixels.filter(p => delta(image, hidden, p) > 18)).toHaveLength(0);
       closePixelGates.push({ rotation, stations, spans: { core, edge, shoulder }, coreTexture, changedByRole, turfSamples: turfPixels.length, roi: { kind: "projected-final-triangles", paddingPx: 2, triangles: triangles.length }, outside: { samples: outside, changed, ratio: changed / outside }, diagnostic, camera: runtime.camera, pixelScale, mapping: "actual-Float32-triangle-barycentric", certifiedCorePixels: certified.size, textureReadPixels: textureReads.size, textureCertificate: "finite-read-and-neighbor-set-plus-1px-Chebyshev-guard; no continuum claim" });
     }
-  }
   expect(await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState())).toEqual(initial);
-  await writeFile(resolve(outputRoot, "p714-path-material-report.json"), JSON.stringify({ version: 2, issue: "ZK-714/ZK-1210", commit, sourceHashes, fixture: "m19Fixture", viewport: { width: 1440, height: 900 }, dpr: await page.evaluate(() => devicePixelRatio), retainedCaptures: 8, transientHiddenCaptures: 4, sampling: "six longitudinal stations, exact-role bands on both normals, aggregate >=4 per role; unchanged vocabulary thresholds", closePixelGates, captures }, null, 2));
-});
+  expect(await page.evaluate(() => window.__coursecraftTest!.state().cash)).toBe(initialCash);
+  expect(captures).toHaveLength(2); expect(closePixelGates).toHaveLength(1);
+  await writeFile(resolve(outputRoot, `p714-path-material-r${rotation}-report.json`), JSON.stringify({ version: 3, issue: "ZK-714/ZK-1210", unit: `pixel-r${rotation}`, rotation, commit, sourceHashes, fixture: "m19Fixture", viewport: { width: 1440, height: 900 }, dpr: await page.evaluate(() => devicePixelRatio), retainedCaptures: captures.length, transientHiddenCaptures: closePixelGates.length, aggregateExpected: { rotations: [0, 90, 180, 270], retainedCaptures: 8, transientHiddenCaptures: 4 }, sampling: "six longitudinal stations, exact-role bands on both normals, aggregate >=4 per role; unchanged vocabulary thresholds", closePixelGates, captures }, null, 2));
+}
+
+for (const rotation of [0, 90, 180, 270] as const) {
+  test(`P714 [pixel-r${rotation}] narrow original three-material vocabulary and final-triangle confinement`, async ({ page }) => {
+    await acceptPixelRotation(page, rotation);
+  });
+}
