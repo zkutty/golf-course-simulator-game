@@ -74,7 +74,7 @@ import {
 } from "../game/render/terrainMaterials";
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
 import type { ParklandComposableDiagnostics } from "../game/render/parklandComposable";
-import { OrderedMeshBoundsCohort } from "../game/render/orderedMeshBounds";
+import type { OrderedMeshBoundsCohort } from "../game/render/orderedMeshBounds";
 import { deriveTerrainDetail } from "../game/render/terrainDetails";
 import {
   seasonalTerrainTreatment,
@@ -924,6 +924,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const overlaysDiagnosticsSceneRef = useRef<OverlaysDiagnosticsSceneSystem | null>(null);
   const terrainWaterSceneRef = useRef<TerrainWaterSceneSystem | null>(null);
   const connectedBoundsCohortRef = useRef<OrderedMeshBoundsCohort | null>(null);
+  const orderedMeshBoundsModuleRef = useRef<typeof import("../game/render/orderedMeshBounds") | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
   const viewportInputControllerModuleRef = useRef<ViewportInputControllerModule | null>(null);
   const sceneCameraDeriversRef = useRef<readonly [DeriveCourseSceneComposition, DeriveCourseSceneCamera] | null>(null);
@@ -1961,12 +1962,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
         releaseIdleGraphicsPools(idleGraphicsPoolApi);
         return;
       }
-      const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule] = await Promise.all([
+      const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule, orderedMeshBoundsModule] = await Promise.all([
         import("./renderer/scenes/deferredWorldScenes"),
         import("./renderer/scenes/terrainWaterScene"),
         import("../game/render/courseSceneComposition"),
         import("../game/render/courseSceneCamera"),
         import("./renderer/viewportInputController"),
+        import("../game/render/orderedMeshBounds"),
       ]);
       if (cancelled) {
         app.stage.removeChildren().forEach(destroySceneSubtree);
@@ -1988,6 +1990,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
       deferredWorldScenesRef.current = deferredWorldScenes;
       viewportInputControllerModuleRef.current = viewportInputControllerModule;
+      orderedMeshBoundsModuleRef.current = orderedMeshBoundsModule;
       sceneCameraDeriversRef.current = [
         compositionModule.deriveCourseSceneComposition,
         cameraModule.deriveCourseSceneCamera,
@@ -2070,6 +2073,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       console.error("[PixiStage] Course renderer initialization failed", error);
       deferredWorldScenesRef.current = null;
       viewportInputControllerModuleRef.current = null;
+      orderedMeshBoundsModuleRef.current = null;
       sceneCameraDeriversRef.current = null;
       setRendererError(true);
       terrainWaterSceneRef.current?.destroy();
@@ -2103,6 +2107,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       terrainWaterSceneRef.current = null;
       deferredWorldScenesRef.current = null;
       viewportInputControllerModuleRef.current = null;
+      orderedMeshBoundsModuleRef.current = null;
       layersRef.current = null;
       structureSpriteCountRef.current = 0;
       surfaceCareWorkersRef.current = [];
@@ -3016,10 +3021,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
     // The phase cleanup normally disposes the previous cohort first. This is
     // also the backstop after an interrupted/partial connected rebuild.
     connectedBoundsCohortRef.current?.dispose();
-    const boundsCohort = new OrderedMeshBoundsCohort();
+    const BoundsCohort = orderedMeshBoundsModuleRef.current?.OrderedMeshBoundsCohort;
+    // A missing optional culling module leaves the original full indices intact.
+    const boundsCohort = BoundsCohort ? new BoundsCohort() : null;
     connectedBoundsCohortRef.current = boundsCohort;
     const releaseBoundsCohort = () => {
-      boundsCohort.dispose();
+      boundsCohort?.dispose();
       if (connectedBoundsCohortRef.current === boundsCohort) connectedBoundsCohortRef.current = null;
     };
     try {
@@ -3249,7 +3256,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         composableTrace,
         quality === "low" ? undefined
           : (mesh, tileSubdivisions, originalUnits) => {
-            boundsCohort.registerTurf(mesh, tileSubdivisions, originalUnits);
+            boundsCohort?.registerTurf(mesh, tileSubdivisions, originalUnits);
           },
       )
       : layer;
@@ -3806,7 +3813,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       shadow.label = "macro-landform-shadow";
       shadow.blendMode = "multiply";
       landformLayer.addChild(shadow);
-      if (quality !== "low") boundsCohort.registerMacro(
+      if (quality !== "low") boundsCohort?.registerMacro(
         shadow, course.width * macroSubdivisions, course.height * macroSubdivisions,
       );
     }
@@ -3818,7 +3825,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       highlight.label = "macro-landform-highlight";
       highlight.blendMode = "screen";
       landformLayer.addChild(highlight);
-      if (quality !== "low") boundsCohort.registerMacro(
+      if (quality !== "low") boundsCohort?.registerMacro(
         highlight, course.width * macroSubdivisions, course.height * macroSubdivisions,
       );
     }
@@ -3885,7 +3892,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
     stampAtlasGeneration(layer, atlasRevision);
     // The stage's first populated draw must already use the current camera.
-    boundsCohort.reconcile(app, rendererLayers.world);
+    boundsCohort?.reconcile(app, rendererLayers.world);
     recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
     return () => {
       releaseBoundsCohort();
