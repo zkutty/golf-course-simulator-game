@@ -3201,14 +3201,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
         mesh.mask = mask;
         maintainedLayer.addChild(mesh, mask);
       }
-      for (const underlay of pathScenePlan.underlay) {
-        if (isMaintained(underlay.terrain)) continue;
-        const mesh = composableRuntime?.createParklandComposableMesh(
-          textureFor(underlay.terrain), underlay.cells, course.width, 1, (cell) => cell,
-          (_cell, x, y) => project({ x, y }), true,
-        );
-        if (mesh) { mesh.eventMode = "none"; mesh.label = `continuous-path-underlay:${underlay.terrain}`; maintainedLayer.addChild(mesh); }
-      }
       layer.addChild(pathMaterialLayer);
       sharedContourDiagnosticsRef.current = EMPTY_SHARED_CONTOUR_DIAGNOSTICS;
       stampAtlasGeneration(maintainedLayer, atlasRevision);
