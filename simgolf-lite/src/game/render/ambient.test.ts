@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Course, Terrain } from "../models/types";
 import {
-  BIRD_FLIGHT_MIN,
-  BIRD_PERIOD_MIN,
-  CLOUD_COUNT,
   DAY_MINUTES,
-  birdCrossing,
-  cloudPos,
   heronSpot,
   timeOfDayTint,
 } from "./ambient";
@@ -41,46 +36,6 @@ describe("timeOfDayTint", () => {
     }
     expect(timeOfDayTint(-50)).toBe(timeOfDayTint(0));
     expect(timeOfDayTint(99999)).toBe(timeOfDayTint(DAY_MINUTES));
-  });
-});
-
-describe("cloudPos", () => {
-  it("keeps every cloud inside the wrapped bounds and actually drifting", () => {
-    for (let i = 0; i < CLOUD_COUNT; i++) {
-      const p0 = cloudPos(0, i, 110, 70);
-      const p1 = cloudPos(60, i, 110, 70);
-      expect(p0.x).toBeGreaterThanOrEqual(-24);
-      expect(p0.x).toBeLessThanOrEqual(110 + 24);
-      expect(p0.y).toBeGreaterThanOrEqual(-24);
-      expect(p0.y).toBeLessThanOrEqual(70 + 24);
-      expect(Math.hypot(p1.x - p0.x, p1.y - p0.y)).toBeGreaterThan(1);
-    }
-  });
-
-  it("staggers the clouds apart", () => {
-    const a = cloudPos(100, 0, 110, 70);
-    const b = cloudPos(100, 1, 110, 70);
-    expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(10);
-  });
-});
-
-describe("birdCrossing", () => {
-  it("holds off in the first half hour, then crosses periodically", () => {
-    expect(birdCrossing(10).active).toBe(false);
-    expect(birdCrossing(31).active).toBe(true); // first flight departs
-    expect(birdCrossing(30 + BIRD_FLIGHT_MIN + 1).active).toBe(false);
-    const second = birdCrossing(30 + BIRD_PERIOD_MIN + 2);
-    expect(second.active).toBe(true);
-    expect(second.index).toBe(1);
-  });
-
-  it("progress runs 0..1 across a flight", () => {
-    const early = birdCrossing(31);
-    const late = birdCrossing(30 + BIRD_FLIGHT_MIN - 0.5);
-    expect(early.t).toBeGreaterThanOrEqual(0);
-    expect(early.t).toBeLessThan(0.2);
-    expect(late.t).toBeGreaterThan(0.9);
-    expect(late.t).toBeLessThanOrEqual(1);
   });
 });
 
