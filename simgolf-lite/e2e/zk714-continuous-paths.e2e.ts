@@ -430,6 +430,21 @@ test("P714 [visual-matrix] 34 desktop biome and elevation captures at actual nor
   expect(captures).toBe(process.env.ZK714_PILOT_CAPTURE_ACCEPTED === "1" ? 33 : 34);
 });
 
+test("P714 [low-underlay] three Low biome saved-S and cross affected views", async ({ page }, info) => {
+  await page.setViewportSize({ width: 2560, height: 1440 }); await boot(page);
+  const views: { theme: Course["theme"]; fixtureHash: string; planKey: string }[] = [];
+  for (const theme of ["parkland", "links", "desert"] as const) {
+    const file = normalizedFixture(fixture("matrix", theme)); const loaded = await publicLoad(page, file); const plan = buildContinuousPathPlan(file.course);
+    await capture(page, info, file, plan, `low-underlay-${theme}`, banks[0], 2.25, 0, "low");
+    expect(await surface(page)).toEqual(loaded); expect(await cash(page)).toBe(file.world.cash);
+    views.push({ theme, fixtureHash: hash(file), planKey: plan.key });
+  }
+  expect(views).toHaveLength(3);
+  await info.attach("low-underlay-contract", { body: Buffer.from(JSON.stringify({ candidate, sourceHashes, fixtureDefinitionSHA256: fixtureDefinitionHash(), views,
+    pathCaptures: 3, viewport: [2560, 1440], zoom: 2.25, rotation: 0, quality: "low", bank: banks[0],
+    scope: "affected Low biome cells only; root visual review must reject any whole-cell path halo" }, null, 2)), contentType: "application/json" });
+});
+
 test("P714 [responsive] two unoccluded path views with separately visible design controls", async ({ page }, info) => {
   await page.setViewportSize({ width: 2560, height: 1440 }); await boot(page);
   const file = normalizedFixture(fixture()); const loaded = await publicLoad(page, file); const plan = buildContinuousPathPlan(file.course);
@@ -447,7 +462,7 @@ test("P714 [responsive] two unoccluded path views with separately visible design
     await page.getByRole("button", { name: "Collapse design dock", exact: true }).click();
     await expect(page.getByTestId("design-dock")).toHaveAttribute("data-collapsed", "true");
     const collapseMinimap = page.getByRole("button", { name: "Collapse course minimap", exact: true });
-    if (await collapseMinimap.isVisible()) await collapseMinimap.click();
+    if (await collapseMinimap.isVisible()) { await collapseMinimap.focus(); await expect(collapseMinimap).toBeFocused(); await page.keyboard.press("Enter"); }
     await expect(page.getByRole("button", { name: "Open course minimap", exact: true })).toBeVisible();
     expect(await surface(page)).toEqual(loaded); expect(await cash(page)).toBe(file.world.cash);
     await capture(page, info, file, plan, `responsive-${width}x${height}`, { minX: 24, maxX: 33, minY: 45, maxY: 48 }, zoom, 0, "medium", true); pathCaptures++;
