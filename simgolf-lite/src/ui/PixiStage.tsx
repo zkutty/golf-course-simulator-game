@@ -103,9 +103,12 @@ import { buildMacroLandformRaster } from "../game/render/macroLandform";
 import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
 import { isMaintained } from "../game/render/materialFields";
 import type { TerrainPresentationDiagnostics } from "../game/render/terrainPresentationPolicy";
+import { buildContinuousPathPlan } from "../game/paths/continuousPathPlan";
 import {
   buildPathMaterialScenePlan,
-  pathMaterialStripMesh,
+  continuousPathGroundHeight,
+  pathMaterialLayerMesh,
+  pathUnderlayForRenderer,
 } from "./renderer/scenes/pathMaterialScene";
 import {
   pickNaturalProp,
@@ -689,7 +692,10 @@ interface Layers {
 
 interface PathMaterialRenderDiagnostics {
   active: boolean;
-  mode: "legacy" | "cross-section";
+  mode: "legacy" | "continuous";
+  planKey?: string;
+  triangleCount?: number;
+  widthRange?: { minimum: number; maximum: number };
   quality: "high" | "medium" | "low";
   componentCount: number;
   stripCount: number;
@@ -1030,14 +1036,24 @@ export function PixiStage(requestedProps: PixiStageProps) {
     course.tiles,
     course.width,
   ]);
+  // Geometry construction is edit-bound, independent of camera, quality,
+  // weather, live ticks and material activation. G is the only path authority.
+  const continuousPathPlan = useMemo(() => buildContinuousPathPlan({
+    tiles: course.tiles, surfaceIntent: course.surfaceIntent,
+    width: course.width, height: course.height,
+  }), [course.tiles, course.surfaceIntent, course.width, course.height]);
+  const pathScenePlan = useMemo(() => buildPathMaterialScenePlan(
+    continuousPathPlan, props.graphicsQuality,
+  ), [continuousPathPlan, props.graphicsQuality]);
+  const pathTerrainTiles = useMemo(() => pathUnderlayForRenderer(effectiveTiles, pathScenePlan), [effectiveTiles, pathScenePlan]);
   const presentationRuntime = getParklandComposableRuntime();
   const terrainPresentation = presentationRuntime?.buildTerrainPresentationMap(
-    effectiveTiles,
+    pathTerrainTiles,
     course.width,
     course.height,
     course.theme,
   );
-  const presentationTiles = terrainPresentation?.presentationTiles ?? effectiveTiles;
+  const presentationTiles = terrainPresentation?.presentationTiles ?? pathTerrainTiles;
   const careVisualSignatures = useMemo(
     () => surfaceCareVisualSignatures(course),
     [course],
@@ -1097,7 +1113,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const index = Math.max(0, Math.min(course.height - 1, Math.floor(y))) * course.width
       + Math.max(0, Math.min(course.width - 1, Math.floor(x)));
     if (props.graphicsQuality === "low" && !isMaintained(effectiveTiles[index])) {
-      return course.elevations[index] ?? 0;
+      return continuousPathGroundHeight(
+        pathScenePlan, effectiveTiles, course.width, course.height, x, y,
+        (px, py) => sampleVisualHeight(visualHeightfield, px, py),
+      ) ?? course.elevations[index] ?? 0;
     }
     return sampleLandscapeSurfaceHeight(
       visualHeightfield,
@@ -1112,6 +1131,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     course.width,
     effectiveTiles,
     landscapeComponentByCell,
+    pathScenePlan,
     props.graphicsQuality,
     visualHeightfield,
   ]);
@@ -2496,9 +2516,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const cols = Math.ceil(w / CHUNK_TILES);
     const rows = Math.ceil(h / CHUNK_TILES);
     const elev = (x: number, y: number) => getElevation(course, x, y);
-    // Whole-tile terrain is the visual source of truth. Surface intent is
-    // retained for editor history and backwards-compatible saves, but it no
-    // longer substitutes an underlay or clips a second terrain layer.
+    // The shared path plan replaces path cells with presentation-only turf.
+    // Atlas chunks and connected turf therefore cannot leave a whole-cell
+    // path diamond beneath the separately rendered narrow ribbon.
     const composableRuntime = presentationRuntime;
     // Composable assets are installed as one atomic bundle, so one field's
     // presence is also the failure-safe readiness signal for its turf cues.
@@ -3062,6 +3082,40 @@ export function PixiStage(requestedProps: PixiStageProps) {
       return texture;
     };
 
+    const pathMaterialLayer = new PIXI.Container();
+    pathMaterialLayer.eventMode = "none";
+    pathMaterialLayer.label = "path-material-cross-section";
+    let pathCoreTexture: PIXI.Texture | null = null;
+    const pathTextureIds: string[] = [];
+    for (const pathLayer of pathScenePlan.layers) {
+      if (!pathLayer.indices.length) continue;
+      const authored = pathLayer.role !== "core" && props.colorVision === "standard" && !props.terrainPatterns
+        ? getPathMaterialField(course.theme, pathLayer.role, quality)
+        : null;
+      const hasAuthored = Boolean(authored && !authored.destroyed);
+      const texture = hasAuthored ? terrainScene.borrowTexture(authored!) : (pathCoreTexture ??= textureFor("path", true));
+      const data = pathMaterialLayerMesh(pathLayer, project);
+      if (!data.indices.length) continue;
+      const mesh = new PIXI.Mesh({ geometry: new PIXI.MeshGeometry({ positions: data.positions, uvs: data.uvs, indices: data.indices }), texture });
+      mesh.eventMode = "none";
+      mesh.label = `continuous-path:${pathLayer.role}:${pathScenePlan.key}`;
+      mesh.tint = texture === PIXI.Texture.WHITE
+        ? shade(themedColors.path, pathLayer.role === "edge" ? .82 : pathLayer.role === "shoulder" ? 1.08 : 1)
+        : !hasAuthored && pathLayer.role !== "core"
+          ? pathLayer.role === "edge" ? 0xc3bfb4 : 0xdbd1b9
+          : seasonalByTerrain.path?.textureTint ?? 0xffffff;
+      pathMaterialLayer.addChild(mesh);
+      pathTextureIds.push(`${getBiomeDefinition(course.theme).key}:${quality}:path-${pathLayer.role}:${hasAuthored ? "authored" : "procedural"}`);
+    }
+    pathMaterialDiagnosticsRef.current = {
+      active: pathMaterialLayer.children.length > 0, mode: pathScenePlan.mode, quality,
+      componentCount: pathScenePlan.componentCount, stripCount: pathMaterialLayer.children.length,
+      roles: pathScenePlan.roles, textureIds: pathTextureIds,
+      widths: { shoulder: pathScenePlan.widths.maximum * .06, edge: pathScenePlan.widths.maximum * .08 },
+      ownership: pathScenePlan.suppressWholeCellPaths ? ["accepted-path-coverage"] : [],
+      planKey: pathScenePlan.key, triangleCount: pathScenePlan.triangleCount, widthRange: pathScenePlan.widths,
+    };
+
     const componentDepth = (component: LandscapeComponent) => {
       let total = 0;
       const step = Math.max(1, Math.floor(component.cells.length / 64));
@@ -3117,17 +3171,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
         mesh.mask = mask;
         maintainedLayer.addChild(mesh, mask);
       }
-      pathMaterialDiagnosticsRef.current = {
-        active: false,
-        mode: "legacy",
-        quality: "low",
-        componentCount: 0,
-        stripCount: 0,
-        roles: ["core"],
-        textureIds: ["legacy:path"],
-        widths: { shoulder: 0, edge: 0 },
-        ownership: [],
-      };
+      for (const underlay of pathScenePlan.underlay) {
+        if (isMaintained(underlay.terrain)) continue;
+        const mesh = composableRuntime?.createParklandComposableMesh(
+          textureFor(underlay.terrain), underlay.cells, course.width, 1, (cell) => cell,
+          (_cell, x, y) => project({ x, y }), true,
+        );
+        if (mesh) { mesh.eventMode = "none"; mesh.label = `continuous-path-underlay:${underlay.terrain}`; maintainedLayer.addChild(mesh); }
+      }
+      layer.addChild(pathMaterialLayer);
       sharedContourDiagnosticsRef.current = EMPTY_SHARED_CONTOUR_DIAGNOSTICS;
       stampAtlasGeneration(maintainedLayer, atlasRevision);
       stampAtlasGeneration(rendererLayers.terrain, atlasRevision);
@@ -3139,9 +3191,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const bandLayer = new PIXI.Container();
     bandLayer.eventMode = "none";
     bandLayer.sortableChildren = true;
-    const pathMaterialLayer = new PIXI.Container();
-    pathMaterialLayer.eventMode = "none";
-    pathMaterialLayer.label = "path-material-cross-section";
+
     const recessedLayer = new PIXI.Container();
     recessedLayer.eventMode = "none";
     const landformLayer = new PIXI.Container();
@@ -3151,22 +3201,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     // Boundary motifs are globally bounded. Habitat composition owns only
     // interior clearings, so shoreline reeds/stones have one renderer owner.
     let remainingContourDetails = quality === "high" ? 440 : quality === "medium" ? 220 : 0;
-    const pathShoulderTexture = props.colorVision === "standard" && !props.terrainPatterns
-      ? getPathMaterialField(course.theme, "shoulder", quality)
-      : null;
-    const pathEdgeTexture = props.colorVision === "standard" && !props.terrainPatterns
-      ? getPathMaterialField(course.theme, "edge", quality)
-      : null;
-    if (pathShoulderTexture) terrainScene.borrowTexture(pathShoulderTexture);
-    if (pathEdgeTexture) terrainScene.borrowTexture(pathEdgeTexture);
-    const hasPathMaterialTextures = Boolean(
-      pathShoulderTexture && !pathShoulderTexture.destroyed && pathEdgeTexture && !pathEdgeTexture.destroyed,
-    );
-    let pathComponentCount = 0;
-    let pathStripCount = 0;
-    let pathShoulderWidth = 0;
-    let pathEdgeWidth = 0;
-    const pathOwnership = new Set<string>();
     const sharedContourDiagnostics = composableRuntime!.buildTerrainPresentationDiagnostics(
       terrainPresentation!,
       landscapeComponents,
@@ -3215,34 +3249,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
       )
       : layer;
     if (presentationLayer !== layer) terrainScene.lowPresentationLayer = presentationLayer;
-    // Low owns only the composable turf overlay. Existing chunk rendering
-    // continues to own hazards, paths, and elevation; do not route those
-    // categories through the connected Medium/High presentation.
+    // Low keeps its economical turf/hazard renderer. The shared path meshes
+    // are installed above that presentation at every quality tier.
     if (quality === "low" && composableActive) {
-      // Low retains the economical chunk path for hazards/elevation, but its
-      // cart route needs one joined top plane above the composable turf.
-      // Reusing the canonical path component here removes rotation-dependent
-      // isolated diamonds without opting Low into the connected-surface scene.
-      for (const pathComponent of sortedComponents.filter((component) => component.terrain === "path")) {
-        const pathMesh = composableRuntime!.createParklandComposableMesh(
-          textureFor("path", true),
-          pathComponent.cells,
-          course.width,
-          1,
-          (cell) => cell,
-          (_cell, x, y) => worldToIso(
-            x,
-            y,
-            sampleLandscapeSurfaceHeight(heightfield, pathComponent, x, y),
-            rotation,
-          ),
-          true,
-        );
-        if (!pathMesh) continue;
-        pathMesh.eventMode = "none";
-        pathMesh.label = `parkland-low-joined-route:${pathComponent.topologyKey}`;
-        presentationLayer.addChild(pathMesh);
-      }
+      // Every Low biome uses the same accepted ribbon; only turf/hazard
+      // material fidelity differs from the connected Medium/High scene.
       // Low uses the same deterministic organic ring authority as the
       // accepted Medium/High hazard floor. The chunk layer beneath has already
       // been neutralized to rough for these cells, so no stepped diamond can
@@ -3344,7 +3355,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         presentationLayer.addChild(edge);
       }
       const diagnostics = composableRuntime!.lowParklandPresentationDiagnostics(composableTrace, components);
-      pathMaterialDiagnosticsRef.current = diagnostics.pathMaterial;
+      layer.addChild(pathMaterialLayer);
       parklandComposableDiagnosticsRef.current = diagnostics.composable;
       sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
       stampAtlasGeneration(presentationLayer, atlasRevision);
@@ -3360,16 +3371,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       // source geometry beneath it; paths intentionally expose no halo.
       const exactComposableCue = composableActive
         && composableRuntime!.isParklandComposableSemantic(component.terrain);
-      const pathMaterialPlan = buildPathMaterialScenePlan(
-        component,
-        presentationTiles,
-        course.width,
-        course.height,
-        quality,
-      );
-      const pathCompositorActive = pathMaterialPlan.mode === "cross-section" && hasPathMaterialTextures;
       const mesh = exactComposableCue ? null : composableRuntime!.createParklandComposableMesh(
-        textureFor(presentationTerrain, pathCompositorActive),
+        textureFor(presentationTerrain),
         component.presentationCells,
         course.width,
         subdivisions,
@@ -3408,10 +3411,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const hazardPlans = visualRings.map((ring) => (
         buildHazardBankFacePlan(component.terrain, component.cells.length, ring)
       ));
-      // The generic field's large square chips made the route read as a gray
-      // speckled ribbon. The compositor's core uses the existing deterministic
-      // fine-grain generator instead; it remains world-anchored and the whole
-      // connected mesh remains the gameplay/picking authority.
+      // Narrow paths are installed separately from these terrain components;
+      // all authoritative gameplay and picking coverage stays whole-cell.
       if (mesh) {
         mesh.tint = seasonalByTerrain[presentationTerrain]?.textureTint ?? 0xffffff;
         mesh.eventMode = "none";
@@ -3425,33 +3426,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
         ));
         mesh.mask = mask;
         layer.addChild(mesh, mask);
-      }
-      if (pathCompositorActive) {
-        pathComponentCount++;
-        pathShoulderWidth = pathMaterialPlan.shoulderWidth;
-        pathEdgeWidth = pathMaterialPlan.edgeWidth;
-        for (const strip of pathMaterialPlan.strips) {
-          const data = pathMaterialStripMesh(strip, (point) => worldToIso(
-            point.x,
-            point.y,
-            sampleVisualHeight(heightfield, point.x, point.y),
-            rotation,
-          ));
-          if (data.indices.length === 0) continue;
-          const stripMesh = new PIXI.Mesh({
-            geometry: new PIXI.MeshGeometry({
-              positions: data.positions,
-              uvs: data.uvs,
-              indices: data.indices,
-            }),
-            texture: data.role === "shoulder" ? pathShoulderTexture! : pathEdgeTexture!,
-          });
-          stripMesh.eventMode = "none";
-          stripMesh.label = `path-material:${data.role}:${component.topologyKey}`;
-          pathMaterialLayer.addChild(stripMesh);
-          pathStripCount++;
-          pathOwnership.add(`path>${strip.outsideTerrain}`);
-        }
       }
       if (component.terrain === "water" || component.terrain === "wetland") {
         const firstCell = component.cells[0];
@@ -3614,7 +3588,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         course.width,
         course.height,
       );
-      if (pathCompositorActive) continue;
+      if (component.terrain === "path" && pathScenePlan.suppressWholeCellPaths) continue;
       for (const run of boundaryRuns) {
         // ZK-459 will own authored pair edges. Until then, two composable turf
         // cues meet directly on their shared tile-snapped boundary; retaining
@@ -3758,6 +3732,18 @@ export function PixiStage(requestedProps: PixiStageProps) {
       uvs: new Float32Array(macroUvs),
       indices: new Uint32Array(macroIndices),
     });
+    // The opaque narrow core is above turf boundary motifs. Restore the
+    // existing macro relief field on that exact clipped geometry, without
+    // shading the underlying turf twice or changing structure layer order.
+    const pathCoreLayer = pathScenePlan.layers.find((entry) => entry.role === "core");
+    const pathMacroData = pathCoreLayer?.indices.length
+      ? pathMaterialLayerMesh(pathCoreLayer, project, { x: course.width, y: course.height })
+      : null;
+    const appendPathRelief = (texture: PIXI.Texture, blendMode: "multiply" | "screen", label: string) => {
+      if (!pathMacroData) return;
+      const mesh = new PIXI.Mesh({ geometry: new PIXI.MeshGeometry({ positions: pathMacroData.positions, uvs: pathMacroData.uvs, indices: pathMacroData.indices }), texture });
+      mesh.eventMode = "none"; mesh.blendMode = blendMode; mesh.label = label; pathMaterialLayer.addChild(mesh);
+    };
     const generatedMacroTextures: PIXI.Texture[] = [];
     const shadowTexture = textureFromRgba(macroRaster.shadow);
     if (shadowTexture) {
@@ -3767,6 +3753,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       shadow.label = "macro-landform-shadow";
       shadow.blendMode = "multiply";
       landformLayer.addChild(shadow);
+      appendPathRelief(shadowTexture, "multiply", "continuous-path-landform-shadow");
     }
     const highlightTexture = textureFromRgba(macroRaster.highlight);
     if (highlightTexture) {
@@ -3776,6 +3763,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       highlight.label = "macro-landform-highlight";
       highlight.blendMode = "screen";
       landformLayer.addChild(highlight);
+      appendPathRelief(highlightTexture, "screen", "continuous-path-landform-highlight");
     }
 
     // Boundaries are provenance only; the broad material field above owns
@@ -3789,26 +3777,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     );
     layer.addChild(landformLayer);
     layer.addChild(recessedLayer);
-    layer.addChild(pathMaterialLayer);
     layer.addChild(bandLayer);
-    const pathActive = pathComponentCount > 0 && pathStripCount > 0;
-    pathMaterialDiagnosticsRef.current = {
-      active: pathActive,
-      mode: pathActive ? "cross-section" : "legacy",
-      quality,
-      componentCount: pathComponentCount,
-      stripCount: pathStripCount,
-      roles: pathActive ? ["shoulder", "edge", "core"] : ["core"],
-      textureIds: pathActive
-        ? [
-          `${getBiomeDefinition(course.theme).key}:${quality}:path-shoulder`,
-          `${getBiomeDefinition(course.theme).key}:${quality}:path-edge`,
-          `${getBiomeDefinition(course.theme).key}:${quality}:path-core:fine-compacted`,
-        ]
-        : ["legacy:path"],
-      widths: { shoulder: pathShoulderWidth, edge: pathEdgeWidth },
-      ownership: [...pathOwnership].sort(),
-    };
+    layer.addChild(pathMaterialLayer);
     if (composableActive) {
       parklandComposableDiagnosticsRef.current = composableTrace.diagnostics(0);
     }
@@ -3857,6 +3827,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     course.surfaceIntent,
     course.theme,
     landscapeComponents,
+    pathScenePlan,
     presentationTiles,
     props.colorVision,
     props.graphicsQuality,
