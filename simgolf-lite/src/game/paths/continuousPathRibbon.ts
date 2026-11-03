@@ -9,7 +9,6 @@ interface Interval { low: Line; high: Line; }
 interface CellShapes { levels: [Polygon[], Polygon[], Polygon[]]; }
 const yAt = (line: Line, x: number) => line.a.y + (line.b.y - line.a.y) * (x - line.a.x) / (line.b.x - line.a.x);
 const pointKey = (p: Point) => `${Math.round(p.x * 1e7)},${Math.round(p.y * 1e7)}`;
-const pointFromKey = (key: string): Point => { const [x, y] = key.split(',').map(Number); return { x: x / 1e7, y: y / 1e7 }; };
 const area = (points: readonly Point[]) => points.reduce((sum, p, i) => { const q = points[(i + 1) % points.length]; return sum + p.x * q.y - p.y * q.x; }, 0) / 2;
 
 /** Convex clipping is applied to the primitive, not just its vertices. */
@@ -116,44 +115,79 @@ function sweepCuts(levels: CellShapes['levels']): number[] {
   return cuts.filter((x, i) => !i || x - cuts[i - 1] > EPS);
 }
 
+function cutBound(cuts: readonly number[], value: number, inclusive: boolean): number {
+  let lo = 0; let hi = cuts.length;
+  while (lo < hi) {
+    const middle = (lo + hi) >>> 1;
+    if (cuts[middle] < value || inclusive && cuts[middle] === value) lo = middle + 1;
+    else hi = middle;
+  }
+  return lo;
+}
+
 function unionBoundary(polygons: readonly Polygon[]): Point[][] {
   interface Directed { a: Point; b: Point; lo: number; hi: number; forward: boolean; }
   const groups = new Map<string, { dx: number; dy: number; segments: Directed[]; cuts: number[] }>();
-  for (const polygon of polygons) for (let i = 0; i < polygon.length; i++) {
-    const a = polygon[i]; const b = polygon[(i + 1) % polygon.length]; const length = Math.hypot(b.x - a.x, b.y - a.y); if (length < EPS) continue;
-    const forward = b.x > a.x + EPS || Math.abs(b.x - a.x) <= EPS && b.y > a.y;
-    const dx = (b.x - a.x) / length * (forward ? 1 : -1); const dy = (b.y - a.y) / length * (forward ? 1 : -1); const normal = -dy * a.x + dx * a.y;
-    // Sweep slabs share vertical edges; tile bins additionally share
-    // horizontal edges. Other edges are genuine stroke boundaries. Grouping
-    // approximately collinear curved boundaries can accidentally cancel a
-    // narrow wedge, so only axis-aligned partitions receive split points.
-    const ka = pointKey(a); const kb = pointKey(b);
-    const groupKey = Math.abs(b.x - a.x) < EPS
-      ? `vertical:${Math.round(a.x * 1e7)}`
-      : Math.abs(b.y - a.y) < EPS
-        ? `horizontal:${Math.round(a.y * 1e7)}`
-        : `boundary:${ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`}`;
-    void normal;
-    let group = groups.get(groupKey); if (!group) { group = { dx, dy, segments: [], cuts: [] }; groups.set(groupKey, group); }
-    const pa = a.x * group.dx + a.y * group.dy; const pb = b.x * group.dx + b.y * group.dy;
-    group.segments.push({ a, b, lo: Math.min(pa, pb), hi: Math.max(pa, pb), forward }); group.cuts.push(pa, pb);
+  for (const polygon of polygons) {
+    const keys = polygon.map(pointKey);
+    for (let i = 0; i < polygon.length; i++) {
+      const a = polygon[i]; const b = polygon[(i + 1) % polygon.length]; const length = Math.hypot(b.x - a.x, b.y - a.y); if (length < EPS) continue;
+      const forward = b.x > a.x + EPS || Math.abs(b.x - a.x) <= EPS && b.y > a.y;
+      const dx = (b.x - a.x) / length * (forward ? 1 : -1); const dy = (b.y - a.y) / length * (forward ? 1 : -1); const normal = -dy * a.x + dx * a.y;
+      // Sweep slabs share vertical edges; tile bins additionally share
+      // horizontal edges. Other edges are genuine stroke boundaries. Grouping
+      // approximately collinear curved boundaries can accidentally cancel a
+      // narrow wedge, so only axis-aligned partitions receive split points.
+      const ka = keys[i]; const kb = keys[(i + 1) % polygon.length];
+      const groupKey = Math.abs(b.x - a.x) < EPS
+        ? `vertical:${Math.round(a.x * 1e7)}`
+        : Math.abs(b.y - a.y) < EPS
+          ? `horizontal:${Math.round(a.y * 1e7)}`
+          : `boundary:${ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`}`;
+      void normal;
+      let group = groups.get(groupKey); if (!group) { group = { dx, dy, segments: [], cuts: [] }; groups.set(groupKey, group); }
+      const pa = a.x * group.dx + a.y * group.dy; const pb = b.x * group.dx + b.y * group.dy;
+      group.segments.push({ a, b, lo: Math.min(pa, pb), hi: Math.max(pa, pb), forward }); group.cuts.push(pa, pb);
+    }
   }
-  const boundary = new Map<string, { a: string; b: string }>();
-  const counts = new Map<string, { a: string; b: string; count: number }>();
-  const countEdge = (target: typeof counts, a: string, b: string) => {
+  interface Endpoint { id: number; key: string; point?: Point; }
+  interface Pair { id: number; a: Endpoint; b: Endpoint; }
+  interface EdgeCounts { values: number[]; order: Pair[]; }
+  const endpointCoordinates = new Map<number, Map<number, Endpoint>>(); let endpointCount = 0;
+  const endpointFor = (point: Point): Endpoint => {
+    const x = Math.round(point.x * 1e7); const y = Math.round(point.y * 1e7);
+    let row = endpointCoordinates.get(x); if (!row) { row = new Map(); endpointCoordinates.set(x, row); }
+    let endpoint = row.get(y);
+    // SameValueZero coalesces 0/-0 exactly as their existing string keys do.
+    // Construct the unchanged lexical key only once per rounded coordinate.
+    if (!endpoint) { endpoint = { id: endpointCount++, key: `${x},${y}` }; row.set(y, endpoint); }
+    return endpoint;
+  };
+  const pairs = new Map<number, Map<number, Pair>>(); let pairCount = 0;
+  const boundary = new Map<number, { a: Endpoint; b: Endpoint }>();
+  const counts: EdgeCounts = { values: [], order: [] };
+  // Numeric identity removes repeated long pair-key construction. Raw key
+  // order still owns orientation, and order retains first insertion exactly.
+  const countEdge = (target: EdgeCounts, a: Endpoint, b: Endpoint) => {
     if (a === b) return;
-    const forward = a < b; const lo = forward ? a : b; const hi = forward ? b : a; const id = `${lo}|${hi}`;
-    const entry = target.get(id) ?? { a: lo, b: hi, count: 0 };
-    entry.count += forward ? 1 : -1; target.set(id, entry);
+    const forward = a.key < b.key; const lo = forward ? a : b; const hi = forward ? b : a;
+    let row = pairs.get(lo.id); if (!row) { row = new Map(); pairs.set(lo.id, row); }
+    let pair = row.get(hi.id); if (!pair) { pair = { id: pairCount++, a: lo, b: hi }; row.set(hi.id, pair); }
+    const previous = target.values[pair.id]; if (previous === undefined) target.order.push(pair);
+    target.values[pair.id] = (previous ?? 0) + (forward ? 1 : -1);
   };
   for (const group of groups.values()) {
     group.cuts.sort((a, b) => a - b); const cuts = group.cuts.filter((p, i) => !i || p - group.cuts[i - 1] > EPS);
     for (const segment of group.segments) {
-      const local = cuts.filter((v) => v >= segment.lo - EPS && v <= segment.hi + EPS);
+      const first = cutBound(cuts, segment.lo - EPS, false); const end = cutBound(cuts, segment.hi + EPS, true);
       const startProjection = segment.a.x * group.dx + segment.a.y * group.dy; const endProjection = segment.b.x * group.dx + segment.b.y * group.dy;
       const at = (v: number): Point => { const t = (v - startProjection) / (endProjection - startProjection); return { x: segment.a.x + (segment.b.x - segment.a.x) * t, y: segment.a.y + (segment.b.y - segment.a.y) * t }; };
-      for (let i = 1; i < local.length; i++) {
-        const a = pointKey(at(segment.forward ? local[i - 1] : local[i])); const b = pointKey(at(segment.forward ? local[i] : local[i - 1])); if (a === b) continue;
+      let previous: Endpoint | undefined;
+      for (let i = first + 1; i < end; i++) {
+        let a: Endpoint; let b: Endpoint;
+        if (segment.forward) { a = previous ?? endpointFor(at(cuts[i - 1])); b = endpointFor(at(cuts[i])); previous = b; }
+        else { a = endpointFor(at(cuts[i])); b = previous ?? endpointFor(at(cuts[i - 1])); previous = a; }
+        if (a === b) continue;
         countEdge(counts, a, b);
       }
     }
@@ -162,43 +196,53 @@ function unionBoundary(polygons: readonly Polygon[]): Point[][] {
   // narrow sweep slabs can quantize to the same endpoints before their
   // opposing partition edges arrive. A set loses those multiplicities and
   // leaves dangling vertical edges in otherwise closed curved boundaries.
-  for (const edge of counts.values()) if (edge.count) {
-    const a = edge.count > 0 ? edge.a : edge.b; const b = edge.count > 0 ? edge.b : edge.a; boundary.set(`${a}|${b}`, { a, b });
+  for (const edge of counts.order) {
+    const count = counts.values[edge.id]; if (!count) continue;
+    const a = count > 0 ? edge.a : edge.b; const b = count > 0 ? edge.b : edge.a; boundary.set(edge.id, { a, b });
   }
   // Intersections computed from two primitive pairs can differ by a few
   // floating ulps. Weld only sub-micropixel boundary endpoints before tracing;
   // this does not modify or expand any final clipped mesh triangle.
-  const aliases = new Map<string, string>();
-  const anchors = new Map<string, string>();
-  const endpointKeys = [...new Set([...boundary.values()].flatMap((edge) => [edge.a, edge.b]))].sort((a, b) => {
-    const pa = pointFromKey(a); const pb = pointFromKey(b); return pa.y - pb.y || pa.x - pb.x;
-  });
-  for (const endpoint of endpointKeys) {
-    const [x, y] = endpoint.split(',').map(Number); let anchor: string | undefined;
-    for (let dy = -2; dy <= 2 && !anchor; dy++) for (let dx = -2; dx <= 2 && !anchor; dx++) anchor = anchors.get(`${x + dx},${y + dy}`);
-    aliases.set(endpoint, anchor ?? endpoint); if (!anchor) anchors.set(endpoint, endpoint);
+  const aliases: Endpoint[] = [];
+  const anchors = new Map<number, Map<number, Endpoint>>();
+  // Decode once before the sort and reuse exact coordinates during welding
+  // and tracing; string keys still own lexical edge/tie-break ordering.
+  const endpoints = [...new Set([...boundary.values()].flatMap((edge) => [edge.a, edge.b]))].map((endpoint) => {
+    const [x, y] = endpoint.key.split(',').map(Number); endpoint.point = { x: x / 1e7, y: y / 1e7 }; return { endpoint, x, y };
+  }).sort((a, b) => a.endpoint.point!.y - b.endpoint.point!.y || a.endpoint.point!.x - b.endpoint.point!.x);
+  for (const { endpoint, x, y } of endpoints) {
+    let anchor: Endpoint | undefined;
+    for (let dy = -2; dy <= 2 && !anchor; dy++) {
+      const row = anchors.get(y + dy);
+      for (let dx = -2; dx <= 2 && !anchor; dx++) anchor = row?.get(x + dx);
+    }
+    aliases[endpoint.id] = anchor ?? endpoint;
+    if (!anchor) { let row = anchors.get(y); if (!row) { row = new Map(); anchors.set(y, row); } row.set(x, endpoint); }
   }
-  const weldedCounts: typeof counts = new Map();
+  const weldedCounts: EdgeCounts = { values: [], order: [] };
   for (const edge of boundary.values()) {
-    const a = aliases.get(edge.a)!; const b = aliases.get(edge.b)!; if (a === b) continue;
+    const a = aliases[edge.a.id]; const b = aliases[edge.b.id]; if (a === b) continue;
     countEdge(weldedCounts, a, b);
   }
   boundary.clear();
-  for (const edge of weldedCounts.values()) if (edge.count) {
-    const a = edge.count > 0 ? edge.a : edge.b; const b = edge.count > 0 ? edge.b : edge.a; boundary.set(`${a}|${b}`, { a, b });
+  for (const edge of weldedCounts.order) {
+    const count = weldedCounts.values[edge.id]; if (!count) continue;
+    const a = count > 0 ? edge.a : edge.b; const b = count > 0 ? edge.b : edge.a; boundary.set(edge.id, { a, b });
   }
-  const outgoing = new Map<string, string[]>();
-  for (const [id, segment] of boundary) { const list = outgoing.get(segment.a) ?? []; list.push(id); outgoing.set(segment.a, list); }
+  const outgoing: number[][] = [];
+  for (const [id, segment] of boundary) { const list = outgoing[segment.a.id] ?? []; list.push(id); outgoing[segment.a.id] = list; }
   const rings: Point[][] = [];
   for (const [firstId, first] of boundary) {
     if (!boundary.has(firstId)) continue; const ring: Point[] = []; let id = firstId;
     while (boundary.has(id)) {
-      const segment = boundary.get(id)!; boundary.delete(id); ring.push(pointFromKey(segment.a)); if (segment.b === first.a) break;
-      const choices = (outgoing.get(segment.b) ?? []).filter((candidate) => boundary.has(candidate)); if (!choices.length) { ring.length = 0; break; }
-      const a = pointFromKey(segment.a); const b = pointFromKey(segment.b); const angle = Math.atan2(b.y - a.y, b.x - a.x);
+      const segment = boundary.get(id)!; boundary.delete(id); ring.push({ ...segment.a.point! }); if (segment.b === first.a) break;
+      const choices = (outgoing[segment.b.id] ?? []).filter((candidate) => boundary.has(candidate)); if (!choices.length) { ring.length = 0; break; }
+      if (choices.length === 1) { id = choices[0]; continue; }
+      const a = segment.a.point!; const b = segment.b.point!; const angle = Math.atan2(b.y - a.y, b.x - a.x);
       choices.sort((one, two) => {
-        const turn = (candidate: string) => { const end = pointFromKey(boundary.get(candidate)!.b); return (Math.atan2(end.y - b.y, end.x - b.x) - angle + Math.PI * 2) % (Math.PI * 2); };
-        return turn(one) - turn(two) || one.localeCompare(two);
+        const turn = (candidate: number) => { const end = boundary.get(candidate)!.b.point!; return (Math.atan2(end.y - b.y, end.x - b.x) - angle + Math.PI * 2) % (Math.PI * 2); };
+        const oneEdge = boundary.get(one)!; const twoEdge = boundary.get(two)!;
+        return turn(one) - turn(two) || `${oneEdge.a.key}|${oneEdge.b.key}`.localeCompare(`${twoEdge.a.key}|${twoEdge.b.key}`);
       }); id = choices[0];
     }
     if (ring.length >= 3 && Math.abs(area(ring)) > 1e-10) rings.push(ring.filter((p, i) => {
@@ -206,6 +250,33 @@ function unionBoundary(polygons: readonly Polygon[]): Point[][] {
     }));
   }
   return rings.filter((ring) => ring.length >= 3).sort((a, b) => Math.abs(area(b)) - Math.abs(area(a)) || pointKey(a[0]).localeCompare(pointKey(b[0])));
+}
+
+/**
+ * Rings are demanded only by explicit readers/serialization. The mesh buffers
+ * remain readonly; mutating them before the first rings read is unsupported.
+ * This top-level owner retains no builder inputs or original polygons.
+ */
+export function createDeferredPathLayer(role: PathRibbonRole, positions: readonly number[], indices: readonly number[]): ContinuousPathLayer {
+  if (positions.length % 8 !== 0) throw new Error('Continuous path layers require complete eight-number quad blocks');
+  let cachedRings: Point[][] | undefined;
+  return {
+    role,
+    get rings() {
+      if (cachedRings === undefined) {
+        const polygons: Polygon[] = [];
+        for (let i = 0; i < positions.length; i += 8) polygons.push([
+          { x: positions[i], y: positions[i + 1] }, { x: positions[i + 2], y: positions[i + 3] },
+          { x: positions[i + 4], y: positions[i + 5] }, { x: positions[i + 6], y: positions[i + 7] },
+        ]);
+        const complete = unionBoundary(polygons);
+        cachedRings = complete;
+      }
+      return cachedRings;
+    },
+    positions,
+    indices,
+  };
 }
 
 /**
@@ -245,6 +316,6 @@ export function buildPathRibbon(chains: readonly PathChain[], coverage: readonly
       const base = positions.length / 2; for (const p of polygon) positions.push(p.x, p.y);
       for (const [a, b, c] of [[0, 1, 2], [0, 2, 3]]) if (area([polygon[a], polygon[b], polygon[c]]) > 1e-12) indices.push(base + a, base + b, base + c);
     }
-    return { role, rings: unionBoundary(polygons[role]), positions, indices };
+    return createDeferredPathLayer(role, positions, indices);
   });
 }

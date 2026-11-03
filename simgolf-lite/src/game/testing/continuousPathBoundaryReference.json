@@ -1,0 +1,347 @@
+{
+  "format": "continuous-path-boundary-reference-v1",
+  "acceptedCommit": "10c85b89a9bf82afa9b0942b13072e05de06416a",
+  "algorithm": "SHA-256 of exact JSON.stringify(value); no normalization, rounding, sorting or output projection",
+  "sourceHashes": {
+    "src/game/paths/continuousPathRibbon.ts": "9ef0e32712f709911f7042705221928cf45f45b201560b9f279d8c58a8d477ac",
+    "src/game/paths/continuousPathTopology.ts": "cffab9ff81092ab41e0524c029a1bb7030ad61dd524ab768353e213b4a3cfa0c",
+    "src/game/paths/continuousPathPlan.ts": "b3362011525c0e155fbae07c21a21252589bde288a527c00a1b016e581998835",
+    "src/game/testing/continuousPathFixtures.ts": "6657825a89347a9310848d1ae625942c32d351545eb834816d0814393e7e601a"
+  },
+  "fixtureDefinitionSha256": "8770abc596a036de4399a1b01b68af9eb9dbffd0643417d10ced30a21cfa56c5",
+  "cases": [
+    {
+      "name": "tile-empty",
+      "kind": "plan",
+      "inputSha256": "5e0a540288ef4f1d212a48e2bf35aeb947b3b76974618405e909487f72fac0ba",
+      "outputSha256": "68067041ca987819d14f70da0abcef8cf96587a937a35a906dd1cf7acd64ccbb",
+      "outputBytes": 2439,
+      "triangles": 0,
+      "ringPoints": 0
+    },
+    {
+      "name": "tile-straight",
+      "kind": "plan",
+      "inputSha256": "09102ee9f6b598d66863d3f50a6321f0b73257178cbc21954d26aabc734986e5",
+      "outputSha256": "5ef8e6416b32707d50d3c6b655c67a8c117a02babe8dfdaf20efd88b663427ae",
+      "outputBytes": 78512,
+      "triangles": 1350,
+      "ringPoints": 294
+    },
+    {
+      "name": "tile-diagonal",
+      "kind": "plan",
+      "inputSha256": "314e696b39d2dc863cb2df6b70aec86ce267a637213fd8f1f9a31eb5c1f13ce0",
+      "outputSha256": "0f99ba26d174ec52031a817e588f2fb6cea860c844e6b77cce5274c0b1dd1165",
+      "outputBytes": 525960,
+      "triangles": 5689,
+      "ringPoints": 2926
+    },
+    {
+      "name": "tile-bend",
+      "kind": "plan",
+      "inputSha256": "f849b936bb3576a0aba1bdbfc1171edbe8865b3d33c771dcee5108cf672100d5",
+      "outputSha256": "380c1fb4c2ec4204dfe5a3285ed3bc518ce965c524a5794bbb342e08020ca9fc",
+      "outputBytes": 143392,
+      "triangles": 1817,
+      "ringPoints": 694
+    },
+    {
+      "name": "tile-T",
+      "kind": "plan",
+      "inputSha256": "13ef94f57398d71531b7c781d7db0a9a53f8a61627034c8c62faabec8c07dfcc",
+      "outputSha256": "b68712f0ee6f89d3be5f3bf28b67176db4c550257d620012dc6d05a66564efff",
+      "outputBytes": 123494,
+      "triangles": 1976,
+      "ringPoints": 479
+    },
+    {
+      "name": "tile-cross",
+      "kind": "plan",
+      "inputSha256": "012e8be79bc21a8d59826f93badfd3bc2b10097875a247360d264096816fc6fb",
+      "outputSha256": "22889834a6f93163947e57dfdc6fd8674bf7d48352191c5f9c41b259ba0fffca",
+      "outputBytes": 137548,
+      "triangles": 2062,
+      "ringPoints": 664
+    },
+    {
+      "name": "tile-loop",
+      "kind": "plan",
+      "inputSha256": "b1120d028c8420b91d25a9f9112e87fd3085b6e20b36c9b382468a76d6746b4f",
+      "outputSha256": "7c712bb9cf391c7952b81a79b71782ca25ecc0585b5dfb97701eceaf9b5641c3",
+      "outputBytes": 334129,
+      "triangles": 4148,
+      "ringPoints": 1488
+    },
+    {
+      "name": "tile-isolated",
+      "kind": "plan",
+      "inputSha256": "3b58818acfffa71ecc797d360654b32c415edf4fab0f3a4f94bb4dfc088eee6b",
+      "outputSha256": "701c14c170c0de9f73149d65f16803c5a68e5aa76311e6e9edd42834074f9a64",
+      "outputBytes": 31681,
+      "triangles": 290,
+      "ringPoints": 284
+    },
+    {
+      "name": "tile-broad",
+      "kind": "plan",
+      "inputSha256": "2555de066370ae27c61353ef7066e3dde23402ddec1a9f9b18fbe85103ea47ab",
+      "outputSha256": "179dfc18f20d88455652e32fb22e7dcd38952cc91aefc82a34eb50e9274aafed",
+      "outputBytes": 69278,
+      "triangles": 1110,
+      "ringPoints": 294
+    },
+    {
+      "name": "tile-corner",
+      "kind": "plan",
+      "inputSha256": "a0f4507b1f4ce52bf0aa8223547026c1270e6f0adaabe2d6bf1b3f54e3a5f4f9",
+      "outputSha256": "c84d593f2ad3f11368e29e13325fe9d3fb5982d85fe744a8c25bf388777512ce",
+      "outputBytes": 62264,
+      "triangles": 580,
+      "ringPoints": 568
+    },
+    {
+      "name": "tile-straight-extended-preview",
+      "kind": "plan",
+      "inputSha256": "2a349770e82756205a89440ab20e74c6ca194167f3550f3a7c3e9a0fcc910635",
+      "outputSha256": "77e6d38c1c89800e97df4f5ae048811706ecaebc36438f1c8fc4c4a580c0c53a",
+      "outputBytes": 81686,
+      "triangles": 1430,
+      "ringPoints": 294
+    },
+    {
+      "name": "tile-even-brush-2",
+      "kind": "plan",
+      "inputSha256": "7f69ca98c5e2465c252d9b5b4a34974d5d515b86d9e88f9161b65e61fb537170",
+      "outputSha256": "6f71a398341fb5fc28b6e38c192906556411535cf23274702a6849ccb3d68b62",
+      "outputBytes": 31690,
+      "triangles": 290,
+      "ringPoints": 284
+    },
+    {
+      "name": "tile-even-brush-4",
+      "kind": "plan",
+      "inputSha256": "128a33f60445a520cae9714f41efc2640e246bb6700b3fcdcfc1de0c9d9f9033",
+      "outputSha256": "ffe254f81c949fefa5452e1563a29699f65983489e9f8c69be85e432b602a81a",
+      "outputBytes": 31734,
+      "triangles": 290,
+      "ringPoints": 284
+    },
+    {
+      "name": "tile-open-detour",
+      "kind": "plan",
+      "inputSha256": "beaad9ea86abccae98e6f79dc51448fb9d23e97dab0f16d70410a7888bd107bc",
+      "outputSha256": "da7bc1c864eadc0e6568978b6b679380b3ea3a54d777b7d30d542f7b92e464e3",
+      "outputBytes": 260730,
+      "triangles": 2891,
+      "ringPoints": 1438
+    },
+    {
+      "name": "saved-S-width-1",
+      "kind": "plan",
+      "inputSha256": "1c8ac0d91533152152b1191b12da22e64612d1861cbc280ed5d2a2d548c74a53",
+      "outputSha256": "a74d9b74d3cefc69b03ad6d119f3ad32e7da7d32ca33ffadfbf7c479961dffe9",
+      "outputBytes": 1481974,
+      "triangles": 13930,
+      "ringPoints": 9762
+    },
+    {
+      "name": "saved-S-width-1.5",
+      "kind": "plan",
+      "inputSha256": "4251cd4407f789cb9a753ece2fd4b1757957607ae13e575db7d6db26c873df94",
+      "outputSha256": "9efc7366cb11a376babd84e7b806e05e8dfb71f27c8aae8bdad86755dee72d15",
+      "outputBytes": 1427105,
+      "triangles": 13848,
+      "ringPoints": 9122
+    },
+    {
+      "name": "saved-S-width-2.5",
+      "kind": "plan",
+      "inputSha256": "1901dfe6d94c2b36a701cf1d40cfb4f86ca6fb69c691353c1ae2ef71bb3760f4",
+      "outputSha256": "3e59dcbd494207f36ef0c198ae9150eec819078831dedae97098f74829999174",
+      "outputBytes": 1199422,
+      "triangles": 12156,
+      "ringPoints": 7682
+    },
+    {
+      "name": "saved-S-explicit-tangents",
+      "kind": "plan",
+      "inputSha256": "d8860d281ab54383cb40c0e6dc53752000e709d044981ff2e53aa7cbc99d7280",
+      "outputSha256": "366e298a5cc7b5a148bc007f85686a32800068f04c93823f2f26e627e17f744c",
+      "outputBytes": 1560319,
+      "triangles": 15440,
+      "ringPoints": 8750
+    },
+    {
+      "name": "saved-S-translated",
+      "kind": "plan",
+      "inputSha256": "46a4643e64a19d930a649359d0c3fb0f92df3b5b299d4b4d6f9275e7d9da879b",
+      "outputSha256": "bd5d3de93ff39f559855f416aa4ecbb7aeb3afd6db74f47fc4cdd28c5bffb736",
+      "outputBytes": 1344681,
+      "triangles": 13075,
+      "ringPoints": 8773
+    },
+    {
+      "name": "saved-S-reversed",
+      "kind": "plan",
+      "inputSha256": "bb473ee2cde4c5025e5680b90db32cce1ecfa2932d7c758088079d190d6c1bc8",
+      "outputSha256": "70c37b3a0abcf14ca7b7fc7e9418503c624d61f950791bb9f575f07f86b25810",
+      "outputBytes": 1426838,
+      "triangles": 13848,
+      "ringPoints": 9122
+    },
+    {
+      "name": "saved-overwrite-gap-excluded-orphan",
+      "kind": "plan",
+      "inputSha256": "b088a3f55df56c6c43943919880c60d2dde13ec8efc0b312cdf03b06465b7e54",
+      "outputSha256": "e26e3ee5a45cbee939890f88440982a416615c95092b3e56f9bc085596340b0f",
+      "outputBytes": 160411,
+      "triangles": 2660,
+      "ringPoints": 314
+    },
+    {
+      "name": "saved-crossing",
+      "kind": "plan",
+      "inputSha256": "60954da9ef81df6042dda02038c57f86c76c4f00babc0af29ddb1a6801cd3bec",
+      "outputSha256": "447b4d6d68b990eac69dfae46d8cb389628b75ca1783e7de783ae3f04b3fd60d",
+      "outputBytes": 147585,
+      "triangles": 2070,
+      "ringPoints": 674
+    },
+    {
+      "name": "saved-crossing-reordered",
+      "kind": "plan",
+      "inputSha256": "b682a066994c9de160e7d9ebf826acc2f88959d352bf0bc1188711f7972fd81a",
+      "outputSha256": "447b4d6d68b990eac69dfae46d8cb389628b75ca1783e7de783ae3f04b3fd60d",
+      "outputBytes": 147585,
+      "triangles": 2070,
+      "ringPoints": 674
+    },
+    {
+      "name": "saved-width-feature-transition",
+      "kind": "plan",
+      "inputSha256": "7bb0098b7ebd3e763a41e92f7340c3b62e38e58844fec70ce0e0f729f1366740",
+      "outputSha256": "8ee84650d08d095185c2809a015872b4e355b568716456c423fa223d28cae284",
+      "outputBytes": 137536,
+      "triangles": 2254,
+      "ringPoints": 490
+    },
+    {
+      "name": "saved-to-legacy-transition",
+      "kind": "plan",
+      "inputSha256": "d73f71c84bb672f353cc1d13aa21e51635a97e380f2218a88f032a018a3358d1",
+      "outputSha256": "a58d416337ee66c54edcb777025f005fdb5cd243b056e036e63baf55c0b0a73a",
+      "outputBytes": 140497,
+      "triangles": 2420,
+      "ringPoints": 294
+    },
+    {
+      "name": "saved-corner-contact",
+      "kind": "plan",
+      "inputSha256": "74823369b8bd45cdbd3d84802c849a26b140a43792048c1a23d7545b2b653353",
+      "outputSha256": "ae41fc581bba8384604bf54dc542415e4bff414e880bab21380b0ec55869a747",
+      "outputBytes": 146751,
+      "triangles": 1558,
+      "ringPoints": 717
+    },
+    {
+      "name": "saved-corner-remote-detour",
+      "kind": "plan",
+      "inputSha256": "ca0c849ac223f02f77c2e7433ac04b00c37e6132ffd0ad771bd7a9b73fe84556",
+      "outputSha256": "14198a56ac8dd9f976edc161eaa48bbd93509380b64977d4e4add8b94f86b563",
+      "outputBytes": 148364,
+      "triangles": 1558,
+      "ringPoints": 717
+    },
+    {
+      "name": "saved-S-repeat-independent",
+      "kind": "plan",
+      "inputSha256": "4251cd4407f789cb9a753ece2fd4b1757957607ae13e575db7d6db26c873df94",
+      "outputSha256": "9efc7366cb11a376babd84e7b806e05e8dfb71f27c8aae8bdad86755dee72d15",
+      "outputBytes": 1427105,
+      "triangles": 13848,
+      "ringPoints": 9122
+    },
+    {
+      "name": "ribbon-axis-partition-many-cuts",
+      "kind": "ribbon",
+      "inputSha256": "23125dff93f37d26a82195dbbbe52ca88afea65dda019321dec690a1ff363a49",
+      "outputSha256": "9ef0bf1b452f3d11cf940270966834d5306330eb3c7dfcdc7bad85cecb0e1162",
+      "outputBytes": 110711,
+      "triangles": 1478,
+      "ringPoints": 634
+    },
+    {
+      "name": "ribbon-near-coincident-weld-anchors",
+      "kind": "ribbon",
+      "inputSha256": "862f3ad4bfdbef8c4f5469b4dfeafd1296e806ae00c3d9153e266b57fe5960ba",
+      "outputSha256": "68b3096ca6cf68225438ba4cfbb88f8919bed9705b134d3a53a58784c97e4e0c",
+      "outputBytes": 579254,
+      "triangles": 6410,
+      "ringPoints": 1244
+    },
+    {
+      "name": "ribbon-narrow-quantized-slabs",
+      "kind": "ribbon",
+      "inputSha256": "772db8488d027c87baf11f475d49b65697841e40164ebf01a4eb043a23244c38",
+      "outputSha256": "df8cc3e88c9ced0d38f34dcadc3da96511f58be94fddc76f18ba3bc1108d0ec8",
+      "outputBytes": 162636,
+      "triangles": 1793,
+      "ringPoints": 827
+    },
+    {
+      "name": "ribbon-repeated-overlapping-chains",
+      "kind": "ribbon",
+      "inputSha256": "5ab838968dce099901fc66d230583f7685d52db66422eb18d637ba7404dfe85a",
+      "outputSha256": "675234c40f5add76bf5e78d3015f23ca40ec02b58cf04accfb5293601e177127",
+      "outputBytes": 71311,
+      "triangles": 1006,
+      "ringPoints": 300
+    },
+    {
+      "name": "ribbon-reversed-chain",
+      "kind": "ribbon",
+      "inputSha256": "31a48af6eecff5af87609dc78684387491b631a15bfe3f477d5d8e07fd79269f",
+      "outputSha256": "7f8bcb61fc5f32d01b87c51cb3921f450e064f73bef47f499a6c11a96d2a9987",
+      "outputBytes": 140535,
+      "triangles": 1378,
+      "ringPoints": 1080
+    },
+    {
+      "name": "ribbon-closed-mini-loop",
+      "kind": "ribbon",
+      "inputSha256": "523cc39170bcd7f67018837a473e0506c48e1fd12bbe5f972d1fed334dd689ec",
+      "outputSha256": "df4a9b7681b1f3bfc54725b0e5ccc8b6a8e4361b9012b0706d3dca95565eb16e",
+      "outputBytes": 40250,
+      "triangles": 544,
+      "ringPoints": 324
+    },
+    {
+      "name": "ribbon-EPS-offset-5e-9",
+      "kind": "ribbon",
+      "inputSha256": "9ffc60f01c17bf14fd5dd25b14ac53810c6d61177a6996b47c1f7317c3d57ce6",
+      "outputSha256": "f1bd74c78e8b0509581f486bc290770de28e962fc15996dd207469cc01150c1b",
+      "outputBytes": 121348,
+      "triangles": 1521,
+      "ringPoints": 724
+    },
+    {
+      "name": "ribbon-EPS-offset-1e-8",
+      "kind": "ribbon",
+      "inputSha256": "9061de7e9d1a3605cddbb7a249930bdc0fa90b3715680be854224cff4d3217c8",
+      "outputSha256": "1dff1f39edc55fd283015a8c6ed8e02e5b2835d5b9e3538f6df126d1e547a463",
+      "outputBytes": 121569,
+      "triangles": 1521,
+      "ringPoints": 730
+    },
+    {
+      "name": "ribbon-EPS-offset-1.5e-8",
+      "kind": "ribbon",
+      "inputSha256": "15a8b2837e50870b397fe4725de1d87a0f7bc20eba99fa5d861c966b60516205",
+      "outputSha256": "d67b715b420834dd68d6a2a8adb297810d1f962e472c8481ffb4a43288b0d465",
+      "outputBytes": 122427,
+      "triangles": 1535,
+      "ringPoints": 736
+    }
+  ]
+}
