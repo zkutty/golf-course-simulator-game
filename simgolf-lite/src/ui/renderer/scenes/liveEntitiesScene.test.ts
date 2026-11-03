@@ -8,6 +8,7 @@ import { DEFAULT_COURSE } from "../../../game/models/defaults";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import { SceneSystemHost } from "../SceneSystemHost";
 import { createLiveEntitiesSceneSystem } from "./liveEntitiesScene";
+import * as emoteFeed from "../../../game/render/emoteFeed";
 
 function point(x = 0, y = 0) {
   return {
@@ -139,7 +140,7 @@ function snapshot(revision = 1, patch: Partial<RenderSnapshot> = {}): RenderSnap
 
 const unbounded = { left: -Infinity, right: Infinity, top: -Infinity, bottom: Infinity };
 
-function fixture(options: { atlasReady?: boolean; addLog?: string[] } = {}) {
+function fixture(options: { atlasReady?: boolean; addLog?: string[]; readPopulation?: () => { readonly generation: symbol; readonly golfers: readonly GolferRenderData[] } } = {}) {
   const world = new FakeContainer();
   world.scale.set(1);
   const objects = new FakeContainer();
@@ -164,6 +165,7 @@ function fixture(options: { atlasReady?: boolean; addLog?: string[] } = {}) {
       screenOverlay: screenOverlay as unknown as PIXI.Container,
     },
     {
+      ...{ readPopulation: options.readPopulation },
       atlasReady: () => options.atlasReady ?? false,
       golferFrame: () => texture as unknown as PIXI.Texture,
       createContainer: () => {
@@ -372,5 +374,228 @@ describe("100-golfer retained scene budget", () => {
     host.dispose();
     expect(scene.objects.children).toHaveLength(0);
     expect(scene.terrainDecals.children).toHaveLength(0);
+  });
+});
+
+
+type Population = Readonly<{ generation: symbol; golfers: readonly GolferRenderData[] }>;
+function populationTick(scene: ReturnType<typeof fixture>, drawn: readonly GolferRenderData[], nowMs = 1_000, renderGolfers = true) {
+  scene.system.tickEffects(nowMs, true);
+  const input = { nowMs, animationsEnabled: true, golfers: drawn, renderGolfers, cullBounds: unbounded,
+    worldPointToScreen: (x: number, y: number) => ({ x, y }), followCamera: vi.fn(), startleAtmosphere: vi.fn(), tickMobilityEntities: vi.fn() };
+  scene.system.tickEntities(input);
+}
+
+describe("ZK-1498 coherent population fee feedback", () => {
+  it("seeds existing population without replaying walk-in feedback", () => {
+    const population: Population = Object.freeze({ generation: Symbol(), golfers: Object.freeze([6, 7, 14, 15, 21].map((id) => Object.freeze(golfer(id)))) });
+    const before = JSON.stringify(population.golfers);
+    const scene = fixture({ readPopulation: () => population });
+    scene.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      populationTick(scene, population.golfers);
+      expect(scene.system.diagnostics().bubbles).toBe(0);
+      expect(scene.screenOverlay.children).toEqual([]);
+      expect(JSON.stringify(population.golfers)).toBe(before);
+    } finally { scene.system.destroy!(); }
+  });
+
+  it("seeds only existing IDs while a new arrival on the same first visible tick gets one fee bubble", () => {
+    const generation = Symbol();
+    let population: Population = { generation, golfers: [golfer(6)] };
+    const scene = fixture({ readPopulation: () => population });
+    scene.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      population = { generation, golfers: [golfer(6), golfer(7)] };
+      populationTick(scene, population.golfers);
+      expect(scene.system.diagnostics().bubbles).toBe(1);
+      const bubble = scene.screenOverlay.children[0];
+      populationTick(scene, population.golfers, 1_100);
+      expect(scene.screenOverlay.children).toEqual([bubble]);
+    } finally { scene.system.destroy!(); }
+  });
+
+  it("uses coherent matching data and drops hidden unobserved seeds on daily ID reuse without an empty observation", () => {
+    let population: Population = { generation: Symbol(), golfers: [golfer(6)] };
+    const scene = fixture({ readPopulation: () => population });
+    scene.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      populationTick(scene, [], 1_000, false);
+      expect(scene.system.diagnostics().golfers).toBe(0);
+      population = { generation: Symbol(), golfers: [golfer(6)] };
+      // The compatibility draw list is stale/empty: only the coherent pair is authoritative.
+      populationTick(scene, [], 2_000, true);
+      expect(scene.system.diagnostics().golfers).toBe(1);
+      expect(scene.system.diagnostics().bubbles).toBe(1);
+    } finally { scene.system.destroy!(); }
+  });
+});
+
+
+describe("ZK-1498 population lifecycle controls", () => {
+  it("ZK-1498 correction3 keeps seeded fee processing across visible-hidden-visible ticks", () => {
+    const population: Population = { generation: Symbol(), golfers: [golfer(6)] };
+    const scene = fixture({ readPopulation: () => population });
+    scene.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      populationTick(scene, [], 1_000);
+      populationTick(scene, [], 2_000, false);
+      populationTick(scene, [], 10_000);
+      expect(scene.system.diagnostics()).toMatchObject({ golfers: 1, bubbles: 0 });
+    } finally { scene.system.destroy!(); }
+  });
+
+  it("ZK-1498 correction3 processes an observed genuine arrival once across hide/show beyond cooldown", () => {
+    const record = vi.spyOn(emoteFeed, "recordEmote");
+    const generation = Symbol();
+    let population: Population = { generation, golfers: [] };
+    const scene = fixture({ readPopulation: () => population });
+    scene.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      population = { generation, golfers: [golfer(6)] };
+      populationTick(scene, [], 1_000);
+      populationTick(scene, [], 2_000, false);
+      populationTick(scene, [], 10_000);
+      expect(record.mock.calls.filter(([id, kind]) => id === 6 && kind === "cashBad")).toHaveLength(1);
+      population = { generation, golfers: [] };
+      populationTick(scene, [], 11_000, false);
+      population = { generation, golfers: [golfer(6)] };
+      populationTick(scene, [], 20_000);
+      expect(record.mock.calls.filter(([id, kind]) => id === 6 && kind === "cashBad")).toHaveLength(2);
+    } finally { scene.system.destroy!(); record.mockRestore(); }
+  });
+
+  it("ZK-1498 correction3 retires recent thoughts on generation replacement but leaves renderer-only disposal unchanged", () => {
+    emoteFeed.__resetEmoteFeedForTests();
+    const generation = Symbol();
+    let population: Population = { generation, golfers: [] };
+    const scene = fixture({ readPopulation: () => population });
+    scene.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      population = { generation, golfers: [golfer(6)] };
+      populationTick(scene, [], 1_000);
+      expect(emoteFeed.recentEmotes(6).map((event) => event.atMs)).toEqual([1_000]);
+      population = { generation: Symbol(), golfers: [golfer(6)] };
+      populationTick(scene, [], 2_000);
+      expect(emoteFeed.recentEmotes(6).map((event) => event.atMs)).toEqual([2_000]);
+      scene.system.destroy!();
+      expect(emoteFeed.recentEmotes(6).map((event) => event.atMs)).toEqual([2_000]);
+    } finally { scene.system.destroy!(); emoteFeed.__resetEmoteFeedForTests(); }
+  });
+
+  it("keeps hidden initial seeds but retires absent unobserved IDs without suppressing future arrivals", () => {
+    const generation = Symbol();
+    let population: Population = { generation, golfers: [golfer(6)] };
+    const scene = fixture({ readPopulation: () => population });
+    scene.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      populationTick(scene, [], 1_000, false);
+      populationTick(scene, [], 1_100, true);
+      expect(scene.system.diagnostics()).toMatchObject({ golfers: 1, bubbles: 0 });
+      populationTick(scene, [], 1_200, false);
+      population = { generation, golfers: [] };
+      populationTick(scene, [], 1_300, false);
+      population = { generation, golfers: [golfer(7)] };
+      populationTick(scene, [], 2_000, true);
+      expect(scene.system.diagnostics().bubbles).toBe(1);
+    } finally { scene.system.destroy!(); }
+
+    let hidden: Population = { generation, golfers: [golfer(6)] };
+    const retired = fixture({ readPopulation: () => hidden });
+    retired.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      hidden = { generation, golfers: [] };
+      populationTick(retired, [], 1_000, false);
+      hidden = { generation, golfers: [golfer(6)] };
+      populationTick(retired, [], 2_000, true);
+      expect(retired.system.diagnostics().bubbles).toBe(1);
+    } finally { retired.system.destroy!(); }
+  });
+
+  it("gives a genuinely new eligible arrival exactly one fee event after an empty initial population", () => {
+    const record = vi.spyOn(emoteFeed, "recordEmote");
+    const generation = Symbol();
+    let population: Population = { generation, golfers: [] };
+    const scene = fixture({ readPopulation: () => population });
+    scene.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      populationTick(scene, [], 1_000);
+      population = { generation, golfers: [golfer(6)] };
+      populationTick(scene, [], 2_000);
+      populationTick(scene, [], 2_100);
+      expect(record.mock.calls.filter(([id, kind]) => id === 6 && kind === "cashBad")).toHaveLength(1);
+      expect(scene.system.diagnostics().bubbles).toBe(1);
+    } finally { scene.system.destroy!(); record.mockRestore(); }
+  });
+
+  it("releases overlapping old-generation entities and bubbles before reused ID arrival without destroying borrowed textures", () => {
+    const generation = Symbol();
+    let population: Population = { generation, golfers: [] };
+    const scene = fixture({ atlasReady: true, readPopulation: () => population });
+    scene.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      population = { generation, golfers: [golfer(6)] };
+      populationTick(scene, [], 1_000);
+      const oldHolder = scene.objects.children[0];
+      const oldBubble = scene.screenOverlay.children[0];
+      const oldBubbleChildren = [...(oldBubble as FakeContainer).children];
+      const effect = scene.fx.children[0];
+      population = { generation: Symbol(), golfers: [golfer(6, { x: 20, mood: .3 })] };
+      populationTick(scene, [golfer(6)], 2_000);
+      expect(oldHolder.destroy).toHaveBeenCalledOnce();
+      expect(oldBubble.destroy).toHaveBeenCalledOnce();
+      expect(oldBubbleChildren.every((node) => node.destroy.mock.calls.length === 1)).toBe(true);
+      expect(scene.objects.children[0]).not.toBe(oldHolder);
+      expect(scene.screenOverlay.children[0]).not.toBe(oldBubble);
+      expect(scene.system.diagnostics()).toMatchObject({ golfers: 1, bubbles: 1 });
+      expect(scene.fx.children).toEqual([effect]);
+      expect(scene.texture.destroy).not.toHaveBeenCalled();
+    } finally { scene.system.destroy!(); }
+  });
+
+  it("preserves mood and hole reactions for seeded golfers with exact expiry and cooldown", () => {
+    const record = vi.spyOn(emoteFeed, "recordEmote");
+    const generation = Symbol();
+    let population: Population = { generation, golfers: [golfer(6)] };
+    const scene = fixture({ readPopulation: () => population });
+    scene.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      populationTick(scene, [], 1_000);
+      population = { generation, golfers: [golfer(6, { mood: .9 })] };
+      populationTick(scene, [], 2_000);
+      const bubble = scene.screenOverlay.children[0];
+      populationTick(scene, [], 5_099);
+      expect(scene.system.diagnostics().bubbles).toBe(1);
+      populationTick(scene, [], 5_100);
+      expect(scene.system.diagnostics().bubbles).toBe(0);
+      expect(bubble.destroy).toHaveBeenCalledOnce();
+      population = { generation, golfers: [golfer(6, { mood: .9, scoredHoles: 1, lastHoleDelta: -1 })] };
+      populationTick(scene, [], 8_100);
+      expect(record.mock.calls.map(([, kind]) => kind)).toEqual(["happy", "star"]);
+    } finally { scene.system.destroy!(); record.mockRestore(); }
+  });
+
+  it("preserves retained hazard feedback once for a seeded golfer and destroys it on departure/disposal", () => {
+    const record = vi.spyOn(emoteFeed, "recordEmote");
+    const generation = Symbol();
+    let population: Population = { generation, golfers: [retainedGolfer(.36, "water")] };
+    const scene = fixture({ atlasReady: true, readPopulation: () => population });
+    scene.system.create!(snapshot(1, { course: { ...DEFAULT_COURSE, baseGreenFee: 120 } }));
+    try {
+      populationTick(scene, [], 1_000);
+      population = { generation, golfers: [retainedGolfer(.9, "water")] };
+      populationTick(scene, [], 2_000);
+      populationTick(scene, [], 2_100);
+      expect(record.mock.calls.map(([, kind]) => kind)).toEqual(["alert"]);
+      const bubble = scene.screenOverlay.children[0];
+      const children = [...(bubble as FakeContainer).children];
+      population = { generation, golfers: [] };
+      populationTick(scene, [], 2_200);
+      expect(bubble.destroy).toHaveBeenCalledOnce();
+      expect(children.every((node) => node.destroy.mock.calls.length === 1)).toBe(true);
+      scene.system.destroy!(); scene.system.destroy!();
+      expect(scene.screenOverlay.children).toEqual([]);
+      expect(scene.texture.destroy).not.toHaveBeenCalled();
+    } finally { scene.system.destroy!(); record.mockRestore(); }
   });
 });

@@ -42,6 +42,21 @@ import { currentShotEvidence, type CurrentShotEvidence } from "../game/live/curr
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
+
+/** A borrowed synchronous render view; generation follows authoritative population identity. */
+export function createLivePopulationPublisher() {
+  let authority: object | null = null;
+  let population: Readonly<{ generation: symbol; golfers: readonly GolferRenderData[] }> = Object.freeze({ generation: Symbol("live-population"), golfers: [] });
+  return {
+    read: () => population,
+    publish: (nextAuthority: object | null, golfers: readonly GolferRenderData[]) => {
+      const generation = nextAuthority === authority ? population.generation : Symbol("live-population");
+      authority = nextAuthority;
+      population = Object.freeze({ generation, golfers });
+    },
+  };
+}
+
 export type CourseOperationsPatch = Partial<Omit<CourseOperations, "beverage">> & { beverage?: Partial<CourseOperations["beverage"]> };
 
 export interface SelectedGolferDetail {
@@ -274,6 +289,16 @@ export function useLiveSimulation(args: {
   const speedRef = useRef<SpeedName>(speed);
   const liveRef = useRef<LiveState | null>(null);
   const golfersRef = useRef<GolferRenderData[]>([]);
+  const populationPublisherRef = useRef<ReturnType<typeof createLivePopulationPublisher> | null>(null);
+  if (populationPublisherRef.current === null) {
+    populationPublisherRef.current = createLivePopulationPublisher();
+  }
+  const publishRenderPopulation = useCallback((authority: LiveState | null, golfers: GolferRenderData[]) => {
+    golfersRef.current = golfers;
+    populationPublisherRef.current!.publish(authority, golfers);
+  }, []);
+  const readLivePopulation = useCallback(() => populationPublisherRef.current!.read(), []);
+
   // Alternate two retained render buffers so 100+ entity frames do not
   // allocate a new array/object graph every rAF. The previous buffer remains
   // intact long enough for audio edge detection.
@@ -340,9 +365,9 @@ export function useLiveSimulation(args: {
     if (enabled && live && live.golfers.length > 0) {
       statusDirtyRef.current = true;
       reconcileGolfers(live, course, pinChanged ? "daily-pin" : "geometry");
-      golfersRef.current = buildRenderData(live);
+      publishRenderPopulation(live, buildRenderData(live));
     }
-  }, [buildRenderData, enabled, course, publicThreeHoleOperation]);
+  }, [buildRenderData, enabled, course, publicThreeHoleOperation, publishRenderPopulation]);
 
   const flushCash = useCallback(() => {
     const d = pendingCashRef.current;
@@ -461,7 +486,7 @@ export function useLiveSimulation(args: {
     if (closesWeek) weekLedgerRef.current = createWeekLedger(preparedNext.world.week);
     const next = createLiveState(nextCourse, preparedNext.world, nextDayIndex, operationPolicyRef.current);
     liveRef.current = next;
-    golfersRef.current = [];
+    publishRenderPopulation(next, []);
     selectedIdRef.current = null;
     setSelectedId(null);
     const snapshot = snapshotLiveSimulation({
@@ -501,7 +526,7 @@ export function useLiveSimulation(args: {
         standings: sortedStandings(next.tournament.standings),
       } : null,
     }));
-  }, [flushCash, setCourse, setWorld]);
+  }, [flushCash, setCourse, setWorld, publishRenderPopulation]);
 
   const advanceSimulation = useCallback((live: LiveState, realMs: number) => {
     // A fresh course has no operating day to consume yet. Keep the opening
@@ -531,12 +556,12 @@ export function useLiveSimulation(args: {
       }
     }
     const nextRender = buildRenderData(live);
-    golfersRef.current = nextRender;
+    publishRenderPopulation(live, nextRender);
     const eventCap = speedRef.current === "4x" ? 2 : speedRef.current === "2x" ? 3 : 6;
     for (const audioEvent of deriveLiveAudioEvents(previousRender, nextRender, courseRef.current).slice(0, eventCap)) {
       onAudioRef.current?.(audioEvent);
     }
-  }, [buildRenderData, setWorld]);
+  }, [buildRenderData, setWorld, publishRenderPopulation]);
 
   // Main clock loop.
   useEffect(() => {
@@ -548,7 +573,9 @@ export function useLiveSimulation(args: {
         worldRef.current = prepared.world;
         setWorld(() => prepared.world);
       }
-      liveRef.current = createLiveState(courseRef.current, prepared.world, 0, operationPolicyRef.current);
+      const initial = createLiveState(courseRef.current, prepared.world, 0, operationPolicyRef.current);
+      liveRef.current = initial;
+      publishRenderPopulation(initial, []);
     }
 
     const tick = (ts: number) => {
@@ -580,7 +607,7 @@ export function useLiveSimulation(args: {
       rafRef.current = null;
       lastTsRef.current = null;
     };
-  }, [advanceSimulation, enabled, flushCash, publishStatus, finishDay]);
+  }, [advanceSimulation, enabled, flushCash, publishStatus, finishDay, publishRenderPopulation]);
 
   const liveActive = speed !== "paused" || status.onCourse > 0;
 
@@ -601,7 +628,7 @@ export function useLiveSimulation(args: {
     if (!snapshot) {
       statusDirtyRef.current = true;
       liveRef.current = null;
-      golfersRef.current = [];
+      publishRenderPopulation(null, []);
       pendingCashRef.current = 0;
       clockRemainderRef.current = 0;
       weekLedgerRef.current = createWeekLedger(worldRef.current.week);
@@ -615,7 +642,7 @@ export function useLiveSimulation(args: {
     if (!restored) return false;
     statusDirtyRef.current = true;
     liveRef.current = restored.state;
-    golfersRef.current = buildRenderData(restored.state);
+    publishRenderPopulation(restored.state, buildRenderData(restored.state));
     pendingCashRef.current = restored.pendingCash;
     clockRemainderRef.current = restored.clockRemainderMinutes;
     weekLedgerRef.current = restored.weekLedger.days.length === 0 && restored.weekLedger.week === 1 && worldRef.current.week !== 1
@@ -662,17 +689,19 @@ export function useLiveSimulation(args: {
       mobility: buildMobilityOperationsReports({ course: courseRef.current, world: worldRef.current, live: restored.state.m51, week: worldRef.current.week, dayIndex: restored.state.dayIndex }),
     });
     return true;
-  }, [buildRenderData]);
+  }, [buildRenderData, publishRenderPopulation]);
 
   const advanceTime = useCallback((ms: number) => {
     if (!enabled || !Number.isFinite(ms) || ms <= 0) return;
     const live = liveRef.current ?? createLiveState(courseRef.current, worldRef.current, 0, operationPolicyRef.current);
+    const created = liveRef.current !== live;
     liveRef.current = live;
+    if (created) publishRenderPopulation(live, []);
     advanceSimulation(live, Math.min(2_000, ms));
     flushCash();
     publishStatus(live);
     if (live.dayOver) finishDay(live);
-  }, [advanceSimulation, enabled, finishDay, flushCash, publishStatus]);
+  }, [advanceSimulation, enabled, finishDay, flushCash, publishStatus, publishRenderPopulation]);
 
   const setSpeed = useCallback((next: SpeedName) => {
     // Update the loop's ref synchronously. App-shell pause must freeze the
@@ -699,6 +728,7 @@ export function useLiveSimulation(args: {
     speed,
     setSpeed,
     golfersRef,
+    readLivePopulation,
     liveActive,
     selectGolfer,
     selectedId,

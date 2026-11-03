@@ -114,10 +114,17 @@ export interface LiveEntityCullBounds {
   readonly bottom: number;
 }
 
+export interface LiveEntityPopulation {
+  readonly generation: symbol;
+  readonly golfers: readonly GolferRenderData[];
+}
+
 export interface LiveEntityTickInput {
   readonly nowMs: number;
   readonly animationsEnabled: boolean;
   readonly golfers: readonly GolferRenderData[];
+  /** Visibility only; matching population data comes from readPopulation when supplied. */
+  readonly renderGolfers?: boolean;
   readonly selectedGolferId?: number | null;
   readonly followSelected?: boolean;
   readonly cullBounds: LiveEntityCullBounds;
@@ -156,6 +163,7 @@ export interface LiveEntitiesSceneSystem extends RenderSceneSystem {
 }
 
 export interface LiveEntitiesSceneDependencies {
+  readonly readPopulation?: () => LiveEntityPopulation;
   readonly atlasReady?: () => boolean;
   readonly golferFrame?: (frame: string) => PIXI.Texture | undefined;
   readonly createContainer?: () => PIXI.Container;
@@ -250,6 +258,11 @@ export function createLiveEntitiesSceneSystem(
   const createSprite = dependencies.createSprite ?? (() => new PIXI.Sprite());
   const createText = dependencies.createText ?? ((options) => new PIXI.Text(options));
   const bubbleDependencies = { createContainer, createGraphics, createText };
+  const readPopulation = dependencies.readPopulation;
+  const initialPopulation = readPopulation?.();
+  let populationGeneration = initialPopulation?.generation;
+  // Fee processing follows the current unfiltered population, independently of visibility.
+  const feeProcessedIds = new Set(initialPopulation?.golfers.map((golfer) => golfer.id));
 
   let authority: LiveEntityAuthority | null = null;
   const pool = new Map<number, GolferEntry>();
@@ -282,20 +295,26 @@ export function createLiveEntitiesSceneSystem(
     if (recordDeparture) forgetGolfer(id);
   };
 
-  const clear = () => {
-    for (const [id, entry] of pool) destroyEntry(id, entry, false);
+  const clearPopulation = (recordDeparture = false) => {
+    for (const [id, entry] of pool) destroyEntry(id, entry, recordDeparture);
     for (const container of bubbles.values()) {
       container.parent?.removeChild(container);
       destroySceneSubtree(container);
     }
     bubbles.clear();
-    effectGraphics?.parent?.removeChild(effectGraphics);
-    effectGraphics?.destroy();
-    effectGraphics = null;
+    effectGraphics?.clear();
     scheduler = createEmoteScheduler();
     simMovingAt = 0;
     ripples = [];
     impacts = [];
+  };
+
+  const clear = () => {
+    clearPopulation();
+    feeProcessedIds.clear();
+    effectGraphics?.parent?.removeChild(effectGraphics);
+    effectGraphics?.destroy();
+    effectGraphics = null;
     authority = null;
   };
 
@@ -359,7 +378,6 @@ export function createLiveEntitiesSceneSystem(
     const {
       nowMs,
       animationsEnabled,
-      golfers,
       selectedGolferId,
       followSelected,
       cullBounds,
@@ -368,6 +386,19 @@ export function createLiveEntitiesSceneSystem(
       startleAtmosphere,
       tickMobilityEntities,
     } = input;
+    const population = readPopulation?.();
+    if (population && population.generation !== populationGeneration) {
+      clearPopulation(true);
+      feeProcessedIds.clear();
+      populationGeneration = population.generation;
+    }
+    if (population && feeProcessedIds.size) {
+      const present = new Set(population.golfers.map((golfer) => golfer.id));
+      for (const id of feeProcessedIds) if (!present.has(id)) feeProcessedIds.delete(id);
+    }
+    const golfers = population
+      ? input.renderGolfers === false ? [] : population.golfers
+      : input.golfers;
     const seen = new Set<number>();
     const golferById = new Map<number, GolferRenderData>();
     for (const golfer of golfers) {
@@ -397,7 +428,7 @@ export function createLiveEntitiesSceneSystem(
           emote: {
             lastScored: golfer.scoredHoles,
             prevMood: golfer.mood,
-            feeChecked: false,
+            feeChecked: feeProcessedIds.has(golfer.id),
             lastPos: { x: golfer.x, y: golfer.y },
             stillSinceMs: nowMs,
           },
@@ -466,6 +497,7 @@ export function createLiveEntitiesSceneSystem(
       emote.prevMood = golfer.mood;
       if (!emote.feeChecked) {
         emote.feeChecked = true;
+        if (population) feeProcessedIds.add(golfer.id);
         if (golfer.scoredHoles === 0) showEmote(feeEmote(course.baseGreenFee, golfer.id));
       }
       if (
