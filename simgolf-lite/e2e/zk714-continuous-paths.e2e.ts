@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { createNewGame } from "../src/game/gen/newGame";
 import { createReferenceCourse } from "../src/game/testing/referenceCourse";
 import { appendSurfaceFeature, corridorFeature, rasterizeSurfaceFeatureDetailed } from "../src/game/models/surfaceIntent";
@@ -151,6 +151,27 @@ async function boot(page: Page) {
   await expect.poll(async () => (await diagnostic(page)).commit).toBe(candidate);
 }
 const importedSlots = new WeakMap<Page, { count: number; name: string }>();
+async function loadPublicSlot(page: Page, button: Locator, expectedKey: string) {
+  // The saved state can be ready while the old Pixi effect is tearing down.
+  // Hold its exact API identity so a same-key reload cannot pass on that API.
+  const previous = await page.evaluateHandle(() => window.__coursecraftPixiTest ?? null);
+  try {
+    await button.click();
+    await expect(page.getByTestId("save-load-screen")).toBeHidden();
+    await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screenBase)).toBe("in-game");
+    await page.waitForFunction(({ previous, expectedKey, candidate }) => {
+      const api = window.__coursecraftPixiTest;
+      if (!api || api === previous) return false;
+      const viewport = api.viewport(), camera = api.cameraTransform();
+      if (!viewport || !camera || ![viewport.width, viewport.height, camera.world.scale.x, camera.world.scale.y, camera.camera.zoom]
+        .every(value => Number.isFinite(value) && value > 0)) return false;
+      const state = (api.rendererAtlasState() as unknown as { pathMaterialCrossSection?: PathDiagnostic }).pathMaterialCrossSection;
+      return Boolean(state?.active && state.mode === "continuous" && state.planKey === expectedKey && state.commit === candidate);
+    }, { previous, expectedKey, candidate }, { timeout: 30_000 });
+  } finally {
+    await previous.dispose();
+  }
+}
 async function publicLoad(page: Page, file: SaveFile) {
   if (!(await page.evaluate(() => window.__coursecraftTest!.state().paused))) await page.getByRole("button", { name: "Open pause menu", exact: true }).click();
   await page.getByRole("button", { name: /load game/i }).click();
@@ -162,7 +183,7 @@ async function publicLoad(page: Page, file: SaveFile) {
   const name = `P714-Q-${(previous?.count ?? 0) + 1}-${file.course.name}`;
   await page.locator("input[type=file][accept='.coursecraft,.json']").setInputFiles({ name: `${name}.coursecraft`, mimeType: "application/json", buffer: Buffer.from(JSON.stringify(file)) });
   const slot = page.locator("section.cc-save-load-slot").filter({ has: page.getByRole("heading", { name, exact: true }) });
-  await expect(slot).toHaveCount(1); await slot.getByRole("button", { name: "Load", exact: true }).click();
+  await expect(slot).toHaveCount(1); await loadPublicSlot(page, slot.getByRole("button", { name: "Load", exact: true }), continuousPathPlanKey(file.course));
   importedSlots.set(page, { count: (previous?.count ?? 0) + 1, name });
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screenBase)).toBe("in-game");
   await page.evaluate(() => window.__coursecraftTest!.pauseLiveSimulation());
@@ -428,7 +449,7 @@ test("P714 [ui] width draft cancel apply undo redo public reload and failed quot
   await page.getByTestId("design-dock").locator(".cc-design-toolbar strong").click(); await page.keyboard.press("Control+KeyS");
   await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete", { timeout: 30_000 });
   await page.getByRole("button", { name: "Open pause menu", exact: true }).click(); await page.getByRole("button", { name: /load game/i }).click();
-  await page.getByTestId("save-slot-quick-save").getByRole("button", { name: "Load", exact: true }).click(); await page.evaluate(() => window.__coursecraftTest!.pauseLiveSimulation());
+  await loadPublicSlot(page, page.getByTestId("save-slot-quick-save").getByRole("button", { name: "Load", exact: true }), expectedKey); await page.evaluate(() => window.__coursecraftTest!.pauseLiveSimulation());
   expect(await surface(page)).toEqual(applied); expect(await cash(page)).toBe(expected.preview.projectedCash); expect((await diagnostic(page)).planKey).toBe(draft.samples.at(-1)!.key);
   // A narrower commit, followed by an unaffordable expansion, must not leak.
   await selectS(page); await page.getByTestId("design-path-width").selectOption("1"); await page.getByTestId("design-path-width-apply").click();
