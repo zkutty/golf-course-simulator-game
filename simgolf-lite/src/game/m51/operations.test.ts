@@ -13,6 +13,10 @@ import {
   settleMobilityFleet,
 } from "./operations";
 import { mobilityRenderUnits } from "./mobilityRender";
+import { corridorFeature } from "../models/surfaceIntent";
+import { findWalkPath } from "../live/walkPath";
+import { createPathWalkingRouter } from "../paths/pathMovementAdapter";
+import { TimedItineraryBuilder, getOriginalWalkPlan } from "./timedItinerary";
 
 function rentalCourse(options: { carts?: number; pushcarts?: number; paths?: boolean; enabled?: boolean } = {}): Course {
   const width = 60; const height = 24;
@@ -226,5 +230,53 @@ describe("M51 coordinated group mobility operations", () => {
     expect(world.m51?.history.weeklyReports.at(-1)).toMatchObject({ week: 5, days: 7, grossRevenue: 280, operatingCosts: 56, netRevenue: 224 });
     expect(world.m51?.history.weeklyReports.at(-1)?.products).toHaveLength(1);
     expect(world.m51?.history.dailyLedgers.at(-1)?.products[0]).toMatchObject({ golfers: 2, utilizedUnits: 1, grossRevenue: 40, operatingCosts: 8, netRevenue: 32, returns: 1 });
+  });
+});
+
+
+describe("continuous paths preserve logical rental legs", () => {
+  it("matches old multi-corner cart costs after dense walking adaptation, maps, and a fresh restored replan", () => {
+    const active = rentalCourse();
+    const from = { x: 8, y: 4 }, to = { x: 56, y: 8 };
+    for (let y = 5; y <= 8; y++) for (let x = 9; x < 56; x++) active.tiles[y * active.width + x] = "water";
+    const feature = corridorFeature(active, "path", [{ x: 8.5, y: 4.25 }, { x: 24.5, y: 4.1 }, { x: 40.5, y: 4.4 }, { x: 56.5, y: 4.25 }], 1);
+    feature.coverage = active.tiles.flatMap((terrain, index) => terrain === "path" ? [index] : []);
+    active.surfaceIntent = { version: 1, nextId: 2, features: [feature] };
+    const member = () => golfer(1, "logical-leg");
+    const build = (adapted: boolean) => {
+      const builder = new TimedItineraryBuilder({ course: active, cursor: from, personality: member().personality, rng: () => .5,
+        route: adapted ? createPathWalkingRouter(active, new Map()) : (a, b) => findWalkPath(active, a, b) });
+      builder.appendWalk(from, to, 0);
+      return builder.segments.map(segment => ({ ...segment, holeId: "hole-1", dur: segment.dur * 1.25 }));
+    };
+    const baseline = member(), adapted = member(); baseline.pos = adapted.pos = from;
+    baseline.segments = build(false); adapted.segments = build(true);
+    expect(baseline.segments).toHaveLength(2); expect(adapted.segments.length).toBeGreaterThan(100);
+    expect(adapted.segments.every(segment => getOriginalWalkPlan(segment) === getOriginalWalkPlan(adapted.segments[0]))).toBe(true);
+    const baselineState = live(active), adaptedState = live(active);
+    baselineState.golfers = [baseline]; adaptedState.golfers = [adapted];
+    const before = reserveGroupMobility(baselineState, active, [baseline]);
+    const after = reserveGroupMobility(adaptedState, active, [adapted]);
+    expect(after.selection.mode).toBe("riding_cart"); expect(after.cashDelta).toBe(before.cashDelta);
+    expect(after.concessionTransactions).toEqual(before.concessionTransactions);
+    expect(after.assignment.actualTravelMinutes).toBeCloseTo(before.assignment.actualTravelMinutes, 12);
+    expect(after.assignment.walkingFallbackMinutes).toBeCloseTo(before.assignment.walkingFallbackMinutes, 12);
+    expect(after.assignment.offPathTiles).toBe(before.assignment.offPathTiles);
+    expect(adapted.mobilityActualTravelMinutes).toBeCloseTo(baseline.mobilityActualTravelMinutes!, 12);
+    expect(adapted.segments.filter(segment => segment.kind === "pause")).toHaveLength(1);
+    expect(adapted.segments.filter(segment => segment.kind === "walk").some(segment => segment.to.y === 3.75)).toBe(true);
+
+    const snapshot = snapshotLiveSimulation({ state: adaptedState, pendingCash: after.cashDelta, speed: "paused", selectedGolferId: 1 });
+    const restored = restoreLiveSimulation(snapshot)!; expect(restored).not.toBeNull();
+    const restoredMember = restored.state.golfers[0];
+    expect(restoredMember.segments.every(segment => getOriginalWalkPlan(segment) === undefined)).toBe(true);
+    const transactionIds = restored.state.m51!.transactions.map(transaction => transaction.id);
+    // Editing/replanning rebuilds fresh transient authority; the save schema
+    // and restored ordinary segment behavior remain unchanged.
+    restoredMember.segments = build(true);
+    reapplyGroupMobility(restored.state, active, restoredMember);
+    expect(restoredMember.mobilityActualTravelMinutes).toBeCloseTo(baseline.mobilityActualTravelMinutes!, 12);
+    expect(restored.state.m51!.transactions.map(transaction => transaction.id)).toEqual(transactionIds);
+    expect(restoredMember.segments.filter(segment => segment.kind === "pause")).toHaveLength(0);
   });
 });

@@ -2,6 +2,7 @@ import type { ConcessionTransaction, Course, Terrain } from "../models/types";
 import { buildingEntrance } from "../models/buildings";
 import type { Golfer, LiveState, Segment } from "../live/types";
 import { mobilityRouteCacheKey, normalizeM51CourseMobilityState } from "./mobility";
+import { getOriginalWalkPlan, attachOriginalWalkPlan } from "./timedItinerary";
 import { TimedMobilityLegCache, mobilityGeometryVersion, planTimedMobilityLeg, type MobilityRouteConditions } from "./travelRouter";
 import {
   MOBILITY_BUSINESS,
@@ -99,6 +100,28 @@ function assignRiders(golfers: Golfer[], units: MobilityFleetUnit[], mode: Exclu
   });
 }
 
+function originalWalkingSegments(segments: readonly Segment[]): Segment[] {
+  const result: Segment[] = [];
+  for (let i = 0; i < segments.length;) {
+    const first = segments[i]; const plan = first.kind === "walk" ? getOriginalWalkPlan(first) : undefined;
+    if (!plan) { result.push(first); i++; continue; }
+    let end = i + 1;
+    while (end < segments.length && segments[end].kind === "walk" && getOriginalWalkPlan(segments[end]) === plan) end++;
+    const last = segments[end - 1];
+    const same = (a: Segment["from"], b: Segment["from"]) => Math.hypot(a.x - b.x, a.y - b.y) < 1e-7;
+    // Only a complete, identity-matched logical leg may recover its corners.
+    // A truncated itinerary never reintroduces an already-consumed section.
+    if (!same(first.from, plan.from) || !same(last.to, plan.to)) { result.push(...segments.slice(i, end)); i = end; continue; }
+    const originalDuration = plan.segments.reduce((sum, segment) => sum + segment.dur, 0);
+    const currentDuration = segments.slice(i, end).reduce((sum, segment) => sum + segment.dur, 0);
+    const scale = originalDuration > 0 ? currentDuration / originalDuration : 1;
+    for (const original of plan.segments) result.push({ ...original, from: { ...original.from }, to: { ...original.to },
+      holeId: first.holeId, dur: original.dur * scale });
+    i = end;
+  }
+  return result;
+}
+
 function travelEvidence(course: Course, state: LiveState, golfer: Golfer, mode: MobilityMode, geometryVersion: string): {
   segments: Segment[];
   actualTravelMinutes: number;
@@ -109,7 +132,8 @@ function travelEvidence(course: Course, state: LiveState, golfer: Golfer, mode: 
   let actualTravelMinutes = 0;
   let walkingFallbackMinutes = 0;
   let offPathTiles = 0;
-  const segments = golfer.segments.flatMap((segment): Segment[] => {
+  const sources = mode === "walk" ? golfer.segments : originalWalkingSegments(golfer.segments);
+  const segments = sources.flatMap((segment): Segment[] => {
     if (segment.kind !== "walk" || mode === "walk") {
       if (segment.kind === "walk") actualTravelMinutes += segment.dur;
       return [{ ...segment, ...(segment.kind === "walk" ? { mobility: { requestedMode: mode, resolvedMode: "walk" as const, minutesSaved: 0, offPathTiles: 0 } } : {}) }];
@@ -144,6 +168,11 @@ function travelEvidence(course: Course, state: LiveState, golfer: Golfer, mode: 
     }
     const totalDistance = distances.reduce((sum, distance) => sum + distance, 0);
     cursor = segment.from;
+    // Keep only this original corner's descriptor on its resulting chunks,
+    // so a later in-memory reapply routes the logical leg once again.
+    const plan = { from: { ...segment.from }, to: { ...segment.to },
+      segments: [{ kind: "walk" as const, from: { ...segment.from }, to: { ...segment.to },
+        holeIndex: segment.holeIndex, holeId: segment.holeId, dur: duration }] };
     return waypoints.map((point, index) => {
       const next: Segment = {
         ...segment,
@@ -158,7 +187,7 @@ function travelEvidence(course: Course, state: LiveState, golfer: Golfer, mode: 
         },
       };
       cursor = point;
-      return next;
+      return attachOriginalWalkPlan(next, plan);
     });
   });
   return { segments, actualTravelMinutes, walkingFallbackMinutes, offPathTiles };

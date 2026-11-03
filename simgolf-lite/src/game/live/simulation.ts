@@ -11,7 +11,7 @@ import { buildGolferRound, entryPoint, planFromHole } from "./golfer";
 import { buildStrategicGolferRound } from "./m47Round";
 import { advanceGolfer } from "./golfer";
 import { planEstateDay } from "./spawn";
-import { findWalkPath } from "./walkPath";
+import { createPathWalkingRouter as makeRouter } from "../paths/pathMovementAdapter";
 import { LIVE } from "./liveConfig";
 import type { Arrival, Golfer, GolferRenderData, LiveState, RoundReactions } from "./types";
 import { rollDiscretionaryWallet } from "./concessions";
@@ -40,19 +40,6 @@ import { emptyM51LiveMobilityState } from "../m51/mobility";
 import { applyGolferMobilityReaction, reapplyGroupMobility, releaseFinishedMobilityGroups, reserveGroupMobility } from "../m51/operations";
 import { isCoursePlayable } from "../sim/isCoursePlayable";
 import { shotEnvironmentFromWeather } from "../rules/shotEnvironment";
-
-// A memoized walk router bound to a course + per-day cache. Golfers spawned the
-// same day share cached routes, so pathfinding runs at most once per (from,to).
-function makeRouter(course: Course, cache: Map<string, Point[] | null>) {
-  return (from: Point, to: Point): Point[] | null => {
-    const key = `${Math.round(from.x)},${Math.round(from.y)}>${Math.round(to.x)},${Math.round(to.y)}`;
-    const hit = cache.get(key);
-    if (hit !== undefined) return hit;
-    const path = findWalkPath(course, from, to);
-    cache.set(key, path);
-    return path;
-  };
-}
 
 export interface PublicOperationPolicy {
   /** A completed private preview permits public play on a valid three-hole layout. */
