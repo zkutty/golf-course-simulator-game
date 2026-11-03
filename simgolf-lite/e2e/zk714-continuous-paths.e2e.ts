@@ -243,7 +243,7 @@ const banks: readonly Box[] = [
 ];
 function union(a: Box, b: Box): Box { return { minX: Math.min(a.minX, b.minX), minY: Math.min(a.minY, b.minY), maxX: Math.max(a.maxX, b.maxX), maxY: Math.max(a.maxY, b.maxY) }; }
 
-async function capture(page: Page, info: TestInfo, file: SaveFile, plan: ContinuousPathPlan, label: string, box: Box, zoom: number, rotation: IsoRotation, quality: Quality) {
+async function capture(page: Page, info: TestInfo, file: SaveFile, plan: ContinuousPathPlan, label: string, box: Box, zoom: number, rotation: IsoRotation, quality: Quality, unoccluded = false) {
   assertIdentity();
   await rotate(page, rotation);
   const roi = vertices(plan, box);
@@ -282,9 +282,32 @@ async function capture(page: Page, info: TestInfo, file: SaveFile, plan: Continu
   `all final triangles must be in page viewport and effective canvas clipping intersection: ${JSON.stringify({ label, zoom, rect, visible })}`).toBe(true);
   const identity = { candidate, sourceHashes, fixtureHash: hash(file), theme: file.course.theme, label, zoom, rotation, quality, viewport: page.viewportSize(), roiVisibility: visible, dpr: await page.evaluate(() => devicePixelRatio), browser: await rendererIdentity(page), diagnostic: d, camera: await page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()), renderer: await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState()), roi: bounds };
   await mkdir(evidence, { recursive: true });
-  const path = resolve(evidence, `${label}.png`); await canvas.screenshot({ path });
+  const path = resolve(evidence, `${label}.png`);
+  if (unoccluded) await assertUnoccludedPathROI(canvas, projected.map(p => ({ x: p.x + rect!.x, y: p.y + rect!.y })), label, info);
+  await canvas.screenshot({ path });
   await writeFile(resolve(evidence, `${label}.json`), JSON.stringify(identity, null, 2));
   await info.attach(label, { path, contentType: "image/png" });
+}
+
+async function assertUnoccludedPathROI(canvas: Locator, points: readonly Point[], label: string, info: TestInfo) {
+  const result = await canvas.evaluate((node, points) => {
+    const unique = new Map(points.map(point => [`${point.x},${point.y}`, point]));
+    let violations = 0;
+    const examples: { point: Point; finite: boolean; hit: { tag: string; className: string | null; testId: string | null; label: string | null } | null }[] = [];
+    for (const point of unique.values()) {
+      const finite = Number.isFinite(point.x) && Number.isFinite(point.y);
+      const hit = finite ? document.elementFromPoint(point.x, point.y) : null;
+      if (hit !== node) {
+        violations++;
+        if (examples.length < 10) examples.push({ point, finite, hit: hit ? { tag: hit.tagName.toLowerCase(), className: hit.getAttribute("class"), testId: hit.getAttribute("data-testid"), label: hit.getAttribute("aria-label") } : null });
+      }
+    }
+    return { viewport: { width: window.innerWidth, height: window.innerHeight }, nonempty: unique.size > 0, mainCanvas: node === document.querySelector(".cc-pixi-stage canvas"), sourcePoints: points.length, checkedUniquePoints: unique.size, violations, examples };
+  }, [...points]);
+  const receipt = { candidate, sourceHashes, label, ...result };
+  await writeFile(resolve(evidence, `${label}-occlusion.json`), JSON.stringify(receipt, null, 2));
+  await info.attach(`${label}-occlusion`, { body: Buffer.from(JSON.stringify(receipt, null, 2)), contentType: "application/json" });
+  expect(result, `every deduplicated projected ROI vertex must reach the main canvas; at most ten occluders: ${JSON.stringify(result)}`).toMatchObject({ nonempty: true, mainCanvas: true, violations: 0 });
 }
 
 function fixtureDefinitionHash() {
@@ -381,7 +404,7 @@ test("P714 [pilot] parkland high saved-S and cross close rotation0", async ({ pa
   await capture(page, info, file, buildContinuousPathPlan(file.course), "close-bank0-r0", banks[0], 2.25, 0, "high");
 });
 
-test("P714 [visual-matrix] 36 bounded captures at actual normal1 and close2.25", async ({ page }, info) => {
+test("P714 [visual-matrix] 34 desktop biome and elevation captures at actual normal1 and close2.25", async ({ page }, info) => {
   test.setTimeout(1_800_000); await page.setViewportSize({ width: 2560, height: 1440 }); await boot(page);
   const file = normalizedFixture(fixture()); const loaded = await publicLoad(page, file); const plan = buildContinuousPathPlan(file.course);
   let captures = 0;
@@ -401,18 +424,38 @@ test("P714 [visual-matrix] 36 bounded captures at actual normal1 and close2.25",
     await capture(page, info, themed, buildContinuousPathPlan(themed.course), `representative-${theme}-${quality}`, banks[0], 2.25, 0, quality); captures++;
   }
   await publicLoad(page, file);
-  for (const [width, height, zoom] of [[390, 844, 1], [1024, 768, 2.25]]) {
-    await page.setViewportSize({ width, height });
-    await page.getByRole("button", { name: "Expand design dock" }).click();
-    await page.getByTestId("design-card-terrain-path").click(); await expect(page.getByTestId("design-path-width")).toBeVisible();
-    await page.getByTestId("design-tool-edit").click(); await expect(page.getByTestId("design-tool-edit")).toBeVisible();
-    await capture(page, info, file, plan, `responsive-${width}x${height}`, { minX: 24, maxX: 33, minY: 45, maxY: 48 }, zoom, 0, "medium"); captures++;
-    await page.getByRole("button", { name: "Collapse design dock" }).click();
-  }
   await page.setViewportSize({ width: 2560, height: 1440 });
   const elevated = normalizedFixture(fixture("elevation")); await publicLoad(page, elevated); const elevatedPlan = buildContinuousPathPlan(elevated.course);
   for (const rotation of [0, 90] as const) { await capture(page, info, elevated, elevatedPlan, `elevation-chunk-entrance-r${rotation}`, union(banks[0], banks[1]), 1, rotation, "high"); captures++; }
-  expect(captures).toBe(process.env.ZK714_PILOT_CAPTURE_ACCEPTED === "1" ? 35 : 36);
+  expect(captures).toBe(process.env.ZK714_PILOT_CAPTURE_ACCEPTED === "1" ? 33 : 34);
+});
+
+test("P714 [responsive] two unoccluded path views with separately visible design controls", async ({ page }, info) => {
+  await page.setViewportSize({ width: 2560, height: 1440 }); await boot(page);
+  const file = normalizedFixture(fixture()); const loaded = await publicLoad(page, file); const plan = buildContinuousPathPlan(file.course);
+  let pathCaptures = 0, controlCaptures = 0;
+  for (const [width, height, zoom] of [[390, 844, 1], [1024, 768, 2.25]]) {
+    await page.setViewportSize({ width, height });
+    await page.getByRole("button", { name: "Expand design dock" }).click();
+    await expect(page.getByTestId("design-dock")).toHaveAttribute("data-collapsed", "false");
+    await page.getByTestId("design-card-terrain-path").click(); await expect(page.getByTestId("design-path-width")).toBeVisible();
+    await page.getByTestId("design-tool-edit").click(); await expect(page.getByTestId("design-tool-edit")).toBeVisible();
+    await expect(page.getByTestId("design-tool-edit")).toHaveAttribute("aria-pressed", "true");
+    const controlsLabel = `responsive-controls-${width}x${height}`;
+    await mkdir(evidence, { recursive: true }); const controlsPath = resolve(evidence, `${controlsLabel}.png`);
+    await page.screenshot({ path: controlsPath }); await info.attach(controlsLabel, { path: controlsPath, contentType: "image/png" }); controlCaptures++;
+    await page.getByRole("button", { name: "Collapse design dock", exact: true }).click();
+    await expect(page.getByTestId("design-dock")).toHaveAttribute("data-collapsed", "true");
+    const collapseMinimap = page.getByRole("button", { name: "Collapse course minimap", exact: true });
+    if (await collapseMinimap.isVisible()) await collapseMinimap.click();
+    await expect(page.getByRole("button", { name: "Open course minimap", exact: true })).toBeVisible();
+    expect(await surface(page)).toEqual(loaded); expect(await cash(page)).toBe(file.world.cash);
+    await capture(page, info, file, plan, `responsive-${width}x${height}`, { minX: 24, maxX: 33, minY: 45, maxY: 48 }, zoom, 0, "medium", true); pathCaptures++;
+    expect(await surface(page)).toEqual(loaded); expect(await cash(page)).toBe(file.world.cash);
+  }
+  expect(pathCaptures).toBe(2); expect(controlCaptures).toBe(2);
+  await info.attach("responsive-capture-contract", { body: Buffer.from(JSON.stringify({ candidate, sourceHashes, fixtureHash: hash(file), pathCaptures, controlCaptures,
+    views: [{ viewport: [390, 844], zoom: 1 }, { viewport: [1024, 768], zoom: 2.25 }], rotation: 0, quality: "medium", matrixPathCapturesReused: 34 }, null, 2)), contentType: "application/json" });
 });
 
 async function openDesignDock(page: Page) {
