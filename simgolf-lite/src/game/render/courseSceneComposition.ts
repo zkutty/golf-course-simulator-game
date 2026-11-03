@@ -702,6 +702,21 @@ function candidateBounds(occupied: readonly HabitatTileCoordinate[]): HabitatGri
   return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
 }
 
+function* rowMajorSourceAnchors(course: Course, cells: ReadonlySet<number>): IterableIterator<HabitatTileCoordinate> {
+  const { width, height } = course;
+  const size = width * height;
+  const indexes = [...cells];
+  if (Number.isSafeInteger(width) && width > 0 && Number.isSafeInteger(height) && height > 0
+    && Number.isSafeInteger(size) && indexes.every((index) => Number.isSafeInteger(index) && index >= 0 && index < size)) {
+    // Numeric cell order is exactly the old y-then-x scan order on a valid grid.
+    indexes.sort((left, right) => left - right);
+    for (const index of indexes) yield { x: index % width, y: Math.floor(index / width) };
+    return;
+  }
+  // Preserve the original scan for malformed runtime dimensions or labels.
+  for (let y = 0; y < course.height; y += 1) for (let x = 0; x < course.width; x += 1) yield { x, y };
+}
+
 function shapeCandidates(course: Course, labels: ReadonlyMap<number, EvidenceLabel>): readonly HabitatCandidate[] {
   const groups = new Map<string, { label: EvidenceLabel; cells: Set<number> }>();
   for (const [value, label] of labels) {
@@ -733,7 +748,7 @@ function shapeCandidates(course: Course, labels: ReadonlyMap<number, EvidenceLab
     // Only choose shapes already expressible by the reduced topology atlas.
     // We inspect all local source-edge possibilities, but render only a small,
     // separated deterministic subset rather than every overlapping square.
-    for (let y = 0; y < course.height; y += 1) for (let x = 0; x < course.width; x += 1) {
+    for (const { x, y } of rowMajorSourceAnchors(course, cells)) {
       if (!has(x, y)) continue;
       // A full 3x3 square or a clipped corner needs at least eight cells.
       if (policy.maxCells >= 8) {

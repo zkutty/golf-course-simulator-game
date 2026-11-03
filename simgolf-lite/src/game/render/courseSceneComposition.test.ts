@@ -4,7 +4,7 @@ import highAtlasJson from "../../assets/terrain/parkland-habitat-4x/high/habitat
 import { hashCanonicalValue } from "../../utils/canonical";
 import { courseForCourseSetup } from "../models/courseSetup";
 import type { Course, Hole, Point, Terrain } from "../models/types";
-import { createM20TerrainReferenceCourse, createM23CourseSetupReferenceCourse, createParklandVisualReferenceCourse } from "../testing/referenceCourse";
+import { createM20TerrainReferenceCourse, createM23CourseSetupReferenceCourse, createM27ReleaseReferenceCourse, createParklandVisualReferenceCourse } from "../testing/referenceCourse";
 import { deriveCourseSceneCamera } from "./courseSceneCamera";
 import { ISO_ROTATIONS } from "./iso";
 import {
@@ -214,7 +214,44 @@ function stressCourse(): Course {
   return course;
 }
 
+function rowEdgeAndMultipleOwnersCourse(): Course {
+  const course = baseCourse(17, 14);
+  course.name = "sparse-anchor-oracle";
+  for (let y = 3; y <= 5; y += 1) for (let x = 3; x <= 5; x += 1) course.tiles[y * course.width + x] = "deep_rough";
+  for (let y = 7; y <= 9; y += 1) for (let x = 11; x <= 13; x += 1) course.tiles[y * course.width + x] = "deep_rough";
+  // Adjacent numeric indexes on different rows must not become cardinal neighbors.
+  course.tiles[5 * course.width + 16] = "deep_rough";
+  course.tiles[6 * course.width] = "deep_rough";
+  for (let y = 2; y <= 4; y += 1) course.tiles[y * course.width + 10] = "water";
+  course.obstacles = [{ x: 7, y: 10, type: "rock" }, { x: 8, y: 10, type: "tree" }, { x: 9, y: 10, type: "tree" }];
+  course.holes = [{ id: "edge-hole", tee: { x: 1, y: 1 }, green: { x: 15, y: 12 }, parMode: "AUTO" }];
+  return course;
+}
+
+function denseSourceCourse(): Course {
+  const course = baseCourse(19, 18);
+  course.name = "sparse-anchor-oracle";
+  for (let y = 1; y < 17; y += 1) for (let x = 1; x < 18; x += 1) course.tiles[y * course.width + x] = "deep_rough";
+  return course;
+}
+
 describe("CourseSceneCompositionPlanV1", () => {
+  it("keeps sparse source anchors' complete original plans across row edges, disconnected owners, dense sources and release holes", () => {
+    // Canonical hashes were recorded from the frozen b7 original full-grid scan.
+    for (const [course, expectedHash, expectedZones] of [
+      [rowEdgeAndMultipleOwnersCourse(), "bb16e13e", 4],
+      [denseSourceCourse(), "97c5954a", 2],
+      [createParklandVisualReferenceCourse(), "d9f40106", 15],
+      [createM27ReleaseReferenceCourse("parkland"), "bb3e6ad3", 24],
+    ] as const) {
+      const before = structuredClone(course);
+      const plan = deriveCourseSceneComposition({ course, seed: 1202 });
+      expect(plan.habitatZones).toHaveLength(expectedZones);
+      expect(hashCanonicalValue(plan)).toBe(expectedHash);
+      expect(course).toEqual(before);
+    }
+  });
+
   it("turns actual M19 evidence into exact full-occupancy T1 zones without mutating authority", () => {
     const course = createParklandVisualReferenceCourse();
     const before = structuredClone(course);
