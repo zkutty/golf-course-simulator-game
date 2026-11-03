@@ -9,8 +9,9 @@ import { expect, test, type Page } from "@playwright/test";
 import { PNG } from "pngjs";
 import { createParklandVisualReferenceCourse } from "../src/game/testing/referenceCourse";
 import { buildContinuousPathPlan, classifyContinuousPathPoint, type PathRibbonRole } from "../src/game/paths/continuousPathPlan";
-import { ELEVATION_STEP_PX, isoToWorld, worldToIso, type IsoRotation } from "../src/game/render/iso";
+import { worldToIso, type IsoRotation } from "../src/game/render/iso";
 import type { Point } from "../src/game/models/types";
+import { buildParklandComposableMeshGeometry } from "../src/game/render/parklandComposable";
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const commit = process.env.ZK714_COMMIT ?? process.env.GITHUB_SHA ?? execFileSync("git", ["rev-parse", "HEAD"], { cwd: projectRoot, encoding: "utf8" }).trim();
@@ -28,7 +29,7 @@ function colorDistance(a: readonly number[], b: readonly number[]) { return Math
 function mean(image: PNG, pixels: readonly Pixel[]) {
   expect(pixels.length).toBeGreaterThan(0); const sum = [0, 0, 0];
   for (const { x, y } of pixels) {
-    expect(x >= 0 && x < image.width && y >= 0 && y < image.height, "ROI must be visible, never clamped").toBe(true);
+    if (!(x >= 0 && x < image.width && y >= 0 && y < image.height)) throw new Error(`ROI pixel (${x},${y}) is outside ${image.width}x${image.height}; never clamp it`);
     const offset = (y * image.width + x) * 4; for (let c = 0; c < 3; c++) sum[c] += image.data[offset + c];
   }
   return { samples: pixels.length, rgb: sum.map(value => value / pixels.length) };
@@ -37,13 +38,14 @@ function delta(image: PNG, hidden: PNG, { x, y }: Pixel) {
   const n = (y * image.width + x) * 4;
   return Math.abs(image.data[n] - hidden.data[n]) + Math.abs(image.data[n + 1] - hidden.data[n + 1]) + Math.abs(image.data[n + 2] - hidden.data[n + 2]);
 }
-function projected(point: Point, elevation: number, rotation: IsoRotation, camera: Camera): Point {
-  const p = worldToIso(point.x, point.y, elevation, rotation);
-  return { x: (p.x - camera.pivot.x) * camera.scale.x + camera.position.x, y: (p.y - camera.pivot.y) * camera.scale.y + camera.position.y };
+function cameraPixels(point: Point, camera: Camera, pixelScale: Point): Point {
+  return { x: ((point.x - camera.pivot.x) * camera.scale.x + camera.position.x) * pixelScale.x,
+    y: ((point.y - camera.pivot.y) * camera.scale.y + camera.position.y) * pixelScale.y };
 }
-function unprojected(point: Point, elevation: number, rotation: IsoRotation, camera: Camera): Point {
-  return isoToWorld((point.x - camera.position.x) / camera.scale.x + camera.pivot.x,
-    (point.y - camera.position.y) / camera.scale.y + camera.pivot.y + elevation * ELEVATION_STEP_PX, rotation);
+function projected(point: Point, elevation: number, rotation: IsoRotation, camera: Camera, pixelScale: Point): Point {
+  const p = worldToIso(point.x, point.y, elevation, rotation);
+  // MeshGeometry stores iso coordinates in Float32 before the camera matrix.
+  return cameraPixels({ x: Math.fround(p.x), y: Math.fround(p.y) }, camera, pixelScale);
 }
 function cross(a: Point, b: Point, p: Point) { return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x); }
 function triangleMask(width: number, height: number, triangles: readonly Point[][]) {
@@ -65,12 +67,92 @@ function triangleMask(width: number, height: number, triangles: readonly Point[]
   }
   return mask;
 }
+type ProjectionTriangle = { world: Point[]; screen: Point[]; role: PathRibbonRole | null };
+type MappedPoint = { kind: "mapped"; world: Point; roles: (PathRibbonRole | null)[] } | { kind: "none" | "ambiguous" };
+type WorldRect = { left: number; right: number; top: number; bottom: number };
+function weights(point: Point, triangle: readonly Point[]): number[] | null {
+  const [a, b, c] = triangle, area = cross(a, b, c);
+  if (Math.abs(area) < 1e-12) return null;
+  const values = [cross(b, c, point) / area, cross(c, a, point) / area, cross(a, b, point) / area];
+  return values.every(value => value >= -1e-8 && value <= 1 + 1e-8) ? values : null;
+}
+function weighted(values: readonly number[], points: readonly Point[]): Point {
+  return { x: values.reduce((sum, value, index) => sum + value * points[index].x, 0),
+    y: values.reduce((sum, value, index) => sum + value * points[index].y, 0) };
+}
+function pixelWorld(point: Point, triangles: readonly ProjectionTriangle[]): MappedPoint {
+  let world: Point | undefined; const roles = new Set<PathRibbonRole | null>();
+  for (const triangle of triangles) {
+    if (point.x < Math.min(...triangle.screen.map(p => p.x)) - 1e-8 || point.x > Math.max(...triangle.screen.map(p => p.x)) + 1e-8
+      || point.y < Math.min(...triangle.screen.map(p => p.y)) - 1e-8 || point.y > Math.max(...triangle.screen.map(p => p.y)) + 1e-8) continue;
+    const barycentric = weights(point, triangle.screen); if (!barycentric) continue;
+    const candidate = weighted(barycentric, triangle.world);
+    // Shared seams may give the same world point twice; a folded/overlapping
+    // projection must never be resolved by choosing an arbitrary first face.
+    if (world && Math.hypot(world.x - candidate.x, world.y - candidate.y) > 1e-7) return { kind: "ambiguous" };
+    world = candidate; roles.add(triangle.role);
+  }
+  return world ? { kind: "mapped", world, roles: [...roles] } : { kind: "none" };
+}
+function worldScreen(point: Point, triangles: readonly ProjectionTriangle[]): Point {
+  const candidates = triangles.flatMap(triangle => {
+    const barycentric = weights(point, triangle.world);
+    return barycentric ? [weighted(barycentric, triangle.screen)] : [];
+  });
+  expect(candidates.length, "world sample must have an actual projected face").toBeGreaterThan(0);
+  expect(candidates.every(p => Math.hypot(p.x - candidates[0].x, p.y - candidates[0].y) < 1e-5), "world seam projections must agree").toBe(true);
+  return candidates[0];
+}
+function clipRect(input: readonly Point[], rect: WorldRect): Point[] {
+  let polygon = [...input];
+  for (const [axis, bound, sign] of [["x", rect.left, 1], ["x", rect.right, -1], ["y", rect.top, 1], ["y", rect.bottom, -1]] as const) {
+    const output: Point[] = [];
+    for (let index = 0; index < polygon.length; index++) {
+      const a = polygon[index], b = polygon[(index + 1) % polygon.length], da = sign * (a[axis] - bound), db = sign * (b[axis] - bound);
+      if (da >= 0) output.push(a);
+      if ((da < 0) !== (db < 0)) { const t = da / (da - db); output.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }); }
+    }
+    polygon = output;
+  }
+  return polygon;
+}
+function polygonArea(points: readonly Point[]): number {
+  return Math.abs(points.reduce((sum, a, index) => { const b = points[(index + 1) % points.length]; return sum + a.x * b.y - b.x * a.y; }, 0)) / 2;
+}
+function distanceToSegment(point: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x, dy = b.y - a.y, length = dx * dx + dy * dy;
+  const t = length ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / length)) : 0;
+  return Math.hypot(point.x - a.x - t * dx, point.y - a.y - t * dy);
+}
+function corePatchClearance(station: Point, center: Point, core: readonly ProjectionTriangle[]): number {
+  const rect = { left: station.x - 1, right: station.x + 1, top: station.y - .216, bottom: station.y + .216 };
+  let area = 0; const boundary: Point[][] = [];
+  for (const triangle of core) {
+    const polygon = clipRect(triangle.world, rect); if (polygon.length < 3 || polygonArea(polygon) < 1e-12) continue;
+    area += polygonArea(polygon);
+    for (let index = 0; index < polygon.length; index++) {
+      const a = polygon[index], b = polygon[(index + 1) % polygon.length];
+      const onSide = Math.abs(a.x - rect.left) < 1e-8 && Math.abs(b.x - rect.left) < 1e-8
+        || Math.abs(a.x - rect.right) < 1e-8 && Math.abs(b.x - rect.right) < 1e-8
+        || Math.abs(a.y - rect.top) < 1e-8 && Math.abs(b.y - rect.top) < 1e-8
+        || Math.abs(a.y - rect.bottom) < 1e-8 && Math.abs(b.y - rect.bottom) < 1e-8;
+      if (onSide) boundary.push([weighted(weights(a, triangle.world)!, triangle.screen), weighted(weights(b, triangle.world)!, triangle.screen)]);
+    }
+  }
+  // G's accepted role triangles are disjoint. Full clipped area certifies this
+  // straight-lane patch has no hole; only its union perimeter limits the disk.
+  expect(area, "core triangles must cover the full straight texture patch").toBeCloseTo((rect.right - rect.left) * (rect.bottom - rect.top), 8);
+  expect(boundary.length).toBeGreaterThan(0);
+  return Math.min(...boundary.map(([a, b]) => distanceToSegment(center, a, b)));
+}
+
 async function pathDiagnostic(page: Page): Promise<PathDiagnostic> {
   return page.evaluate(() => (window.__coursecraftPixiTest!.rendererAtlasState() as unknown as { pathMaterialCrossSection: PathDiagnostic }).pathMaterialCrossSection);
 }
 
-function compactedCoreTextureStats(image: PNG, center: ScreenPoint, radius: number) {
+function compactedCoreTextureStats(image: PNG, center: ScreenPoint, radius: number, certify: (pixel: Pixel) => void) {
   const luminance = (x: number, y: number) => {
+    certify({ x, y }); // Also certifies every x+1/y+1 neighbor actually read.
     const offset = (y * image.width + x) * 4;
     return image.data[offset] * 0.2126 + image.data[offset + 1] * 0.7152 + image.data[offset + 2] * 0.0722;
   };
@@ -80,7 +162,7 @@ function compactedCoreTextureStats(image: PNG, center: ScreenPoint, radius: numb
   const maxX = Math.min(image.width - 2, Math.ceil(center.x + radius));
   const minY = Math.max(1, Math.floor(center.y - radius));
   const maxY = Math.min(image.height - 2, Math.ceil(center.y + radius));
-  const inside = (x: number, y: number) => (x - center.x) ** 2 + (y - center.y) ** 2 <= radius ** 2;
+  const inside = (x: number, y: number) => (x + .5 - center.x) ** 2 + (y + .5 - center.y) ** 2 <= radius ** 2;
   for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
     if (!inside(x, y)) continue;
     const value = luminance(x, y);
@@ -118,11 +200,16 @@ test("P714 [pixel] narrow original three-material vocabulary and final-triangle 
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), { timeout: 90_000 }).toBe("game");
   await page.waitForFunction(() => Boolean(window.__coursecraftPixiTest)); await page.evaluate(() => window.__coursecraftTest!.pauseLiveSimulation());
   const course = createParklandVisualReferenceCourse(); const plan = buildContinuousPathPlan(course);
-  const initial = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState()); expect(initial.tiles).toEqual(course.tiles);
+  const initial = await page.evaluate(() => {
+    const actual = window.__coursecraftTest!.terrainSurfaceState();
+    // App's existing hook returns effectiveTiles; its shared ambient declaration
+    // predates that read-only field. Keep this verified projection test-local.
+    return actual as typeof actual & { effectiveTiles: typeof actual.tiles };
+  }); expect(initial.tiles).toEqual(course.tiles); expect(Array.isArray(initial.effectiveTiles)).toBe(true);
   const canvas = page.locator("canvas").first(); await expect(canvas).toBeVisible();
   const captures: unknown[] = [], closePixelGates: unknown[] = [];
-  // Six separated stations inside the verified flat straight run. Half-tile
-  // spacing retains six longitudinal stations without sampling the x12 terrace.
+  // Six separated stations inside the straight run. Authored coarse elevation
+  // is level here, while the actual visual field retains its biome undulation.
   const stations = Array.from({ length: 6 }, (_, i) => ({ x: 7.8 + i * .5, y: 12.5 }));
   for (const station of stations) {
     expect(classifyContinuousPathPoint(plan, station)).toBe("core");
@@ -137,40 +224,121 @@ test("P714 [pixel] narrow original three-material vocabulary and final-triangle 
       await expect.poll(async () => { const d = await pathDiagnostic(page); return d.active && d.quality === view.quality && d.camera.rotation === rotation && Math.abs(d.camera.zoom - view.zoom) < .001; }, { timeout: 30_000 }).toBe(true);
       const diagnostic = await pathDiagnostic(page); expect(diagnostic.commit).toBe(commit); expect(diagnostic.mode).toBe("continuous"); expect(diagnostic.roles).toEqual(["shoulder", "edge", "core"]); expect(diagnostic.textureIds).toHaveLength(3);
       expect(diagnostic.widths.shoulder).toBeCloseTo(.036); expect(diagnostic.widths.edge).toBeCloseTo(.048); expect(diagnostic.ownership).toEqual(["accepted-path-coverage"]); expect(diagnostic.planKey).toBe(plan.key);
+      const cameraBefore = view.label === "close" ? await page.evaluate(() => window.__coursecraftPixiTest!.cameraTransform()!.world) : null;
       const screenshot = await canvas.screenshot(); const file = resolve(outputRoot, `p714-pixel-r${rotation}-${view.label}.png`); await writeFile(file, screenshot); captures.push({ file, rotation, ...view, diagnostic });
       if (view.label !== "close") continue;
       const image = PNG.sync.read(screenshot);
       const worldPoints = plan.layers.flatMap(layer => Array.from({ length: layer.positions.length / 2 }, (_, n) => ({ x: layer.positions[n * 2], y: layer.positions[n * 2 + 1] })));
-      const runtime = await page.evaluate(points => ({ camera: window.__coursecraftPixiTest!.cameraTransform()!.world, heights: points.map(p => window.__coursecraftPixiTest!.surfaceHeightAt(p.x, p.y)), stationHeights: Array.from({ length: 6 }, (_, i) => window.__coursecraftPixiTest!.surfaceHeightAt(7.8 + i * .5, 12.5)) }), worldPoints);
-      expect(runtime.stationHeights.every(h => Math.abs(h - runtime.stationHeights[0]) < 1e-8), "pixel lane must remain flat").toBe(true);
-      const projectedVertices = worldPoints.map((p, i) => projected(p, runtime.heights[i], rotation, runtime.camera));
-      const triangles: Point[][] = []; let start = 0;
-      for (const layer of plan.layers) { for (let i = 0; i < layer.indices.length; i += 3) triangles.push(layer.indices.slice(i, i + 3).map(n => projectedVertices[start + n])); start += layer.positions.length / 2; }
+      const laneCells = new Set<number>();
+      for (const station of stations) for (let y = Math.floor(station.y - .45); y <= Math.floor(station.y + .45); y++) {
+        for (let x = Math.floor(station.x - 1); x <= Math.floor(station.x + 1); x++) laneCells.add(y * course.width + x);
+      }
+      for (const cell of laneCells) {
+        expect(initial.effectiveTiles[cell]).toBe("path");
+        expect(["rough", "deep_rough", "fairway", "green", "tee"]).toContain(plan.underlayTiles[cell]);
+      }
+      const pointKey = (p: Point) => `${p.x}:${p.y}`;
+      const queryPoints = new Map(worldPoints.map(p => [pointKey(p), p]));
+      for (const cell of laneCells) for (let sy = 0; sy <= 4; sy++) for (let sx = 0; sx <= 4; sx++) {
+        const p = { x: cell % course.width + sx / 4, y: Math.floor(cell / course.width) + sy / 4 };
+        queryPoints.set(pointKey(p), p);
+      }
+      const queries = [...queryPoints.values()];
+      // surfaceHeightAt equals sampleVisualHeight only without hazard recesses.
+      // This checks all path vertices and the local High4 turf grid, including
+      // integer-boundary lookups; underlay components above are nonhazard turf.
+      let recessedQueries = 0; const recessedExamples: { point: Point; terrain: string }[] = [];
+      for (const p of queries) {
+        const x = Math.max(0, Math.min(course.width - 1, Math.floor(p.x))), y = Math.max(0, Math.min(course.height - 1, Math.floor(p.y)));
+        const terrain = initial.effectiveTiles[y * course.width + x];
+        if (["water", "wetland", "sand"].includes(terrain)) {
+          recessedQueries++; if (recessedExamples.length < 10) recessedExamples.push({ point: p, terrain });
+        }
+      }
+      expect(recessedQueries, `height hook must equal base field at every query: ${JSON.stringify(recessedExamples)}`).toBe(0);
+      const runtime = await page.evaluate(points => ({ camera: window.__coursecraftPixiTest!.cameraTransform()!.world,
+        viewport: window.__coursecraftPixiTest!.viewport()!, heights: points.map(p => window.__coursecraftPixiTest!.surfaceHeightAt(p.x, p.y)) }), queries);
+      expect(runtime.camera).toEqual(cameraBefore);
+      expect(runtime.heights.every(Number.isFinite)).toBe(true);
+      const heightByPoint = new Map(queries.map((p, i) => [pointKey(p), runtime.heights[i]]));
+      const heightAt = (p: Point) => {
+        const height = heightByPoint.get(pointKey(p));
+        if (height === undefined) throw new Error(`Missing actual runtime height at (${p.x},${p.y})`);
+        return height;
+      };
+      expect(runtime.viewport.width).toBeGreaterThan(0); expect(runtime.viewport.height).toBeGreaterThan(0);
+      const pixelScale = { x: image.width / runtime.viewport.width, y: image.height / runtime.viewport.height };
+      const projectedVertices = worldPoints.map(p => projected(p, heightAt(p), rotation, runtime.camera, pixelScale));
+      const pathTriangles: ProjectionTriangle[] = []; let start = 0;
+      for (const layer of plan.layers) {
+        for (let i = 0; i < layer.indices.length; i += 3) {
+          const indices = layer.indices.slice(i, i + 3);
+          pathTriangles.push({ world: indices.map(n => worldPoints[start + n]), screen: indices.map(n => projectedVertices[start + n]), role: layer.role });
+        }
+        start += layer.positions.length / 2;
+      }
+      // The actual shared High4 tessellator supplies turf topology/Float32 iso
+      // positions. Path and nonhazard underlay both consume the same base field.
+      const turfWorld: Point[] = [];
+      const turfMesh = buildParklandComposableMeshGeometry([...laneCells], course.width, 4, cell => cell, (_cell, x, y) => {
+        const p = { x, y }; turfWorld.push(p); return worldToIso(x, y, heightAt(p), rotation);
+      }, true);
+      const turfTriangles: ProjectionTriangle[] = [];
+      for (let i = 0; i < turfMesh.indices.length; i += 3) {
+        const indices = [...turfMesh.indices.slice(i, i + 3)];
+        turfTriangles.push({ world: indices.map(n => turfWorld[n]),
+          screen: indices.map(n => cameraPixels({ x: turfMesh.positions[n * 2], y: turfMesh.positions[n * 2 + 1] }, runtime.camera, pixelScale)), role: null });
+      }
+      const triangles = pathTriangles.map(triangle => triangle.screen);
+      const coreTriangles = pathTriangles.filter(triangle => triangle.role === "core");
       const rolePixels = new Map<PathRibbonRole, Pixel[]>([["core", []], ["edge", []], ["shoulder", []]]);
       const turfPixels: Pixel[] = []; const textureCandidates: ReturnType<typeof compactedCoreTextureStats>[] = [];
-      const elevation = runtime.stationHeights[0];
       const band = (station: Point, sign: number, from: number, to: number, role: PathRibbonRole | null): Pixel[] => {
-        const a = projected({ x: station.x, y: station.y + sign * from }, elevation, rotation, runtime.camera), b = projected({ x: station.x, y: station.y + sign * to }, elevation, rotation, runtime.camera);
-        const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) * 4)); const found = new Map<string, Pixel>();
-        for (let i = 0; i <= steps; i++) {
-          const x = Math.floor(a.x + (b.x - a.x) * i / steps), y = Math.floor(a.y + (b.y - a.y) * i / steps);
-          const world = unprojected({ x: x + .5, y: y + .5 }, elevation, rotation, runtime.camera); const offset = sign * (world.y - station.y);
-          if (offset < from || offset > to || Math.abs(world.x - station.x) > .04 || classifyContinuousPathPoint(plan, world) !== role) continue;
-          expect(x >= 0 && x < image.width && y >= 0 && y < image.height).toBe(true); found.set(`${x},${y}`, { x, y });
+        const rect = { left: station.x - .04, right: station.x + .04,
+          top: station.y + Math.min(sign * from, sign * to), bottom: station.y + Math.max(sign * from, sign * to) };
+        const source = role === null ? turfTriangles : pathTriangles, found = new Map<string, Pixel>();
+        for (const triangle of source) {
+          if (triangle.role !== role) continue;
+          const polygon = clipRect(triangle.world, rect); if (polygon.length < 3 || polygonArea(polygon) < 1e-12) continue;
+          const points = polygon.map(p => weighted(weights(p, triangle.world)!, triangle.screen));
+          const left = Math.floor(Math.min(...points.map(p => p.x))), right = Math.ceil(Math.max(...points.map(p => p.x)));
+          const top = Math.floor(Math.min(...points.map(p => p.y))), bottom = Math.ceil(Math.max(...points.map(p => p.y)));
+          for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
+            const center = { x: x + .5, y: y + .5 }, mapping = pixelWorld(center, source);
+            if (mapping.kind !== "mapped" || !mapping.roles.includes(role)) continue;
+            const world = mapping.world, offset = sign * (world.y - station.y);
+            if (offset < from || offset > to || Math.abs(world.x - station.x) > .04 || classifyContinuousPathPoint(plan, world) !== role) continue;
+            if (role === null && pixelWorld(center, pathTriangles).kind !== "none") continue;
+            if (!(x >= 0 && x < image.width && y >= 0 && y < image.height)) throw new Error(`Exact ${role ?? "turf"} ROI pixel (${x},${y}) is outside ${image.width}x${image.height}`);
+            found.set(`${x},${y}`, { x, y });
+          }
         }
         return [...found.values()];
       };
+      const certified = new Set<string>();
+      const certifyCore = (pixel: Pixel) => {
+        const key = `${pixel.x}:${pixel.y}`; if (certified.has(key)) return;
+        const mapping = pixelWorld({ x: pixel.x + .5, y: pixel.y + .5 }, pathTriangles);
+        if (mapping.kind !== "mapped") throw new Error(`Texture read (${pixel.x},${pixel.y}) has ${mapping.kind} projected coverage`);
+        const role = classifyContinuousPathPoint(plan, mapping.world);
+        if (!mapping.roles.includes("core") || role !== "core") {
+          throw new Error(`Texture read (${pixel.x},${pixel.y}) maps to world (${mapping.world.x},${mapping.world.y}), triangle roles ${mapping.roles.join(",")}, classified ${role}`);
+        }
+        certified.add(key);
+      };
       for (const station of stations) {
         for (const [role, from, to] of [["core", .08, .18], ["edge", .224, .258], ["shoulder", .270, .296]] as const) {
-          const pixels = [-1, 1].flatMap(sign => band(station, sign, from, to, role));
+          const pixels = [-1, 1].flatMap(sign => {
+            const samples = band(station, sign, from, to, role);
+            expect(samples.length, `${role} has true-band pixels on normal ${sign}`).toBeGreaterThan(0); return samples;
+          });
           expect(pixels.length, `${role} has at least one true-band pixel per station`).toBeGreaterThanOrEqual(1); rolePixels.get(role)!.push(...pixels);
         }
         turfPixels.push(...[-1, 1].flatMap(sign => band(station, sign, .35, .45, null)));
-        const center = projected(station, elevation, rotation, runtime.camera), along = projected({ x: station.x + 1, y: station.y }, elevation, rotation, runtime.camera), edge = projected({ x: station.x, y: station.y + .216 }, elevation, rotation, runtime.camera);
-        const clearance = Math.abs(cross(center, along, edge)) / Math.hypot(along.x - center.x, along.y - center.y);
+        const center = worldScreen(station, coreTriangles), clearance = corePatchClearance(station, center, coreTriangles);
         const radius = Math.min(9, clearance - 1); expect(radius, "insufficient core texture pixels requires a closer evidence view").toBeGreaterThanOrEqual(3);
         expect(center.x - radius >= 1 && center.y - radius >= 1 && center.x + radius < image.width - 1 && center.y + radius < image.height - 1).toBe(true);
-        textureCandidates.push(compactedCoreTextureStats(image, center, radius));
+        textureCandidates.push(compactedCoreTextureStats(image, center, radius, certifyCore));
       }
       const core = mean(image, rolePixels.get("core")!), edge = mean(image, rolePixels.get("edge")!), shoulder = mean(image, rolePixels.get("shoulder")!);
       for (const region of [core, edge, shoulder]) expect(region.samples).toBeGreaterThanOrEqual(4);
@@ -186,7 +354,7 @@ test("P714 [pixel] narrow original three-material vocabulary and final-triangle 
       const changedByRole = Object.fromEntries([...rolePixels].map(([role, pixels]) => [role, pixels.filter(p => delta(image, hidden, p) > 18).length]));
       for (const role of ["core", "edge", "shoulder"]) expect(changedByRole[role]).toBeGreaterThan(0);
       expect(turfPixels.length).toBeGreaterThanOrEqual(12); expect(turfPixels.filter(p => delta(image, hidden, p) > 18)).toHaveLength(0);
-      closePixelGates.push({ rotation, stations, spans: { core, edge, shoulder }, coreTexture, changedByRole, turfSamples: turfPixels.length, roi: { kind: "projected-final-triangles", paddingPx: 2, triangles: triangles.length }, outside: { samples: outside, changed, ratio: changed / outside }, diagnostic, camera: runtime.camera });
+      closePixelGates.push({ rotation, stations, spans: { core, edge, shoulder }, coreTexture, changedByRole, turfSamples: turfPixels.length, roi: { kind: "projected-final-triangles", paddingPx: 2, triangles: triangles.length }, outside: { samples: outside, changed, ratio: changed / outside }, diagnostic, camera: runtime.camera, pixelScale, mapping: "actual-Float32-triangle-barycentric", certifiedCorePixels: certified.size });
     }
   }
   expect(await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState())).toEqual(initial);
