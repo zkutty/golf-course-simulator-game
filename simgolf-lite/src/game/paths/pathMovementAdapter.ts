@@ -569,24 +569,51 @@ export function adaptPathMovementRoute(options: PathMovementOptions): PathMoveme
   return result;
 }
 
-const routeAuthorities = new WeakMap<Point[], { distance: number; originalWaypoints: Point[] }>();
-/** Bound once per live planning/reconcile snapshot; walkCache remains the cache owner. */
+interface WalkingPresentation {
+  tiles: Course["tiles"];
+  revision: string;
+  cells: Point[] | null;
+  generation?: { geometry: string; variants: Map<string, { waypoints: Point[]; aligned: boolean }> };
+}
+// The caller's original-route arrays own this derived data weakly. Releasing or
+// clearing walkCache releases its presentation generations; returned clones do
+// not own these entries. No graph or timing authority is stored in this cache.
+const walkingPresentations = new WeakMap<Point[], WalkingPresentation>();
+/** Bound once per live planning/reconcile snapshot; walkCache owns ORIGINAL routes. */
 export function createPathWalkingRouter(course: Course, cache: Map<string, Point[] | null>) {
-  // Existing live reconciliation recreates this router after terrain edits.
-  // Saved handles/width are still checked on each query, even on the same course.
+  // Existing live reconciliation clears walkCache after terrain edits. Geometry
+  // edits invalidate only derived presentation, never rounded route authority.
   const revision = terrainRevision(course);
   return (from: Point, to: Point): Point[] | { waypoints: Point[]; distance: number; originalWaypoints: Point[] } | null => {
+    const key = `${Math.round(from.x)},${Math.round(from.y)}>${Math.round(to.x)},${Math.round(to.y)}`;
+    let original = cache.get(key);
+    if (original === undefined) {
+      original = findWalkPath(course, from, to);
+      cache.set(key, original);
+      if (original) walkingPresentations.set(original, { tiles: course.tiles, revision, cells: findWalkPathCells(course, from, to) });
+    }
+    if (!original) return null;
+    const evidence = walkingPresentations.get(original), endpoint = original.at(-1);
+    // Unknown/preseeded authority has no certified cell evidence. Fractional
+    // targets may differ from the original cached endpoint, including on a
+    // miss: keep the ordinary route rather than relocate it or attach an
+    // incomplete original-corner descriptor to a presentation-only path.
+    if (!evidence || evidence.tiles !== course.tiles || evidence.revision !== revision || !evidence.cells
+      || !endpoint || endpoint.x !== to.x || endpoint.y !== to.y) return copy(original);
     const geometry = pathMovementPlanKey(course, revision);
-    const key = `${geometry}:${from.x},${from.y}>${to.x},${to.y}`;
-    if (cache.has(key)) { const hit = cache.get(key)!; if (!hit) return null; const authority = routeAuthorities.get(hit); return authority === undefined ? copy(hit) : { waypoints: copy(hit), distance: authority.distance, originalWaypoints: copy(authority.originalWaypoints) }; }
-    const original = findWalkPath(course, from, to); if (!original) { cache.set(key, null); return null; }
-    const cells = findWalkPathCells(course, from, to)!;
-    const adapted = adaptPathMovementRoute({ course, from, to, cells, waypoints: original, geometryVersion: revision });
-    cache.set(key, adapted.waypoints);
-    if (!adapted.alignedRuns) return copy(adapted.waypoints);
+    if (evidence.generation?.geometry !== geometry) evidence.generation = { geometry, variants: new Map() };
+    const variant = `${from.x},${from.y}`;
+    let presentation = evidence.generation.variants.get(variant);
+    if (!presentation) {
+      const adapted = adaptPathMovementRoute({ course, from, to: endpoint, cells: evidence.cells, waypoints: original, geometryVersion: revision });
+      presentation = { waypoints: adapted.waypoints, aligned: adapted.alignedRuns > 0 };
+      evidence.generation.variants.set(variant, presentation);
+    }
+    if (!presentation.aligned) return copy(original);
+    // Rounded hits can have a different exact starting position. Preserve the
+    // original corner order and recalculate its authority from THIS request.
     let cursor = from, originalDistance = 0;
     for (const point of original) { originalDistance += distance(cursor, point); cursor = point; }
-    routeAuthorities.set(adapted.waypoints, { distance: originalDistance, originalWaypoints: copy(original) });
-    return { waypoints: copy(adapted.waypoints), distance: originalDistance, originalWaypoints: copy(original) };
+    return { waypoints: copy(presentation.waypoints), distance: originalDistance, originalWaypoints: copy(original) };
   };
 }

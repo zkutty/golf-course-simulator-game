@@ -3,6 +3,8 @@ import type { Course, Point } from "../models/types";
 import { corridorFeature, rasterizeSurfaceFeatureDetailed } from "../models/surfaceIntent";
 import { DEFAULT_COURSE } from "../models/defaults";
 import { findWalkPath, findWalkPathCells, walkPathAuthority } from "../live/walkPath";
+import { TimedItineraryBuilder } from "../m51/timedItinerary";
+import { LIVE } from "../live/liveConfig";
 import { authoredPathFixture, continuousPathFixture, type ContinuousPathFixture } from "../testing/continuousPathFixtures";
 import { buildContinuousPathPlan, classifyContinuousPathPoint } from "./continuousPathPlan";
 import { adaptPathMovementRoute, createPathWalkingRouter, pathMovementPlanKey, validatePathMovementPolyline, validatePathMovementSupport, type PathMovementSupportPiece } from "./pathMovementAdapter";
@@ -97,19 +99,90 @@ describe("continuous-path movement presentation", () => {
     expect(route(from, to)).toEqual(findWalkPath(active, from, to)); expect(cache.size).toBe(1);
   });
 
-  it("invalidates same-object width/tangent changes with a trusted terrain revision", () => {
+  it("keeps rounded fractional collisions, null hits, and original clones authoritative without PATH", () => {
+    const active = course(continuousPathFixture("empty")), cache = new Map<string, Point[] | null>();
+    const route = createPathWalkingRouter(active, cache), from = { x: 3, y: 3 }, firstTo = { x: 3.1, y: 3.1 }, secondTo = { x: 3.2, y: 3.2 };
+    const first = route(from, firstTo) as Point[];
+    expect(first).toEqual([firstTo]); first[0].x = -100;
+    expect(route(from, secondTo)).toEqual([firstTo]); expect([...cache.keys()]).toEqual(["3,3>3,3"]);
+    const currentFrom = { x: 3.05, y: 3.05 };
+    const builder = new TimedItineraryBuilder({ course: active, cursor: currentFrom,
+      personality: { skill: .6, consistency: .6, patience: .5, spendPropensity: 1, prefs: { difficulty: 0, scenery: 0, price: 0 } }, rng: () => .5, route });
+    builder.appendWalk(currentFrom, secondTo, 0);
+    expect(builder.segments).toEqual([{ kind: "walk", from: currentFrom, to: firstTo, holeIndex: 0,
+      dur: Math.hypot(firstTo.x - currentFrom.x, firstTo.y - currentFrom.y) * LIVE.pace.walkPerTile }]);
+    // A seeded null must remain final authority even though a new search works.
+    cache.set("3,3>5,5", null);
+    expect(findWalkPath(active, from, { x: 5.1, y: 5.1 })).not.toBeNull();
+    expect(route(from, { x: 5.1, y: 5.1 })).toBeNull(); expect(cache.get("3,3>5,5")).toBeNull();
+  });
+
+  it("keeps fractional PATH target mismatches on exact original arrays and timing", () => {
+    const active = course(authoredPathFixture()), cache = new Map<string, Point[] | null>(), route = createPathWalkingRouter(active, cache);
+    const from = { x: 2, y: 3 }, to = { x: 13.2, y: 5.2 }, original = findWalkPath(active, from, to)!;
+    expect(original.at(-1)).toEqual({ x: 13, y: 5 });
+    expect(route(from, to)).toEqual(original); expect(Array.isArray(route(from, to))).toBe(true);
+    expect(route(from, { x: 13.1, y: 5.1 })).toEqual(original);
+    expect(cache.get("2,3>13,5")).toEqual(original); expect(cache.size).toBe(1);
+    const builder = new TimedItineraryBuilder({ course: active, cursor: from,
+      personality: { skill: .6, consistency: .6, patience: .5, spendPropensity: 1, prefs: { difficulty: 0, scenery: 0, price: 0 } }, rng: () => .5, route });
+    builder.appendWalk(from, to, 0);
+    let cursor = from;
+    expect(builder.segments).toEqual(original.map(point => {
+      const segment = { kind: "walk", from: cursor, to: point, holeIndex: 0, dur: Math.hypot(point.x - cursor.x, point.y - cursor.y) * LIVE.pace.walkPerTile };
+      cursor = point; return segment;
+    }));
+  });
+
+  it("falls back to preseeded or unknown-revision original PATH evidence without re-searching", () => {
+    const active = course(authoredPathFixture()), from = { x: 2, y: 3 }, to = { x: 13, y: 5 };
+    const seeded = [{ x: 4, y: 3 }, { x: 13, y: 5 }], cache = new Map<string, Point[] | null>([["2,3>13,5", seeded]]);
+    const route = createPathWalkingRouter(active, cache), first = route(from, to) as Point[];
+    expect(first).toEqual(seeded); first[0].x = -1; expect(route(from, to)).toEqual(seeded);
+    cache.clear(); const known = route(from, to); expect(known && !Array.isArray(known)).toBe(true);
+    const original = cache.get("2,3>13,5")!;
+    // A new terrain snapshot cannot reuse presentation certified for old cells.
+    active.tiles = [...active.tiles]; active.tiles[0] = "water";
+    expect(createPathWalkingRouter(active, cache)(from, to)).toEqual(original);
+    expect(cache.get("2,3>13,5")).toBe(original);
+  });
+
+  it("recomputes aligned original distance for each exact start on rounded hits", () => {
+    const active = course(authoredPathFixture()), cache = new Map<string, Point[] | null>(), route = createPathWalkingRouter(active, cache);
+    const from = { x: 2, y: 3 }, currentFrom = { x: 2.1, y: 3.1 }, to = { x: 13, y: 5 };
+    const first = route(from, to), next = route(currentFrom, to);
+    if (!first || Array.isArray(first) || !next || Array.isArray(next)) throw new Error("fixture must align both starts");
+    expect(first.originalWaypoints).toEqual(findWalkPath(active, from, to));
+    expect(next.originalWaypoints).toEqual(first.originalWaypoints); expect(cache.size).toBe(1);
+    let cursor = currentFrom, expected = 0;
+    for (const point of first.originalWaypoints) { expected += Math.hypot(point.x - cursor.x, point.y - cursor.y); cursor = point; }
+    expect(next.distance).toBe(expected); expect(next.distance).not.toBe(first.distance);
+    next.originalWaypoints[0].x = -100; next.waypoints[0].x = -100;
+    expect(route(currentFrom, to)).not.toEqual(next);
+    expect(cache.get("2,3>13,5")).toEqual(first.originalWaypoints);
+  });
+
+  it("invalidates only presentation for same-object width/tangent edits with a trusted terrain revision", () => {
     const active = course(authoredPathFixture([{ x: 2.5, y: 4.25 }, { x: 12.5, y: 4.25 }], 1));
     const cache = new Map<string, Point[] | null>(); const route = createPathWalkingRouter(active, cache);
     const from = { x: 2, y: 4 }, to = { x: 12, y: 4 };
     const first = route(from, to); expect(Array.isArray(first)).toBe(false);
+    const original = cache.get("2,4>12,4"), originalSnapshot = original!.map(point => ({ ...point }));
     const feature = active.surfaceIntent!.features[0]; if (feature.geometry.kind !== "corridor") throw new Error("fixture");
-    const before = pathMovementPlanKey(active, "same-terrain"); feature.geometry.width = 1.5;
-    expect(pathMovementPlanKey(active, "same-terrain")).not.toBe(before); route(from, to);
+    const before = pathMovementPlanKey(active, "same-terrain"), firstMesh = buildContinuousPathPlan(active).layers.map(layer => layer.positions);
+    feature.geometry.width = 1.5;
+    expect(pathMovementPlanKey(active, "same-terrain")).not.toBe(before);
+    expect(buildContinuousPathPlan(active).layers.map(layer => layer.positions)).not.toEqual(firstMesh);
+    const wider = route(from, to); expect(Array.isArray(wider)).toBe(false);
     const widthKey = pathMovementPlanKey(active, "same-terrain");
-    feature.geometry.tangents = feature.geometry.knots.map(point => ({ in: { x: point.x - .3, y: point.y }, out: { x: point.x + .3, y: point.y } }));
-    expect(pathMovementPlanKey(active, "same-terrain")).not.toBe(widthKey); route(from, to);
-    expect(cache.size).toBe(3);
-    if (first && !Array.isArray(first)) { first.waypoints[0].x = -100; expect(route(from, to)).not.toEqual(first); }
+    feature.geometry.tangents = [{ in: { x: 2.2, y: 4.25 }, out: { x: 5.5, y: 4.05 } },
+      { in: { x: 9.5, y: 4.05 }, out: { x: 12.8, y: 4.25 } }];
+    expect(pathMovementPlanKey(active, "same-terrain")).not.toBe(widthKey);
+    const bent = route(from, to); expect(bent && !Array.isArray(bent)).toBe(true); expect(bent).not.toEqual(wider);
+    expect(route(from, to)).toEqual(bent); expect(cache.size).toBe(1);
+    expect(cache.get("2,4>12,4")).toBe(original); expect(original).toEqual(originalSnapshot);
+    if (bent && !Array.isArray(bent)) { bent.waypoints[0].x = -100; bent.originalWaypoints[0].x = -100; expect(route(from, to)).not.toEqual(bent); }
+    expect(original).toEqual(originalSnapshot);
   });
 });
 
