@@ -6,7 +6,6 @@ import { perfProfiler } from "./utils/performanceProfiler";
 import { lastItem } from "./utils/array";
 import "./ui/cozyLayout.css";
 import "./App.css";
-import { PixiStage } from "./ui/PixiStage";
 import { usePlayerShotPlayback } from "./ui/playerPro/usePlayerShotPlayback";
 import { isValidRetainedShotMotionV1 } from "./game/rules/shotMotion";
 import type { SfxName } from "./audio/AudioManager";
@@ -383,7 +382,7 @@ import { CAMPAIGN_CHAPTER_BY_ID } from "./game/campaign/content";
 import { CampaignSceneModal } from "./ui/CampaignSceneModal";
 import { CampaignPanel } from "./ui/CampaignPanel";
 import { WorkspaceNav, type WorkspaceActionId, type WorkspaceId } from "./ui/WorkspaceNav";
-import { DeferredSurface } from "./app/DeferredSurface";
+import { DeferredSurface, DeferredSurfaceLoading } from "./app/DeferredSurface";
 import { DeferredHudSurface } from "./app/DeferredHudSurface";
 import { applyManualOperationsCommand } from "./game/operations/commands";
 import { ContentLibraryPanel } from "./ui/ContentLibraryPanel";
@@ -396,6 +395,8 @@ import {
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
 type ViewMode = "global" | "hole";
+
+const PixiStage = lazy(() => import("./ui/PixiStage").then(({ PixiStage }) => ({ default: PixiStage })));
 
 // Vision is a media-heavy title-menu surface. Keep the core play path eager and
 // load this optional route only when the user explicitly opens it.
@@ -6286,6 +6287,7 @@ export default function App() {
           {...biomeContextAttributes(contextualUiTheme, "course-frame")}
         >
           <div ref={canvasPaneRef} className="cc-course-pane" data-tutorial-target="course">
+            <Suspense fallback={<div style={{ width: "100%", height: "100%" }}><DeferredSurfaceLoading label={course.name} /></div>}>
             <PixiStage
                 course={course}
                 holes={course.holes}
@@ -6385,6 +6387,7 @@ export default function App() {
                 cameraJump={minimapJump}
                 referenceCamera={m52ReferenceCamera}
             />
+            </Suspense>
             {!activeTutorial && (
               <WorkspaceNav
                 workspace={workspace}
