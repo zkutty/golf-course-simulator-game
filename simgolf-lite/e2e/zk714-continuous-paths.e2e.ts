@@ -388,10 +388,16 @@ async function mousePoint(page: Page, point: Point) {
   expect(box).not.toBeNull(); expect(p.x >= 8 && p.y >= 8 && p.x <= box!.width - 8 && p.y <= box!.height - 8, `gesture point must be inside canvas: ${JSON.stringify({ point, projected: p, box })}`).toBe(true);
   return { x: p.x + box!.x, y: p.y + box!.y };
 }
-async function selectS(page: Page, point = { x: 2.5, y: 3.5 }) {
+async function selectS(page: Page, point = { x: 4.5, y: 3 }) {
+  const before = await surface(page), beforeCash = await cash(page);
   await page.evaluate(() => window.__coursecraftPixiTest!.focusTileForTest(8, 5, 1.5)); await frame(page);
+  // First-segment t=.5 is (4.5,3), inside the saved S and away from every
+  // node/handle. A node click starts a drag and pointer-up commits input-plane
+  // coordinates, so it is an edit gesture rather than selection-only setup.
   await page.getByTestId("design-tool-edit").click(); const p = await mousePoint(page, point); await page.mouse.click(p.x, p.y);
   await expect(page.getByTestId("surface-authoring-instructions")).toContainText("Drag gold nodes");
+  expect(await surface(page), "selecting the saved stroke must preserve all authoritative geometry/coverage").toEqual(before);
+  expect(await cash(page), "selection-only setup must neither charge nor refund").toBe(beforeCash);
 }
 function candidateWidth(file: SaveFile, width: number, current?: Course) {
   const course = current ?? file.course; const source = course.surfaceIntent!.features[0];
@@ -409,7 +415,7 @@ test("P714 [ui] width draft cancel apply undo redo public reload and failed quot
   const beforeDraft = await compute(page);
   await page.getByTestId("design-path-width").selectOption("2.5"); await expect(page.getByTestId("design-path-width-apply")).toBeEnabled();
   const expectedKey = continuousPathPlanKey({ ...file.course, tiles: expected.tiles, surfaceIntent: expected.intent });
-  await expect.poll(async () => { const current = await compute(page); return current.completedCount > beforeDraft.completedCount && current.samples.at(-1)?.key === expectedKey; }).toBe(true);
+  await expect.poll(async () => { const current = await compute(page); return { completed: current.completedCount > beforeDraft.completedCount, key: current.samples.at(-1)?.key ?? null }; }).toEqual({ completed: true, key: expectedKey });
   expect(await surface(page)).toEqual(initial); expect(await cash(page)).toBe(initialCash);
   const draft = await compute(page); expect(draft.samples.at(-1)?.key).toBe(continuousPathPlanKey({ ...file.course, tiles: expected.tiles, surfaceIntent: expected.intent }));
   await page.getByTestId("design-path-width-cancel").click(); expect(await surface(page)).toEqual(initial);
