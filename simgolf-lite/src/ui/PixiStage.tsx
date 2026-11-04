@@ -75,6 +75,7 @@ import {
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
 import type { ParklandComposableDiagnostics } from "../game/render/parklandComposable";
 import type { OrderedMeshBoundsCohort } from "../game/render/orderedMeshBounds";
+import { prepareRendererStartup } from "./renderer/rendererStartup";
 import { deriveTerrainDetail } from "../game/render/terrainDetails";
 import {
   seasonalTerrainTreatment,
@@ -1947,47 +1948,38 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const width = Math.max(container.clientWidth || 800, 100);
       const height = Math.max(container.clientHeight || 600, 100);
 
-      await app.init({
-        width,
-        height,
-        backgroundColor: 0xdfe8d8, // soft parchment-green backdrop
-        antialias: true,
-        resolution: (window.devicePixelRatio || 1) * initialRendererConfigRef.current.resolutionScale,
-        autoDensity: true,
-      });
-
-      if (cancelled) {
-        app.stage.removeChildren().forEach(destroySceneSubtree);
-        app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
-        releaseIdleGraphicsPools(idleGraphicsPoolApi);
-        return;
-      }
-      const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule, orderedMeshBoundsModule] = await Promise.all([
-        import("./renderer/scenes/deferredWorldScenes"),
-        import("./renderer/scenes/terrainWaterScene"),
-        import("../game/render/courseSceneComposition"),
-        import("../game/render/courseSceneCamera"),
-        import("./renderer/viewportInputController"),
-        import("../game/render/orderedMeshBounds"),
-      ]);
-      if (cancelled) {
-        app.stage.removeChildren().forEach(destroySceneSubtree);
-        app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
-        releaseIdleGraphicsPools(idleGraphicsPoolApi);
-        return;
-      }
-
-      const activation = await loadAtlases(
-        initialRendererConfigRef.current.theme,
-        initialRendererConfigRef.current.graphicsQuality,
-        initialRendererConfigRef.current.season,
+      const startup = await prepareRendererStartup(
+        () => app.init({
+          width,
+          height,
+          backgroundColor: 0xdfe8d8, // soft parchment-green backdrop
+          antialias: true,
+          resolution: (window.devicePixelRatio || 1) * initialRendererConfigRef.current.resolutionScale,
+          autoDensity: true,
+        }),
+        () => Promise.all([
+          import("./renderer/scenes/deferredWorldScenes"),
+          import("./renderer/scenes/terrainWaterScene"),
+          import("../game/render/courseSceneComposition"),
+          import("../game/render/courseSceneCamera"),
+          import("./renderer/viewportInputController"),
+          import("../game/render/orderedMeshBounds"),
+        ]),
+        () => loadAtlases(
+          initialRendererConfigRef.current.theme,
+          initialRendererConfigRef.current.graphicsQuality,
+          initialRendererConfigRef.current.season,
+        ),
+        () => cancelled,
       );
-      if (cancelled) {
+      if (startup.kind === "cancelled") {
         app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
         releaseIdleGraphicsPools(idleGraphicsPoolApi);
         return;
       }
+      const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule, orderedMeshBoundsModule] = startup.modules;
+      const { activation } = startup;
       deferredWorldScenesRef.current = deferredWorldScenes;
       viewportInputControllerModuleRef.current = viewportInputControllerModule;
       orderedMeshBoundsModuleRef.current = orderedMeshBoundsModule;
@@ -2065,8 +2057,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
     void init().catch((error: unknown) => {
       if (cancelled) {
-        terrainWaterSceneRef.current?.destroy();
-        terrainWaterSceneRef.current = null;
+        // A StrictMode replacement may already own these shared refs.
+        if (appRef.current === app) {
+          terrainWaterSceneRef.current?.destroy();
+          terrainWaterSceneRef.current = null;
+        }
         try { app.stage.removeChildren().forEach(destroySceneSubtree); app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: false, textureSource: false }); releaseIdleGraphicsPools(idleGraphicsPoolApi); } catch { /* partial initialization */ }
         return;
       }
