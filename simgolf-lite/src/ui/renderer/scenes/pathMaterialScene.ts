@@ -162,6 +162,9 @@ export function createContinuousPathContactSampler(
           if (offset >= chosen) break;
           const ai = indices[offset], bi = indices[offset + 1], ci = indices[offset + 2];
           const a = ai * 2, b = bi * 2, c = ci * 2;
+          // In one-cell geometry, -1e-9 weights extend bounds by about2e-9; retain the clipEpsilon guard.
+          if (x < Math.min(p[a], p[b], p[c]) - clipEpsilon || x > Math.max(p[a], p[b], p[c]) + clipEpsilon
+            || y < Math.min(p[a + 1], p[b + 1], p[c + 1]) - clipEpsilon || y > Math.max(p[a + 1], p[b + 1], p[c + 1]) + clipEpsilon) continue;
           const denominator = (p[b + 1] - p[c + 1]) * (p[a] - p[c]) + (p[c] - p[b]) * (p[a + 1] - p[c + 1]);
           const u = ((p[b + 1] - p[c + 1]) * (x - p[c]) + (p[c] - p[b]) * (y - p[c + 1])) / denominator;
           const v = ((p[c + 1] - p[a + 1]) * (x - p[c]) + (p[a] - p[c]) * (y - p[c + 1])) / denominator;

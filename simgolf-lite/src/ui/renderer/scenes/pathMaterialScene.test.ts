@@ -168,3 +168,21 @@ describe("CONTACT-QUERY original-offset seam precedence", () => {
     expect(sample).toHaveBeenCalledTimes(9);
   });
 });
+
+
+describe("CONTACT-QUERY conservative triangle bounds", () => {
+  it.each([
+    { axis: "X", positions: [.25, .25, .75, .25, .75, .75], upper: [.75, .5], lower: [.25, .25], moveX: true },
+    { axis: "Y", positions: [.25, .25, .25, .75, .75, .75], upper: [.5, .75], lower: [.25, .25], moveX: false },
+  ])("preserves existing barycentric tolerance at both $axis bounds", ({ positions, upper, lower, moveX }) => {
+    const height = createContinuousPathContactSampler(corePlan(positions, [0, 1, 2]), 2, 2, (x, y) => x + y);
+    const offset = (point: number[], delta: number): [number, number] => [point[0] + (moveX ? delta : 0), point[1] + (moveX ? 0 : delta)];
+    // A half-cell triangle gives a negative weight of only -4e-10 at this offset.
+    // The farther offset gives -4e-8 and must remain outside.
+    for (const [point, direction] of [[upper, 1], [lower, -1]] as const) {
+      const near = offset(point, direction * 2e-10), outside = offset(point, direction * 2e-8);
+      expect(height(...near)).toBeCloseTo(near[0] + near[1], 14);
+      expect(height(...outside)).toBeNull();
+    }
+  });
+});
