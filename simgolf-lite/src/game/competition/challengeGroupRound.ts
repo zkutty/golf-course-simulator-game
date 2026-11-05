@@ -34,9 +34,11 @@ import { usesClubShotModel } from "../rules/shotModelSnapshot";
 import { normalizePerformanceLoadoutSnapshot } from "./equipmentRuntime";
 import {
   caddieRecommendation,
+  createOwnedCaddiePlanningContext,
   ownedCaddieRecommendation,
   previewPlayableShot,
   resolvePlayableShot,
+  type OwnedCaddiePlanningContext,
   type PlayerShotPreview,
   type PlayerShotSelection,
 } from "../playerPro/playerPro";
@@ -50,6 +52,9 @@ const MAX_SCORE_ONLY_PLAYER_TURNS = 480;
 const SIDE_BET_KINDS = ["skins", "nassau", "closest-to-pin", "longest-drive"] as const;
 const isNassauFormat = (format: ChallengeGroupScoringMode) => format === "gross-match" || format === "net-match";
 const INVALID_SETUP = "Bad setup";
+// Only the specialized starter below may register its own canonical result.
+// Membership is never serialized or propagated to replacement rounds.
+const ownedReplayStarts = new WeakSet<ChallengeGroupRound>();
 
 export type ChallengeGroupController = "player" | "ai";
 export type ChallengeGroupPhase = "awaiting_player" | "awaiting_ball_choice" | "complete";
@@ -1102,14 +1107,30 @@ function commitTurn(round: ChallengeGroupRound, golferId: string, selection: Pla
   }, golfers);
 }
 
-function runAiUntilPlayer(round: ChallengeGroupRound, freezeResult = true, ownedPlanning = false): ChallengeGroupRound {
+type OwnedPlanningContexts = Map<string, OwnedCaddiePlanningContext>;
+
+function participantPlanningContext(contexts: OwnedPlanningContexts, golferId: string, view: PlayerPlayableRound): OwnedCaddiePlanningContext {
+  let context = contexts.get(golferId);
+  if (!context) {
+    // The projection contains this participant's immutable tee/pin setup.
+    context = createOwnedCaddiePlanningContext(view.course);
+    contexts.set(golferId, context);
+  }
+  return context;
+}
+
+function runAiUntilPlayer(round: ChallengeGroupRound, freezeResult = true, ownedPlanning = false, planningContexts?: OwnedPlanningContexts): ChallengeGroupRound {
   let next = round;
   let guard = 0;
   while (next.phase !== "complete" && guard++ < MAX_AI_TURNS) {
     if (next.phase === "awaiting_ball_choice") break;
     const golfer = next.golfers.find((candidate) => candidate.id === next.activeGolferId);
     if (!golfer || golfer.controller === "player") break;
-    const selection = (ownedPlanning ? ownedCaddieRecommendation : caddieRecommendation)(playableRound(next, withTeamBallGolfer(next, golfer)), shotSkills(next, golfer));
+    const view = playableRound(next, withTeamBallGolfer(next, golfer));
+    const skills = shotSkills(next, golfer);
+    const selection = ownedPlanning
+      ? ownedCaddieRecommendation(view, skills, planningContexts ? participantPlanningContext(planningContexts, golfer.id, view) : undefined)
+      : caddieRecommendation(view, skills);
     const advanced = commitTurn(next, golfer.id, selection);
     if (advanced !== next) {
       next = advanced;
@@ -1245,6 +1266,30 @@ export function startChallengeGroupRound(args: StartChallengeGroupRoundArgs): Ch
   return started;
 }
 
+function eligibleOwnedPlanningGeometry(round: ChallengeGroupRound): boolean {
+  const ownedCourse = round.course;
+  const finitePoint = (point: { x: number; y: number } | null | undefined) => !!point && typeof point === "object" && Number.isFinite(point.x) && Number.isFinite(point.y);
+  return Number.isFinite(ownedCourse.width) && Number.isFinite(ownedCourse.height)
+    && Number.isFinite(ownedCourse.yardsPerTile)
+    && Array.isArray(ownedCourse.tiles) && ownedCourse.tiles.every((tile) => typeof tile === "string")
+    && Array.isArray(ownedCourse.elevations) && ownedCourse.elevations.every(Number.isFinite)
+    && round.golfers.every((golfer) => Array.isArray(golfer.setup.holes) && golfer.setup.holes.every((hole) =>
+      !!hole && finitePoint(hole.tee) && finitePoint(hole.pin) && Array.isArray(hole.waypoints) && hole.waypoints.every(finitePoint)));
+}
+
+/**
+ * Owns canonical startup for private transcript reconstruction. Public startup
+ * and its initial AI burst run unchanged before inspecting the JSON-owned,
+ * validated, deeply frozen result. Unsupported setups retain raw planning.
+ */
+export function startChallengeGroupOwnedReplayRound(args: StartChallengeGroupRoundArgs): ChallengeGroupRound {
+  const round = startChallengeGroupRound(args);
+  if (!round.teamAuthority && round.individualAuthority?.format === "net-stroke"
+    && !round.individualAuthority.contests.length && !round.sideBets.length
+    && eligibleOwnedPlanningGeometry(round)) ownedReplayStarts.add(round);
+  return round;
+}
+
 /**
  * Owns an automatic own-ball simulation from canonical startup to score-only
  * output. No caller round, shot callback, or unfrozen working state crosses
@@ -1263,23 +1308,21 @@ export function simulateChallengeGroupOwnBallScores(
   }
   // Only inspect canonical JSON-owned data. Malformed-but-accepted legacy
   // geometry retains the original sampler's reads and failures by falling back.
-  const finitePoint = (point: { x: number; y: number } | null | undefined) => !!point && typeof point === "object" && Number.isFinite(point.x) && Number.isFinite(point.y);
-  const ownedPlanning = Number.isFinite(ownedCourse.width) && Number.isFinite(ownedCourse.height)
-    && Number.isFinite(ownedCourse.yardsPerTile)
-    && Array.isArray(ownedCourse.tiles) && ownedCourse.tiles.every((tile) => typeof tile === "string")
-    && Array.isArray(ownedCourse.elevations) && ownedCourse.elevations.every(Number.isFinite)
-    && round.golfers.every((golfer) => Array.isArray(golfer.setup.holes) && golfer.setup.holes.every((hole) =>
-      !!hole && finitePoint(hole.tee) && finitePoint(hole.pin) && Array.isArray(hole.waypoints) && hole.waypoints.every(finitePoint)));
+  const ownedPlanning = eligibleOwnedPlanningGeometry(round);
+  const planningContexts: OwnedPlanningContexts | undefined = ownedPlanning ? new Map() : undefined;
   let guard = 0;
   while (round.phase !== "complete" && guard++ < MAX_SCORE_ONLY_PLAYER_TURNS) {
     const view = challengeGroupPlayerRound(round);
     if (!view || round.phase !== "awaiting_player") return null;
-    const selection = (ownedPlanning ? ownedCaddieRecommendation : caddieRecommendation)(view, challengeGroupPlayerSkills(round));
+    const skills = challengeGroupPlayerSkills(round);
+    const selection = ownedPlanning
+      ? ownedCaddieRecommendation(view, skills, participantPlanningContext(planningContexts!, round.playerGolferId, view))
+      : caddieRecommendation(view, skills);
     if (round.activeGolferId !== round.playerGolferId) {
       throw new Error("The player-controlled golfer does not own the current turn.");
     }
     const committed = commitTurn(round, round.playerGolferId, selection);
-    const next = committed === round ? round : runAiUntilPlayer(committed, false, ownedPlanning);
+    const next = committed === round ? round : runAiUntilPlayer(committed, false, ownedPlanning, planningContexts);
     if ((next.phase !== "awaiting_player" && next.phase !== "complete")
       || next.teamAuthority || next.individualAuthority?.contests.length) {
       throw new Error("Only a settled own-ball Pro-Am simulation burst can be compacted.");
@@ -1342,13 +1385,15 @@ export function replayChallengeGroupPlayerShots(
   selections: readonly PlayerShotSelection[],
 ): ChallengeGroupRound | null {
   if (selections.length === 0) return round;
+  const ownedPlanning = ownedReplayStarts.has(round);
+  const planningContexts: OwnedPlanningContexts | undefined = ownedPlanning ? new Map() : undefined;
   let next = round;
   for (const selection of selections) {
     if (golferId !== next.playerGolferId) throw new Error("Only the player-controlled golfer accepts player shot input.");
     if (next.activeGolferId !== golferId) throw new Error("The player-controlled golfer does not own the current turn.");
     const committed = commitTurn(next, golferId, selection);
     if (committed === next) return null;
-    next = runAiUntilPlayer(committed, false);
+    next = runAiUntilPlayer(committed, false, ownedPlanning, planningContexts);
   }
   return freeze(next);
 }

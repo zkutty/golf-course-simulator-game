@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Point, SurfaceFeature } from '../models/types';
 import { rasterizeSurfaceFeatureDetailed } from '../models/surfaceIntent';
@@ -7,6 +8,8 @@ import reference from '../testing/continuousPathBoundaryReference.json';
 import { buildContinuousPathPlan, type ContinuousPathInput, type ContinuousPathLayer, type ContinuousPathPlan } from './continuousPathPlan';
 import { buildPathRibbon } from './continuousPathRibbon';
 import type { PathChain } from './continuousPathTopology';
+import { buildContinuousPathPlan as buildAcceptedPathPlan } from './continuousPathPlan.accepted-10c85b89.test-support';
+import { buildPathRibbon as buildAcceptedPathRibbon } from './continuousPathRibbon.accepted-10c85b89.test-support';
 
 type PlanCase = { name: string; kind: 'plan'; input: ContinuousPathInput };
 type RibbonInput = { chains: PathChain[]; coverage: number[]; width: number; height: number };
@@ -15,6 +18,29 @@ export type BoundaryCase = PlanCase | RibbonCase;
 export type BoundaryOutput = ContinuousPathPlan | ContinuousPathLayer[];
 
 export const boundaryDigest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+// These test-only builders preserve the accepted eager implementation. Native
+// floating-point results can differ across hosts, so compare both implementations
+// on the same host while retaining every historical digest and source receipt.
+const acceptedPlanRibbonImport = "from './continuousPathRibbon.accepted-10c85b89.test-support';";
+const originalPlanRibbonImport = "from './continuousPathRibbon';";
+const sourceDigest = (source: string): string => createHash('sha256').update(source).digest('hex');
+const readSource = (path: string): string => readFileSync(new URL(path, import.meta.url), 'utf8');
+
+function assertSourceReceipt(source: string, expected: string): void {
+  if (sourceDigest(source) !== expected) throw new Error('Accepted boundary source receipt mismatch');
+}
+
+function originalAcceptedPlanSource(source: string): string {
+  if (source.split(acceptedPlanRibbonImport).length !== 2) throw new Error('Expected exactly one accepted Ribbon import');
+  return source.replace(acceptedPlanRibbonImport, originalPlanRibbonImport);
+}
+
+function assertExactBoundaryOutput(output: BoundaryOutput, accepted: BoundaryOutput): void {
+  if (JSON.stringify(output) !== JSON.stringify(accepted)) {
+    throw new Error(`Boundary output does not exactly match accepted source: ${boundaryDigest(output)} !== ${boundaryDigest(accepted)}`);
+  }
+}
 
 function paint(course: ContinuousPathFixture, points: readonly (readonly number[])[]): ContinuousPathFixture {
   for (const [x, y] of points) course.tiles[y * course.width + x] = 'path';
@@ -102,6 +128,10 @@ export function buildBoundaryCase(sample: BoundaryCase): BoundaryOutput {
   return sample.kind === 'plan' ? buildContinuousPathPlan(sample.input) : buildPathRibbon(sample.input.chains, sample.input.coverage, sample.input.width, sample.input.height);
 }
 
+function buildAcceptedBoundaryCase(sample: BoundaryCase): BoundaryOutput {
+  return sample.kind === 'plan' ? buildAcceptedPathPlan(sample.input) : buildAcceptedPathRibbon(sample.input.chains, sample.input.coverage, sample.input.width, sample.input.height);
+}
+
 export function assertBoundaryFinite(value: unknown): void {
   if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Nonfinite boundary output');
   if (value && typeof value === 'object') for (const child of Object.values(value)) assertBoundaryFinite(child);
@@ -123,21 +153,79 @@ function freeze<T>(value: T): T {
 
 describe('accepted G boundary extraction exact equivalence', () => {
   const cases = continuousPathBoundaryCases();
+  const immutableSources = [
+    ['./continuousPathRibbon.accepted-10c85b89.test-support.ts', reference.sourceHashes['src/game/paths/continuousPathRibbon.ts']],
+    ['./continuousPathTopology.ts', reference.sourceHashes['src/game/paths/continuousPathTopology.ts']],
+    ['../testing/continuousPathFixtures.ts', reference.sourceHashes['src/game/testing/continuousPathFixtures.ts']],
+    ['../models/surfaceIntent.ts', '4f096c1f6480ce2260292e154f678bd8097c91847e1167898b4221bacb1ee2dd'],
+    ['../testing/continuousPathBoundaryReference.json', '21f93931eb6110157fdcaf1acffc92508096b175a0f04c6f336325e61c89bcb2'],
+  ] as const;
+
+  it.each(immutableSources)('preserves immutable accepted source receipt %s', (path, expected) => {
+    assertSourceReceipt(readSource(path), expected);
+  });
+  it('preserves the original accepted Plan except its one frozen Ribbon import', () => {
+    const source = readSource('./continuousPathPlan.accepted-10c85b89.test-support.ts');
+    assertSourceReceipt(originalAcceptedPlanSource(source), reference.sourceHashes['src/game/paths/continuousPathPlan.ts']);
+  });
   it('keeps the reviewed named input manifest intact', () => {
     expect(reference.format).toBe('continuous-path-boundary-reference-v1');
     expect(cases.map(sample => sample.name)).toEqual(reference.cases.map(sample => sample.name));
     expect(reference.acceptedCommit).toBe('10c85b89a9bf82afa9b0942b13072e05de06416a');
+    expect(reference.fixtureDefinitionSha256).toBe('8770abc596a036de4399a1b01b68af9eb9dbffd0643417d10ced30a21cfa56c5');
   });
   it.each(cases)('$name preserves the complete serialized accepted output', sample => {
     const baseline = reference.cases.find(row => row.name === sample.name);
     expect(baseline).toBeDefined();
     expect(boundaryDigest(sample.input)).toBe(baseline!.inputSha256);
     const originalInput = JSON.stringify(sample.input);
+    const acceptedSample = structuredClone(sample);
     freeze(sample.input);
+    freeze(acceptedSample.input);
     const output = buildBoundaryCase(sample);
+    const acceptedOutput = buildAcceptedBoundaryCase(acceptedSample);
     assertBoundaryFinite(output); assertIndependentRingPoints(output);
+    assertBoundaryFinite(acceptedOutput); assertIndependentRingPoints(acceptedOutput);
     expect(JSON.stringify(sample.input)).toBe(originalInput);
-    expect(boundaryDigest(output)).toBe(baseline!.outputSha256);
+    expect(JSON.stringify(acceptedSample.input)).toBe(originalInput);
+    assertExactBoundaryOutput(output, acceptedOutput);
     if (sample.kind === 'plan' && !Array.isArray(output)) expect(output.underlayTiles).not.toBe(sample.input.tiles);
+  });
+
+  it('rejects a numeric change smaller than boundary welding tolerances', () => {
+    const accepted = buildAcceptedPathPlan(continuousPathFixture('isolated'));
+    const first = accepted.layers[0]; const positions = [...first.positions]; const original = positions[0];
+    positions[0] += 1e-12;
+    expect(positions[0]).not.toBe(original);
+    expect(Math.abs(positions[0] - original)).toBeLessThan(1e-8);
+    const changed = { ...accepted, layers: [{ ...first, positions }, ...accepted.layers.slice(1)] };
+    expect(() => assertExactBoundaryOutput(changed, accepted)).toThrow('does not exactly match accepted source');
+  });
+  it('rejects omitted boundary geometry', () => {
+    const accepted = buildAcceptedPathPlan(continuousPathFixture('isolated'));
+    const first = accepted.layers[0]; expect(first.rings.length).toBeGreaterThan(0);
+    const changed = { ...accepted, layers: [{ ...first, rings: [] }, ...accepted.layers.slice(1)] };
+    expect(() => assertExactBoundaryOutput(changed, accepted)).toThrow('does not exactly match accepted source');
+  });
+  it('rejects reordered triangle indices', () => {
+    const accepted = buildAcceptedPathPlan(continuousPathFixture('isolated'));
+    const first = accepted.layers[0]; const indices = [...first.indices];
+    expect(indices[0]).not.toBe(indices[1]);
+    [indices[0], indices[1]] = [indices[1], indices[0]];
+    const changed = { ...accepted, layers: [{ ...first, indices }, ...accepted.layers.slice(1)] };
+    expect(() => assertExactBoundaryOutput(changed, accepted)).toThrow('does not exactly match accepted source');
+  });
+  it('rejects changed non-geometry output fields', () => {
+    const accepted = buildAcceptedPathPlan(continuousPathFixture('isolated'));
+    const changed = { ...accepted, diagnostics: { ...accepted.diagnostics, junctionCount: accepted.diagnostics.junctionCount + 1 } };
+    expect(() => assertExactBoundaryOutput(changed, accepted)).toThrow('does not exactly match accepted source');
+  });
+  it('rejects even a whitespace change to the immutable accepted source', () => {
+    const source = readSource('./continuousPathRibbon.accepted-10c85b89.test-support.ts');
+    expect(() => assertSourceReceipt(`${source}\n`, reference.sourceHashes['src/game/paths/continuousPathRibbon.ts'])).toThrow('source receipt mismatch');
+  });
+  it('rejects a missing accepted Plan import redirection', () => {
+    const source = readSource('./continuousPathPlan.accepted-10c85b89.test-support.ts');
+    expect(() => originalAcceptedPlanSource(source.replace(acceptedPlanRibbonImport, originalPlanRibbonImport))).toThrow('exactly one accepted Ribbon import');
   });
 });

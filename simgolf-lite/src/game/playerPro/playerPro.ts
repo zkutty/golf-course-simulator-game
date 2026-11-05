@@ -1387,7 +1387,7 @@ export function advancePlayerRound(round: PlayerPlayableRound): PlayerPlayableRo
   };
 }
 
-function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkills, ownedPlanning = false): PlayerShotSelection {
+function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkills, ownedPlanning = false, planningContext?: OwnedCaddiePlanningContext): PlayerShotSelection {
   const hole = round.course.holes[round.currentHoleIndex];
   if (usesClubShotModel(round.course.shotModel)) {
     // Deliberately unseeded: compare expected centerlines, never resolve a
@@ -1395,9 +1395,12 @@ function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkill
     const clubs = availablePlayerClubs(round.lie);
     const fallback: PlayerShotSelection = { club: clubs[0]?.name ?? "Pitching Wedge", aim: { ...hole.pin }, power: 1, technique: "normal" };
     if (!clubs.length) return fallback;
-    const course = courseFromSnapshot(round.course);
+    // Only private owned callers supply a context. The public and standalone
+    // routes preserve their original reads, preparation and no-club laziness.
+    const prepared = ownedPlanning ? planningContext?.() : undefined;
+    const course = prepared?.course ?? courseFromSnapshot(round.course);
     const sampleSurface = ownedPlanning ? undefined : createGreenRolloutSurfaceSampler(course, course.greenSurface);
-    const height = ownedPlanning ? createGreenRolloutHeightSampler(course, course.greenSurface) : undefined;
+    const height = ownedPlanning ? prepared?.height ?? createGreenRolloutHeightSampler(course, course.greenSurface) : undefined;
     const heightAt = (at: PlayerProPoint) => (height ? height(at) : sampleSurface!(at).height) * 2.5;
     let rolloutContext: ReturnType<typeof createGreenRolloutContext> | undefined;
     const rules = round.rulesSnapshot ?? round.course.rulesSnapshot;
@@ -1493,7 +1496,7 @@ function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkill
       const travelY = expected.landing.y - round.ball.y;
       const travelLength = Math.max(.001, Math.hypot(travelX, travelY));
       const resolveRollout = ownedPlanning
-        ? (rolloutContext ??= createGreenRolloutContext(course)).resolve
+        ? prepared?.resolve ?? (rolloutContext ??= createGreenRolloutContext(course)).resolve
         : resolveGreenRollout;
       const rollout = resolveRollout({ course, holeId: hole.id, landing: isPutter ? round.ball : landing,
         direction: { x: travelX / travelLength, y: travelY / travelLength },
@@ -1867,7 +1870,34 @@ export function playerTournamentPrizePreview(event: TournamentEvent): string {
   return `${spec.revenueAward}:${spec.reputationAward}`;
 }
 
-/** Internal suggestion-only route for canonical, eligible score-only ownership. */
-export function ownedCaddieRecommendation(round: PlayerPlayableRound, skills: PlayerProSkills): PlayerShotSelection {
-  return recommendedSelection(round, skills, true);
+interface PreparedOwnedCaddiePlanning {
+  course: Course;
+  height: ReturnType<typeof createGreenRolloutHeightSampler>;
+  resolve: ReturnType<typeof createGreenRolloutContext>["resolve"];
+}
+
+/** Private physical preparation, scoped by the owning burst and participant. */
+export type OwnedCaddiePlanningContext = () => PreparedOwnedCaddiePlanning;
+
+/** Captures an internally owned physical projection without reading it yet. */
+export function createOwnedCaddiePlanningContext(snapshot: PlayerRoundCourseSnapshot): OwnedCaddiePlanningContext {
+  let prepared: PreparedOwnedCaddiePlanning | undefined;
+  return () => {
+    if (!prepared) {
+      const course = courseFromSnapshot(snapshot);
+      const height = createGreenRolloutHeightSampler(course, course.greenSurface);
+      let rolloutContext: ReturnType<typeof createGreenRolloutContext> | undefined;
+      prepared = {
+        course,
+        height,
+        resolve: (input) => (rolloutContext ??= createGreenRolloutContext(course)).resolve(input),
+      };
+    }
+    return prepared;
+  };
+}
+
+/** Internal suggestion-only route for canonical, eligible planning ownership. */
+export function ownedCaddieRecommendation(round: PlayerPlayableRound, skills: PlayerProSkills, planningContext?: OwnedCaddiePlanningContext): PlayerShotSelection {
+  return recommendedSelection(round, skills, true, planningContext);
 }

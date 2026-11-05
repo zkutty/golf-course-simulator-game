@@ -6,6 +6,7 @@ import {
   encodeChallengeGroupRound,
   replayChallengeGroupPlayerShots,
   startChallengeGroupRound,
+  startChallengeGroupOwnedReplayRound,
   withdrawChallengeGroupGolfer,
   type ChallengeGroupParticipantInput,
   type ChallengeGroupRound,
@@ -192,10 +193,12 @@ function createChallengeRound(
   teamId: string,
   playerEntrantId: string,
   seed: number,
+  ownedReplay = false,
 ): ChallengeGroupRound {
   const team = snapshot.teams.find((candidate) => candidate.id === teamId)!;
   const entrants = team.entrantIds.map((id) => snapshot.entrants.find((entrant) => entrant.entrantId === id)!);
-  return startChallengeGroupRound({
+  const start = ownedReplay ? startChallengeGroupOwnedReplayRound : startChallengeGroupRound;
+  return start({
     id: roundId(snapshot, roundNumber, team.id),
     course,
     rulesSnapshot: course.rulesSnapshot,
@@ -229,6 +232,7 @@ function replayActions(
       state.teamId,
       state.playerEntrantId,
       state.seed,
+      true,
     );
     // Only decode's JSON-owned candidate can take this necessary-condition
     // preflight. Direct settlement keeps its original raw-object replay path.
