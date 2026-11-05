@@ -137,10 +137,11 @@ export function prepareGuardedTurfFan(positions: Float32Array, uvs: Float32Array
     let valid = true;
     for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
       const g = y * 5 + x, at = start + (y * 4 + x) * 6;
-      const expected = [grid[g], grid[g + 1], grid[g + 6], grid[g], grid[g + 6], grid[g + 5]];
-      for (let k = 0; k < 6; k++) if (indices[at + k] !== expected[k]) return null;
-      if (determinant(positions, expected[0], expected[1], expected[2]) <= 0
-        || determinant(positions, expected[3], expected[4], expected[5]) <= 0) valid = false;
+      const a = grid[g], b = grid[g + 1], c = grid[g + 6], d = grid[g + 5];
+      if (indices[at] !== a || indices[at + 1] !== b || indices[at + 2] !== c
+        || indices[at + 3] !== a || indices[at + 4] !== c || indices[at + 5] !== d) return null;
+      if (determinant(positions, a, b, c) <= 0
+        || determinant(positions, a, c, d) <= 0) valid = false;
     }
     for (let i = 0; i < 16; i++) if (determinant(positions, grid[12], grid[boundary[i]], grid[boundary[(i + 1) % 16]]) <= 0) valid = false;
     if (!valid || !simpleBoundary(positions, grid)) continue;
