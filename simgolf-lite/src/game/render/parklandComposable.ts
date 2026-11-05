@@ -187,31 +187,58 @@ export function transformParklandCuePixels(
   const cap = MOTIF_ALPHA_CAPS[quality][semantic];
   let nonZero = 0;
   let alphaTotal = 0;
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    const pixel = y * width + x;
-    const offset = pixel * 4;
-    const sourceAlpha = source[offset + 3];
-    let colorOffset = offset;
-    let motifAlpha = sourceAlpha;
-    if (semantic === "green") for (const [sampleX, sampleY] of [
-      [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
-    ] as const) {
-      const sampleOffset = ((sampleY + height) % height * width + (sampleX + width) % width) * 4;
-      if (source[sampleOffset + 3] <= motifAlpha) continue;
-      motifAlpha = source[sampleOffset + 3];
-      colorOffset = sampleOffset;
+  // ImageData.data has stable indexed reads. Keep the original neighbor loop
+  // for arbitrary ArrayLike inputs, including accessors and SharedArrayBuffer.
+  const ordinaryGreen = semantic === "green"
+    && Number.isSafeInteger(width) && width > 0
+    && Number.isSafeInteger(height) && height > 0
+    && ArrayBuffer.isView(source)
+    && Object.getPrototypeOf(source) === Uint8ClampedArray.prototype
+    && !Object.hasOwn(source, "length") && !Object.hasOwn(source, "buffer")
+    && source.buffer instanceof ArrayBuffer;
+  for (let y = 0; y < height; y++) {
+    const rowBase = ordinaryGreen ? y * width * 4 : 0;
+    const aboveRowBase = ordinaryGreen ? (y === 0 ? height - 1 : y - 1) * width * 4 : 0;
+    const belowRowBase = ordinaryGreen ? (y + 1 === height ? 0 : y + 1) * width * 4 : 0;
+    for (let x = 0; x < width; x++) {
+      const pixel = y * width + x;
+      const offset = pixel * 4;
+      const sourceAlpha = source[offset + 3];
+      let colorOffset = offset;
+      let motifAlpha = sourceAlpha;
+      if (ordinaryGreen) {
+        let sampleOffset = x === 0 ? rowBase + (width - 1) * 4 : offset - 4;
+        let sampleAlpha = source[sampleOffset + 3];
+        if (sampleAlpha > motifAlpha) { motifAlpha = sampleAlpha; colorOffset = sampleOffset; }
+        sampleOffset = x + 1 === width ? rowBase : offset + 4;
+        sampleAlpha = source[sampleOffset + 3];
+        if (sampleAlpha > motifAlpha) { motifAlpha = sampleAlpha; colorOffset = sampleOffset; }
+        sampleOffset = aboveRowBase + x * 4;
+        sampleAlpha = source[sampleOffset + 3];
+        if (sampleAlpha > motifAlpha) { motifAlpha = sampleAlpha; colorOffset = sampleOffset; }
+        sampleOffset = belowRowBase + x * 4;
+        sampleAlpha = source[sampleOffset + 3];
+        if (sampleAlpha > motifAlpha) { motifAlpha = sampleAlpha; colorOffset = sampleOffset; }
+      } else if (semantic === "green") for (const [sampleX, sampleY] of [
+        [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
+      ] as const) {
+        const sampleOffset = ((sampleY + height) % height * width + (sampleX + width) % width) * 4;
+        if (source[sampleOffset + 3] <= motifAlpha) continue;
+        motifAlpha = source[sampleOffset + 3];
+        colorOffset = sampleOffset;
+      }
+      const residual = motifAlpha - alphaFloor;
+      const signal = residual <= (quality === "low" ? 3 : 2)
+        ? 0
+        : Math.min(cap, Math.round(residual * MOTIF_SIGNAL_GAINS[semantic]));
+      output[offset] = source[colorOffset];
+      output[offset + 1] = source[colorOffset + 1];
+      output[offset + 2] = source[colorOffset + 2];
+      output[offset + 3] = signal;
+      alpha[pixel] = signal;
+      if (signal > 0) nonZero++;
+      alphaTotal += signal;
     }
-    const residual = motifAlpha - alphaFloor;
-    const signal = residual <= (quality === "low" ? 3 : 2)
-      ? 0
-      : Math.min(cap, Math.round(residual * MOTIF_SIGNAL_GAINS[semantic]));
-    output[offset] = source[colorOffset];
-    output[offset + 1] = source[colorOffset + 1];
-    output[offset + 2] = source[colorOffset + 2];
-    output[offset + 3] = signal;
-    alpha[pixel] = signal;
-    if (signal > 0) nonZero++;
-    alphaTotal += signal;
   }
   return {
     pixels: output,

@@ -4,7 +4,9 @@ import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
 import {
   PARKLAND_COMPOSABLE_LOW_CONTRACT,
+  PARKLAND_COMPOSABLE_PATTERNS,
   PARKLAND_COMPOSABLE_SEMANTICS,
+  PARKLAND_COMPOSABLE_WORLD_PERIOD_TILES,
   PARKLAND_MATERIAL_FIELD_SOURCE_HASHES,
   activeParklandComposableDiagnostics,
   isParklandComposableSemantic,
@@ -16,6 +18,189 @@ import {
   transformParklandCuePixels,
   usesParklandComposableMaterial,
 } from "./parklandComposable";
+
+// Frozen from parklandComposable.ts at 28d866c (whole source SHA-256
+// b81032940e7c6192b728d41aa89b0fac7d1de6913437639591c3abfd0c8e05ee).
+// Keep this oracle independent of the optimized green-neighbor branch.
+const ORIGINAL_MOTIF_ALPHA_CAPS = {
+  high: { fairway: 20, rough: 64, deep_rough: 74, green: 74, tee: 76 },
+  medium: { fairway: 20, rough: 58, deep_rough: 68, green: 68, tee: 72 },
+  low: { fairway: 16, rough: 44, deep_rough: 56, green: 56, tee: 60 },
+} as const;
+const ORIGINAL_MOTIF_SIGNAL_GAINS = {
+  fairway: 1, rough: 1, deep_rough: 1, green: 1, tee: 1,
+} as const;
+type MotifSemantic = typeof PARKLAND_COMPOSABLE_SEMANTICS[number];
+type MotifQuality = "high" | "medium" | "low";
+function originalBoundaryEnergy(alpha: Uint8ClampedArray, width: number, height: number): number {
+  let energy = 0;
+  let samples = 0;
+  for (let step = 1; step < PARKLAND_COMPOSABLE_WORLD_PERIOD_TILES; step++) {
+    const x = Math.round(step * width / PARKLAND_COMPOSABLE_WORLD_PERIOD_TILES);
+    const y = Math.round(step * height / PARKLAND_COMPOSABLE_WORLD_PERIOD_TILES);
+    if (x > 0 && x < width) for (let row = 0; row < height; row++) {
+      energy += Math.abs(alpha[row * width + x] - alpha[row * width + x - 1]);
+      samples++;
+    }
+    if (y > 0 && y < height) for (let column = 0; column < width; column++) {
+      energy += Math.abs(alpha[y * width + column] - alpha[(y - 1) * width + column]);
+      samples++;
+    }
+  }
+  return samples === 0 ? 0 : energy / samples / 255;
+}
+function originalTransform(
+  source: ArrayLike<number>, width: number, height: number,
+  semantic: MotifSemantic, quality: MotifQuality,
+) {
+  if (source.length !== width * height * 4) throw new Error("invalid Parkland cue dimensions");
+  let alphaFloor = 255;
+  for (let offset = 3; offset < source.length; offset += 4) alphaFloor = Math.min(alphaFloor, source[offset]);
+  const output = new Uint8ClampedArray(source.length);
+  const alpha = new Uint8ClampedArray(width * height);
+  const cap = ORIGINAL_MOTIF_ALPHA_CAPS[quality][semantic];
+  let nonZero = 0;
+  let alphaTotal = 0;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const pixel = y * width + x;
+    const offset = pixel * 4;
+    const sourceAlpha = source[offset + 3];
+    let colorOffset = offset;
+    let motifAlpha = sourceAlpha;
+    if (semantic === "green") for (const [sampleX, sampleY] of [
+      [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
+    ] as const) {
+      const sampleOffset = ((sampleY + height) % height * width + (sampleX + width) % width) * 4;
+      if (source[sampleOffset + 3] <= motifAlpha) continue;
+      motifAlpha = source[sampleOffset + 3];
+      colorOffset = sampleOffset;
+    }
+    const residual = motifAlpha - alphaFloor;
+    const signal = residual <= (quality === "low" ? 3 : 2)
+      ? 0
+      : Math.min(cap, Math.round(residual * ORIGINAL_MOTIF_SIGNAL_GAINS[semantic]));
+    output[offset] = source[colorOffset];
+    output[offset + 1] = source[colorOffset + 1];
+    output[offset + 2] = source[colorOffset + 2];
+    output[offset + 3] = signal;
+    alpha[pixel] = signal;
+    if (signal > 0) nonZero++;
+    alphaTotal += signal;
+  }
+  return {
+    pixels: output,
+    metrics: {
+      semantic,
+      pattern: PARKLAND_COMPOSABLE_PATTERNS[semantic],
+      sourceAlphaFloor: alphaFloor,
+      outputAlphaFloor: 0,
+      maximumAlpha: cap,
+      nonZeroAlphaFraction: nonZero / Math.max(1, width * height),
+      lowFrequencyPlateScore: alphaTotal / Math.max(1, width * height) / 255,
+      tileBoundaryEdgeEnergy: originalBoundaryEnergy(alpha, width, height),
+      motifExpansionPixels: semantic === "green" ? 1 : 0,
+    },
+  };
+}
+
+function expectOriginalCueTransform(
+  source: ArrayLike<number>, width: number, height: number,
+  semantic: MotifSemantic, quality: MotifQuality,
+) {
+  const expected = originalTransform(source, width, height, semantic, quality);
+  const actual = transformParklandCuePixels(source, width, height, semantic, quality);
+  const actualBytes = Buffer.from(actual.pixels.buffer, actual.pixels.byteOffset, actual.pixels.byteLength);
+  const expectedBytes = Buffer.from(expected.pixels.buffer, expected.pixels.byteOffset, expected.pixels.byteLength);
+  expect(actualBytes.equals(expectedBytes)).toBe(true);
+  expect(actual.metrics).toStrictEqual(expected.metrics);
+}
+
+describe("Parkland cue transform exact-output fast path", () => {
+  it("matches frozen original bytes and metrics for every approved atlas", () => {
+    for (const quality of ["high", "medium", "low"] as const) {
+      for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
+        const png = PNG.sync.read(readFileSync(new URL(
+          `../../assets/terrain/parkland-composable-v1/${quality}/semantic-${semantic}.png`,
+          import.meta.url,
+        )));
+        // PNG.data is a Buffer. Browser ImageData.data is Uint8ClampedArray.
+        const source = new Uint8ClampedArray(png.data);
+        const inputHash = createHash("sha256").update(source).digest("hex");
+        expectOriginalCueTransform(source, png.width, png.height, semantic, quality);
+        expect(createHash("sha256").update(source).digest("hex")).toBe(inputHash);
+      }
+    }
+  });
+
+  it("preserves row wraps, one-pixel dimensions, strict ties, alpha thresholds and caps", () => {
+    for (const [width, height] of [[0, 0], [0, 1], [1, 0], [1, 1], [1, 7], [7, 1], [2, 2], [3, 5], [8, 8], [17, 11]]) {
+      for (let seed = 0; seed < 4; seed++) {
+        const source = new Uint8ClampedArray(width * height * 4);
+        let random = 0x9e3779b9 ^ (width * 31 + height * 17 + seed);
+        for (let pixel = 0; pixel < width * height; pixel++) {
+          const offset = pixel * 4;
+          random = (Math.imul(random, 1664525) + 1013904223) >>> 0;
+          source[offset] = random & 255;
+          source[offset + 1] = (random >>> 8) & 255;
+          source[offset + 2] = (random >>> 16) & 255;
+          source[offset + 3] = [0, 1, 2, 3, 4, 20, 74, 76, 255][(pixel * 3 + seed) % 9];
+        }
+        for (const quality of ["high", "medium", "low"] as const) {
+          for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
+            expectOriginalCueTransform(source, width, height, semantic, quality);
+          }
+        }
+      }
+    }
+    const ties = new Uint8ClampedArray([
+      10, 20, 30, 50, 40, 50, 60, 50,
+      70, 80, 90, 50, 100, 110, 120, 50,
+    ]);
+    expectOriginalCueTransform(ties, 2, 2, "green", "high");
+  });
+
+  it("retains the original fallback's getter order, mutations and errors", () => {
+    const makeSource = (reads: number[], throwsAt = -1): ArrayLike<number> => {
+      const values = [20, 40, 60, 5, 80, 100, 120, 20, 140, 160, 180, 20, 200, 220, 240, 2];
+      return new Proxy({ length: values.length } as ArrayLike<number>, {
+        get(target, property) {
+          if (property === "length") return target.length;
+          const index = Number(property);
+          if (Number.isInteger(index) && index >= 0) {
+            reads.push(index);
+            if (index === throwsAt) throw new Error("indexed read failure");
+            if (reads.length === 8) values[7] = 255;
+            return values[index];
+          }
+          return undefined;
+        },
+      });
+    };
+    for (const throwsAt of [-1, 7]) {
+      const originalReads: number[] = [];
+      const actualReads: number[] = [];
+      const originalSource = makeSource(originalReads, throwsAt);
+      const actualSource = makeSource(actualReads, throwsAt);
+      if (throwsAt < 0) {
+        const expected = originalTransform(originalSource, 2, 2, "green", "high");
+        const actual = transformParklandCuePixels(actualSource, 2, 2, "green", "high");
+        expect(actual.pixels).toStrictEqual(expected.pixels);
+        expect(actual.metrics).toStrictEqual(expected.metrics);
+      } else {
+        expect(() => originalTransform(originalSource, 2, 2, "green", "high"))
+          .toThrow("indexed read failure");
+        expect(() => transformParklandCuePixels(actualSource, 2, 2, "green", "high"))
+          .toThrow("indexed read failure");
+      }
+      expect(actualReads).toStrictEqual(originalReads);
+    }
+    const invalid = new Uint8ClampedArray(15);
+    expect(() => originalTransform(invalid, 2, 2, "green", "high"))
+      .toThrow("invalid Parkland cue dimensions");
+    expect(() => transformParklandCuePixels(invalid, 2, 2, "green", "high"))
+      .toThrow("invalid Parkland cue dimensions");
+  });
+});
 
 const TEST_COLORS = {
   fairway: 0x4fa64f,
