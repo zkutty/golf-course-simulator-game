@@ -3400,6 +3400,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
       return releaseBoundsCohort;
     }
+    const pendingComponentCulls: Array<readonly [PIXI.Mesh<PIXI.MeshGeometry>, PIXI.Graphics]> = [];
     for (const component of sortedComponents) {
       const presentationTerrain = component.terrain;
       // Canonical seams may displace slightly beyond authoritative ownership.
@@ -3472,6 +3473,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
         ));
         mesh.mask = mask;
         layer.addChild(mesh, mask);
+        if (!composableRuntime!.isParklandComposableSemantic(component.terrain)
+          && pendingComponentCulls.length < 64 && mesh.geometry instanceof PIXI.MeshGeometry) {
+          pendingComponentCulls.push([mesh as PIXI.Mesh<PIXI.MeshGeometry>, mask]);
+        }
       }
       if (pathCompositorActive) {
         pathComponentCount++;
@@ -3826,6 +3831,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
         highlight, course.width * macroSubdivisions, course.height * macroSubdivisions,
       );
     }
+
+    // Canonical turf/cue+macro reservations retain priority within the same cap.
+    for (const [mesh, mask] of pendingComponentCulls) boundsCohort?.registerComponent(mesh, mask);
+    pendingComponentCulls.length = 0;
 
     // Boundaries are provenance only; the broad material field above owns
     // visible relief. Never emit lines, closed rings or shoulder backfaces.

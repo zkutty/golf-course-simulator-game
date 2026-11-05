@@ -1,4 +1,6 @@
 import {
+  Graphics, StencilMask, StencilMaskPipe, GlStencilSystem, GlColorMaskSystem,
+  GlRenderTargetAdaptor, GraphicsPipe, GlGraphicsAdaptor, ViewContainer,
   AbstractRenderer,
   Application,
   Container,
@@ -7,6 +9,7 @@ import {
   Mesh,
   MeshGeometry,
   MeshPipe,
+  State,
   RenderGroupSystem,
   RenderTargetSystem,
   RendererType,
@@ -214,6 +217,12 @@ function supportedRenderer(app: Application): { width: number; height: number } 
  */
 export function knownRootStageViewport(app: Application, world: Container,
   mesh: Mesh<MeshGeometry>, extent: FullGeometryExtent): KnownRootStageViewport | null {
+  return rootViewport(app, world, mesh, extent);
+}
+
+function rootViewport(app: Application, world: Container,
+  mesh: Mesh<MeshGeometry>, extent: FullGeometryExtent,
+  owned?: OwnedStencilViewportProof): KnownRootStageViewport | null {
   if (!(app instanceof Application) || !(world instanceof Container)
     || !(mesh instanceof Mesh) || !(mesh.geometry instanceof MeshGeometry)
     || extent?.[extentBrand] !== true || extent.mesh !== mesh
@@ -229,7 +238,9 @@ export function knownRootStageViewport(app: Application, world: Container,
   let node: Container | null = mesh;
   let seenWorld = false;
   while (node) {
-    if (node.effects?.length !== 0 || node.mask != null || (node !== app.stage && node.renderGroup)) return null;
+    // The generic entry point always rejects masks/effects, unchanged.
+    if (((node.effects?.length !== 0 || node.mask != null) && !(node === mesh && owned))
+      || (node !== app.stage && node.renderGroup)) return null;
     const local = updatedLocal(node);
     if (!finite(local.a, local.b, local.c, local.d, local.tx, local.ty)) return null;
     if (node === world) {
@@ -265,4 +276,87 @@ export function knownRootStageViewport(app: Application, world: Container,
     || (minNumeratorX !== 0 && local.minX === 0) || (maxNumeratorX !== 0 && local.maxX === 0)
     || (minNumeratorY !== 0 && local.minY === 0) || (maxNumeratorY !== 0 && local.maxY === 0)) return null;
   return { local, screenErrorPx: error, worldToScreen: fresh };
+}
+
+
+const stencilProofBrand = Symbol("private-owned-stencil-viewport");
+export type OwnedStencilViewportProof = Readonly<{
+  [stencilProofBrand]: true; mesh: Mesh<MeshGeometry>; mask: Graphics;
+  parent: Container; ancestors: readonly Container[]; effect: StencilMask; context: Graphics["context"];
+}>;
+const stockCulled = Object.getOwnPropertyDescriptor(Container.prototype, "culled")!;
+const stock2dState = State.for2d().data;
+function sameMethod(value: object, key: string, prototype: object): boolean {
+  return Reflect.get(value, key) === Reflect.get(prototype, key);
+}
+/** Read-only SDK identity checks; no direct use of the @ignore culled setter. */
+export function stockOwnedCullingAccessor(mesh: Mesh): boolean {
+  let node: object | null = mesh;
+  let descriptor: PropertyDescriptor | undefined;
+  while (node && !descriptor) { descriptor = Object.getOwnPropertyDescriptor(node, "culled"); node = Object.getPrototypeOf(node); }
+  return descriptor?.get === stockCulled.get && descriptor?.set === stockCulled.set
+    && sameMethod(mesh, "_onUpdate", Container.prototype);
+}
+export function stockComponentCullingControls(mesh: Mesh): boolean {
+  return stockOwnedCullingAccessor(mesh)
+    && sameMethod(mesh, "collectRenderables", Container.prototype)
+    && sameMethod(mesh, "collectRenderablesWithEffects", Container.prototype)
+    && sameMethod(mesh, "collectRenderablesSimple", ViewContainer.prototype);
+}
+function ownedStencilSource(proof: OwnedStencilViewportProof): boolean {
+  const { mesh, mask, parent, effect, context } = proof;
+  return proof[stencilProofBrand] === true
+    && proof.ancestors.every((node, index) => !node.destroyed && node.parent === (proof.ancestors[index + 1] ?? null))
+    && !mesh.destroyed && !mask.destroyed
+    && mesh.parent === parent && mask.parent === parent && mesh.children.length === 0 && mask.children.length === 0
+    && mesh.mask === mask && mesh.effects?.length === 1 && mesh.effects?.[0] === effect
+    && effect instanceof StencilMask && effect.mask === mask && effect.pipe === "stencilMask"
+    && Reflect.get(mesh, "_maskOptions")?.inverse === false
+    && mask.context === context && Array.isArray(context.instructions) && !context.customShader && mask.effects?.length === 0 && mask.mask == null
+    && !mask.renderGroup && mask.includeInBuild === false && !mask.measurable
+    && mesh.state.data === stock2dState && stockComponentCullingControls(mesh)
+    && sameMethod(mask, "collectRenderables", Container.prototype)
+    && sameMethod(mask, "collectRenderablesSimple", ViewContainer.prototype)
+    && sameMethod(mask, "collectRenderablesWithEffects", Container.prototype)
+    && identity(updatedLocal(mask));
+}
+/** Only the private freshly built floor/mask producer opts into this proof. */
+export function captureOwnedStencilViewport(mesh: Mesh<MeshGeometry>, mask: Graphics): OwnedStencilViewportProof | null {
+  const parent = mesh.parent, effect = mesh.effects?.[0];
+  if (!parent || !(mask instanceof Graphics) || !(effect instanceof StencilMask)) return null;
+  const ancestors: Container[] = [];
+  let node: Container | null = parent;
+  while (node) {
+    if (ancestors.length >= 64 || ancestors.includes(node)) return null;
+    ancestors.push(node); node = node.parent;
+  }
+  const proof = Object.freeze({ [stencilProofBrand]: true as const, mesh, mask, parent,
+    ancestors: Object.freeze(ancestors), effect, context: mask.context });
+  return ownedStencilSource(proof) ? proof : null;
+}
+
+/** Distinct private path: generic knownRootStageViewport still rejects this mesh. */
+export function knownOwnedStencilRootViewport(app: Application, world: Container,
+  extent: FullGeometryExtent, proof: OwnedStencilViewportProof): KnownRootStageViewport | null {
+  if (!ownedStencilSource(proof) || proof.mesh !== extent.mesh) return null;
+  const renderer = app.renderer;
+  if (!(renderer instanceof WebGLRenderer) || renderer.gl.isContextLost?.() !== false
+    || renderer.background.clearBeforeRender !== true || renderer.background.alpha !== 1
+    || app.stage.renderGroup?.isCachedAsTexture || proof.ancestors.at(-1) !== app.stage) return null;
+  const pipes = renderer.renderPipes, stencil = pipes.stencilMask;
+  const target = renderer.renderTarget, adaptor = target.adaptor;
+  const graphics = pipes.graphics;
+  if (!graphics) return null;
+  const graphicsAdaptor = Reflect.get(graphics, "_adaptor");
+  if (!(stencil instanceof StencilMaskPipe) || Reflect.get(stencil, "_renderer") !== renderer
+    || (Reflect.get(stencil, "_maskStackHash")?.[renderer.view.renderTarget.uid] ?? 0) !== 0
+    || !["push", "pop", "execute"].every(key => sameMethod(stencil, key, StencilMaskPipe.prototype))
+    || !(renderer.stencil instanceof GlStencilSystem) || !sameMethod(renderer.stencil, "setStencilMode", GlStencilSystem.prototype)
+    || !(renderer.colorMask instanceof GlColorMaskSystem) || !sameMethod(renderer.colorMask, "setMask", GlColorMaskSystem.prototype)
+    || !sameMethod(target, "ensureDepthStencil", RenderTargetSystem.prototype)
+    || !(adaptor instanceof GlRenderTargetAdaptor) || !sameMethod(adaptor, "startRenderPass", GlRenderTargetAdaptor.prototype)
+    || !(graphics instanceof GraphicsPipe) || !sameMethod(graphics, "execute", GraphicsPipe.prototype)
+    || !(graphicsAdaptor instanceof GlGraphicsAdaptor) || !sameMethod(graphicsAdaptor, "execute", GlGraphicsAdaptor.prototype)
+    || !["_updateRenderGroups", "_buildInstructions"].every(key => sameMethod(renderer.renderGroup, key, RenderGroupSystem.prototype))) return null;
+  return rootViewport(app, world, proof.mesh, extent, proof);
 }

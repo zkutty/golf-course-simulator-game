@@ -1,3 +1,4 @@
+import { COMPONENT_ENTRY_BYTES, OwnedComponentCulling } from "./ownedComponentCulling";
 import { copyGuardedTurfFan, guardedTurfFanEligible, guardedTurfFanKernelBytes,
   hasOwnedHighTurfFanRegistration, prepareGuardedTurfFan } from "./guardedTurfFan";
 import * as PIXI from "pixi.js";
@@ -290,6 +291,13 @@ export class OrderedMeshBoundsCohort {
   private originalIndexCount = 0;
   private fanKernelReserved = false;
   private disposed = false;
+  private readonly components = new OwnedComponentCulling();
+
+  /** Called after canonical turf+macro registration. No component index copies. */
+  registerComponent(mesh: Mesh, mask: PIXI.Graphics): boolean {
+    if (this.disposed || this.reservedBytes + this.components.reservedBytes + COMPONENT_ENTRY_BYTES > COHORT_BYTES) return false;
+    return this.components.register(mesh, mask);
+  }
 
   registerTurf(mesh: Mesh, subdivisions: number, originalUnits: number): boolean {
     if (subdivisions !== 2 && subdivisions !== 4) return false;
@@ -319,7 +327,7 @@ export class OrderedMeshBoundsCohort {
       || indices.length > MESH_INDICES || indices.length + this.originalIndexCount > COHORT_INDICES
       || !validIndices(indices, positions.length / 2)) return false;
     let bytes = estimate(shape, indices.length);
-    if (!Number.isSafeInteger(bytes) || bytes > MESH_BYTES || bytes + this.reservedBytes > COHORT_BYTES
+    if (!Number.isSafeInteger(bytes) || bytes > MESH_BYTES || bytes + this.reservedBytes + this.components.reservedBytes > COHORT_BYTES
       || (shape.kind === "macro" && !validGrid(shape, positions, indices))) return false;
     const extent = scanFullGeometryExtent(mesh);
     if (!extent) return false;
@@ -334,7 +342,7 @@ export class OrderedMeshBoundsCohort {
     const kernelBytes = this.fanKernelReserved ? 0 : guardedTurfFanKernelBytes();
     let fanErrors: Float64Array | null = null;
     if (shape.kind === "turf" && shape.stride === 96 && hasOwnedHighTurfFanRegistration(mesh)
-      && bytes + fanBytes <= MESH_BYTES && this.reservedBytes + bytes + fanBytes + kernelBytes <= COHORT_BYTES) {
+      && bytes + fanBytes <= MESH_BYTES && this.reservedBytes + this.components.reservedBytes + bytes + fanBytes + kernelBytes <= COHORT_BYTES) {
       fanErrors = prepareGuardedTurfFan(positions, uvs, indices, shape.units);
       if (fanErrors) {
         bytes += fanBytes;
@@ -446,11 +454,13 @@ export class OrderedMeshBoundsCohort {
       entry.mode = "selected";
       entry.lastRect = viewport.local;
     }
+    this.components.reconcile(app, world);
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.components.dispose();
     for (const entry of this.entries.values()) restore(entry);
     this.entries.clear();
     this.reservedBytes = 0;
@@ -472,9 +482,13 @@ export class OrderedMeshBoundsCohort {
     return { preparedUnits, selectedUnits, metadataBytes, kernelBytes: guardedTurfFanKernelBytes() };
   }
 
+  componentDiagnostics(): Readonly<{ meshes: number; culled: number; reservedBytes: number }> {
+    return this.components.diagnostics();
+  }
+
   /** Bounded integer diagnostics for focused tests; never returns owners. */
   diagnostics(): Readonly<{ meshes: number; originalIndices: number; reservedBytes: number }> {
-    return { meshes: this.entries.size, originalIndices: this.originalIndexCount,
-      reservedBytes: this.reservedBytes };
+    return { meshes: this.entries.size + this.components.size, originalIndices: this.originalIndexCount,
+      reservedBytes: this.reservedBytes + this.components.reservedBytes };
   }
 }

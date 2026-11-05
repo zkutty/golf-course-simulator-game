@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import * as rootViewport from "./rootStageViewport";
 import { withOwnedHighTurfFan, copyGuardedTurfFan } from "./guardedTurfFan";
 import { describe, expect, it, vi } from "vitest";
@@ -424,4 +425,24 @@ describe("owned guarded High fan integration", () => {
     const { app, world, layer } = appWithCanvas();const generic = highFanMesh([0]);layer.addChild(generic);const cohort = new OrderedMeshBoundsCohort();cohort.registerTurf(generic, 4, 1);cohort.reconcile(app, world);expect(cohort.fanDiagnostics().preparedUnits).toBe(0);cohort.dispose();
     const mesh = highFanMesh([0]);layer.addChild(mesh);const owned = new OrderedMeshBoundsCohort();registerFan(owned, mesh, 1);owned.reconcile(app, world);const foreign = new Uint32Array([0, 1, 2]);mesh.geometry.indices = foreign;owned.dispose();expect(mesh.geometry.indices).toBe(foreign);expect(owned.fanDiagnostics().metadataBytes).toBe(0);
   });
+});
+
+it("reserves component owners from the same cohort cap without component indices or fan metadata", () => {
+  const { layer } = appWithCanvas(), mesh = turfMesh([0]); mesh.geometry.uvs = new Float32Array(mesh.geometry.positions.length);
+  const mask = new PIXI.Graphics().rect(0, 0, 1, 1).fill(0xffffff); mesh.mask = mask; layer.addChild(mesh, mask);
+  const cohort = new OrderedMeshBoundsCohort(), original = mesh.geometry.indices;
+  expect(cohort.registerComponent(mesh, mask)).toBe(true);
+  expect(cohort.diagnostics()).toEqual({ meshes: 1, originalIndices: 0, reservedBytes: 4096 });
+  expect(cohort.fanDiagnostics().preparedUnits).toBe(0); expect(cohort.fanDiagnostics().metadataBytes).toBe(0);
+  expect(mesh.geometry.indices).toBe(original); cohort.dispose(); expect(cohort.diagnostics().reservedBytes).toBe(0);
+  const bounded = new OrderedMeshBoundsCohort();
+  // Exercise the final reservation boundary without allocating64MiB solely to
+  // reach it. Existing tests cover real tree/index reservations independently.
+  const budget = bounded as unknown as { reservedBytes: number };
+  budget.reservedBytes = 64 * 1024 * 1024 - 4095;
+  expect(bounded.registerComponent(mesh, mask)).toBe(false); expect(mesh.geometry.indices).toBe(original); bounded.dispose();
+  const source = readFileSync(new URL("../../ui/PixiStage.tsx", import.meta.url), "utf8");
+  expect(source.indexOf("boundsCohort?.registerComponent(mesh, mask)")).toBeGreaterThan(source.lastIndexOf("boundsCohort?.registerMacro("));
+  expect(source).toContain("pendingComponentCulls.length < 64");
+  const geometry = mesh.geometry; mesh.destroy(); geometry.destroy(true); mask.destroy();
 });
