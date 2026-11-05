@@ -3,7 +3,8 @@ import type * as PIXI from "pixi.js";
 import { DEFAULT_STATE } from "../../../game/gameState";
 import type { Course, Decoration, LandTheme, Terrain } from "../../../game/models/types";
 import { plantDefinition } from "../../../game/models/plantRegistry";
-import { TILE_H, TILE_W } from "../../../game/render/iso";
+import { TILE_H, TILE_W, worldToIso } from "../../../game/render/iso";
+import { DECORATION_KINDS, decorationTiles } from "../../../game/models/decorations";
 import {
   seasonalDecorationPlantForm,
   seasonalPlantClimate,
@@ -403,5 +404,55 @@ describe("structures and authored props scene ownership", () => {
     }));
     expect(scene.atlasCalls).toEqual([[theme, quality, `${theme}_bench`]]);
     expect(scene.sprites[0].scale.x).toBe(-1);
+  });
+});
+
+
+describe("bridge and boardwalk camera span orientation", () => {
+  it.each(["bridge", "boardwalk"] as const)("mirrors actual %s scene sprites with the independently projected span axis", (kind) => {
+    for (const decorationRotation of [0, 1] as const) for (const rotation of [0, 90, 180, 270] as const) {
+      const authored: Decoration = { kind, x: 7, y: 8, rotation: decorationRotation, span: 3, origin: "player" };
+      const active = course("parkland", [authored]), before = JSON.stringify(active), scene = fixture();
+      try {
+        scene.system.create!(snapshot(1, { course: active, effectiveTiles: active.tiles, rotation }));
+        const sprite = scene.sprites[0]; expect(scene.sprites).toHaveLength(1);
+        // The reviewed source art's undirected long axis runs NW→SE before
+        // X reflection. This is a consumer-mirror proof, not a mock-texture
+        // deck/landmark or physical endpoint measurement.
+        const artAxis = { x: 2 * sprite.scale.x, y: sprite.scale.y };
+        const tiles = decorationTiles(authored), first = tiles[0], last = tiles.at(-1)!;
+        const start = worldToIso(first.x + .5, first.y + .5, 2, rotation);
+        const end = worldToIso(last.x + .5, last.y + .5, 2, rotation);
+        const spanAxis = { x: end.x - start.x, y: end.y - start.y };
+        expect(Math.hypot(spanAxis.x, spanAxis.y)).toBeGreaterThan(0);
+        expect(artAxis.x * spanAxis.y - artAxis.y * spanAxis.x,
+          `${kind} decoration${decorationRotation} camera${rotation} must share the projected span's undirected axis`).toBeCloseTo(0, 10);
+        expect(sprite.scale.y).toBe(1);
+        if (rotation === 0 || rotation === 180) expect(sprite.scale.x).toBe(decorationRotation === 0 ? 1 : -1);
+        expect([sprite.anchor.x, sprite.anchor.y]).toEqual([.5, 1]);
+        expect(sprite.width).toBeCloseTo(tiles.length * .72 * TILE_W);
+        expect(sprite.height).toBeCloseTo(sprite.width * .75);
+        expect(scene.graphics[0].ellipse).toHaveBeenCalledWith(0, 0, sprite.width * .38, 8);
+        expect(scene.graphics[0].position.y).toBe(sprite.position.y - TILE_H / 2 + 2);
+        expect(JSON.stringify(active)).toBe(before);
+      } finally { scene.system.destroy!(); }
+      expect(scene.texture.destroy).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each(DECORATION_KINDS.filter(kind => kind !== "bridge" && kind !== "boardwalk"))("retains every existing %s billboard flip across all decoration and camera rotations", (kind) => {
+    for (const decorationRotation of [0, 1, 2, 3] as const) for (const rotation of [0, 90, 180, 270] as const) {
+      const authored: Decoration = { kind, x: 7, y: 8, rotation: decorationRotation, origin: "player" };
+      const active = course("parkland", [authored]), scene = fixture();
+      try {
+        scene.system.create!(snapshot(1, { course: active, effectiveTiles: active.tiles, rotation }));
+        expect(scene.sprites).toHaveLength(1);
+        // Preserve the prior nonstructure policy exactly; only the camera
+        // term for the two spanning structures is being corrected.
+        expect(scene.sprites[0].scale.x).toBe((decorationRotation + rotation) % 2 === 1 ? -1 : 1);
+        expect(scene.sprites[0].scale.y).toBe(1);
+      } finally { scene.system.destroy!(); }
+      expect(scene.texture.destroy).not.toHaveBeenCalled();
+    }
   });
 });

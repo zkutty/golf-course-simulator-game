@@ -197,7 +197,7 @@ export function createStructuresPropsSceneSystem(
         sprite.height = logicalWidth * texture.height / texture.width * (seasonal?.scaleY ?? 1);
         sprite.tint = seasonal?.tint ?? 0xffffff;
         sprite.alpha = seasonal?.alpha ?? 1;
-        if ((decoration.rotation + snapshot.rotation) % 2 === 1) sprite.scale.x *= -1;
+        if ((decoration.rotation + (structure ? snapshot.rotation / 90 : snapshot.rotation)) % 2 === 1) sprite.scale.x *= -1;
         sprite.zIndex = placement.zIndex + 0.05;
         sprite.eventMode = "none";
         objects.addChild(sprite);
