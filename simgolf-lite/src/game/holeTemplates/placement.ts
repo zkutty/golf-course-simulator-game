@@ -22,10 +22,11 @@ import type {
   Hole,
   Obstacle,
   Point,
+  SurfaceFeature,
   World,
 } from "../models/types";
 import { isTerrainUnlocked } from "../progression/progression";
-import { sha256Hex, validateHoleTemplateV1 } from "./serialization";
+import { HOLE_TEMPLATE_SURFACE_LIMITS, sha256Hex, validateHoleTemplateV1 } from "./serialization";
 import {
   HOLE_TEMPLATE_PLAN_VERSION,
   type HoleTemplatePlacement,
@@ -35,6 +36,7 @@ import {
   type HoleTemplateQuoteV1,
   type HoleTemplateRotation,
   type HoleTemplateTargetVersions,
+  type HoleTemplateSurfaceMutation,
   type HoleTemplateV1,
   type ResolvedHoleTemplatePlacement,
 } from "./types";
@@ -182,6 +184,78 @@ export function transformHoleTemplatePoint(
         ? { x: template.width - 1 - mirroredX, y: template.height - 1 - point.y }
         : { x: point.y, y: template.width - 1 - mirroredX };
   return { x: placement.origin.x + local.x, y: placement.origin.y + local.y };
+}
+
+/** Authored coordinates lie on cell edges; tile indices use the older W-1 transform. */
+export function transformHoleTemplateSurfacePoint(
+  point: Point,
+  template: Pick<HoleTemplateV1, "width" | "height">,
+  placement: Pick<HoleTemplatePlacement, "origin" | "rotation" | "mirrorX">,
+): Point {
+  const x = placement.mirrorX ? template.width - point.x : point.x;
+  const local = placement.rotation === 0 ? { x, y: point.y }
+    : placement.rotation === 1 ? { x: template.height - point.y, y: x }
+      : placement.rotation === 2 ? { x: template.width - x, y: template.height - point.y }
+        : { x: point.y, y: template.width - x };
+  return { x: placement.origin.x + local.x, y: placement.origin.y + local.y };
+}
+
+function planSurfaceIntent(
+  course: Course, template: HoleTemplateV1, placement: Pick<HoleTemplatePlacement, "origin" | "rotation" | "mirrorX">,
+  authoredPoints: readonly Point[], blockers: HoleTemplatePlacementBlocker[],
+): HoleTemplateSurfaceMutation | undefined {
+  if (!template.surfaceIntent) return undefined;
+  const intent = course.surfaceIntent;
+  const capacity = (message: string) => addBlocker(blockers, rejectionBlocker("surface_capacity", message, "Reduce editable surfaces or reload a valid course before placing this template.", "course.surfaceIntent"));
+  if (intent !== undefined && (!intent || intent.version !== 1 || !Array.isArray(intent.features))) {
+    capacity("The target editable surface state is invalid."); return undefined;
+  }
+  const existing = intent?.features ?? [], batch = template.surfaceIntent.features;
+  if (existing.length + batch.length > HOLE_TEMPLATE_SURFACE_LIMITS.features) {
+    capacity("This template would exceed the 512 editable surface limit."); return undefined;
+  }
+  let nextId = intent ? intent.nextId : 1, maxOrder = 0;
+  if (!Number.isSafeInteger(nextId) || nextId < 1) { capacity("The target editable surface counter is invalid."); return undefined; }
+  const ids = new Set<string>(), authoredCells = new Set(authoredPoints.filter(p => inCourse(course, p)).map(p => p.y * course.width + p.x));
+  const conflicts: Point[] = [];
+  for (const feature of existing) {
+    if (!feature || typeof feature.id !== "string" || ids.has(feature.id) || !Number.isSafeInteger(feature.order) || feature.order < 0
+      || !Array.isArray(feature.coverage) || feature.coverage.length > course.tiles.length
+      || !feature.coverage.every(index => Number.isSafeInteger(index) && index >= 0 && index < course.tiles.length)) {
+      capacity("The target editable surface identities, order or coverage are invalid."); return undefined;
+    }
+    ids.add(feature.id); maxOrder = Math.max(maxOrder, feature.order);
+    for (const index of feature.coverage) if (authoredCells.has(index)) conflicts.push({ x: index % course.width, y: Math.floor(index / course.width) });
+  }
+  if (conflicts.length) addBlocker(blockers, { code: "surface_conflict", message: "The template overlaps an existing editable surface.", action: "Move the template to land without existing editable surfaces.", points: uniqueSortedPoints(conflicts) });
+  if (maxOrder > Number.MAX_SAFE_INTEGER - batch.length) { capacity("The editable surface order is exhausted."); return undefined; }
+  const transform = (p: Point) => transformHoleTemplateSurfacePoint(p, template, placement);
+  const addFeatures: SurfaceFeature[] = [];
+  for (const [index, feature] of batch.entries()) {
+    while (ids.has(`surface-${nextId}`) && nextId < Number.MAX_SAFE_INTEGER) nextId++;
+    if (nextId >= Number.MAX_SAFE_INTEGER) { capacity("The editable surface counter is exhausted."); return undefined; }
+    const id = `surface-${nextId++}`; ids.add(id);
+    const geometry = feature.geometry;
+    const points = geometry.kind === "corridor" ? geometry.knots : geometry.ring;
+    const outside = [...points, ...(geometry.tangents?.flatMap(pair => [pair.in, pair.out]) ?? []), ...(feature.renderRings?.flat() ?? [])]
+      .map(transform).filter(point => point.x < 0 || point.y < 0 || point.x > course.width || point.y > course.height);
+    if (outside.length) addBlocker(blockers, { code: "out_of_bounds", path: "template.surfaceIntent", message: "The transformed editable curve extends beyond the estate grid.", action: "Move the template until its editable curve and handles remain inside the estate.", points: outside });
+    const tangents = geometry.tangents?.map(pair => ({ in: transform(pair.in), out: transform(pair.out) }));
+    addFeatures.push({ id, terrain: feature.terrain, order: maxOrder + index + 1,
+      geometry: geometry.kind === "corridor"
+        ? { kind: "corridor", knots: geometry.knots.map(transform), width: geometry.width, ...(tangents ? { tangents } : {}) }
+        : { kind: "region", ring: geometry.ring.map(transform), ...(tangents ? { tangents } : {}) },
+      coverage: feature.coverage.map(cell => {
+        const point = transformHoleTemplatePoint({ x: cell % template.width, y: Math.floor(cell / template.width) }, template, placement);
+        return point.y * course.width + point.x;
+      }).sort((a, b) => a - b),
+      ...(feature.renderRings ? { renderRings: feature.renderRings.map(ring => {
+        const points = ring.map(transform); return placement.mirrorX ? points.reverse() : points;
+      }) } : {}),
+    });
+  }
+  try { return { baseHash: sha256Hex(canonicalJson(intent ?? null)), addFeatures, nextId }; }
+  catch { capacity("The target editable surface state cannot be verified."); return undefined; }
 }
 
 function transformDecorationRotation(
@@ -427,7 +501,8 @@ export function planHoleTemplatePlacement(input: PlanHoleTemplatePlacementInput)
   if (template.confidence.elevation < 0.65 && input.placement.elevationPolicy === "template-relief") warnings.push("Elevation confidence is low; consider preserving the estate relief.");
   if (template.provenance.redistribution === "private_only" || template.provenance.redistribution === "unknown") warnings.push("This blueprint is local-only and cannot be redistributed.");
 
-  const hasTerrainMutation = terrainMutations.length > 0 || elevationMutations.length > 0;
+  const surfaceIntent = planSurfaceIntent(course, template, placement, transformedCells.map(cell => cell.target), blockers);
+  const hasTerrainMutation = terrainMutations.length > 0 || elevationMutations.length > 0 || !!surfaceIntent;
   const hasObstacleMutation = removeObstacles.length > 0 || addObstacles.length > 0 || addDecorations.length > 0;
   const beforeVersions = { ...input.targetVersions };
   const afterVersions = {
@@ -460,6 +535,7 @@ export function planHoleTemplatePlacement(input: PlanHoleTemplatePlacementInput)
       },
       cashDelta: money(-quote.total),
       versions: { before: beforeVersions, after: afterVersions },
+      ...(surfaceIntent ? { surfaceIntent } : {}),
     },
   };
   const identity = { algorithm: "SHA-256" as const, value: sha256Hex(canonicalHoleTemplatePlanIdentityJson(withoutIdentity)) };

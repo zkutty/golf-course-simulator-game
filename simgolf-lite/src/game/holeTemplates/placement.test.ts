@@ -17,6 +17,7 @@ import {
   canonicalHoleTemplatePlanIdentityJson,
   planHoleTemplatePlacement,
   transformHoleTemplatePoint,
+  transformHoleTemplateSurfacePoint,
   transformedHoleTemplateSize,
 } from "./placement";
 import {
@@ -403,5 +404,104 @@ describe("TEMPLATE-C strict portable authored surfaces", () => {
     expect(check(Array.from({ length: 5 }, (_, i) => ({ ...feature, id: `surface-${i}`, renderRings: Array(32).fill(ring) })))).toMatchObject({ ok: false, issues: expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining("mask") })]) });
     expect(check(Array.from({ length: 26 }, (_, i) => ({ ...feature, id: `surface-${i}`, geometry: { kind: "corridor", knots: [{ x: 0, y: 0 }, { x: 256, y: 0 }], width: 1 } })))).toMatchObject({ ok: false, issues: expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining("sampling") })]) });
     expect(check([feature], 257, 1, new Set([5])).ok).toBe(false);
+  });
+});
+
+
+describe("TEMPLATE-P rigid authored surface placement", () => {
+  const matrices = [
+    [0, false, 1, 0, 0, 0, 1, 0], [1, false, 0, -1, 3, 1, 0, 0],
+    [2, false, -1, 0, 4, 0, -1, 3], [3, false, 0, 1, 0, -1, 0, 4],
+    [0, true, -1, 0, 4, 0, 1, 0], [1, true, 0, -1, 3, -1, 0, 4],
+    [2, true, 1, 0, 0, 0, -1, 3], [3, true, 0, 1, 0, 1, 0, 0],
+  ] as const;
+  function authoredTemplate() {
+    return template({ obstacles: [], decorations: [], surfaceIntent: { version: 1, features: [
+      { id: "portable-path", terrain: "path", order: 20, coverage: [5], geometry: { kind: "corridor", knots: [{ x: 1.25, y: 1.5 }, { x: 1.75, y: 1.5 }], width: 1.75,
+        tangents: [{ in: { x: 1, y: 1 }, out: { x: 1.5, y: 2 } }, { in: { x: 1.5, y: 1 }, out: { x: 2, y: 2 } }] }, renderRings: [[{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 }, { x: 1, y: 2 }]] },
+      { id: "portable-region", terrain: "water", order: 10, coverage: [6], geometry: { kind: "region", ring: [{ x: 2, y: 1 }, { x: 3, y: 1 }, { x: 3, y: 2 }] } },
+    ] } });
+  }
+  it.each(matrices)("maps cell edges, centers and authored handles at rotation %s mirror %s", (rotation, mirrorX, a, b, c, d, e, f) => {
+    const origin = { x: 10, y: 20 }, where = placement({ origin, rotation, mirrorX });
+    const oracle = (p: { x: number; y: number }) => ({ x: 10 + a * p.x + b * p.y + c, y: 20 + d * p.x + e * p.y + f });
+    for (const point of [{ x: 1.5, y: 1.5 }, { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 }]) expect(transformHoleTemplateSurfacePoint(point, { width: 4, height: 3 }, where)).toEqual(oracle(point));
+    for (let y = 0; y < 3; y++) for (let x = 0; x < 4; x++) {
+      const center = oracle({ x: x + .5, y: y + .5 });
+      expect(transformHoleTemplatePoint({ x, y }, { width: 4, height: 3 }, where)).toEqual({ x: center.x - .5, y: center.y - .5 });
+    }
+    const source = authoredTemplate(), before = structuredClone(source), course = buildableCourse();
+    const plan = planned({ course, template: source, placement: where }); expect(plan.canApply).toBe(true);
+    const [region, corridor] = plan.mutations.surfaceIntent!.addFeatures;
+    expect(region.geometry).toEqual({ kind: "region", ring: source.surfaceIntent!.features[1].geometry.kind === "region" ? source.surfaceIntent!.features[1].geometry.ring.map(oracle) : [] });
+    const geometry = source.surfaceIntent!.features[0].geometry;
+    if (geometry.kind !== "corridor") throw new Error("Expected authored corridor");
+    expect(corridor.geometry).toEqual({ kind: "corridor", knots: geometry.knots.map(oracle), width: 1.75, tangents: geometry.tangents!.map(pair => ({ in: oracle(pair.in), out: oracle(pair.out) })) });
+    const expectedMask = source.surfaceIntent!.features[0].renderRings![0].map(oracle); if (mirrorX) expectedMask.reverse();
+    expect(corridor.renderRings).toEqual([expectedMask]);
+    expect(corridor.coverage).toEqual([(() => { const center = oracle({ x: 1.5, y: 1.5 }); return (center.y - .5) * course.width + center.x - .5; })()]);
+    expect(source).toEqual(before);
+  });
+  it("allocates collision-free target IDs and dense relative order without changing portable IDs", () => {
+    const course = buildableCourse(), source = authoredTemplate();
+    course.surfaceIntent = { version: 1, nextId: 1, features: [1, 2].map(id => ({ id: `surface-${id}`, terrain: "rough", order: id * 10, coverage: [id], geometry: { kind: "corridor", knots: [{ x: id + .5, y: .5 }], width: 1 } })) };
+    const before = JSON.stringify(course.surfaceIntent), plan = planned({ course, template: source });
+    expect(plan.canApply).toBe(true); expect(plan.mutations.surfaceIntent).toMatchObject({ nextId: 5, addFeatures: [{ id: "surface-3", order: 21 }, { id: "surface-4", order: 22 }] });
+    expect(JSON.stringify(course.surfaceIntent)).toBe(before);
+    expect(plan.template.surfaceIntent!.features.map(feature => feature.id)).toEqual(["portable-region", "portable-path"]);
+    expect(plan.mutations.surfaceIntent).not.toHaveProperty("features");
+  });
+  it("blocks existing intent on any authored payload cell, including an unchanged marker outside new feature coverage", () => {
+    const source = authoredTemplate(), course = buildableCourse();
+    course.surfaceIntent = { version: 1, nextId: 2, features: [{ id: "existing-curve", terrain: "rough", order: 1, coverage: [13 * course.width + 11], geometry: { kind: "corridor", knots: [{ x: 11.5, y: 13.5 }], width: 1 } }] };
+    const plan = planned({ course, template: source });
+    expect(plan.canApply).toBe(false); expect(plan.blockers).toContainEqual(expect.objectContaining({ code: "surface_conflict", points: [{ x: 11, y: 13 }] }));
+    const old = structuredClone(source); delete old.surfaceIntent;
+    expect(planned({ course, template: old }).canApply).toBe(true);
+  });
+  it.each(["capacity", "counter-zero", "counter-unsafe", "counter-exhausted", "order-exhausted", "order-negative"])("blocks target %s without evicting or repairing features", reason => {
+    const course = buildableCourse(), count = reason === "capacity" ? 512 : 1;
+    course.surfaceIntent = { version: 1, nextId: 1, features: Array.from({ length: count }, (_, i) => ({ id: `existing-${i}`, terrain: "rough", order: reason === "order-exhausted" ? Number.MAX_SAFE_INTEGER : reason === "order-negative" ? -1 : i, coverage: [], geometry: { kind: "corridor", knots: [{ x: .5, y: .5 }], width: 1 } })) };
+    if (reason === "counter-zero") course.surfaceIntent.nextId = 0;
+    if (reason === "counter-unsafe") course.surfaceIntent.nextId = Number.MAX_SAFE_INTEGER + 1;
+    if (reason === "counter-exhausted") course.surfaceIntent.nextId = Number.MAX_SAFE_INTEGER - 1;
+    const before = structuredClone(course), plan = planned({ course, template: authoredTemplate() });
+    expect(plan.canApply).toBe(false); expect(plan.blockers).toContainEqual(expect.objectContaining({ code: "surface_capacity" })); expect(course).toEqual(before);
+  });
+  it("preserves exact quote and old mutation bytes except declared intent and its terrain invalidation", () => {
+    const source = authoredTemplate(), old = structuredClone(source); delete old.surfaceIntent;
+    const course = buildableCourse();
+    for (const cell of source.cells) { const point = transformHoleTemplatePoint(cell, source, placement()); const index = point.y * course.width + point.x; course.tiles[index] = cell.terrain; course.elevations[index] = 5 + cell.elevationOffset; }
+    const legacy = planned({ course, template: old }), authored = planned({ course, template: source });
+    expect(authored.quote).toEqual(legacy.quote); expect(authored.quote.total).toBe(0);
+    const { surfaceIntent, versions, ...rest } = authored.mutations;
+    expect(surfaceIntent!.addFeatures).toHaveLength(2);
+    expect(rest).toEqual((({ versions: _versions, ...mutation }) => mutation)(legacy.mutations));
+    expect(versions.after).toEqual({ ...legacy.mutations.versions.after, terrainVersion: VERSIONS.terrainVersion + 1 });
+    expect(legacy.mutations.versions.after.terrainVersion).toBe(VERSIONS.terrainVersion); expect(legacy.mutations).not.toHaveProperty("surfaceIntent");
+  });
+});
+
+
+describe("TEMPLATE-P frozen historical plan bytes", () => {
+  it("keeps the pre-C absent-extension identity and plan text byte-exact", () => {
+    const source = JSON.parse("{\"cells\":[{\"elevationOffset\":0,\"terrain\":\"tee\",\"x\":0,\"y\":1},{\"elevationOffset\":0,\"terrain\":\"fairway\",\"x\":1,\"y\":1},{\"elevationOffset\":-1,\"terrain\":\"water\",\"x\":2,\"y\":1},{\"elevationOffset\":1,\"terrain\":\"green\",\"x\":3,\"y\":1}],\"confidence\":{\"elevation\":1,\"notes\":[],\"scale\":1,\"terrain\":1},\"decorations\":[{\"kind\":\"flower_bed\",\"rotation\":0,\"x\":0,\"y\":0}],\"description\":\"Player-built sparse capture.\",\"format\":\"coursecraft-hole-template\",\"height\":2,\"hole\":{\"green\":{\"x\":3,\"y\":1},\"parManual\":3,\"parMode\":\"MANUAL\",\"pinPositions\":{\"A\":{\"x\":3,\"y\":1}},\"tee\":{\"x\":0,\"y\":1},\"teeBoxes\":{\"member\":{\"x\":0,\"y\":1}},\"waypoints\":[{\"x\":1,\"y\":1}]},\"id\":\"built-hole\",\"obstacles\":[{\"type\":\"bush\",\"x\":2,\"y\":0}],\"provenance\":{\"importedAt\":\"2026-08-05T12:00:00.000Z\",\"redistribution\":\"private_only\",\"rightsAttested\":true,\"sourceAssetRetained\":false,\"sourceKind\":\"manual\",\"sourceLabel\":\"Player-built hole\"},\"title\":\"Built par three\",\"version\":1,\"width\":4,\"yardsPerTile\":5}") as HoleTemplateV1;
+    const course = structuredClone(DEFAULT_COURSE); course.holes = []; course.tiles = course.tiles.map(() => "rough"); course.elevations = course.elevations.map(() => 5); course.obstacles = []; course.decorations = []; course.buildings = []; course.estate = undefined; course.yardsPerTile = 5;
+    const plan = planned({ course, world: { ...structuredClone(DEFAULT_WORLD), cash: 1_000_000, reputation: 100, isBankrupt: false }, template: source, placement: placement({ holeId: "historical-hole" }) });
+    expect(sha256Hex(canonicalHoleTemplatePlanIdentityJson(plan))).toBe("462aeb00d219f0d3d3e560ad35252a442622bf0920053d69bdbf85e7f4c15714");
+    expect(sha256Hex(plan.identity.value)).toBe("3ce89622d8a9eb4ad2840fd5cfe68fdaab7c17243139d93af9f4b75022f326c5");
+    expect(sha256Hex(JSON.stringify(plan))).toBe("c5c6f5ac84a9d42b104bfa29a9934191795df72ea67de3bc11082287df43dcec");
+    expect(plan.mutations).not.toHaveProperty("surfaceIntent");
+  });
+});
+
+
+describe("TEMPLATE-P sparse boundary authority", () => {
+  it("blocks outside continuous control points even when every sparse authored tile is inside", () => {
+    const source = template({ obstacles: [], decorations: [], cells: [{ x: 1, y: 1, terrain: "tee", elevationOffset: 0 }, { x: 2, y: 1, terrain: "path", elevationOffset: 0 }, { x: 3, y: 1, terrain: "green", elevationOffset: 0 }], hole: { tee: { x: 1, y: 1 }, green: { x: 3, y: 1 }, parMode: "AUTO" },
+      surfaceIntent: { version: 1, features: [{ id: "sparse-edge", terrain: "path", order: 1, coverage: [6], geometry: { kind: "corridor", knots: [{ x: 0, y: 1.5 }, { x: 2.5, y: 1.5 }], width: 1 } }] } });
+    const where = placement({ origin: { x: -1, y: 10 }, rotation: 0, mirrorX: false }), plan = planned({ template: source, placement: where });
+    expect(plan.canApply).toBe(false); expect(plan.blockers).toContainEqual(expect.objectContaining({ code: "out_of_bounds", path: "template.surfaceIntent", points: [{ x: -1, y: 11.5 }] }));
+    const legacy = structuredClone(source); delete legacy.surfaceIntent; expect(planned({ template: legacy, placement: where }).canApply).toBe(true);
   });
 });

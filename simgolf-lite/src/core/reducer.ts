@@ -204,6 +204,11 @@ export function applyAction(state: GameState, action: Action): GameState {
         decorations: [...(course.decorations ?? []), ...plan.mutations.addDecorations.map((decoration) => ({ ...decoration }))],
         holes,
         layouts,
+        ...(plan.mutations.surfaceIntent ? { surfaceIntent: {
+          version: 1 as const,
+          nextId: plan.mutations.surfaceIntent.nextId,
+          features: [...(course.surfaceIntent?.features ?? []), ...structuredClone(plan.mutations.surfaceIntent.addFeatures)],
+        } } : {}),
       };
       const cash = state.world.cash + plan.mutations.cashDelta;
       newState = {
