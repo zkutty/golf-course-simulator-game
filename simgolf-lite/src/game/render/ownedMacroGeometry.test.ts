@@ -1,6 +1,6 @@
 import * as PIXI from "pixi.js";
 import { describe, expect, it, vi } from "vitest";
-import { createOwnedMacroMeshes } from "./ownedMacroGeometry";
+import { createOwnedAttributeMeshPair, createOwnedMacroMeshes } from "./ownedMacroGeometry";
 import { destroySceneSubtree } from "./destroySceneSubtree";
 import { OrderedMeshBoundsCohort } from "./orderedMeshBounds";
 
@@ -68,6 +68,22 @@ function appWithCanvas() {
 }
 
 describe("owned macro attribute buffers in installed Pixi", () => {
+  it("transfers private typed attributes and the first index array without copies", () => {
+    const input = grid(), tex = texture();
+    const data = { positions: new Float32Array(input.positions), uvs: new Float32Array(input.uvs),
+      indices: new Uint32Array(input.indices) };
+    const peers = createOwnedAttributeMeshPair(data, [tex, tex]);
+    try {
+      for (const mesh of peers) {
+        expect(mesh!.geometry.positions).toBe(data.positions);
+        expect(mesh!.geometry.uvs).toBe(data.uvs);
+      }
+      expect(peers[0]!.geometry.indices).toBe(data.indices);
+      expect(peers[1]!.geometry.indices).not.toBe(data.indices);
+      expect(bits(peers[1]!.geometry.indices)).toEqual(bits(data.indices));
+    } finally { peers.forEach(mesh => mesh!.destroy()); tex.destroy(true); }
+  });
+
   it("shares actual Buffer identities and exact original bytes, with independent indices", () => {
     const tex = texture(), input = grid(), original = originalGeometry(input);
     const [shadow, highlight] = createOwnedMacroMeshes(

@@ -3256,7 +3256,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
           },
         // This synchronous callback only registers already-built meshes;
         // neither it nor this owned layer changes component/height inputs.
-        { reusePairedFieldCueGeometry: true, guardedHighTurfFan: !props.terrainPatterns },
+        // Field/cue positions and UVs remain private and immutable for their
+        // entire lifetime; cohort reconciliation only replaces owned indices.
+        { sharePairedFieldCueAttributes: true, guardedHighTurfFan: !props.terrainPatterns },
       )
       : layer;
     if (presentationLayer !== layer) terrainScene.lowPresentationLayer = presentationLayer;

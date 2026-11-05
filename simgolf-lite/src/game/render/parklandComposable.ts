@@ -1,3 +1,4 @@
+import { createOwnedAttributeMeshPair } from "./ownedMacroGeometry";
 import { withOwnedHighTurfFan } from "./guardedTurfFan";
 import { destroySceneSubtree } from "./destroySceneSubtree";
 import * as PIXI from "pixi.js";
@@ -474,6 +475,7 @@ export function createParklandComposableMesh<T>(
   project: (entry: T, x: number, y: number) => Readonly<{ x: number; y: number }>,
   reuseVertices: boolean,
   preserveUnsharedBatching = false,
+  ownedMeshFactory?: (data: ParklandComposableMeshGeometry, texture: PIXI.Texture) => PIXI.Mesh,
 ): PIXI.Mesh | null {
   // Pixi 8.14.3 auto-batches at <=100 vertices. Turf indexing must preserve
   // the old transform path: retain small unshared meshes, and explicitly keep
@@ -485,6 +487,11 @@ export function createParklandComposableMesh<T>(
     preserveUnsharedBatching ? indexTurfVertices : reuseVertices,
   );
   if (data.indices.length === 0) return null;
+  if (ownedMeshFactory) {
+    const mesh = ownedMeshFactory(data, texture);
+    if (indexTurfVertices) (mesh.geometry as PIXI.MeshGeometry).batchMode = "no-batch";
+    return mesh;
+  }
   const geometry = new PIXI.MeshGeometry(data);
   if (indexTurfVertices) geometry.batchMode = "no-batch";
   return new PIXI.Mesh({ geometry, texture });
@@ -563,6 +570,40 @@ function appendParklandCuesFromCopiedFields(
     mesh.label = `parkland-common-phase:semantic:${semantic}`;
     mesh.tint = tintFor(semantic);
     layer.addChild(mesh);
+    onTileMesh?.(mesh, subdivisions, entries.length);
+    drawn.push(semantic);
+  }
+  return drawn;
+}
+
+function appendParklandCuesFromSharedFields(
+  layer: PIXI.Container,
+  cues: Readonly<Record<ParklandComposableSemantic, PIXI.Texture>>,
+  components: readonly LandscapeComponent[],
+  courseWidth: number,
+  subdivisions: number,
+  heightfield: VisualHeightfield,
+  rotation: IsoRotation,
+  tintFor: (semantic: ParklandComposableSemantic) => number,
+  onTileMesh: ((mesh: PIXI.Mesh, subdivisions: number, originalUnits: number) => void) | undefined,
+  pending: Map<ParklandComposableSemantic, PIXI.Mesh>,
+): readonly ParklandComposableSemantic[] {
+  const drawn: ParklandComposableSemantic[] = [];
+  for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
+    const entries = components.filter(component => component.terrain === semantic)
+      .flatMap(component => component.cells.map(cell => ({ cell, component })));
+    const mesh = pending.get(semantic) ?? createParklandComposableMesh(
+      cues[semantic], entries, courseWidth, subdivisions, entry => entry.cell,
+      (entry, x, y) => worldToIso(x, y,
+        sampleLandscapeSurfaceHeight(heightfield, entry.component, x, y), rotation),
+      false, true,
+    );
+    if (!mesh) continue;
+    mesh.eventMode = "none";
+    mesh.label = `parkland-common-phase:semantic:${semantic}`;
+    mesh.tint = tintFor(semantic);
+    layer.addChild(mesh);
+    pending.delete(semantic);
     onTileMesh?.(mesh, subdivisions, entries.length);
     drawn.push(semantic);
   }
@@ -703,6 +744,7 @@ export function appendParklandSemanticFields(
   rotation: IsoRotation,
   colors: Readonly<Record<ParklandComposableSemantic, number>>,
   onTileMesh?: (mesh: PIXI.Mesh, subdivisions: number, originalUnits: number) => void,
+  ownedMeshFactory?: (semantic: ParklandComposableSemantic, data: ParklandComposableMeshGeometry, texture: PIXI.Texture) => PIXI.Mesh,
 ): readonly ParklandComposableSemantic[] {
   const drawn: ParklandComposableSemantic[] = [];
   for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
@@ -720,6 +762,7 @@ export function appendParklandSemanticFields(
       ),
       false,
       true,
+      ownedMeshFactory ? (data, texture) => ownedMeshFactory(semantic, data, texture) : undefined,
     );
     if (!mesh) continue;
     mesh.eventMode = "none";
@@ -821,17 +864,37 @@ export function appendParklandComposablePresentation(
   // Explicit internal opt-in: the caller guarantees that its synchronous mesh
   // callback and scene hooks do not mutate the heightfield, components, or
   // field geometry before cue construction. Omitted means the original path.
-  options?: Readonly<{ reusePairedFieldCueGeometry?: boolean; guardedHighTurfFan?: boolean }>,
+  options?: Readonly<{ reusePairedFieldCueGeometry?: boolean; guardedHighTurfFan?: boolean;
+    // Internal producer guarantee: positions/UVs stay private and immutable for
+    // the whole field/cue lifetime, including callbacks and scene hooks.
+    sharePairedFieldCueAttributes?: boolean;
+  }>,
 ): PIXI.Container {
-  const reusePairedGeometry = options?.reusePairedFieldCueGeometry === true
-    && sources.quality !== "low" && semanticFields !== null
+  const pairEligible = sources.quality !== "low" && semanticFields !== null
     && (subdivisions === 2 || subdivisions === 4);
+  const sharePairedAttributes = options?.sharePairedFieldCueAttributes === true && pairEligible;
+  const reusePairedGeometry = options?.reusePairedFieldCueGeometry === true
+    && pairEligible && !sharePairedAttributes;
   const fanOptIn = options?.guardedHighTurfFan === true && sources.quality === "high"
     && subdivisions === 4 && standardColorVision && semanticFields !== null;
   const ownedTileCallback = fanOptIn && onTileMesh
     ? (mesh: PIXI.Mesh, tileSubdivisions: number, units: number) => {
       withOwnedHighTurfFan(mesh, () => onTileMesh(mesh, tileSubdivisions, units));
     } : onTileMesh;
+  const pendingCues = new Map<ParklandComposableSemantic, PIXI.Mesh>();
+  let sharedBytes = 0;
+  const sharedFieldFactory = sharePairedAttributes
+    ? (semantic: ParklandComposableSemantic, data: ParklandComposableMeshGeometry, texture: PIXI.Texture) => {
+      const bytes = data.positions.byteLength + data.uvs.byteLength + data.indices.byteLength;
+      if (!Number.isSafeInteger(bytes) || bytes > MAX_PAIRED_CUE_COPY_BYTES - sharedBytes) {
+        return new PIXI.Mesh({ geometry: new PIXI.MeshGeometry(data), texture });
+      }
+      const [field, cue] = createOwnedAttributeMeshPair(data, [texture, sources.cues[semantic]]);
+      if (data.indices.length / 6 * 4 > 100) (cue!.geometry as PIXI.MeshGeometry).batchMode = "no-batch";
+      pendingCues.set(semantic, cue!);
+      sharedBytes += bytes;
+      return field!;
+    } : undefined;
   const copiedFields: Array<PairedCueGeometry | null> = [];
   const cueCopies = new Map<ParklandComposableSemantic, PairedCueGeometry>();
   let copiedBytes = 0;
@@ -864,6 +927,7 @@ export function appendParklandComposablePresentation(
     rotation,
     colors,
     fieldCallback,
+    sharedFieldFactory,
   );
   if (reusePairedGeometry) semanticFieldDraws.forEach((semantic, index) => {
     const copy = copiedFields[index];
@@ -871,6 +935,10 @@ export function appendParklandComposablePresentation(
   });
   const fieldMeshes = presentationLayer.children.slice(fieldStart) as PIXI.Mesh[];
   const omitUndercoat = canOmitParklandUndercoat(presentationLayer, sources.quality, semanticFields, fieldMeshes);
+  if (sharePairedAttributes && !omitUndercoat) {
+    for (const mesh of pendingCues.values()) mesh.destroy();
+    pendingCues.clear();
+  }
   const undercoatDrawn = !omitUndercoat && appendParklandComposableUndercoat(
     presentationLayer,
     sources.undercoat,
@@ -899,9 +967,11 @@ export function appendParklandComposablePresentation(
     (role: ParklandComposableSemantic) => parklandCueTint(role, colors[role], standardColorVision),
     ownedTileCallback,
   ] as const;
-  const cueDraws = reusePairedGeometry && omitUndercoat
-    ? appendParklandCuesFromCopiedFields(...cueArgs, cueCopies)
-    : appendParklandComposableCues(...cueArgs);
+  const cueDraws = sharePairedAttributes && omitUndercoat
+    ? appendParklandCuesFromSharedFields(...cueArgs, pendingCues)
+    : reusePairedGeometry && omitUndercoat
+      ? appendParklandCuesFromCopiedFields(...cueArgs, cueCopies)
+      : appendParklandComposableCues(...cueArgs);
   for (const semantic of cueDraws) trace.recordSemantic(semantic);
   trace.recordPairFringes(appendParklandPairFringes(
     presentationLayer,
@@ -914,6 +984,10 @@ export function appendParklandComposablePresentation(
   ));
   return presentationLayer;
   } finally {
+    // Published meshes belong to the caller's layer, including a field whose
+    // callback throws. Only staged, unpublished cues are retired here.
+    for (const mesh of pendingCues.values()) mesh.destroy();
+    pendingCues.clear();
     cueCopies.clear();
     copiedFields.length = 0;
   }
