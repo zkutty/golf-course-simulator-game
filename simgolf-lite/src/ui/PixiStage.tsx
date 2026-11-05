@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Workers deployments can retain a script-src policy without 'unsafe-eval'.
 import "pixi.js/unsafe-eval";
 import { destroySceneSubtree } from "../game/render/destroySceneSubtree";
+import { createOwnedMacroMeshes } from "../game/render/ownedMacroGeometry";
 import { releaseIdleGraphicsPools } from "../game/render/releaseIdleGraphicsPools";
 import * as PIXI from "pixi.js";
 import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../game/models/types";
@@ -3797,16 +3798,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
         );
       }
     }
-    const macroGeometry = () => new PIXI.MeshGeometry({
-      positions: new Float32Array(macroPositions),
-      uvs: new Float32Array(macroUvs),
-      indices: new Uint32Array(macroIndices),
-    });
     const generatedMacroTextures: PIXI.Texture[] = [];
     const shadowTexture = textureFromRgba(macroRaster.shadow);
-    if (shadowTexture) {
-      generatedMacroTextures.push(terrainScene.ownGeneratedTexture(shadowTexture));
-      const shadow = new PIXI.Mesh({ geometry: macroGeometry(), texture: shadowTexture });
+    if (shadowTexture) generatedMacroTextures.push(terrainScene.ownGeneratedTexture(shadowTexture));
+    const highlightTexture = textureFromRgba(macroRaster.highlight);
+    if (highlightTexture) generatedMacroTextures.push(terrainScene.ownGeneratedTexture(highlightTexture));
+    const [shadow, highlight] = createOwnedMacroMeshes(
+      macroPositions, macroUvs, macroIndices, [shadowTexture, highlightTexture],
+    );
+    if (shadow) {
       shadow.eventMode = "none";
       shadow.label = "macro-landform-shadow";
       shadow.blendMode = "multiply";
@@ -3815,10 +3815,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         shadow, course.width * macroSubdivisions, course.height * macroSubdivisions,
       );
     }
-    const highlightTexture = textureFromRgba(macroRaster.highlight);
-    if (highlightTexture) {
-      generatedMacroTextures.push(terrainScene.ownGeneratedTexture(highlightTexture));
-      const highlight = new PIXI.Mesh({ geometry: macroGeometry(), texture: highlightTexture });
+    if (highlight) {
       highlight.eventMode = "none";
       highlight.label = "macro-landform-highlight";
       highlight.blendMode = "screen";
