@@ -158,7 +158,8 @@ export function createContinuousPathContactSampler(
         const cell = cy * width + cx;
         for (let j = offsets[cell]; j < offsets[cell + 1]; j++) {
           const offset = triangles[j];
-          if (offset >= chosen) continue;
+          // CSR offsets ascend: later entries cannot win; continue outer seam-owner cells.
+          if (offset >= chosen) break;
           const ai = indices[offset], bi = indices[offset + 1], ci = indices[offset + 2];
           const a = ai * 2, b = bi * 2, c = ci * 2;
           const denominator = (p[b + 1] - p[c + 1]) * (p[a] - p[c]) + (p[c] - p[b]) * (p[a + 1] - p[c + 1]);
@@ -166,7 +167,7 @@ export function createContinuousPathContactSampler(
           const v = ((p[c + 1] - p[a + 1]) * (x - p[c]) + (p[a] - p[c]) * (y - p[c + 1])) / denominator;
           const w = 1 - u - v;
           if (u < -1e-9 || v < -1e-9 || w < -1e-9) continue;
-          result = u * heights[ai] + v * heights[bi] + w * heights[ci]; chosen = offset;
+          result = u * heights[ai] + v * heights[bi] + w * heights[ci]; chosen = offset; break;
         }
       }
     }

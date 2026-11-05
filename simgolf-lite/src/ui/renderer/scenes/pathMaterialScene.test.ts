@@ -148,3 +148,23 @@ describe("accepted core triangle contact lookup", () => {
     }
   });
 });
+
+
+describe("CONTACT-QUERY original-offset seam precedence", () => {
+  it.each([
+    { name: "earlier right cell wins after the left cell is visited first", indices: [0, 1, 2, 3, 4, 5, 6, 7, 8], expected: .25 },
+    { name: "earlier left cell wins when the right cell is visited later", indices: [3, 4, 5, 0, 1, 2, 6, 7, 8], expected: .125 },
+  ])("$name", ({ indices, expected }) => {
+    // Right edge endpoints have heights0/1, so y=.25 interpolates to.25.
+    // The shorter left edge has heights0/.25, so its midpoint gives.125.
+    // The disjoint last left-cell triangle also exercises cell-local stopping.
+    const positions = [1, 0, 2, 0, 1, 1, 0, 0, 1, 0, 1, .5, 0, 0, .5, 0, 0, .5];
+    const sample = vi.fn((x: number, y: number) => x * y * y);
+    const lookup = createContinuousPathContactSampler(corePlan(positions, indices), 2, 1, sample);
+    expect(sample).toHaveBeenCalledTimes(9);
+    expect(lookup(1, .25)).toBe(expected);
+    expect(lookup(.99, .25)).toBeCloseTo(.125, 12);
+    expect(lookup(1.01, .25)).toBeCloseTo(.25, 12);
+    expect(sample).toHaveBeenCalledTimes(9);
+  });
+});
