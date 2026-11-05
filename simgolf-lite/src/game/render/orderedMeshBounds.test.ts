@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import * as rootViewport from "./rootStageViewport";
+import { withOwnedHighTurfFan, copyGuardedTurfFan } from "./guardedTurfFan";
+import { describe, expect, it, vi } from "vitest";
 import * as PIXI from "pixi.js";
 import { OrderedMeshBoundsCohort } from "./orderedMeshBounds";
 import { knownRootStageViewport, scanFullGeometryExtent } from "./rootStageViewport";
@@ -355,5 +357,71 @@ describe("ordered original-index bounds", () => {
     expect(cohort.registerTurf(oversized, 2, 250_001)).toBe(false);
     expect(cohort.diagnostics()).toEqual({ meshes: 0, originalIndices: 0, reservedBytes: 0 });
     cohort.dispose();
+  });
+});
+
+function highFanMesh(curvatures: readonly number[], overlap = false): PIXI.Mesh<PIXI.MeshGeometry> {
+  const positions = new Float32Array(curvatures.length * 50), uvs = new Float32Array(positions.length), indices = new Uint32Array(curvatures.length * 96);
+  for (let unit = 0; unit < curvatures.length; unit++) {
+    const base = unit * 25;
+    for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) {
+      const v = base + y * 5 + x;
+      positions[v * 2] = (overlap ? 0 : unit * 40) + (x - y) * 8 + 40;
+      positions[v * 2 + 1] = (x + y) * 4 - curvatures[unit] * x * y + 40;
+      uvs[v * 2] = (unit % 1000) / 8 + x / 32;uvs[v * 2 + 1] = y / 32;
+    }
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+      const v = base + y * 5 + x;indices.set([v, v + 1, v + 6, v, v + 6, v + 5], unit * 96 + (y * 4 + x) * 6);
+    }
+  }
+  const geometry = new PIXI.MeshGeometry({ positions, uvs, indices });geometry.batchMode = "no-batch";
+  return new PIXI.Mesh({ geometry });
+}
+function registerFan(cohort: OrderedMeshBoundsCohort, mesh: PIXI.Mesh<PIXI.MeshGeometry>, units: number) {
+  let accepted = false;withOwnedHighTurfFan(mesh, () => { accepted = cohort.registerTurf(mesh, 4, units); });return accepted;
+}
+describe("owned guarded High fan integration", () => {
+  it("emits mixed48/96blocks in originalcellorder and updates with same visiblebits at zoomchange", () => {
+    const { app, world, layer } = appWithCanvas();const mesh = highFanMesh([0, .5, 0]);layer.addChild(mesh);
+    const original = mesh.geometry.indices, positions = mesh.geometry.positions, uvs = mesh.geometry.uvs;
+    const cohort = new OrderedMeshBoundsCohort();expect(registerFan(cohort, mesh, 3)).toBe(true);
+    cohort.reconcile(app, world);
+    const expected = new Uint32Array(192);let cursor = copyGuardedTurfFan(original, 0, expected, 0);expected.set(original.subarray(96, 192), cursor);cursor += 96;copyGuardedTurfFan(original, 2, expected, cursor);
+    expect(mesh.geometry.indices).toEqual(expected);expect(cohort.fanDiagnostics().selectedUnits).toBe(2);
+    const version = (mesh.geometry.indexBuffer as PIXI.Buffer & { _updateID: number })._updateID;
+    world.scale.set(.15);cohort.reconcile(app, world);
+    expect(mesh.geometry.indices).toHaveLength(144);expect(cohort.fanDiagnostics().selectedUnits).toBe(3);
+    expect((mesh.geometry.indexBuffer as PIXI.Buffer & { _updateID: number })._updateID).toBeGreaterThan(version);
+    const selected = mesh.geometry.indices;const stableVersion = (mesh.geometry.indexBuffer as PIXI.Buffer & { _updateID: number })._updateID;
+    world.position.set(.125, .25);cohort.reconcile(app, world);
+    expect(mesh.geometry.indices).toBe(selected);expect((mesh.geometry.indexBuffer as PIXI.Buffer & { _updateID: number })._updateID).toBe(stableVersion);
+    expect(mesh.geometry.positions).toBe(positions);expect(mesh.geometry.uvs).toBe(uvs);
+    cohort.dispose();expect(mesh.geometry.indices).toBe(original);expect(cohort.fanDiagnostics().metadataBytes).toBe(0);
+  });
+  it("invalidates modes for changed roundingerror even when localrect and visiblebits stay equal", () => {
+    const { app, world, layer } = appWithCanvas();const mesh = highFanMesh([0]);layer.addChild(mesh);
+    const original = mesh.geometry.indices;const cohort = new OrderedMeshBoundsCohort();registerFan(cohort, mesh, 1);
+    const view = rootViewport.knownRootStageViewport(app, world, mesh, scanFullGeometryExtent(mesh)!)!;
+    const mock = vi.spyOn(rootViewport, "knownRootStageViewport").mockReturnValue({ ...view, screenErrorPx: .001 });
+    try { cohort.reconcile(app, world);expect(mesh.geometry.indices).toHaveLength(48);
+      mock.mockReturnValue({ ...view, screenErrorPx: .1 });cohort.reconcile(app, world);expect(mesh.geometry.indices).toBe(original);
+    } finally { mock.mockRestore();cohort.dispose(); }
+  });
+  it("restores original on unsupportedviewport/sourceversion and releases ownedmetadata", () => {
+    const { app, world, layer } = appWithCanvas();const mesh = highFanMesh([0]);layer.addChild(mesh);
+    const original = mesh.geometry.indices;const cohort = new OrderedMeshBoundsCohort();registerFan(cohort, mesh, 1);cohort.reconcile(app, world);
+    world.rotation = .01;cohort.reconcile(app, world);expect(mesh.geometry.indices).toBe(original);
+    world.rotation = 0;cohort.reconcile(app, world);expect(mesh.geometry.indices).toHaveLength(48);
+    mesh.geometry.attributes.aPosition.buffer.update();cohort.reconcile(app, world);expect(mesh.geometry.indices).toBe(original);expect(cohort.fanDiagnostics().preparedUnits).toBe(0);
+    cohort.dispose();cohort.dispose();expect(cohort.diagnostics().reservedBytes).toBe(0);
+  });
+  it("retains original blocks if certificatevisits exhaust the original8192budget", () => {
+    const { app, world, layer } = appWithCanvas();const mesh = highFanMesh(Array(8193).fill(0), true);layer.addChild(mesh);
+    const original = mesh.geometry.indices;const cohort = new OrderedMeshBoundsCohort();expect(registerFan(cohort, mesh, 8193)).toBe(true);
+    cohort.reconcile(app, world);expect(cohort.fanDiagnostics().preparedUnits).toBe(8193);expect(cohort.fanDiagnostics().selectedUnits).toBe(0);expect(mesh.geometry.indices).toBe(original);cohort.dispose();
+  });
+  it("doesnotadmitfanmetadata from genericregistration or overwriteforeignbuffers ondispose", () => {
+    const { app, world, layer } = appWithCanvas();const generic = highFanMesh([0]);layer.addChild(generic);const cohort = new OrderedMeshBoundsCohort();cohort.registerTurf(generic, 4, 1);cohort.reconcile(app, world);expect(cohort.fanDiagnostics().preparedUnits).toBe(0);cohort.dispose();
+    const mesh = highFanMesh([0]);layer.addChild(mesh);const owned = new OrderedMeshBoundsCohort();registerFan(owned, mesh, 1);owned.reconcile(app, world);const foreign = new Uint32Array([0, 1, 2]);mesh.geometry.indices = foreign;owned.dispose();expect(mesh.geometry.indices).toBe(foreign);expect(owned.fanDiagnostics().metadataBytes).toBe(0);
   });
 });

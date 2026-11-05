@@ -1,3 +1,5 @@
+import { copyGuardedTurfFan, guardedTurfFanEligible, guardedTurfFanKernelBytes,
+  hasOwnedHighTurfFanRegistration, prepareGuardedTurfFan } from "./guardedTurfFan";
 import * as PIXI from "pixi.js";
 import {
   knownRootStageViewport,
@@ -41,6 +43,11 @@ type Entry = {
   mode: "original" | "selected";
   lastRect: Rect | null;
   reservedBytes: number;
+  fanErrors: Float64Array | null;
+  currentFanBits: Uint32Array | null;
+  nextFanBits: Uint32Array | null;
+  lastFanScale: number;
+  lastFanError: number;
 };
 
 function version(buffer: PIXI.Buffer): number {
@@ -281,6 +288,7 @@ export class OrderedMeshBoundsCohort {
   private readonly entries = new Map<Mesh, Entry>();
   private reservedBytes = 0;
   private originalIndexCount = 0;
+  private fanKernelReserved = false;
   private disposed = false;
 
   registerTurf(mesh: Mesh, subdivisions: number, originalUnits: number): boolean {
@@ -310,7 +318,7 @@ export class OrderedMeshBoundsCohort {
       || uvs.length < positions.length || indices.length !== shape.units * shape.stride
       || indices.length > MESH_INDICES || indices.length + this.originalIndexCount > COHORT_INDICES
       || !validIndices(indices, positions.length / 2)) return false;
-    const bytes = estimate(shape, indices.length);
+    let bytes = estimate(shape, indices.length);
     if (!Number.isSafeInteger(bytes) || bytes > MESH_BYTES || bytes + this.reservedBytes > COHORT_BYTES
       || (shape.kind === "macro" && !validGrid(shape, positions, indices))) return false;
     const extent = scanFullGeometryExtent(mesh);
@@ -321,15 +329,30 @@ export class OrderedMeshBoundsCohort {
     const uvVersion = version(geometry.attributes.aUV.buffer);
     const indexVersion = version(indexBuffer);
     if (![positionVersion, uvVersion, indexVersion].every(Number.isSafeInteger)) return false;
+    const words = Math.ceil(shape.units / 32);
+    const fanBytes = shape.units * 16 + words * 8;
+    const kernelBytes = this.fanKernelReserved ? 0 : guardedTurfFanKernelBytes();
+    let fanErrors: Float64Array | null = null;
+    if (shape.kind === "turf" && shape.stride === 96 && hasOwnedHighTurfFanRegistration(mesh)
+      && bytes + fanBytes <= MESH_BYTES && this.reservedBytes + bytes + fanBytes + kernelBytes <= COHORT_BYTES) {
+      fanErrors = prepareGuardedTurfFan(positions, uvs, indices, shape.units);
+      if (fanErrors) {
+        bytes += fanBytes;
+        this.reservedBytes += kernelBytes;
+        this.fanKernelReserved = true;
+      }
+    }
     const bounds = shape.kind === "turf"
       ? buildTurf(shape, positions, indices)
       : buildMacro(shape, positions, indices);
-    const words = Math.ceil(shape.units / 32);
     this.entries.set(mesh, {
       mesh, geometry, indexBuffer, positions, uvs, indices, extent,
       positionVersion, uvVersion, indexVersion, expectedIndexData: indices,
       shape, bounds, currentBits: new Uint32Array(words), nextBits: new Uint32Array(words),
       selectedStorage: null, mode: "original", lastRect: null, reservedBytes: bytes,
+      fanErrors, currentFanBits: fanErrors ? new Uint32Array(words) : null,
+      nextFanBits: fanErrors ? new Uint32Array(words) : null,
+      lastFanScale: NaN, lastFanError: NaN,
     });
     this.reservedBytes += bytes;
     this.originalIndexCount += indices.length;
@@ -352,8 +375,13 @@ export class OrderedMeshBoundsCohort {
         restore(entry);
         continue;
       }
-      if (sameRect(entry.lastRect, viewport.local)) continue;
+      const fanScale = viewport.worldToScreen.a;
+      const fanError = viewport.screenErrorPx;
+      const sameFanView = entry.fanErrors === null
+        || entry.lastFanScale === fanScale && entry.lastFanError === fanError;
+      if (sameRect(entry.lastRect, viewport.local) && sameFanView) continue;
       entry.nextBits.fill(0);
+      entry.nextFanBits?.fill(0);
       const query = entry.shape.kind === "turf"
         ? queryTurf(entry, viewport.local, remaining)
         : queryMacro(entry, viewport.local, remaining);
@@ -365,12 +393,34 @@ export class OrderedMeshBoundsCohort {
         this.originalIndexCount -= entry.indices.length;
         continue;
       }
-      if (allBits(entry.nextBits, entry.shape.units)) {
+      let fanCount = 0;
+      if (entry.fanErrors && entry.nextFanBits) {
+        let selectedUnits = 0;
+        for (const word of entry.nextBits) {
+          let bits = word;
+          while (bits !== 0) { bits &= bits - 1; selectedUnits++; }
+        }
+        // Each certificate lookup consumes one of the existing query visits.
+        // If that budget is unavailable, retain every selected original96-index block.
+        if (selectedUnits <= MESH_VISITS - query.visited && selectedUnits <= remaining) {
+          remaining -= selectedUnits;
+          for (let unit = 0; unit < entry.shape.units; unit++) {
+            if ((entry.nextBits[unit >>> 5] & (1 << (unit & 31))) !== 0
+              && guardedTurfFanEligible(entry.fanErrors, unit, fanScale, fanError)) {
+              entry.nextFanBits[unit >>> 5] |= 1 << (unit & 31); fanCount++;
+            }
+          }
+        }
+      }
+      entry.lastFanScale = fanScale;
+      entry.lastFanError = fanError;
+      if (fanCount === 0 && allBits(entry.nextBits, entry.shape.units)) {
         restore(entry, true);
         entry.lastRect = viewport.local;
         continue;
       }
-      if (entry.mode === "selected" && sameBits(entry.currentBits, entry.nextBits)) {
+      if (entry.mode === "selected" && sameBits(entry.currentBits, entry.nextBits)
+        && (entry.fanErrors === null || sameBits(entry.currentFanBits!, entry.nextFanBits!))) {
         entry.lastRect = viewport.local;
         continue;
       }
@@ -378,9 +428,13 @@ export class OrderedMeshBoundsCohort {
       let cursor = 0;
       for (let unit = 0; unit < entry.shape.units; unit++) {
         if ((entry.nextBits[unit >>> 5] & (1 << (unit & 31))) === 0) continue;
-        const end = (unit + 1) * entry.shape.stride;
-        for (let index = unit * entry.shape.stride; index < end; index++) {
-          entry.selectedStorage[cursor++] = entry.indices[index];
+        if (entry.nextFanBits && (entry.nextFanBits[unit >>> 5] & (1 << (unit & 31))) !== 0) {
+          cursor = copyGuardedTurfFan(entry.indices, unit, entry.selectedStorage, cursor);
+        } else {
+          const end = (unit + 1) * entry.shape.stride;
+          for (let index = unit * entry.shape.stride; index < end; index++) {
+            entry.selectedStorage[cursor++] = entry.indices[index];
+          }
         }
       }
       const selected = cursor === 0 ? EMPTY_INDICES : entry.selectedStorage.subarray(0, cursor);
@@ -388,6 +442,7 @@ export class OrderedMeshBoundsCohort {
       entry.expectedIndexData = selected;
       entry.indexVersion = version(entry.geometry.indexBuffer);
       [entry.currentBits, entry.nextBits] = [entry.nextBits, entry.currentBits];
+      [entry.currentFanBits, entry.nextFanBits] = [entry.nextFanBits, entry.currentFanBits];
       entry.mode = "selected";
       entry.lastRect = viewport.local;
     }
@@ -400,6 +455,21 @@ export class OrderedMeshBoundsCohort {
     this.entries.clear();
     this.reservedBytes = 0;
     this.originalIndexCount = 0;
+    this.fanKernelReserved = false;
+  }
+
+  /** Prototype-only bounded scalar diagnostics; no meshes or arrays escape. */
+  fanDiagnostics(): Readonly<{ preparedUnits: number; selectedUnits: number; metadataBytes: number; kernelBytes: number }> {
+    let preparedUnits = 0, selectedUnits = 0, metadataBytes = 0;
+    for (const entry of this.entries.values()) if (entry.fanErrors) {
+      preparedUnits += entry.shape.units;
+      metadataBytes += entry.fanErrors.byteLength + entry.currentFanBits!.byteLength + entry.nextFanBits!.byteLength;
+      if (entry.mode === "selected") for (const word of entry.currentFanBits!) {
+        let bits = word;
+        while (bits !== 0) { bits &= bits - 1; selectedUnits++; }
+      }
+    }
+    return { preparedUnits, selectedUnits, metadataBytes, kernelBytes: guardedTurfFanKernelBytes() };
   }
 
   /** Bounded integer diagnostics for focused tests; never returns owners. */

@@ -1,3 +1,4 @@
+import { withOwnedHighTurfFan } from "./guardedTurfFan";
 import { destroySceneSubtree } from "./destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import type { Building, LandTheme, Point, Terrain } from "../models/types";
@@ -820,11 +821,17 @@ export function appendParklandComposablePresentation(
   // Explicit internal opt-in: the caller guarantees that its synchronous mesh
   // callback and scene hooks do not mutate the heightfield, components, or
   // field geometry before cue construction. Omitted means the original path.
-  options?: Readonly<{ reusePairedFieldCueGeometry?: boolean }>,
+  options?: Readonly<{ reusePairedFieldCueGeometry?: boolean; guardedHighTurfFan?: boolean }>,
 ): PIXI.Container {
   const reusePairedGeometry = options?.reusePairedFieldCueGeometry === true
     && sources.quality !== "low" && semanticFields !== null
     && (subdivisions === 2 || subdivisions === 4);
+  const fanOptIn = options?.guardedHighTurfFan === true && sources.quality === "high"
+    && subdivisions === 4 && standardColorVision && semanticFields !== null;
+  const ownedTileCallback = fanOptIn && onTileMesh
+    ? (mesh: PIXI.Mesh, tileSubdivisions: number, units: number) => {
+      withOwnedHighTurfFan(mesh, () => onTileMesh(mesh, tileSubdivisions, units));
+    } : onTileMesh;
   const copiedFields: Array<PairedCueGeometry | null> = [];
   const cueCopies = new Map<ParklandComposableSemantic, PairedCueGeometry>();
   let copiedBytes = 0;
@@ -834,9 +841,9 @@ export function appendParklandComposablePresentation(
         MAX_PAIRED_CUE_COPY_BYTES - copiedBytes);
       copiedFields.push(copy);
       if (copy) copiedBytes += copy.positions.byteLength + copy.uvs.byteLength + copy.indices.byteLength;
-      onTileMesh?.(mesh, tileSubdivisions, units);
+      ownedTileCallback?.(mesh, tileSubdivisions, units);
     }
-    : onTileMesh;
+    : ownedTileCallback;
   try {
   const presentationLayer = sources.quality === "low" ? new PIXI.Container() : layer;
   if (presentationLayer !== layer) {
@@ -890,7 +897,7 @@ export function appendParklandComposablePresentation(
     // natural hierarchy without adding a broad role-colored mask or changing
     // the shared x/8,y/8 material phase.
     (role: ParklandComposableSemantic) => parklandCueTint(role, colors[role], standardColorVision),
-    onTileMesh,
+    ownedTileCallback,
   ] as const;
   const cueDraws = reusePairedGeometry && omitUndercoat
     ? appendParklandCuesFromCopiedFields(...cueArgs, cueCopies)

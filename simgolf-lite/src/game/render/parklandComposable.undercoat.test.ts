@@ -1,3 +1,4 @@
+import { hasOwnedHighTurfFanRegistration } from "./guardedTurfFan";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import * as PIXI from "pixi.js";
@@ -79,6 +80,7 @@ function presentation(
   textures: ParklandSemanticFieldSources<PIXI.Texture>,
   reuse: boolean,
   onTileMesh?: (mesh: PIXI.Mesh, subdivisions: number, originalUnits: number) => void,
+  fan = false,
 ) {
   const layer = new PIXI.Container();
   const sources = resolveParklandComposableSources("parkland", quality, () => PIXI.Texture.EMPTY)!;
@@ -86,7 +88,7 @@ function presentation(
   appendParklandComposablePresentation(
     layer, sources, textures, data.components, data.course, data.tiles, data.tiles,
     quality === "high" ? 4 : 2, data.heightfield, rotation, true, colors, trace,
-    onTileMesh, reuse ? { reusePairedFieldCueGeometry: true } : undefined,
+    onTileMesh, reuse || fan ? { reusePairedFieldCueGeometry: reuse, guardedHighTurfFan: fan } : undefined,
   );
   return { layer, diagnostics: trace.diagnostics(0) };
 }
@@ -150,6 +152,19 @@ describe("ZK-1259 redundant opaque undercoat", () => {
     for (const texture of Object.values(textures)) texture.destroy(true);
   });
 
+  it("admits exactlyownedHighfield/cue callbacks on both factoryroutes withoutchangingbytes or3arguments", () => {
+    for (const reuse of [false, true]) for (const quality of ["high", "medium"] as const) {
+      const data = fixture(), textures = fields(quality);const flags: boolean[] = [], labels: string[] = [], args: number[] = [];
+      const baseline = presentation(quality, 0, data, textures, reuse);
+      const result = presentation(quality, 0, data, textures, reuse, (...values) => { flags.push(hasOwnedHighTurfFanRegistration(values[0]));labels.push(values[0].label);args.push(values.length); }, true);
+      expect(flags).toHaveLength(10);expect(flags.every(flag => flag === (quality === "high"))).toBe(true);expect(args).toEqual(Array(10).fill(3));
+      expect(labels.slice(0, 5).every(label => label.startsWith("parkland-authoritative-material-field:"))).toBe(true);
+      expect(labels.slice(5).every(label => label.startsWith("parkland-common-phase:semantic:"))).toBe(true);
+      expect((result.layer.children as PIXI.Mesh[]).map(geometryBytes)).toEqual((baseline.layer.children as PIXI.Mesh[]).map(geometryBytes));
+      expect(result.layer.children.some(mesh => hasOwnedHighTurfFanRegistration(mesh))).toBe(false);
+      destroySceneSubtree(result.layer);destroySceneSubtree(baseline.layer);for (const texture of Object.values(textures)) texture.destroy(true);
+    }
+  });
   it("certifies all deployed field bytes and every alpha sample", () => {
     for (const quality of ["high", "medium"] as const) for (const role of roles) {
       const filename = `field-parkland-${quality}-${role}.${hashes[quality][role].slice(0, 12)}.png`;

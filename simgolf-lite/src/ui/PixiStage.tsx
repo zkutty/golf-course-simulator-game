@@ -3255,7 +3255,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           },
         // This synchronous callback only registers already-built meshes;
         // neither it nor this owned layer changes component/height inputs.
-        { reusePairedFieldCueGeometry: true },
+        { reusePairedFieldCueGeometry: true, guardedHighTurfFan: !props.terrainPatterns },
       )
       : layer;
     if (presentationLayer !== layer) terrainScene.lowPresentationLayer = presentationLayer;
