@@ -543,13 +543,27 @@ test("P714 [responsive-controls] minimap pointer/touch/keyboard and saved-path w
       const context = source.getContext("2d");
       if (!context) return 0;
       const image = context.getImageData(0, 0, source.width, source.height);
-      const colors = new Set<string>();
-      for (let y = 8; y < image.height; y += 24) for (let x = 8; x < image.width; x += 24) {
-        const index = (y * image.width + x) * 4;
-        colors.add(`${image.data[index]},${image.data[index + 1]},${image.data[index + 2]},${image.data[index + 3]}`);
+      // The public editor fixture is flat elevation zero: production shade()
+      // renders rough #548342 as (69,107,54) and path #9b8d76 as (127,116,97).
+      // Audit every bitmap pixel so a blank/uniform map or missing saved path fails.
+      let rough = 0;
+      let path = 0;
+      let background = 0;
+      let opaque = 0;
+      for (let index = 0; index < image.data.length; index += 4) {
+        const red = image.data[index];
+        const green = image.data[index + 1];
+        const blue = image.data[index + 2];
+        const alpha = image.data[index + 3];
+        if (alpha !== 255) continue;
+        opaque++;
+        if (red === 69 && green === 107 && blue === 54) rough++;
+        if (red === 127 && green === 116 && blue === 97) path++;
+        if (red === 38 && green === 55 && blue === 47) background++;
       }
-      return colors.size;
-    })).toBeGreaterThan(4);
+      const pixels = image.width * image.height;
+      return rough > pixels * 0.1 && path > 0 && background > 0 && opaque > pixels * 0.9;
+    })).toBe(true);
   }
 
   async function ensureMapOpen() {
