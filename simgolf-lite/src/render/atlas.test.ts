@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { assetsLoad } = vi.hoisted(() => ({ assetsLoad: vi.fn() }));
-vi.mock("pixi.js", () => ({
+vi.mock("pixi.js", async (importOriginal) => ({
+  // The lazily imported terrain module declares an owned MeshGeometry subclass.
+  // Keep its real base class while mocking only this suite's asset interfaces.
+  MeshGeometry: (await importOriginal<typeof import("pixi.js")>()).MeshGeometry,
   Assets: { load: assetsLoad },
   Rectangle: class {
     readonly x;
