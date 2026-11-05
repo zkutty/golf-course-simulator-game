@@ -666,9 +666,10 @@ test("P714 [responsive-controls-pointer] minimap pointer/keyboard and saved-path
 
 });
 
-test("P714 [responsive-controls-touch] real touch toggles the minimap in both dock states", async ({ browser }) => {
+for (const [width, height] of [[390, 844], [1024, 768], [1600, 1000]] as const) {
+test(`P714 [responsive-controls-touch] @${width}x${height} real touch toggles the minimap in both dock states`, async ({ browser }) => {
   const file = normalizedFixture(fixture("editor"));
-  const touchContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  const touchContext = await browser.newContext({ viewport: { width, height }, hasTouch: true });
   try {
     const page = await touchContext.newPage();
     await boot(page);
@@ -712,8 +713,8 @@ test("P714 [responsive-controls-touch] real touch toggles the minimap in both do
       expect(box, "touch target must have a rendered hit box").not.toBeNull();
       expect(box!.x).toBeGreaterThanOrEqual(0);
       expect(box!.y).toBeGreaterThanOrEqual(0);
-      expect(box!.x + box!.width).toBeLessThanOrEqual(390);
-      expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(height);
       expect(box!.width).toBeGreaterThan(0);
       expect(box!.height).toBeGreaterThan(0);
       const center = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
@@ -768,6 +769,7 @@ test("P714 [responsive-controls-touch] real touch toggles the minimap in both do
     await touchContext.close();
   }
 });
+}
 
 async function openDesignDock(page: Page) {
   // Loading remounts the dock in its collapsed state. These public controls
