@@ -496,6 +496,45 @@
   }
 }
 
+/* The dock loses 260px of its course-pane width to its left/right insets.
+   Wrap by actual pane width so the controls stay inside the clipped shell at
+   tablet and intermediate sizes, regardless of the browser viewport width. */
+@container (max-width: 900px) {
+  .cc-design-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .cc-design-toolbar > strong {
+    flex: 1;
+  }
+
+  .cc-design-toolbar__collapse { order: 1; }
+  .cc-design-toolbar__tools { order: 2; }
+  .cc-design-toolbar__history { order: 3; }
+
+  .cc-design-toolbar__width {
+    order: 4;
+    flex: 1 0 100%;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .cc-design-toolbar__width--path {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  }
+
+  .cc-design-toolbar__history {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .cc-design-toolbar__history button {
+    flex: 1 1 auto;
+  }
+}
+
 @media (max-width: 560px) {
   .cc-design-dock {
     width: min(226px, calc(100% - 12px));
