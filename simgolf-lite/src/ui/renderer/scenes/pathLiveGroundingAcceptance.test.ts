@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import * as PIXI from "pixi.js";
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
@@ -56,6 +57,7 @@ function stageArrow<T>(name: string, contains: string, scope: Record<string, unk
   if (candidates.length !== 1) throw new Error(`A1_SETUP Stage arrow ${name}: ${candidates.length} candidates`);
   return factory<T>(candidates[0].getText(parsed), scope);
 }
+const receiptDirectory = join(tmpdir(), `coursecraft-joins-a2-${process.pid}`);
 const from = { x: 14, y: 9 }, to = { x: 25, y: 11 };
 function fixture(): Course {
   const shared = authoredPathFixture(), width = 60, height = 24;
@@ -211,7 +213,7 @@ function oracleControls() {
 
 it("A1 proves actual M4 moving actors against final Float32 path triangle interiors", () => {
   const receipt: { status: string; controls: string[]; routes: unknown[]; samples: unknown[]; unresolvedAcceptance: string[]; failure?: unknown } = { status: "running", controls: [], routes: [], samples: [], unresolvedAcceptance: ["Separate real flat production-field control executes only after the principal nonaffine matrix passes."] };
-  const output = process.env.JOINS_A1_RECEIPT_PATH ?? "/private/tmp/coursecraft-followthrough-20261105/JOINS-A2/contact-principal-receipt.json";
+  const output = process.env.JOINS_A1_RECEIPT_PATH ?? join(receiptDirectory, "contact-principal-receipt.json");
   let stage = "oracle-controls";
   try {
     oracleControls(); receipt.controls.push("independent-offset/omission/buffer-perturbation");
@@ -318,7 +320,7 @@ it("A1 proves actual M4 moving actors against final Float32 path triangle interi
 
 
 it("A2 separately proves real M4 contact on an actual production flat field", () => {
-  const output = process.env.JOINS_A2_FLAT_RECEIPT_PATH ?? "/private/tmp/coursecraft-followthrough-20261105/JOINS-A2/contact-flat-receipt.json";
+  const output = process.env.JOINS_A2_FLAT_RECEIPT_PATH ?? join(receiptDirectory, "contact-flat-receipt.json");
   const receipt: { status: string; routes: unknown[]; sample?: unknown; failure?: string } = { status: "running", routes: [] };
   try {
     // A real Course input, not a synthetic/injected heightfield. Water flat
