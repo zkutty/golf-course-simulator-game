@@ -168,7 +168,9 @@ export type HoleTemplatePlacementBlockerCode =
   | "duplicate_hole_id"
   | "insufficient_funds"
   | "bankrupt"
-  | "active_player_round";
+  | "active_player_round"
+  | "surface_conflict"
+  | "surface_capacity";
 
 export interface HoleTemplatePlacementBlocker {
   code: HoleTemplatePlacementBlockerCode;
@@ -218,6 +220,13 @@ export interface HoleTemplateLayoutMutation {
   afterDraftHoleIds: string[];
 }
 
+export interface HoleTemplateSurfaceMutation {
+  /** SHA-256 of the exact current intent, or canonical null when absent. */
+  baseHash: string;
+  addFeatures: SurfaceFeature[];
+  nextId: number;
+}
+
 export interface HoleTemplatePlacementMutations {
   terrain: HoleTemplateTerrainMutation[];
   elevations: HoleTemplateElevationMutation[];
@@ -228,6 +237,8 @@ export interface HoleTemplatePlacementMutations {
   layout: HoleTemplateLayoutMutation;
   cashDelta: number;
   versions: HoleTemplateVersionMutation;
+  /** Omitted for historical templates to preserve their plan bytes. */
+  surfaceIntent?: HoleTemplateSurfaceMutation;
 }
 
 export interface HoleTemplatePlanIdentity {
