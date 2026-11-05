@@ -473,7 +473,7 @@ test("P714 [responsive] two unoccluded path views with separately visible design
     views: [{ viewport: [390, 844], zoom: 1 }, { viewport: [1024, 768], zoom: 2.25 }], rotation: 0, quality: "medium", matrixPathCapturesReused: 34 }, null, 2)), contentType: "application/json" });
 });
 
-test("P714 [responsive-controls] minimap pointer/touch/keyboard and saved-path width controls stay reachable", async ({ page, browser }, info) => {
+test("P714 [responsive-controls-pointer] minimap pointer/keyboard and saved-path width controls stay reachable", async ({ page }, info) => {
   const file = normalizedFixture(fixture("editor"));
   await editorReady(page, file);
   await selectS(page);
@@ -664,35 +664,105 @@ test("P714 [responsive-controls] minimap pointer/touch/keyboard and saved-path w
     }
   }
 
+});
+
+test("P714 [responsive-controls-touch] real touch toggles the minimap in both dock states", async ({ browser }) => {
+  const file = normalizedFixture(fixture("editor"));
   const touchContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
   try {
-    const touchPage = await touchContext.newPage();
-    await boot(touchPage);
-    await publicLoad(touchPage, file);
-    const touchDock = touchPage.getByTestId("design-dock");
-    const touchExpandDock = touchPage.getByRole("button", { name: "Expand design dock", exact: true });
-    const touchCollapseDock = touchPage.getByRole("button", { name: "Collapse design dock", exact: true });
-    const touchOpenMap = touchPage.getByRole("button", { name: "Open course minimap", exact: true });
-    const touchCloseMap = touchPage.getByRole("button", { name: "Collapse course minimap", exact: true });
-    for (const dockExpanded of [false, true]) {
-      if (dockExpanded && await touchExpandDock.isVisible()) await touchExpandDock.click();
-      if (!dockExpanded && await touchCollapseDock.isVisible()) await touchCollapseDock.click();
-      await expect(touchDock).toHaveAttribute("data-collapsed", dockExpanded ? "false" : "true");
-      const target = await touchCloseMap.isVisible() ? touchCloseMap : touchOpenMap;
-      await expect(target).toBeVisible();
-      const box = await target.boundingBox();
+    const page = await touchContext.newPage();
+    await boot(page);
+    await publicLoad(page, file);
+
+    // Public achievement toasts are real hit targets above the map. Dismiss
+    // their bounded queue through the component's ordinary click handler before
+    // assessing map reachability; never suppress or bypass the notification.
+    const toast = page.getByTestId("achievement-toast");
+    await expect(toast).toBeVisible();
+    let dismissed = 0;
+    for (; dismissed < 8 && await toast.isVisible(); dismissed++) {
+      const before = await toast.innerText();
+      const box = await toast.boundingBox();
       expect(box).not.toBeNull();
       const point = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
-      const targetSelector = await touchCloseMap.isVisible() ? ".cc-minimap-collapse" : ".cc-minimap-toggle";
-      const isTopmostTarget = await touchPage.evaluate(({ x, y, selector }) => {
-        const control = document.querySelector(selector);
+      const reachesToast = await page.evaluate(({ x, y }) => {
+        const target = document.querySelector('[data-testid="achievement-toast"]');
         const hit = document.elementFromPoint(x, y);
-        return Boolean(control && hit && (control === hit || control.contains(hit)));
-      }, { ...point, selector: targetSelector });
-      expect(isTopmostTarget).toBe(true);
-      await touchPage.touchscreen.tap(point.x, point.y);
-      await expect(target === touchOpenMap ? touchCloseMap : touchOpenMap).toBeVisible();
-      if (target === touchOpenMap) await expect(touchPage.locator(".cc-minimap")).toBeVisible();
+        return Boolean(target && hit && (target === hit || target.contains(hit)));
+      }, point);
+      expect(reachesToast, "notification tap must reach its public dismissal target").toBe(true);
+      await page.touchscreen.tap(point.x, point.y);
+      await expect.poll(async () => !(await toast.isVisible()) || (await toast.innerText()) !== before).toBe(true);
+    }
+    expect(dismissed).toBeGreaterThan(0);
+    await expect(toast).toHaveCount(0);
+
+    const initialSurface = await surface(page);
+    const initialCash = await cash(page);
+    const dock = page.getByTestId("design-dock");
+    const expandDock = page.getByRole("button", { name: "Expand design dock", exact: true });
+    const collapseDock = page.getByRole("button", { name: "Collapse design dock", exact: true });
+    const openMap = page.getByRole("button", { name: "Open course minimap", exact: true });
+    const closeMap = page.getByRole("button", { name: "Collapse course minimap", exact: true });
+    const map = page.locator(".cc-minimap");
+
+    async function tapMapControl(target: Locator, selector: string) {
+      await expect(target).toBeVisible();
+      const box = await target.boundingBox();
+      expect(box, "touch target must have a rendered hit box").not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.y).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+      expect(box!.width).toBeGreaterThan(0);
+      expect(box!.height).toBeGreaterThan(0);
+      const center = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
+      const points = [
+        { x: box!.x + 3, y: box!.y + 3 },
+        { x: box!.x + box!.width - 3, y: box!.y + 3 },
+        { x: box!.x + 3, y: box!.y + box!.height - 3 },
+        { x: box!.x + box!.width - 3, y: box!.y + box!.height - 3 },
+        center,
+      ];
+      const reachesTarget = await page.evaluate(({ points, selector }) => {
+        const control = document.querySelector(selector);
+        return points.map(({ x, y }) => {
+          const hit = document.elementFromPoint(x, y);
+          return Boolean(control && hit && (control === hit || control.contains(hit)));
+        });
+      }, { points, selector });
+      expect(reachesTarget, "all five interior hit points must reach the ordinary touch control")
+        .toEqual([true, true, true, true, true]);
+      await page.touchscreen.tap(center.x, center.y);
+    }
+
+    async function assertReadyMapAndPreservedState() {
+      await expect(closeMap).toBeVisible();
+      await expect(map).toBeVisible();
+      await expect(map).toHaveAttribute("data-render-state", "ready");
+      await expect(map.locator("canvas")).toBeVisible();
+      expect(await surface(page)).toEqual(initialSurface);
+      expect(await cash(page)).toBe(initialCash);
+    }
+
+    for (const dockExpanded of [false, true]) {
+      if (dockExpanded && await expandDock.isVisible()) await expandDock.click();
+      if (!dockExpanded && await collapseDock.isVisible()) await collapseDock.click();
+      await expect(dock).toHaveAttribute("data-collapsed", dockExpanded ? "false" : "true");
+
+      // Normalize to closed, then exercise open and collapse through real taps.
+      if (await closeMap.isVisible()) {
+        await tapMapControl(closeMap, ".cc-minimap-collapse");
+        await expect(openMap).toBeVisible();
+      }
+      await tapMapControl(openMap, ".cc-minimap-toggle");
+      await assertReadyMapAndPreservedState();
+      await tapMapControl(closeMap, ".cc-minimap-collapse");
+      await expect(openMap).toBeVisible();
+      expect(await surface(page)).toEqual(initialSurface);
+      expect(await cash(page)).toBe(initialCash);
+      await tapMapControl(openMap, ".cc-minimap-toggle");
+      await assertReadyMapAndPreservedState();
     }
   } finally {
     await touchContext.close();
