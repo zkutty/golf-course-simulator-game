@@ -108,6 +108,7 @@ import { buildContinuousPathPlan } from "../game/paths/continuousPathPlan";
 import {
   buildPathMaterialScenePlan,
   continuousPathGroundHeight,
+  createContinuousPathContactSampler,
   pathMaterialLayerMesh,
   pathUnderlayForRenderer,
 } from "./renderer/scenes/pathMaterialScene";
@@ -1123,7 +1124,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
     }
     return lookup;
   }, [effectiveTiles.length, landscapeComponents]);
+  const pathContactHeightAt = useMemo(() => createContinuousPathContactSampler(
+    { layers: pathScenePlan.layers, suppressWholeCellPaths: pathScenePlan.suppressWholeCellPaths }, course.width, course.height,
+    (x, y) => sampleVisualHeight(visualHeightfield, x, y),
+  ), [pathScenePlan.layers, pathScenePlan.suppressWholeCellPaths, visualHeightfield, course.width, course.height]);
   const surfaceHeightAt = useCallback((x: number, y: number) => {
+    const pathHeight = pathContactHeightAt(x, y);
+    if (pathHeight !== null) return pathHeight;
     const index = Math.max(0, Math.min(course.height - 1, Math.floor(y))) * course.width
       + Math.max(0, Math.min(course.width - 1, Math.floor(x)));
     if (props.graphicsQuality === "low" && !isMaintained(effectiveTiles[index])) {
@@ -1145,6 +1152,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     course.width,
     effectiveTiles,
     landscapeComponentByCell,
+    pathContactHeightAt,
     pathScenePlan,
     props.graphicsQuality,
     visualHeightfield,

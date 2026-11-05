@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { buildContinuousPathPlan } from "../../../game/paths/continuousPathPlan";
+import { describe, expect, it, vi } from "vitest";
+import { buildContinuousPathPlan, classifyContinuousPathPoint } from "../../../game/paths/continuousPathPlan";
 import { sampleVisualHeight } from "../../../game/render/landscapeGeometry";
 import { authoredPathFixture, continuousPathFixture } from "../../../game/testing/continuousPathFixtures";
-import { buildPathMaterialScenePlan, continuousPathGroundHeight, pathMaterialLayerMesh, pathUnderlayForRenderer } from "./pathMaterialScene";
+import { buildPathMaterialScenePlan, continuousPathGroundHeight, createContinuousPathContactSampler, pathMaterialLayerMesh, pathUnderlayForRenderer } from "./pathMaterialScene";
 
 describe("continuous path material scene", () => {
   it.each(["low", "medium", "high"] as const)("uses the same accepted silhouette and underlay at %s", (quality) => {
@@ -68,5 +68,83 @@ describe("continuous path material scene", () => {
   it("keeps no-path terrain input stable", () => {
     const course = continuousPathFixture("empty"); const scene = buildPathMaterialScenePlan(buildContinuousPathPlan(course), "low");
     expect(scene.componentCount).toBe(0); expect(scene.triangleCount).toBe(0); expect(pathUnderlayForRenderer(course.tiles, scene)).toBe(course.tiles);
+  });
+});
+
+const corePlan = (positions: readonly number[], indices: readonly number[]) => ({
+  suppressWholeCellPaths: true, layers: [{ role: "core" as const, positions, indices, rings: [] }],
+});
+
+describe("accepted core triangle contact lookup", () => {
+  it.each([{ indices: [0, 1, 2] }, { indices: [2, 1, 0] }])("interpolates vertex heights instead of bilinear interior heights with winding $indices", ({ indices }) => {
+    const height = createContinuousPathContactSampler(corePlan([0, 0, 1, 0, 1, 1], indices), 1, 1, (x, y) => 4 * x * y);
+    expect(height(.75, .25)).toBe(1); // Bilinear sampling at this point is .75.
+    expect(height(.25, .75)).toBeNull(); expect(height(0, 0)).toBe(0); expect(height(1, 1)).toBe(4);
+    expect(height(.5, .5)).toBe(2);
+  });
+
+  it("retains affine planes at shared edges, subdivided seams and course borders", () => {
+    const plan = corePlan([0, 0, 1, 0, 1, 1, 0, 1, 1, 0, 2, 0, 2, .5, 1, .5, 1, .5, 2, .5, 2, 1, 1, 1],
+      [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 8, 10, 11]);
+    const sample = (x: number, y: number) => 2 + x * .25 - y * .5;
+    const lookup = createContinuousPathContactSampler(plan, 2, 1, sample);
+    for (const [x, y] of [[0, 0], [2, 1], [1, 0], [1, .25], [1, .5], [1, .75], [1, 1], [1.5, .5], [.7, .4]]) expect(lookup(x, y)).toBeCloseTo(sample(x, y), 12);
+  });
+
+  it("keeps holes, outside points, disconnected corners and other material roles absent", () => {
+    const plan = corePlan([0, 0, .4, 0, .4, .4, 1.6, 1.6, 2, 1.6, 2, 2], [0, 1, 2, 3, 4, 5]);
+    const lookup = createContinuousPathContactSampler({ ...plan, layers: [...plan.layers, { ...plan.layers[0], role: "shoulder", positions: [0, 0, 2, 0, 2, 2] }] }, 2, 2, () => 3);
+    expect(lookup(.3, .1)).toBe(3);
+    for (const [x, y] of [[.8, .8], [1, 1], [1.5, 1.5], [-1e-6, 0], [2.000001, 2], [NaN, 0], [0, Infinity]]) expect(lookup(x, y)).toBeNull();
+  });
+
+  it("fails closed on disabled, absent, malformed, nonfinite and non-cell-clipped input", () => {
+    const valid = corePlan([0, 0, 1, 0, 1, 1], [0, 1, 2]);
+    const cases = [{ ...valid, suppressWholeCellPaths: false }, { ...valid, layers: [] }, corePlan([], []),
+      corePlan([0, 0, 1], [0, 1, 2]), corePlan([0, 0, 1, 0, 1, 1], [0, 1]),
+      corePlan([0, 0, 1, 0, 1, 1], [0, 1, 3]), corePlan([0, 0, 1, 0, 1, 1], [0, -1, 2]),
+      corePlan([0, 0, 1, 0, 1, 1], [0, .5, 2]), corePlan([0, 0, Infinity, 0, 1, 1], [0, 1, 2]),
+      corePlan([0, 0, 2, 0, 2, 1], [0, 1, 2])];
+    for (const plan of cases) expect(createContinuousPathContactSampler(plan, 2, 2, () => 3)(.75, .25)).toBeNull();
+    expect(createContinuousPathContactSampler(valid, 1, 1, () => NaN)(.75, .25)).toBeNull();
+    expect(createContinuousPathContactSampler(valid, 1, 1, () => Infinity)(.75, .25)).toBeNull();
+  });
+
+  it("guards save dimensions before sampling/allocation and supports the inclusive 256 boundary", () => {
+    const sample = vi.fn(() => 2), plan = corePlan([0, 0, 1, 0, 1, 1], [0, 1, 2]);
+    for (const [width, height] of [[0, 1], [-1, 1], [1, 0], [1.5, 1], [NaN, 1], [Infinity, 1], [257, 1], [1, 257], [1e12, 1e12]]) {
+      expect(createContinuousPathContactSampler(plan, width, height, sample)(.75, .25)).toBeNull();
+    }
+    expect(sample).not.toHaveBeenCalled();
+    const boundary = createContinuousPathContactSampler(corePlan([255, 255, 256, 255, 256, 256], [0, 1, 2]), 256, 256, sample);
+    expect(boundary(255.75, 255.25)).toBe(2); expect(boundary(256, 256)).toBe(2); expect(boundary(256, 255)).toBe(2);
+    expect(boundary(256.000001, 255)).toBeNull();
+  });
+
+  it("skips degenerate triangles without losing real triangles and samples only on generation build", () => {
+    const plan = corePlan([0, 0, 1, 0, 1, 1, 0, 0, .5, 0, 1, 0], [3, 4, 5, 0, 1, 2]);
+    const a = vi.fn((x: number, y: number) => x + y), b = vi.fn((x: number, y: number) => 4 + x + y);
+    const first = createContinuousPathContactSampler(plan, 1, 1, a), second = createContinuousPathContactSampler(plan, 1, 1, b);
+    expect(a).toHaveBeenCalledTimes(6); expect(b).toHaveBeenCalledTimes(6);
+    for (let i = 0; i < 5; i++) { expect(first(.75, .25)).toBe(1); expect(second(.75, .25)).toBe(5); }
+    expect(a).toHaveBeenCalledTimes(6); expect(b).toHaveBeenCalledTimes(6);
+    expect(createContinuousPathContactSampler(corePlan([0, 0, .5, 0, 1, 0], [0, 1, 2]), 1, 1, a)(.5, 0)).toBeNull();
+  });
+
+  it.each(["straight", "diagonal", "T", "cross", "loop", "broad", "S"] as const)("indexes actual %s G triangles without changing core coverage", (kind) => {
+    const course = kind === "S" ? authoredPathFixture() : continuousPathFixture(kind);
+    const plan = buildContinuousPathPlan(course), scene = buildPathMaterialScenePlan(plan, "low");
+    const lookup = createContinuousPathContactSampler(scene, course.width, course.height, (x, y) => 3 + x * .125 + y * .25);
+    const core = plan.layers.find(layer => layer.role === "core")!;
+    for (let offset = 0; offset < core.indices.length; offset += 3) {
+      let x = 0, y = 0;
+      for (let i = 0; i < 3; i++) { const index = core.indices[offset + i] * 2; x += core.positions[index] / 3; y += core.positions[index + 1] / 3; }
+      expect(lookup(x, y), `triangle ${offset / 3}`).toBeCloseTo(3 + x * .125 + y * .25, 9);
+    }
+    for (let y = .25; y < course.height; y += .5) for (let x = .25; x < course.width; x += .5) {
+      const expectedCore = classifyContinuousPathPoint(plan, { x, y }) === "core";
+      if (expectedCore) expect(lookup(x, y)).toBeCloseTo(3 + x * .125 + y * .25, 9);
+      else expect(lookup(x, y)).toBeNull();
+    }
   });
 });
