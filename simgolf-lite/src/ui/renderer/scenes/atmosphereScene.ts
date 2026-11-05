@@ -1,10 +1,7 @@
 import { destroySceneSubtree } from "../../../game/render/destroySceneSubtree";
 import * as PIXI from "pixi.js";
 import {
-  CLOUD_COUNT,
   HERON_STARTLE_TILES,
-  birdCrossing,
-  cloudPos,
   heronSpot,
   timeOfDayTint,
 } from "../../../game/render/ambient";
@@ -101,9 +98,7 @@ export function createAtmosphereSceneSystem(
   let blobTexture: PIXI.Texture | null = null;
   let ownsBlobTexture = false;
   let tintQuad: PIXI.Sprite | null = null;
-  let birdGraphics: PIXI.Graphics | null = null;
   let shimmer: PIXI.Sprite | null = null;
-  const clouds: PIXI.Sprite[] = [];
   const heron: HeronState = {
     graphics: null,
     spot: null,
@@ -113,21 +108,16 @@ export function createAtmosphereSceneSystem(
     respawnAt: 0,
   };
   const tintCurrent = { r: 255, g: 255, b: 255 };
-  let clockMinute = 0;
-  let previousDayMinute: number | null = null;
 
   const destroy = () => {
     if (!layers.seasonalTerrain.destroyed) {
       layers.seasonalTerrain.removeChildren().forEach(destroySceneSubtree);
     }
-    for (const cloud of clouds.splice(0)) removeAndDestroy(cloud);
     removeAndDestroy(shimmer);
     removeAndDestroy(tintQuad);
-    removeAndDestroy(birdGraphics);
     removeAndDestroy(heron.graphics);
     shimmer = null;
     tintQuad = null;
-    birdGraphics = null;
     heron.graphics = null;
     heron.spot = null;
     heron.forCourse = null;
@@ -138,8 +128,6 @@ export function createAtmosphereSceneSystem(
     tintCurrent.r = 255;
     tintCurrent.g = 255;
     tintCurrent.b = 255;
-    clockMinute = 0;
-    previousDayMinute = null;
     snapshot = null;
     created = false;
   };
@@ -148,11 +136,9 @@ export function createAtmosphereSceneSystem(
     tintQuad = new PIXI.Sprite(PIXI.Texture.WHITE);
     tintQuad.blendMode = "multiply";
     tintQuad.visible = false;
-    birdGraphics = new PIXI.Graphics();
 
     const overlayIndex = layers.stage.getChildIndex(layers.screenOverlay);
     layers.stage.addChildAt(tintQuad, overlayIndex);
-    layers.stage.addChildAt(birdGraphics, overlayIndex + 1);
 
     if (typeof document !== "undefined") {
       const canvas = document.createElement("canvas");
@@ -172,16 +158,6 @@ export function createAtmosphereSceneSystem(
     }
     blobTexture ??= PIXI.Texture.WHITE;
 
-    for (let index = 0; index < CLOUD_COUNT; index++) {
-      const cloud = new PIXI.Sprite(blobTexture);
-      cloud.anchor.set(.5);
-      cloud.tint = 0x0a1408;
-      cloud.alpha = .07;
-      cloud.scale.set(3.6 + index * .9, 1.9 + index * .5);
-      cloud.visible = false;
-      layers.fx.addChild(cloud);
-      clouds.push(cloud);
-    }
     shimmer = new PIXI.Sprite(blobTexture);
     shimmer.anchor.set(.5);
     shimmer.blendMode = "add";
@@ -223,13 +199,6 @@ export function createAtmosphereSceneSystem(
       if (!created || !snapshot) return;
       const ambientOn = input.ambienceFx && snapshot.animationsEnabled;
       const dayMinute = input.dayMinute;
-      if (dayMinute !== undefined && previousDayMinute !== null) {
-        const delta = dayMinute - previousDayMinute;
-        clockMinute += delta > 0 ? delta : dayMinute >= 0 ? Math.max(0, dayMinute) : 0;
-      } else if (dayMinute === undefined) {
-        clockMinute += (input.dtMs / 1000) * 3;
-      }
-      if (dayMinute !== undefined) previousDayMinute = dayMinute;
 
       if (tintQuad) {
         const target = ambientOn ? timeOfDayTint(dayMinute ?? 420) : 0xffffff;
@@ -249,15 +218,6 @@ export function createAtmosphereSceneSystem(
         }
       }
 
-      for (let index = 0; index < clouds.length; index++) {
-        const cloud = clouds[index];
-        cloud.visible = ambientOn;
-        if (!ambientOn) continue;
-        const point = cloudPos(clockMinute, index, snapshot.course.width, snapshot.course.height);
-        const iso = worldToIso(point.x, point.y, 0, snapshot.rotation);
-        cloud.position.set(iso.x, iso.y);
-      }
-
       if (shimmer) {
         const span = (snapshot.course.width + snapshot.course.height) * 1.6;
         const sweep = ((input.nowMs / 1000) * 1.1 * 2.2) % span;
@@ -266,30 +226,6 @@ export function createAtmosphereSceneSystem(
         if (shimmer.visible) {
           const iso = worldToIso(x, snapshot.course.height / 2, 0, snapshot.rotation);
           shimmer.position.set(iso.x, iso.y);
-        }
-      }
-
-      if (birdGraphics) {
-        const crossing = birdCrossing(dayMinute ?? -1);
-        birdGraphics.clear();
-        if (ambientOn && crossing.active) {
-          const screen = layers.screen();
-          const leftToRight = crossing.index % 2 === 0;
-          const yBase = screen.height * (.18 + ((crossing.index * 37) % 40) / 100);
-          const x0 = leftToRight ? -50 : screen.width + 50;
-          const x1 = leftToRight ? screen.width + 50 : -50;
-          const flap = Math.floor(input.nowMs / 150) % 2 === 0 ? -2.4 : 2.2;
-          for (let bird = 0; bird < 4; bird++) {
-            const t = Math.max(0, Math.min(1, crossing.t - bird * .035));
-            const x = x0 + (x1 - x0) * t + (bird % 2) * 14 - 7;
-            const y = yBase + bird * 9
-              + Math.sin(input.nowMs / 700 + bird * 1.7) * 3
-              + (x1 - x0 > 0 ? t : -t) * 40;
-            birdGraphics.moveTo(x - 4.5, y + flap);
-            birdGraphics.lineTo(x, y);
-            birdGraphics.lineTo(x + 4.5, y + flap);
-            birdGraphics.stroke({ width: 1.5, color: 0x2f2f2a, alpha: .7 });
-          }
         }
       }
 
@@ -341,7 +277,7 @@ export function createAtmosphereSceneSystem(
       }
     },
     objectCount() {
-      return clouds.length + (shimmer ? 1 : 0) + (birdGraphics ? 1 : 0) + (heron.graphics ? 1 : 0);
+      return (shimmer ? 1 : 0) + (heron.graphics ? 1 : 0);
     },
   };
 }

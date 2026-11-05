@@ -294,6 +294,9 @@ group counts may reduce to their roster minimum. No solitary version of a
 roster-designated mob/flock is substituted to meet a budget. Offscreen groups
 consume no frame updates; no extra wildlife per hole, tile, or building. These
 targets must be profiled in a later runtime packet before they become certified.
+The proposed reconciliation with ZK-658, including distinct logical-population and presentation
+requirements, is tracked in [WILDLIFE_POPULATION_CONTRACT.md](WILDLIFE_POPULATION_CONTRACT.md);
+the Low-tier conflict remains unresolved pending review.
 
 Only selected biome/quality wildlife is eligible for loading, through the
 existing lazy, hashed, biome-owned asset boundary. No unselected-biome prefetch,

@@ -3,6 +3,7 @@ import { getElevation } from "../models/elevation";
 import { findWalkPath, findWalkPathCells, walkPathAuthority, type WalkPathAuthority } from "../live/walkPath";
 import type { MobilityMode } from "./types";
 import { mobilityRouteCacheKey } from "./mobility";
+import { adaptPathMovementRoute, pathMovementPlanKey, type PathMovementResult } from "../paths/pathMovementAdapter";
 
 export type MobilityWeatherRestriction = "dry" | "wet" | "cart_path_only";
 
@@ -45,7 +46,7 @@ export interface TimedMobilityLeg {
   requestedMode: MobilityMode;
   resolvedMode: MobilityMode;
   cacheKey: string;
-  /** Full tile-by-tile evidence. Never simplify this before computing cost. */
+  /** Full authoritative routing/cost evidence. Presentation may also use separately reported diagonal-clearance PATH cells. */
   cells: Point[];
   /** Render-friendly corners only; derived from the complete evidence above. */
   waypoints: Point[];
@@ -53,6 +54,8 @@ export interface TimedMobilityLeg {
   minutes: number;
   expansions: number;
   fallback: "walk" | null;
+  /** Presentation evidence; route authority and economic fallback stay separate. */
+  pathAlignment?: Omit<PathMovementResult, "waypoints">;
 }
 
 export interface MobilityRouteRequest {
@@ -81,7 +84,7 @@ function conditionsKey(conditions: MobilityRouteConditions | undefined) {
 }
 
 /** Stable geometry fingerprint for cache invalidation after edits or restored snapshots. */
-export function mobilityGeometryVersion(course: Course): string {
+function mobilityBaseGeometryVersion(course: Course): string {
   let hash = 0x811c9dc5;
   const add = (value: string) => { for (let i = 0; i < value.length; i++) { hash ^= value.charCodeAt(i); hash = Math.imul(hash, 0x01000193); } };
   add(`${course.width}x${course.height}|${course.tiles.join(",")}|${course.elevations.join(",")}`);
@@ -90,13 +93,19 @@ export function mobilityGeometryVersion(course: Course): string {
   return (hash >>> 0).toString(16);
 }
 
+export function mobilityGeometryVersion(course: Course): string {
+  const base = mobilityBaseGeometryVersion(course);
+  return `${base}:${pathMovementPlanKey(course, base)}`;
+}
+
 export function mobilityTimedLegCacheKey(request: MobilityRouteRequest): string {
-  const geometry = request.geometryVersion ?? mobilityGeometryVersion(request.course);
-  return `${mobilityRouteCacheKey({ courseId: request.courseId, layoutId: request.layoutId, mode: request.mode, from: request.from, to: request.to })}:g${geometry}:r${conditionsKey(request.conditions)}`;
+  const geometry = request.geometryVersion ?? mobilityBaseGeometryVersion(request.course);
+  const pathKey = pathMovementPlanKey(request.course, geometry);
+  return `${mobilityRouteCacheKey({ courseId: request.courseId, layoutId: request.layoutId, mode: request.mode, from: request.from, to: request.to })}:g${geometry}:p${pathKey}:r${conditionsKey(request.conditions)}`;
 }
 
 function cloneLeg(leg: TimedMobilityLeg): TimedMobilityLeg {
-  return { ...leg, cells: leg.cells.map((point) => ({ ...point })), waypoints: leg.waypoints.map((point) => ({ ...point })) };
+  return { ...leg, cells: leg.cells.map((point) => ({ ...point })), waypoints: leg.waypoints.map((point) => ({ ...point })), ...(leg.pathAlignment ? { pathAlignment: { ...leg.pathAlignment, reasons: [...leg.pathAlignment.reasons], presentationClearanceCells: [...leg.pathAlignment.presentationClearanceCells] } } : {}) };
 }
 
 /** Bounded deterministic cache. A geometry/restriction key change is invalidation. */
@@ -132,7 +141,7 @@ function timedWalkLeg(request: MobilityRouteRequest, cacheKey: string): TimedMob
   return { requestedMode: request.mode, resolvedMode: "walk", cacheKey, cells, waypoints: findWalkPath(request.course, request.from, request.to, request.maxExpansions ?? MAX_EXPANSIONS) ?? simplify(cells), cost, minutes: cost * MOBILITY_MODE_PROFILES.walk.minutesPerTile, expansions: cells.length, fallback: request.mode === "walk" ? null : "walk" };
 }
 
-function cartPassable(request: MobilityRouteRequest, profile: MobilityModeProfile, authority: WalkPathAuthority, x: number, y: number, fromIndex: number | null): boolean {
+function cartPassable(request: Pick<MobilityRouteRequest, "course" | "conditions">, profile: MobilityModeProfile, authority: WalkPathAuthority, x: number, y: number, fromIndex: number | null): boolean {
   const { course, conditions } = request;
   if (!authority.isWalkable(x, y)) return false;
   const tileIndex = index(course, x, y);
@@ -188,12 +197,36 @@ function weightedCartLeg(request: MobilityRouteRequest, cacheKey: string): Timed
   return { requestedMode: request.mode, resolvedMode: request.mode, cacheKey, cells, waypoints: simplify(cells), cost: costs[goal], minutes: costs[goal], expansions, fallback: null };
 }
 
+/** Fresh call-owned presentation authority, identical to the routing adapter's
+ * existing cart predicate. Never retain this closure in a leg/cache/descriptor. */
+export function createMobilityPresentationCanStep(
+  request: Pick<MobilityRouteRequest, "course" | "conditions">,
+  resolvedMode: MobilityMode,
+): ((from: Point, to: Point) => boolean) | undefined {
+  if (resolvedMode === "walk") return undefined;
+  const authority = walkPathAuthority(request.course);
+  const profile = MOBILITY_MODE_PROFILES[resolvedMode];
+  return (from, to) => {
+    const fromIndex = index(request.course, from.x, from.y);
+    return cartPassable(request, profile, authority, to.x, to.y, fromIndex)
+      && (!(from.x !== to.x && from.y !== to.y)
+        || cartPassable(request, profile, authority, to.x, from.y, fromIndex) && cartPassable(request, profile, authority, from.x, to.y, fromIndex));
+  };
+}
+
 /** One deterministic router for all mobility modes. Walk deliberately delegates to the legacy authority. */
 export function planTimedMobilityLeg(request: MobilityRouteRequest, cache?: TimedMobilityLegCache): TimedMobilityLeg | null {
-  const cacheKey = mobilityTimedLegCacheKey(request); const cached = cache?.get(cacheKey); if (cached) return cached;
-  const direct = request.mode === "walk" ? timedWalkLeg(request, cacheKey) : weightedCartLeg(request, cacheKey);
-  const result = direct ?? (request.mode !== "walk" && request.allowWalkFallback !== false ? timedWalkLeg(request, cacheKey) : null);
-  if (result) cache?.set(cacheKey, result);
+  const scoped = { ...request, geometryVersion: request.geometryVersion ?? mobilityBaseGeometryVersion(request.course) };
+  const cacheKey = mobilityTimedLegCacheKey(scoped); const cached = cache?.get(cacheKey); if (cached) return cached;
+  const direct = request.mode === "walk" ? timedWalkLeg(scoped, cacheKey) : weightedCartLeg(scoped, cacheKey);
+  const result = direct ?? (request.mode !== "walk" && request.allowWalkFallback !== false ? timedWalkLeg(scoped, cacheKey) : null);
+  if (result) {
+    const canStep = createMobilityPresentationCanStep(request, result.resolvedMode);
+    const { waypoints, ...pathAlignment } = adaptPathMovementRoute({ course: request.course, cells: result.cells,
+      waypoints: result.waypoints, from: request.from, to: request.to, geometryVersion: scoped.geometryVersion, canStep });
+    result.waypoints = waypoints; result.pathAlignment = pathAlignment;
+    cache?.set(cacheKey, result);
+  }
   return result;
 }
 

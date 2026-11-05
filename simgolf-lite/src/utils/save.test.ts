@@ -5,6 +5,7 @@ import { settlePlayerRound } from "../game/playerPro/playerProSettlement";
 import { createEstate, starterParcelOffset } from "../game/estate/estate";
 import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
 import { createNewGame } from "../game/gen/newGame";
+import { PATH_WIDTH_PRESETS } from "../game/paths/continuousPathPlan";
 import { corridorFeature, rasterizeSurfaceFeatureDetailed } from "../game/models/surfaceIntent";
 import {
   COURSE_HEIGHT,
@@ -1053,19 +1054,19 @@ describe("save validation and migrations", () => {
     expect(result.payload.course.height).toBe(COURSE_HEIGHT);
   });
 
-  it("translates M35 surface intent with a legacy grid migration", () => {
+  it.each(["fairway", "path"] as const)("translates M35 %s surface intent with a legacy grid migration", (terrain) => {
     const width = STARTER_PARCEL_WIDTH;
     const height = STARTER_PARCEL_HEIGHT;
-    const tiles = new Array(width * height).fill("rough" as const);
+    const tiles = new Array<"rough" | "fairway" | "path">(width * height).fill("rough");
     const elevations = new Array(width * height).fill(0);
     const draft = corridorFeature(
       { width, surfaceIntent: { version: 1, nextId: 2, features: [] } },
-      "fairway",
+      terrain,
       [{ x: 10.5, y: 20.5 }, { x: 30.5, y: 20.5 }],
       2.5,
     );
     const raster = rasterizeSurfaceFeatureDetailed(draft, width, height);
-    for (const point of raster.tiles) tiles[point.y * width + point.x] = "fairway";
+    for (const point of raster.tiles) tiles[point.y * width + point.x] = terrain;
     const feature = {
       ...draft,
       coverage: raster.tiles.map((point) => point.y * width + point.x),
@@ -1096,6 +1097,7 @@ describe("save validation and migrations", () => {
     const migrated = result.payload.course.surfaceIntent?.features[0];
     expect(migrated?.geometry.kind).toBe("corridor");
     if (!migrated || migrated.geometry.kind !== "corridor") return;
+    expect(migrated.geometry.width).toBe(2.5);
     expect(migrated.geometry.knots[0]).toEqual({ x: 10.5 + offset.x, y: 20.5 + offset.y });
     expect(migrated.coverage).toEqual(
       feature.coverage.map((index) => {
@@ -1157,5 +1159,16 @@ describe("save validation and migrations", () => {
       ok: false,
       error: { code: "INVALID_WORLD" },
     });
+  });
+});
+
+describe("saved continuous path widths", () => {
+  it.each(PATH_WIDTH_PRESETS)("round-trips $id width without a schema change", ({ envelopeWidth }) => {
+    const feature = corridorFeature(DEFAULT_COURSE, "path", [{ x: 10.5, y: 12.5 }, { x: 18.5, y: 12.5 }], envelopeWidth);
+    const raster = rasterizeSurfaceFeatureDetailed(feature, DEFAULT_COURSE.width, DEFAULT_COURSE.height); feature.coverage = raster.tiles.map((point) => point.y * DEFAULT_COURSE.width + point.x); feature.renderRings = raster.rings;
+    const tiles = [...DEFAULT_COURSE.tiles]; for (const cell of feature.coverage) tiles[cell] = "path";
+    const result = normalizeLoadedSaveResult({ schemaVersion: CURRENT_SAVE_SCHEMA_VERSION, savedAt: 123, course: { ...DEFAULT_COURSE, tiles, surfaceIntent: { version: 1, nextId: 2, features: [feature] } }, world: DEFAULT_WORLD, history: [] });
+    expect(result.ok).toBe(true); if (!result.ok) throw new Error("width fixture failed normalization");
+    const loaded = result.payload.course.surfaceIntent!.features[0]; expect(loaded.geometry).toMatchObject({ kind: "corridor", width: envelopeWidth }); expect(loaded.coverage).toEqual(feature.coverage); expect(loaded.renderRings).toEqual(feature.renderRings);
   });
 });

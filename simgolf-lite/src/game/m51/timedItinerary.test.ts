@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Course, Terrain } from "../models/types";
 import { LIVE } from "../live/liveConfig";
 import type { Personality } from "../live/personality";
-import { TimedItineraryBuilder } from "./timedItinerary";
+import { TimedItineraryBuilder, ORIGINAL_WALK_PLAN, getOriginalWalkPlan } from "./timedItinerary";
 
 const personality: Personality = {
   skill: .6,
@@ -74,5 +74,38 @@ describe("retained motion itinerary ownership", () => {
     expect(builder.segments[0].to).not.toEqual(motion.reliefPosition);
     builder.appendFlight({ x: 1, y: 1 }, { x: 2, y: 2 }, 0, "putt");
     expect(builder.segments[1]).not.toHaveProperty("motion");
+  });
+});
+
+
+describe("presentation-only route timing", () => {
+  it("distributes the original walking duration over adapted arclength without a new cap", () => {
+    const from = { x: 1, y: 1 }, via = { x: 3, y: 2 }, to = { x: 7, y: 1 };
+    const builder = new TimedItineraryBuilder({ course: course(), cursor: from, personality, rng: () => .5,
+      route: () => ({ waypoints: [via, to], distance: 8 }) });
+    builder.appendWalk(from, to, 0, .1);
+    expect(builder.segments.reduce((sum, segment) => sum + segment.dur, 0)).toBeCloseTo(8 * LIVE.pace.walkPerTile, 12);
+    expect(builder.segments[0].dur / builder.segments[1].dur).toBeCloseTo(Math.sqrt(5) / Math.sqrt(17), 12);
+    expect(builder.segments.at(-1)?.to).toEqual(to);
+  });
+});
+
+
+describe("transient original walking authority", () => {
+  it("keeps original corners through hole identity spreads without persisting metadata", () => {
+    const from = { x: 1, y: 1 }, to = { x: 7, y: 3 };
+    const builder = new TimedItineraryBuilder({ course: course(), cursor: from, personality, rng: () => .5,
+      route: () => ({ waypoints: [{ x: 2, y: 1.2 }, { x: 4, y: 1 }, { x: 7, y: 3 }], distance: 3 + Math.sqrt(13),
+        originalWaypoints: [{ x: 4, y: 1 }, to] }) });
+    builder.appendWalk(from, to, 0);
+    const mapped = builder.segments.map(segment => ({ ...segment, holeId: "hole-1" }));
+    const plan = getOriginalWalkPlan(mapped[0])!;
+    expect(plan).toBeDefined(); expect(mapped.every(segment => getOriginalWalkPlan(segment) === plan)).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(mapped[0], ORIGINAL_WALK_PLAN)?.enumerable).toBe(true);
+    expect(plan.segments.map(segment => [segment.from, segment.to])).toEqual([[from, { x: 4, y: 1 }], [{ x: 4, y: 1 }, to]]);
+    expect(plan.segments.reduce((sum, segment) => sum + segment.dur, 0)).toBeCloseTo((3 + Math.sqrt(13)) * LIVE.pace.walkPerTile, 12);
+    const loaded = JSON.parse(JSON.stringify(mapped)) as typeof mapped;
+    expect(loaded.every(segment => getOriginalWalkPlan(segment) === undefined)).toBe(true);
+    expect(loaded.map(segment => Object.getOwnPropertySymbols(segment))).toEqual([[], [], []]);
   });
 });

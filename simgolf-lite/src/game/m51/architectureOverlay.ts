@@ -52,7 +52,12 @@ export function buildArchitectureMobilityOverlay(args: {
       return;
     }
     if (transfer) transfers++;
-    for (let index = 1; index < leg.waypoints.length; index++) traces.push({ id: `${id}:${mode}:${index}`, from: leg.waypoints[index - 1], to: leg.waypoints[index], current: true, emphasized: transfer });
+    for (let index = 0; index < leg.waypoints.length; index++) {
+      const from = index === 0 ? input.from : leg.waypoints[index - 1];
+      const to = leg.waypoints[index];
+      if (from.x === to.x && from.y === to.y) continue;
+      traces.push({ id: `${id}:${mode}:${index}`, from, to, current: true, emphasized: transfer });
+    }
     for (const point of leg.cells) {
       const key = `${point.x}:${point.y}`;
       const prior = cells.get(key);

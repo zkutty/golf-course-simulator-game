@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { completePathPreviewCompute, createPathPreviewMeasurement, pathPreviewTelemetrySnapshot, resetPathPreviewTelemetry } from "./pathPreviewTelemetry";
+import { buildContinuousPathPlan } from "../paths/continuousPathPlan";
+import { continuousPathFixture } from "../testing/continuousPathFixtures";
+import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_STATE, type GameState } from "../gameState";
 import type { PlayerProWorldDisplayPresentation } from "../playerPro/socialPresentation";
 import {
   architectureOverlayRevisionDependencies,
   changedRenderSystems,
   createRenderSnapshot,
+  createSurfacePathPreviewResolver,
   habitatFieldRevisionDependencies,
   holeMarkersRevisionDependencies,
   mobilityEntitiesRevisionDependencies,
@@ -480,6 +484,13 @@ describe("RenderSnapshot invalidation contract", () => {
       .toBe((initial.surfaceEditor ?? 0) + 3);
     expect(tracker.update(dependencies({ elevations: [...course.elevations] })).surfaceEditor)
       .toBe((initial.surfaceEditor ?? 0) + 4);
+    const preview = buildContinuousPathPlan(continuousPathFixture("straight"));
+    expect(tracker.update(dependencies({ pathPreview: preview })).surfaceEditor).toBe((initial.surfaceEditor ?? 0) + 5);
+    expect(tracker.update(dependencies({ pathPreview: preview, pathPreviewAffordable: false })).surfaceEditor).toBe((initial.surfaceEditor ?? 0) + 6);
+    const coverage = [66];
+    expect(tracker.update(dependencies({ pathPreview: preview, pathPreviewAffordable: false, pathPreviewCoverage: coverage })).surfaceEditor).toBe((initial.surfaceEditor ?? 0) + 7);
+    const receipt = { epoch: 0, id: 1, key: preview.key, quoteMs: 1, keyMs: 2, buildMs: 3 };
+    expect(tracker.update(dependencies({ pathPreview: preview, pathPreviewAffordable: false, pathPreviewCoverage: coverage, pathPreviewReceipt: receipt })).surfaceEditor).toBe((initial.surfaceEditor ?? 0) + 8);
   });
 
   it("isolates editor, terrain, marker, live, atmosphere, and viewport revisions", () => {
@@ -513,5 +524,59 @@ describe("RenderSnapshot invalidation contract", () => {
 
     const viewport = snapshot(DEFAULT_STATE, { viewportInputRevision: 1 });
     expect(changedRenderSystems(first, viewport)).toEqual(["viewport-input"]);
+  });
+});
+
+
+describe("surface path preview geometry cache", () => {
+  it("reuses identical inputs across frame, camera, quality and quote-only renders", () => {
+    const source = continuousPathFixture("straight");
+    const build = vi.fn(buildContinuousPathPlan);
+    const resolve = createSurfacePathPreviewResolver(build);
+    const first = resolve(source);
+    for (const rotation of [0, 1, 2, 3] as const) {
+      const snapshot = { rotation, quality: "low", cash: rotation * 100, source: { ...source, tiles: [...source.tiles] } };
+      expect(resolve(snapshot.source)).toBe(first);
+    }
+    expect(build).toHaveBeenCalledTimes(1);
+    const changed = { ...source, tiles: [...source.tiles] }; changed.tiles[4 * source.width + 11] = "path";
+    expect(resolve(changed)).not.toBe(first); expect(build).toHaveBeenCalledTimes(2);
+    expect(resolve(undefined)).toBeNull();
+    expect(resolve(changed)).not.toBe(first); expect(build).toHaveBeenCalledTimes(3);
+  });
+});
+
+
+describe("observed path preview resolver", () => {
+  it("measures actual key/build calls and preserves their receipt through repeated same-key calculations", () => {
+    resetPathPreviewTelemetry();
+    const source = continuousPathFixture("straight"); const plan = buildContinuousPathPlan(source); const build = vi.fn(() => plan);
+    const ticks = [0, 2, 2, 9, 10, 12]; const now = vi.fn(() => ticks.shift()!);
+    const owner = createPathPreviewMeasurement(); const resolve = createSurfacePathPreviewResolver(build, owner.observe, now);
+    expect(resolve(source)).toBe(plan); const receipt = owner.receipt(3)!;
+    expect(receipt).toMatchObject({ keyMs: 2, buildMs: 7, quoteMs: 3 });
+    expect(resolve({ ...source, tiles: [...source.tiles] })).toBe(plan);
+    expect(owner.receipt(99)).toEqual({ ...receipt, keyMs: 4 }); expect(build).toHaveBeenCalledTimes(1);
+    expect(completePathPreviewCompute(owner.receipt(99)!, 5, 11)).toBe(true);
+    expect(pathPreviewTelemetrySnapshot()).toMatchObject({ resolutionCount: 2, buildCount: 1, completedCount: 1 });
+  });
+
+  it("counts failed builder invocations and retries without inventing a completed sample", () => {
+    resetPathPreviewTelemetry(); const source = continuousPathFixture("straight"); const plan = buildContinuousPathPlan(source);
+    const build = vi.fn().mockImplementationOnce(() => { throw new Error("build failed"); }).mockReturnValueOnce(plan);
+    const owner = createPathPreviewMeasurement(); let tick = 0;
+    const resolve = createSurfacePathPreviewResolver(build, owner.observe, () => ++tick);
+    expect(() => resolve(source)).toThrow("build failed");
+    expect(owner.receipt(3)).toBeNull(); expect(pathPreviewTelemetrySnapshot()).toMatchObject({ buildCount: 1, failedBuildCount: 1, completedCount: 0 });
+    expect(resolve(source)).toBe(plan); expect(owner.receipt(3)).not.toBeNull();
+    expect(pathPreviewTelemetrySnapshot()).toMatchObject({ buildCount: 2, failedBuildCount: 1, completedCount: 0 });
+  });
+
+  it("keeps the original unobserved API free of instrumentation clock calls", () => {
+    const source = continuousPathFixture("straight"); const plan = buildContinuousPathPlan(source);
+    const now = vi.fn(() => { throw new Error("unobserved clock"); });
+    const resolve = createSurfacePathPreviewResolver(() => plan, undefined, now);
+    expect(resolve(source)).toBe(plan); expect(resolve(source)).toBe(plan); expect(resolve(undefined)).toBeNull();
+    expect(now).not.toHaveBeenCalled();
   });
 });

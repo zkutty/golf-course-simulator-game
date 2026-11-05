@@ -1,3 +1,4 @@
+import { completePathPreviewCompute } from "../../../game/render/pathPreviewTelemetry";
 import * as PIXI from "pixi.js";
 import { buildGreenSurfaceOverlayCommands } from "../../../game/greens/greenSurfaceRender";
 import type { Course, Point, SurfaceFeature } from "../../../game/models/types";
@@ -6,12 +7,14 @@ import {
   sampleCorridor,
   sampleRegion,
 } from "../../../game/models/surfaceIntent";
+import { ringSignedArea } from "../../../game/render/landscapeGeometry";
 import { worldToIso } from "../../../game/render/iso";
 import type {
   RenderSnapshot,
   SurfaceEditorRenderSnapshot,
 } from "../../../game/render/renderSnapshot";
 import type { RenderSceneSystem } from "../SceneSystemHost";
+import type { ContinuousPathPlan } from "../../../game/paths/continuousPathPlan";
 
 function surfaceFeaturePoints(feature: SurfaceFeature): Point[] {
   return feature.geometry.kind === "corridor"
@@ -25,9 +28,48 @@ function sampledSurfacePath(feature: SurfaceFeature): Point[] {
     : sampleRegion(feature.geometry.ring, feature.geometry.tangents);
 }
 
+/** Clip final role triangles, so a local ghost retains exact junctions and holes. */
+export function surfacePathPreviewPolygons(
+  plan: ContinuousPathPlan | null | undefined,
+  coverage: readonly number[] | undefined,
+  width: number,
+  height: number,
+): readonly (readonly Point[])[] {
+  if (!plan || !coverage?.length) return [];
+  const active = new Set(coverage);
+  const polygons: Point[][] = [];
+  const clip = (points: Point[], axis: "x" | "y", bound: number, sign: number): Point[] => {
+    const result: Point[] = [];
+    for (let index = 0; index < points.length; index++) {
+      const a = points[index]; const b = points[(index + 1) % points.length];
+      const da = sign * (a[axis] - bound); const db = sign * (b[axis] - bound);
+      if (da >= 0) result.push(a);
+      if ((da < 0) !== (db < 0)) {
+        const t = da / (da - db);
+        result.push({ x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
+      }
+    }
+    return result;
+  };
+  for (const layer of plan.layers) for (let index = 0; index < layer.indices.length; index += 3) {
+    const triangle = layer.indices.slice(index, index + 3).map((vertex) => ({ x: layer.positions[vertex * 2], y: layer.positions[vertex * 2 + 1] }));
+    const minX = Math.max(0, Math.floor(Math.min(...triangle.map((point) => point.x))));
+    const minY = Math.max(0, Math.floor(Math.min(...triangle.map((point) => point.y))));
+    const maxX = Math.min(width - 1, Math.ceil(Math.max(...triangle.map((point) => point.x))) - 1);
+    const maxY = Math.min(height - 1, Math.ceil(Math.max(...triangle.map((point) => point.y))) - 1);
+    for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
+      if (!active.has(y * width + x)) continue;
+      const polygon = clip(clip(clip(clip(triangle, "x", x, 1), "x", x + 1, -1), "y", y, 1), "y", y + 1, -1);
+      if (polygon.length >= 3 && Math.abs(ringSignedArea(polygon)) > 1e-12) polygons.push(polygon);
+    }
+  }
+  return polygons;
+}
+
 function drawSurfaceEditor(
   graphics: PIXI.Graphics,
   state: SurfaceEditorRenderSnapshot | undefined,
+  pathPreviewPolygons: readonly (readonly Point[])[],
 ): void {
   graphics.clear();
   if (!state) return;
@@ -124,6 +166,13 @@ function drawSurfaceEditor(
     graphics.stroke({ width: 2.2, color, alpha, cap: "round", join: "round" });
   };
 
+  // These disjoint polygons come only from the final G triangles intersecting
+  // the edit footprint. Empty loop interiors stay empty without ring repair.
+  if (pathPreviewPolygons.length) {
+    for (const polygon of pathPreviewPolygons) graphics.poly(polygon.map(project).flatMap((point) => [point.x, point.y]));
+    graphics.fill({ color: state.pathPreviewAffordable === false ? 0xff7664 : 0xffe28a, alpha: .38 });
+  }
+
   if (state.terrainTool === "spline" && state.splineDraft.length > 0) {
     const previewPoints = state.splineHover
       ? [...state.splineDraft, state.splineHover]
@@ -179,8 +228,32 @@ function drawSurfaceEditor(
 export function createSurfaceEditorSceneSystem(
   layer: PIXI.Container,
   createGraphics: () => PIXI.Graphics = () => new PIXI.Graphics(),
+  now: () => number = () => performance.now(),
 ): RenderSceneSystem {
   let graphics: PIXI.Graphics | null = null;
+  let previousPlan: ContinuousPathPlan | null | undefined;
+  let previousFootprint = "";
+  let previewPolygons: readonly (readonly Point[])[] = [];
+  let previewClipMs = 0;
+  const resolvePreview = (state: SurfaceEditorRenderSnapshot | undefined) => {
+    const startedAt = state?.pathPreview ? now() : 0;
+    const footprint = `${state?.width}:${state?.height}:${state?.pathPreviewCoverage?.join(",") ?? ""}`;
+    if (previousPlan !== state?.pathPreview || previousFootprint !== footprint) {
+      const polygons = surfacePathPreviewPolygons(state?.pathPreview, state?.pathPreviewCoverage, state?.width ?? 0, state?.height ?? 0);
+      previewClipMs = state?.pathPreview ? now() - startedAt : 0;
+      previousPlan = state?.pathPreview; previousFootprint = footprint;
+      previewPolygons = polygons;
+    }
+    return previewPolygons;
+  };
+
+  const draw = (owned: PIXI.Graphics, state: SurfaceEditorRenderSnapshot | undefined) => {
+    const polygons = resolvePreview(state);
+    const receipt = state?.editorMode === "PAINT" && state.pathPreview?.key === state.pathPreviewReceipt?.key ? state.pathPreviewReceipt : null;
+    const startedAt = receipt ? now() : 0;
+    drawSurfaceEditor(owned, state, polygons);
+    if (receipt) completePathPreviewCompute(receipt, previewClipMs, now() - startedAt);
+  };
 
   return {
     id: "surfaceEditor",
@@ -188,15 +261,19 @@ export function createSurfaceEditorSceneSystem(
       const next = createGraphics();
       layer.addChild(next);
       graphics = next;
-      drawSurfaceEditor(next, snapshot.surfaceEditor);
+      draw(next, snapshot.surfaceEditor);
     },
     update(snapshot: RenderSnapshot) {
       if (!graphics) throw new Error("Surface editor scene updated before creation");
-      drawSurfaceEditor(graphics, snapshot.surfaceEditor);
+      draw(graphics, snapshot.surfaceEditor);
     },
     destroy() {
       const owned = graphics;
       graphics = null;
+      previousPlan = undefined;
+      previousFootprint = "";
+      previewPolygons = [];
+      previewClipMs = 0;
       if (!owned) return;
       if (owned.parent) owned.parent.removeChild(owned);
       owned.destroy();

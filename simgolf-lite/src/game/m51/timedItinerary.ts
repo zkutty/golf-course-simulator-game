@@ -12,7 +12,29 @@ import type { MobilityMode } from "./types";
  * may change travel semantics here, but must not create a second itinerary,
  * route cache, wallet, or concession flow.
  */
-export type TimedItineraryRouter = (from: Point, to: Point) => Point[] | null;
+export interface TimedItineraryRoute {
+  waypoints: Point[];
+  /** Original route distance, before presentation-only centerline adaptation. */
+  distance: number;
+  /** Legacy corners retained transiently for per-corner M51 routing economics. */
+  originalWaypoints?: Point[];
+}
+export type TimedItineraryRouter = (from: Point, to: Point) => Point[] | TimedItineraryRoute | null;
+
+/** Enumerable symbols survive existing {...segment} maps but JSON omits them.
+ * Ownership follows the chunks; no global registry or derived graph is retained. */
+export const ORIGINAL_WALK_PLAN = Symbol("original-walk-plan");
+export interface OriginalWalkPlan {
+  readonly from: Point;
+  readonly to: Point;
+  readonly segments: readonly Segment[];
+}
+export function getOriginalWalkPlan(segment: Segment): OriginalWalkPlan | undefined {
+  return (segment as Segment & { [ORIGINAL_WALK_PLAN]?: OriginalWalkPlan })[ORIGINAL_WALK_PLAN];
+}
+export function attachOriginalWalkPlan(segment: Segment, plan: OriginalWalkPlan): Segment {
+  return Object.assign(segment, { [ORIGINAL_WALK_PLAN]: plan });
+}
 
 export interface TimedItineraryOptions {
   course: Course;
@@ -61,7 +83,30 @@ export class TimedItineraryBuilder {
    * straight-line walk. The selected M51 mode is intentionally not weighted.
    */
   appendWalk(from: Point, to: Point, holeIndex: number, cap = Infinity): void {
-    const path = this.options.route?.(from, to);
+    const route = this.options.route?.(from, to);
+    const path = Array.isArray(route) ? route : route?.waypoints;
+    if (path?.length && route && !Array.isArray(route) && Number.isFinite(route.distance) && route.distance >= 0) {
+      const distances: number[] = []; let cursor = from;
+      for (const point of path) { distances.push(distance(cursor, point)); cursor = point; }
+      const length = distances.reduce((sum, value) => sum + value, 0);
+      const duration = route.distance * LIVE.pace.walkPerTile;
+      let originalCursor = from;
+      const originalSegments = route.originalWaypoints?.map(point => {
+        const segment = this.walkSegment({ ...originalCursor }, { ...point }, holeIndex);
+        originalCursor = point; return segment;
+      });
+      const originalPlan: OriginalWalkPlan | undefined = originalSegments?.length
+        ? { from: { ...from }, to: { ...to }, segments: originalSegments } : undefined;
+      cursor = from;
+      for (let index = 0; index < path.length; index++) {
+        const point = path[index];
+        const segment: Segment = { kind: "walk", from: cursor, to: point, holeIndex,
+          dur: length > 0 ? duration * distances[index] / length : index === 0 ? duration : 0 };
+        this.segments.push(originalPlan ? attachOriginalWalkPlan(segment, originalPlan) : segment);
+        cursor = point;
+      }
+      return;
+    }
     if (path?.length) {
       let current = from;
       for (const point of path) {

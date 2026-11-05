@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { buildContinuousPathPlan, PATH_WIDTH_PRESETS } from "../paths/continuousPathPlan";
+import { emptyEditorEditHistory, recordEditorEdit, undoEditorEdit, redoEditorEdit } from "../editor/editorHistory";
 import { applyAction } from "../../core/reducer";
 import { DEFAULT_STATE } from "../gameState";
 import type { Course, SurfaceFeature, Terrain } from "./types";
@@ -288,5 +290,37 @@ describe("surface feature editing", () => {
       ...target,
       terrain: "water",
     });
+  });
+});
+
+describe("path width editor contract", () => {
+  it.each(PATH_WIDTH_PRESETS)("quotes, commits and undoes $id using the same persisted envelope", ({ envelopeWidth }) => {
+    const { course, feature } = authoredCourse("path"); if (feature.geometry.kind !== "corridor") throw new Error("corridor fixture");
+    // Start from a legacy custom width so every preset performs a real edit.
+    feature.geometry.width = 2;
+    const raster = rasterizeSurfaceFeatureDetailed(feature, course.width, course.height);
+    feature.coverage = raster.tiles.map((point) => point.y * course.width + point.x); feature.renderRings = raster.rings;
+    course.tiles.fill("rough"); for (const cell of feature.coverage) course.tiles[cell] = "path";
+    const candidate: SurfaceFeature = { ...feature, geometry: { ...feature.geometry, width: envelopeWidth } };
+    const prepared = prepareSurfaceFeatureEdit(course, candidate, 100_000, 1, 100)!;
+    expect(prepared.commitAllowed).toBe(true); expect(prepared.preview.affordable).toBe(true);
+    const before = { ...DEFAULT_STATE, course, world: { ...DEFAULT_STATE.world, cash: 100_000, reputation: 100 } };
+    const action = { type: "EDIT_SURFACE_FEATURE", feature: candidate } as const; const after = applyAction(before, action);
+    expect(after.world.cash).toBe(prepared.preview.projectedCash); expect(after.course.tiles).toEqual(prepared.tiles); expect(after.course.surfaceIntent).toEqual(prepared.intent);
+    const preview = buildContinuousPathPlan({ ...course, tiles: prepared.tiles, surfaceIntent: prepared.intent }); const committed = buildContinuousPathPlan(after.course);
+    expect(committed).toEqual(preview); expect(committed.edges.every((edge) => Math.abs(edge.width - envelopeWidth * .6) < 1e-8)).toBe(true);
+    const capital = { spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} }; const history = recordEditorEdit(emptyEditorEditHistory(), before, after, capital, action);
+    const undone = undoEditorEdit(history, after, capital)!; expect(undone.snapshot.course).toEqual(before.course); expect(undone.snapshot.world.cash).toBe(before.world.cash);
+    const redone = redoEditorEdit(undone.history, undone.snapshot, capital)!; expect(redone.snapshot.course).toEqual(after.course); expect(buildContinuousPathPlan(redone.snapshot.course).key).toBe(committed.key);
+  });
+
+  it("clips width expansion to charged owned coverage and preserves located exclusions", () => {
+    const { course, feature } = authoredCourse("path"); if (feature.geometry.kind !== "corridor") throw new Error("corridor fixture");
+    course.property = { assets: [{ id: "sold-edge", kind: "houses", name: "Sold edge", category: "community", tier: 1, x: 0, y: 6, width: course.width, height: 8, capacity: 0, condition: 1, price: 0, enabled: true, tenure: "sold" }] } as Course["property"];
+    const candidate: SurfaceFeature = { ...feature, geometry: { ...feature.geometry, width: 5 } }; const prepared = prepareSurfaceFeatureEdit(course, candidate, 100_000, 1, 100)!;
+    expect(prepared.preview.excluded.unowned).toBeGreaterThan(0); expect(prepared.feature.coverage.every((cell) => Math.floor(cell / course.width) < 6)).toBe(true);
+    const plan = buildContinuousPathPlan({ ...course, tiles: prepared.tiles, surfaceIntent: prepared.intent });
+    for (const layer of plan.layers) for (let i = 1; i < layer.positions.length; i += 2) expect(layer.positions[i]).toBeLessThanOrEqual(6 + 1e-7);
+    expect(prepared.preview.excludedTiles.every((tile) => tile.reason === "unowned")).toBe(true);
   });
 });

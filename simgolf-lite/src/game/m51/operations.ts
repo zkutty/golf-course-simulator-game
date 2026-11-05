@@ -1,8 +1,10 @@
-import type { ConcessionTransaction, Course, Terrain } from "../models/types";
+import type { ConcessionTransaction, Course, Point, Terrain } from "../models/types";
+import { adaptPathMovementRoute } from "../paths/pathMovementAdapter";
 import { buildingEntrance } from "../models/buildings";
 import type { Golfer, LiveState, Segment } from "../live/types";
 import { mobilityRouteCacheKey, normalizeM51CourseMobilityState } from "./mobility";
-import { TimedMobilityLegCache, mobilityGeometryVersion, planTimedMobilityLeg, type MobilityRouteConditions } from "./travelRouter";
+import { getOriginalWalkPlan, attachOriginalWalkPlan } from "./timedItinerary";
+import { TimedMobilityLegCache, mobilityGeometryVersion, planTimedMobilityLeg, createMobilityPresentationCanStep, type TimedMobilityLeg, type MobilityRouteConditions } from "./travelRouter";
 import {
   MOBILITY_BUSINESS,
   type MobilityAssignment,
@@ -99,6 +101,97 @@ function assignRiders(golfers: Golfer[], units: MobilityFleetUnit[], mode: Exclu
   });
 }
 
+const samePoint = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y) < 1e-7;
+interface MobilitySourceGroup { sources: Segment[]; complete: boolean; from?: Point; to?: Point; }
+function mobilitySourceGroups(segments: readonly Segment[]): MobilitySourceGroup[] {
+  const result: MobilitySourceGroup[] = [];
+  for (let i = 0; i < segments.length;) {
+    const first = segments[i], plan = first.kind === "walk" && !first.concession ? getOriginalWalkPlan(first) : undefined;
+    if (!plan) { result.push({ sources: [first], complete: false }); i++; continue; }
+    let end = i + 1;
+    while (end < segments.length && segments[end].kind === "walk" && !segments[end].concession
+      && getOriginalWalkPlan(segments[end]) === plan && segments[end].holeIndex === first.holeIndex && segments[end].holeId === first.holeId) end++;
+    const chunks = segments.slice(i, end), last = chunks.at(-1)!;
+    const originals = plan.segments, originalFirst = originals[0];
+    const complete = !!originalFirst && samePoint(first.from, plan.from) && samePoint(last.to, plan.to)
+      && chunks.every((chunk, index) => !index || samePoint(chunks[index - 1].to, chunk.from))
+      && samePoint(originalFirst.from, plan.from) && samePoint(originals.at(-1)!.to, plan.to)
+      && originals.every((segment, index) => segment.kind === "walk" && !segment.concession
+        && segment.holeIndex === first.holeIndex && segment.holeId === originalFirst.holeId
+        && (!index || samePoint(originals[index - 1].to, segment.from)));
+    if (!complete) { result.push(...chunks.map(segment => ({ sources: [segment], complete: false }))); i = end; continue; }
+    const originalDuration = originals.reduce((sum, segment) => sum + segment.dur, 0);
+    const currentDuration = chunks.reduce((sum, segment) => sum + segment.dur, 0);
+    const scale = originalDuration > 0 ? currentDuration / originalDuration : 1;
+    result.push({ complete: true, from: plan.from, to: plan.to, sources: originals.map(original => ({ ...original,
+      from: { ...original.from }, to: { ...original.to }, holeId: first.holeId, dur: original.dur * scale })) });
+    i = end;
+  }
+  return result;
+}
+interface CornerEvidence {
+  source: Segment; leg: TimedMobilityLeg | null; duration: number; saved: number; offpath: number; chunks: Segment[];
+}
+/** Map each unchanged economic block onto a duration share of the fixed curve.
+ * Every bend remains; allocations still use each original corner's own floor,
+ * saved-minutes scalar and independent offpath rounding. */
+function distributeCornerBudgets(records: readonly CornerEvidence[], from: Point, waypoints: readonly Point[], mode: MobilityMode): Segment[] | null {
+  const points = [from, ...waypoints]; const lengths = points.slice(1).map((point, i) => Math.hypot(point.x - points[i].x, point.y - points[i].y));
+  const cumulative = [0]; for (const length of lengths) cumulative.push(cumulative.at(-1)! + length);
+  const totalLength = cumulative.at(-1)!, totalDuration = records.reduce((sum, record) => sum + record.duration, 0);
+  if (!Number.isFinite(totalLength) || !Number.isFinite(totalDuration) || totalLength <= 1e-10 || totalDuration <= 0 || records.some(record => record.duration <= 0)) return null;
+  const at = (s: number): Point => {
+    let i = lengths.findIndex((length, index) => length > 0 && cumulative[index + 1] >= s - 1e-12);
+    if (i < 0) i = lengths.length - 1;
+    const t = lengths[i] > 0 ? Math.max(0, Math.min(1, (s - cumulative[i]) / lengths[i])) : 1;
+    return { x: points[i].x + (points[i + 1].x - points[i].x) * t, y: points[i].y + (points[i + 1].y - points[i].y) * t };
+  };
+  const output: Segment[] = []; let elapsed = 0, start = 0;
+  for (let r = 0; r < records.length; r++) {
+    const record = records[r]; elapsed += record.duration;
+    const end = r === records.length - 1 ? totalLength : elapsed / totalDuration * totalLength;
+    if (end - start <= 1e-12) return null;
+    const local = [at(start), ...points.filter((_, index) => cumulative[index] > start + 1e-12 && cumulative[index] < end - 1e-12), at(end)];
+    const distances = local.slice(1).map((point, i) => Math.max(.0001, Math.hypot(point.x - local[i].x, point.y - local[i].y)));
+    const blockDistance = distances.reduce((sum, value) => sum + value, 0);
+    for (let i = 1; i < local.length; i++) {
+      const share = distances[i - 1] / blockDistance;
+      output.push({ ...record.source, from: { ...local[i - 1] }, to: { ...local[i] }, dur: record.duration * share,
+        mobility: { requestedMode: mode, resolvedMode: record.leg!.resolvedMode, minutesSaved: record.saved * share,
+          offPathTiles: Math.round(record.offpath * share) } });
+    }
+    start = end;
+  }
+  return output;
+}
+function composeCornerPresentations(records: readonly CornerEvidence[], course: Course, conditions: MobilityRouteConditions, geometryVersion: string, mode: MobilityMode): Segment[] {
+  const output: Segment[] = [];
+  for (let i = 0; i < records.length;) {
+    const first = records[i];
+    if (!first.leg || first.leg.cells.length < 2) { output.push(...first.chunks); i++; continue; }
+    let end = i + 1;
+    while (end < records.length) {
+      const previous = records[end - 1].leg!, next = records[end].leg;
+      if (!next || next.cells.length < 2 || next.resolvedMode !== first.leg.resolvedMode
+        || !samePoint(previous.cells.at(-1)!, next.cells[0])) break;
+      end++;
+    }
+    const run = records.slice(i, end), cells: Point[] = [];
+    for (const record of run) record.leg!.cells.forEach((cell, index) => {
+      // ONLY the adjacent seam duplicate is redundant. Later revisits remain.
+      if (!index && cells.length && samePoint(cells.at(-1)!, cell)) return;
+      cells.push({ ...cell });
+    });
+    const oldChunks = run.flatMap(record => record.chunks), from = first.source.from, to = run.at(-1)!.source.to;
+    const match = adaptPathMovementRoute({ course, cells, from, to, waypoints: oldChunks.map(chunk => ({ ...chunk.to })), geometryVersion,
+      canStep: createMobilityPresentationCanStep({ course, conditions }, first.leg.resolvedMode) });
+    const accepted = match.alignedRuns > 0 && match.fallbackRuns === 0 && !!match.waypoints.length && samePoint(match.waypoints.at(-1)!, to);
+    const composed = accepted ? distributeCornerBudgets(run, from, match.waypoints, mode) : null;
+    output.push(...(composed ?? oldChunks)); i = end;
+  }
+  return output;
+}
+
 function travelEvidence(course: Course, state: LiveState, golfer: Golfer, mode: MobilityMode, geometryVersion: string): {
   segments: Segment[];
   actualTravelMinutes: number;
@@ -109,10 +202,11 @@ function travelEvidence(course: Course, state: LiveState, golfer: Golfer, mode: 
   let actualTravelMinutes = 0;
   let walkingFallbackMinutes = 0;
   let offPathTiles = 0;
-  const segments = golfer.segments.flatMap((segment): Segment[] => {
+  const routeCorner = (segment: Segment): CornerEvidence => {
     if (segment.kind !== "walk" || mode === "walk") {
       if (segment.kind === "walk") actualTravelMinutes += segment.dur;
-      return [{ ...segment, ...(segment.kind === "walk" ? { mobility: { requestedMode: mode, resolvedMode: "walk" as const, minutesSaved: 0, offPathTiles: 0 } } : {}) }];
+      return { source: segment, leg: null, duration: segment.dur, saved: 0, offpath: 0,
+        chunks: [{ ...segment, ...(segment.kind === "walk" ? { mobility: { requestedMode: mode, resolvedMode: "walk" as const, minutesSaved: 0, offPathTiles: 0 } } : {}) }] };
     }
     const courseId = golfer.courseId ?? course.activeCourseId ?? "course-primary";
     const leg = planTimedMobilityLeg({
@@ -122,7 +216,8 @@ function travelEvidence(course: Course, state: LiveState, golfer: Golfer, mode: 
     if (!leg || leg.cells.length < 2) {
       actualTravelMinutes += segment.dur;
       walkingFallbackMinutes += segment.dur;
-      return [{ ...segment, mobility: { requestedMode: mode, resolvedMode: "walk", minutesSaved: 0, offPathTiles: 0 } }];
+      return { source: segment, leg, duration: segment.dur, saved: 0, offpath: 0,
+        chunks: [{ ...segment, mobility: { requestedMode: mode, resolvedMode: "walk", minutesSaved: 0, offPathTiles: 0 } }] };
     }
     const resolved = leg.resolvedMode;
     const duration = Math.max(.01, leg.minutes);
@@ -144,7 +239,12 @@ function travelEvidence(course: Course, state: LiveState, golfer: Golfer, mode: 
     }
     const totalDistance = distances.reduce((sum, distance) => sum + distance, 0);
     cursor = segment.from;
-    return waypoints.map((point, index) => {
+    // Keep only this original corner's descriptor on its resulting chunks,
+    // so a later in-memory reapply routes the logical leg once again.
+    const plan = { from: { ...segment.from }, to: { ...segment.to },
+      segments: [{ kind: "walk" as const, from: { ...segment.from }, to: { ...segment.to },
+        holeIndex: segment.holeIndex, holeId: segment.holeId, dur: duration }] };
+    const chunks = waypoints.map((point, index) => {
       const next: Segment = {
         ...segment,
         from: { ...cursor },
@@ -158,9 +258,27 @@ function travelEvidence(course: Course, state: LiveState, golfer: Golfer, mode: 
         },
       };
       cursor = point;
-      return next;
+      return attachOriginalWalkPlan(next, plan);
     });
-  });
+    return { source: segment, leg, duration, saved: segment.dur - duration, offpath: legOffPath, chunks };
+  };
+  const groups = mode === "walk" ? golfer.segments.map(segment => ({ sources: [segment], complete: false } as MobilitySourceGroup)) : mobilitySourceGroups(golfer.segments);
+  const segments: Segment[] = [];
+  for (const group of groups) {
+    // Requests and scalar additions keep the exact original source order.
+    const records = group.sources.map(routeCorner);
+    if (!group.complete) { segments.push(...records.flatMap(record => record.chunks)); continue; }
+    const chunks = composeCornerPresentations(records, course, conditions, geometryVersion, mode);
+    // Whole post-routing provenance retains old corner endpoints and budgets,
+    // never sampled G points, route cells, closures, or a retained graph.
+    const plan = { from: { ...group.from! }, to: { ...group.to! }, segments: records.map(record => ({
+      kind: "walk" as const, from: { ...record.source.from }, to: { ...record.source.to },
+      holeIndex: record.source.holeIndex, holeId: record.source.holeId, dur: record.duration,
+      mobility: { requestedMode: mode, resolvedMode: record.leg && record.leg.cells.length >= 2 ? record.leg.resolvedMode : "walk" as const,
+        minutesSaved: record.saved, offPathTiles: record.offpath },
+    })) };
+    segments.push(...chunks.map(chunk => attachOriginalWalkPlan(chunk, plan)));
+  }
   return { segments, actualTravelMinutes, walkingFallbackMinutes, offPathTiles };
 }
 

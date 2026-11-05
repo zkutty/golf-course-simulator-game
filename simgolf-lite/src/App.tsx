@@ -1,3 +1,4 @@
+import { resetPathPreviewTelemetry } from "./game/render/pathPreviewTelemetry";
 import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState, useCallback, type CSSProperties } from "react";
 import { formatCurrency } from "./i18n/format";
 import { useI18n } from "./i18n/useI18n";
@@ -5,7 +6,6 @@ import { perfProfiler } from "./utils/performanceProfiler";
 import { lastItem } from "./utils/array";
 import "./ui/cozyLayout.css";
 import "./App.css";
-import { PixiStage } from "./ui/PixiStage";
 import { usePlayerShotPlayback } from "./ui/playerPro/usePlayerShotPlayback";
 import { createPlayerShotPreviewReceiver } from "./ui/playerPro/shotPreviewReceiver";
 import { isValidRetainedShotMotionV1 } from "./game/rules/shotMotion";
@@ -31,8 +31,9 @@ import {
   saveToSlot,
 } from "./utils/saveStore";
 import { computeElevationChangeCost, computeTerrainChangeCost } from "./game/models/terrainEconomics";
-import { previewTerrainStroke, type TerrainStrokePreview } from "./game/models/terrainStroke";
-import { corridorFeature, rasterizeSurfaceFeatureDetailed, regionFeature, simplifySurfacePoints } from "./game/models/surfaceIntent";
+import { previewTerrainStroke } from "./game/models/terrainStroke";
+import { appendSurfaceFeature, corridorFeature, rasterizeSurfaceFeatureDetailed, regionFeature, simplifySurfacePoints } from "./game/models/surfaceIntent";
+import type { SurfaceEditorTerrainPreview } from "./game/render/renderSnapshot";
 import { prepareSurfaceFeatureEdit } from "./game/models/surfaceFeatureEdit";
 import {
   AdaptiveGraphicsQualityController,
@@ -383,7 +384,7 @@ import { CAMPAIGN_CHAPTER_BY_ID } from "./game/campaign/content";
 import { CampaignSceneModal } from "./ui/CampaignSceneModal";
 import { CampaignPanel } from "./ui/CampaignPanel";
 import { WorkspaceNav, type WorkspaceActionId, type WorkspaceId } from "./ui/WorkspaceNav";
-import { DeferredSurface } from "./app/DeferredSurface";
+import { DeferredSurface, DeferredSurfaceLoading } from "./app/DeferredSurface";
 import { DeferredHudSurface } from "./app/DeferredHudSurface";
 import { applyManualOperationsCommand } from "./game/operations/commands";
 import { ContentLibraryPanel } from "./ui/ContentLibraryPanel";
@@ -396,6 +397,8 @@ import {
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
 type ViewMode = "global" | "hole";
+
+const PixiStage = lazy(() => import("./ui/PixiStage").then(({ PixiStage }) => ({ default: PixiStage })));
 
 // Vision is a media-heavy title-menu surface. Keep the core play path eager and
 // load this optional route only when the user explicitly opens it.
@@ -534,7 +537,13 @@ export default function App() {
     ]).has(action.type);
     if (editingLocked && physicalEdit) return;
     const next = gameSession.dispatch(action);
-    if (action.type === "NEW_GAME" || action.type === "LOAD_GAME") editorHistoryRef.current = emptyEditorEditHistory();
+    if (action.type === "NEW_GAME" || action.type === "LOAD_GAME") {
+      editorHistoryRef.current = emptyEditorEditHistory();
+      setPathWidthDraft(null);
+      setSelectedSurfaceFeatureId(null);
+      // Reset the controller selection even if the incoming course reuses IDs.
+      setTerrainTool("curve");
+    }
     else editorHistoryRef.current = recordEditorEdit(editorHistoryRef.current, previous, next, capitalRef.current, action);
     if (action.type !== "NEW_GAME" && action.type !== "LOAD_GAME" && !action.type.startsWith("SET_")) markDirty();
   }, [gameSession, markDirty]);
@@ -562,6 +571,8 @@ export default function App() {
   const [editorMode, setEditorMode] = useState<EditorMode>("PAINT");
   const [terrainTool, setTerrainTool] = useState<TerrainAuthoringTool>("curve");
   const [terrainBrushWidth, setTerrainBrushWidth] = useState(1);
+  const [selectedSurfaceFeatureId, setSelectedSurfaceFeatureId] = useState<string | null>(null);
+  const [pathWidthDraft, setPathWidthDraft] = useState<number | null>(null);
   const [activeHoleIndex, setActiveHoleIndex] = useState(0); // 0..8
   const [selectedTeeSet, setSelectedTeeSet] = useState<TeeSet>("member");
   const [wizardStep, setWizardStepState] = useState<WizardStep>("TEE");
@@ -609,6 +620,7 @@ export default function App() {
     terrain: Terrain = selected,
   ) => {
     setTerrainTool(tool);
+    setPathWidthDraft(null);
     setSelected(terrain);
     setSelectedPlantId(null);
     setSelectedDesignItemId(`terrain:${terrain}`);
@@ -665,6 +677,7 @@ export default function App() {
   }), [course.theme, obstacleType, selectedPlantId]);
 
   const undoTerrainEdit = useCallback(() => {
+    setPathWidthDraft(null);
     const current = gameSession.getState();
     const result = undoEditorEdit(editorHistoryRef.current, current, capital);
     if (!result) return;
@@ -684,6 +697,7 @@ export default function App() {
   }, [capital, gameSession, markDirty, t]);
 
   const redoTerrainEdit = useCallback(() => {
+    setPathWidthDraft(null);
     const current = gameSession.getState();
     const result = redoEditorEdit(editorHistoryRef.current, current, capital);
     if (!result) return;
@@ -2976,6 +2990,9 @@ export default function App() {
       return false;
     }
     recordBugAction({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
+    setPathWidthDraft(null);
+    setSelectedSurfaceFeatureId(null);
+    setTerrainTool("curve");
     editorHistoryRef.current = emptyEditorEditHistory();
     gameSession.restore(loaded);
     live.restoreSnapshot(loaded.live);
@@ -3752,7 +3769,7 @@ export default function App() {
         };
       },
       m35Metrics: m35TelemetrySnapshot,
-      resetM35Metrics: resetM35Telemetry,
+      resetM35Metrics: () => { resetM35Telemetry(); resetPathPreviewTelemetry(); },
       setPaintCash: (cash: number) => {
         gameSession.update((current) => ({ ...current, world: { ...current.world, cash } }));
       },
@@ -4823,9 +4840,10 @@ export default function App() {
     return { feature, coveragePoints };
   }, [course, selected, terrainBrushWidth, terrainTool]);
 
-  const getTerrainStrokePreview = useCallback((points: Point[]): TerrainStrokePreview => {
-    const { coveragePoints } = buildTerrainSurfaceFeature(points, openingPaintTargetIds ?? undefined);
-    return previewTerrainStroke(
+  const getTerrainStrokePreview = useCallback((points: Point[]): SurfaceEditorTerrainPreview => {
+    const startedAt = selected === "path" ? performance.now() : 0;
+    const { feature, coveragePoints } = buildTerrainSurfaceFeature(points, openingPaintTargetIds ?? undefined);
+    const preview = previewTerrainStroke(
       course,
       coveragePoints,
       selected,
@@ -4840,6 +4858,14 @@ export default function App() {
         waterPolicy: world.seasonal?.operations.waterPolicy,
       },
     );
+    if (selected !== "path") return preview;
+    const accepted = new Set(preview.acceptedTiles.map((point) => point.y * course.width + point.x));
+    const clipped = rasterizeSurfaceFeatureDetailed(feature, course.width, course.height, accepted);
+    const acceptedFeature: SurfaceFeature = { ...feature, coverage: clipped.tiles.map((point) => point.y * course.width + point.x), renderRings: clipped.rings };
+    const tiles = [...course.tiles]; for (const point of preview.acceptedTiles) tiles[point.y * course.width + point.x] = point.terrain;
+    const pathSource = { width: course.width, height: course.height, tiles, surfaceIntent: appendSurfaceFeature({ ...course, tiles }, acceptedFeature) };
+    return { ...preview, surfaceFeature: acceptedFeature, surfaceCommitAllowed: accepted.size > 0, pathAffectedCoverage: acceptedFeature.coverage,
+      pathSource, pathQuoteMs: performance.now() - startedAt };
   }, [
     buildTerrainSurfaceFeature,
     openingPaintTargetIds,
@@ -4958,9 +4984,9 @@ export default function App() {
     void audio.playSfx("sculpt");
   }, [audio, dispatch, fineGreenBrush, getFineGreenStrokePreview, t, world.cash, world.isBankrupt]);
 
-  const getSurfaceFeatureEditPreview = useCallback((feature: SurfaceFeature): TerrainStrokePreview | null => {
+  const getSurfaceFeatureEditPreview = useCallback((feature: SurfaceFeature): SurfaceEditorTerrainPreview | null => {
     const startedAt = performance.now();
-    const preview = prepareSurfaceFeatureEdit(
+    const prepared = prepareSurfaceFeatureEdit(
       course,
       feature,
       world.cash,
@@ -4973,9 +4999,15 @@ export default function App() {
         publishedForecast: world.seasonal?.forecast ?? [],
         waterPolicy: world.seasonal?.operations.waterPolicy,
       },
-    )?.preview ?? null;
-    recordM35Metric("surfacePreview", performance.now() - startedAt);
-    return preview;
+    );
+    if (feature.terrain !== "path") recordM35Metric("surfacePreview", performance.now() - startedAt);
+    if (!prepared) return null;
+    if (feature.terrain !== "path") return prepared.preview;
+    const originalCoverage = course.surfaceIntent?.features.find((current) => current.id === feature.id)?.coverage ?? [];
+    const pathAffectedCoverage = [...new Set([...originalCoverage, ...prepared.feature.coverage])].sort((a, b) => a - b);
+    const pathSource = { width: course.width, height: course.height, tiles: prepared.tiles, surfaceIntent: prepared.intent };
+    return { ...prepared.preview, surfaceFeature: prepared.feature, surfaceCommitAllowed: prepared.commitAllowed, pathAffectedCoverage,
+      pathSource, pathQuoteMs: performance.now() - startedAt };
   }, [course, world.cash, world.reputation, world.constraints?.protectedTrees, world.seasonal?.forecast, world.seasonal?.operations.waterPolicy, costMult, seasonalPresentation.climate.calendar.season, seasonalPresentation.weather]);
 
   const commitSurfaceFeatureEdit = useCallback((feature: SurfaceFeature) => {
@@ -5040,6 +5072,20 @@ export default function App() {
     seasonalPresentation.climate.calendar.season,
     seasonalPresentation.weather,
   ]);
+
+  // Width is persisted only in corridor.geometry.width. The pending toolbar
+  // choice is a transient editor draft and uses the normal atomic quote.
+  const selectedPathCorridor = useMemo(() => {
+    if (terrainTool !== "edit" || editorMode !== "PAINT") return null;
+    const feature = course.surfaceIntent?.features.find((current) => current.id === selectedSurfaceFeatureId);
+    return feature?.terrain === "path" && feature.geometry.kind === "corridor" ? feature : null;
+  }, [course.surfaceIntent, editorMode, selectedSurfaceFeatureId, terrainTool]);
+  const pathWidthCandidate = useMemo(() => {
+    if (!selectedPathCorridor || selectedPathCorridor.geometry.kind !== "corridor" || pathWidthDraft === null || pathWidthDraft === selectedPathCorridor.geometry.width) return null;
+    return { ...selectedPathCorridor, geometry: { ...selectedPathCorridor.geometry, width: pathWidthDraft } };
+  }, [pathWidthDraft, selectedPathCorridor]);
+  const pathWidthPreview = useMemo(() => pathWidthCandidate ? getSurfaceFeatureEditPreview(pathWidthCandidate) : null,
+    [getSurfaceFeatureEditPreview, pathWidthCandidate]);
 
   // Smart fairway painting: paint fairway along centerline with specified width in yards
   function smartPaintFairway(widthYards: number) {
@@ -6228,6 +6274,7 @@ export default function App() {
           {...biomeContextAttributes(contextualUiTheme, "course-frame")}
         >
           <div ref={canvasPaneRef} className="cc-course-pane" data-tutorial-target="course">
+            <Suspense fallback={<div style={{ width: "100%", height: "100%" }}><DeferredSurfaceLoading label={course.name} /></div>}>
             <PixiStage
                 course={course}
                 holes={course.holes}
@@ -6281,6 +6328,11 @@ export default function App() {
                 onCommitTerrainStroke={openingReadOnly ? undefined : commitTerrainStroke}
                 terrainTool={terrainTool}
                 onPreviewSurfaceFeatureEdit={getSurfaceFeatureEditPreview}
+                surfaceWidthPreview={pathWidthPreview}
+                onSurfaceFeatureSelectionChange={(featureId, dragging) => {
+                  if (dragging || featureId !== selectedSurfaceFeatureId) setPathWidthDraft(null);
+                  setSelectedSurfaceFeatureId(featureId);
+                }}
                 onCommitSurfaceFeatureEdit={openingReadOnly ? undefined : commitSurfaceFeatureEdit}
                 onPreviewFineGreenStroke={getFineGreenStrokePreview}
                 onCommitFineGreenStroke={openingReadOnly ? undefined : commitFineGreenStroke}
@@ -6322,6 +6374,7 @@ export default function App() {
                 cameraJump={minimapJump}
                 referenceCamera={m52ReferenceCamera}
             />
+            </Suspense>
             {!activeTutorial && (
               <WorkspaceNav
                 workspace={workspace}
@@ -6368,6 +6421,15 @@ export default function App() {
                   onTerrainTool={(tool) => activateTerrainEditing(tool)}
                   terrainBrushWidth={terrainBrushWidth}
                   onTerrainBrushWidth={setTerrainBrushWidth}
+                  pathEditWidth={selectedPathCorridor?.geometry.kind === "corridor" ? selectedPathCorridor.geometry.width : null}
+                  pathWidthDraft={pathWidthCandidate ? pathWidthDraft : null}
+                  pathWidthCanApply={!openingReadOnly && !world.isBankrupt && pathWidthPreview?.affordable === true && pathWidthPreview.surfaceCommitAllowed === true}
+                  onPathWidthPreview={setPathWidthDraft}
+                  onPathWidthApply={() => {
+                    if (!pathWidthCandidate || !pathWidthPreview?.affordable || !pathWidthPreview.surfaceCommitAllowed || openingReadOnly) return;
+                    commitSurfaceFeatureEdit(pathWidthCandidate); setPathWidthDraft(null);
+                  }}
+                  onPathWidthCancel={() => setPathWidthDraft(null)}
                   onUndo={undoTerrainEdit}
                   onRedo={redoTerrainEdit}
                   collapseSignal={designDockCollapseSignal}

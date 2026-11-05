@@ -22,7 +22,7 @@ import { TERRAIN_KINDS } from "../game/render/terrainMaterials";
 import { seasonalVisualState } from "../game/presentation/seasonalVisualState";
 import type { Decoration } from "../game/models/types";
 import { translate } from "../i18n/core";
-import { DesignDock } from "./DesignDock";
+import { DesignDock, PathWidthControl } from "./DesignDock";
 import {
   buildDesignCatalog,
   designCatalogCoverage,
@@ -319,5 +319,20 @@ describe("registry-driven Design dock catalog", () => {
     expect(html).toContain("Weekly care");
     expect(html).toContain("Current-season risk");
     expect(html).not.toContain("Terrain brush width");
+  });
+});
+
+describe("path width toolbar", () => {
+  it("offers the shared fractional presets without exposing a second saved width", () => {
+    const html = renderToStaticMarkup(<PathWidthControl width={1.5} onChange={() => undefined} />);
+    expect(html).toContain('aria-label="Path width"'); expect(html).toContain('value="1"'); expect(html).toContain('value="1.5" selected=""'); expect(html).toContain('value="2.5"');
+    expect(html).toContain("Walking"); expect(html).toContain("Wide cart"); expect(html).not.toContain("Apply width");
+  });
+  it("preserves legacy custom values and gates a pending edit by its atomic quote", () => {
+    const custom = renderToStaticMarkup(<PathWidthControl width={2} onChange={() => undefined} />); expect(custom).toContain('value="2" selected=""'); expect(custom).toContain("Custom width");
+    const pending = renderToStaticMarkup(<PathWidthControl width={2.5} pending canApply={false} onChange={() => undefined} />);
+    expect(pending).toContain('data-testid="design-path-width-apply" disabled=""'); expect(pending).toContain("Cancel width");
+    const affordable = renderToStaticMarkup(<PathWidthControl width={2.5} pending canApply onChange={() => undefined} />);
+    expect(affordable).not.toContain('data-testid="design-path-width-apply" disabled=""');
   });
 });
