@@ -4,7 +4,7 @@ import type { ContentLibraryEntry, ContentPackageKind } from "../game/contentPac
 import { holeTemplateLibrarySummary, type HoleTemplateLibrarySummary } from "./contentLibraryProvenance";
 import { effectiveHoleTemplateFidelity } from "../game/holeTemplates/provenancePolicy";
 import { createCoursePackage } from "../game/contentPackages/packageFormat";
-import { captureHoleTemplate, createHoleTemplatePackage } from "../game/contentPackages/holeTemplatePackage";
+import { captureHoleTemplateWithWarnings, HoleTemplateCaptureError, createHoleTemplatePackage } from "../game/contentPackages/holeTemplatePackage";
 import { buildPackageTestRun } from "../game/scenarioAuthoring/authoring";
 import {
   deleteContentPackage,
@@ -122,21 +122,26 @@ export function ContentLibraryPanelContent(props: ContentLibraryPanelProps) {
     if (!captureRightsAttested) throw new Error(t("content.holeRightsRequired"));
     const id = `author-${author.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 72) || "local"}`;
     const previous = await readAuthoredHoleTemplatePackage(id, title.trim(), platformServices);
-    const template = captureHoleTemplate(props.course, hole, {
+    let capture: ReturnType<typeof captureHoleTemplateWithWarnings>;
+    try { capture = captureHoleTemplateWithWarnings(props.course, hole, {
       id: previous?.payload.template.id ?? `hole-${hole.id}`,
       title,
       description,
       yardsPerTile: 5,
       provenance: { sourceKind: "manual", sourceLabel: t("content.playerBuiltSource"), importedAt: new Date().toISOString(), rightsAttested: captureRightsAttested, redistribution: "private_only", sourceAssetRetained: false },
       confidence: { scale: 1, terrain: 1, elevation: 1, notes: [t("content.playerBuiltCaptureNote")] },
-    });
+    }); } catch (error) {
+      if (error instanceof HoleTemplateCaptureError) throw new Error(t(error.code === "partial_path" ? "content.holePartialPath" : "content.holeInvalidSurfaces"));
+      throw error;
+    }
+    const template = capture.template;
     const value = await createHoleTemplatePackage({
       template, title, description, author: { id, displayName: author }, requiredGameVersion: __APP_VERSION__, theme: props.course.theme ?? "parkland",
       ...(previous ? { contentId: previous.manifest.contentId, revision: previous.manifest.revision + 1, createdAt: new Date(previous.manifest.createdAt) } : {}),
     });
     const saved = await saveAuthoredHoleTemplatePackage(value);
     if (!saved.entry) throw new Error(saved.validation.status === "corrupt" || saved.validation.status === "unsupported" ? saved.validation.errors.join(" ") : t("content.failed"));
-    return t("content.holeSaved", { title: value.manifest.title });
+    return [t("content.holeSaved", { title: value.manifest.title }), ...capture.warnings.map(() => t("content.holePartialCurvesWarning"))].join(" ");
   });
 
   const testPlay = (entry: ContentLibraryEntry) => run(async () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sampleCorridor } from "../models/surfaceIntent";
 import { terrainCostMult } from "../balance/difficulty";
 import { createEstate } from "../estate/estate";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
@@ -22,6 +23,7 @@ import {
   canonicalHoleTemplateJson,
   sha256Hex,
   validateHoleTemplateV1,
+  validateHoleTemplateSurfaceIntent,
 } from "./serialization";
 import type {
   HoleTemplatePlacement,
@@ -327,5 +329,79 @@ describe("pure hole template placement planner", () => {
       targetVersions: VERSIONS,
     });
     expect(invalid).toMatchObject({ status: "rejected", blockers: [expect.objectContaining({ code: "invalid_placement", path: "placement.baseElevation" })] });
+  });
+});
+
+
+describe("TEMPLATE-C strict portable authored surfaces", () => {
+  const surfaces = () => ({ version: 1 as const, features: [{ id: "surface-1", terrain: "path" as const, order: 7,
+    geometry: { kind: "corridor" as const, knots: [{ x: 1.1, y: 1.2 }, { x: 1.3, y: 1.2 }], width: 1.75,
+      tangents: [{ in: { x: 0, y: 0 }, out: { x: 4, y: 3 } }, { in: { x: 0, y: 3 }, out: { x: 4, y: 0 } }] }, coverage: [5] }] });
+  const raw = () => JSON.parse(JSON.stringify(template({ surfaceIntent: surfaces() })));
+  it("preserves optional field absence and canonicalizes feature order without moving authored nodes", () => {
+    const source = raw(); source.surfaceIntent.features.push({ ...structuredClone(source.surfaceIntent.features[0]), id: "surface-2", order: 2 });
+    const result = validateHoleTemplateV1(source); expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected valid metadata");
+    expect(result.value.surfaceIntent!.features.map(f => f.id)).toEqual(["surface-2", "surface-1"]);
+    expect(result.value.surfaceIntent!.features[1].geometry).toEqual(source.surfaceIntent.features[0].geometry);
+    expect(canonicalHoleTemplateJson(result.value)).toBe(canonicalHoleTemplateJson(source));
+    expect(validateHoleTemplateV1(template())).not.toHaveProperty("value.surfaceIntent");
+  });
+  const malformed: Array<[string, (value: ReturnType<typeof JSON.parse>) => void]> = [
+    ["unknown extension field", v => { v.surfaceIntent.graph = {}; }],
+    ["unsupported extension version", v => { v.surfaceIntent.version = 2; }],
+    ["null extension", v => { v.surfaceIntent = null; }],
+    ["empty extension", v => { v.surfaceIntent.features = []; }],
+    ["excess features", v => { v.surfaceIntent.features = Array(513).fill(v.surfaceIntent.features[0]); }],
+    ["duplicate identities", v => { v.surfaceIntent.features.push(structuredClone(v.surfaceIntent.features[0])); }],
+    ["invalid identity", v => { v.surfaceIntent.features[0].id = "bad/id"; }],
+    ["unsafe order", v => { v.surfaceIntent.features[0].order = Number.MAX_SAFE_INTEGER + 1; }],
+    ["unknown terrain", v => { v.surfaceIntent.features[0].terrain = "lava"; }],
+    ["graph on feature", v => { v.surfaceIntent.features[0].indices = [0, 1, 2]; }],
+    ["unknown geometry", v => { v.surfaceIntent.features[0].geometry.kind = "mesh"; }],
+    ["unknown geometry field", v => { v.surfaceIntent.features[0].geometry.secret = 1; }],
+    ["nonfinite knot", v => { v.surfaceIntent.features[0].geometry.knots[0].x = NaN; }],
+    ["outside knot", v => { v.surfaceIntent.features[0].geometry.knots[0].x = -.01; }],
+    ["excess nodes", v => { v.surfaceIntent.features[0].geometry.knots = Array(257).fill({ x: 1, y: 1 }); }],
+    ["missing node", v => { v.surfaceIntent.features[0].geometry.knots = []; }],
+    ["width too small", v => { v.surfaceIntent.features[0].geometry.width = .249; }],
+    ["width too large", v => { v.surfaceIntent.features[0].geometry.width = 24.001; }],
+    ["infinite width", v => { v.surfaceIntent.features[0].geometry.width = Infinity; }],
+    ["handle count", v => { v.surfaceIntent.features[0].geometry.tangents.pop(); }],
+    ["nonfinite distant handle", v => { v.surfaceIntent.features[0].geometry.tangents[0].out.x = Infinity; }],
+    ["outside distant handle", v => { v.surfaceIntent.features[0].geometry.tangents[0].out.x = 4.01; }],
+    ["handle extra field", v => { v.surfaceIntent.features[0].geometry.tangents[0].key = "bad"; }],
+    ["duplicate coverage", v => { v.surfaceIntent.features[0].coverage.push(5); }],
+    ["noninteger coverage", v => { v.surfaceIntent.features[0].coverage = [5.5]; }],
+    ["outside coverage", v => { v.surfaceIntent.features[0].coverage = [12]; }],
+    ["missing explicit carrier cell", v => { v.surfaceIntent.features[0].coverage = [0]; }],
+    ["empty mask", v => { v.surfaceIntent.features[0].renderRings = []; }],
+    ["excess rings", v => { v.surfaceIntent.features[0].renderRings = Array(33).fill([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }]); }],
+    ["short mask ring", v => { v.surfaceIntent.features[0].renderRings = [[{ x: 1, y: 1 }]]; }],
+    ["outside mask", v => { v.surfaceIntent.features[0].renderRings = [[{ x: 5, y: 1 }, { x: 1, y: 0 }, { x: 1, y: 1 }]]; }],
+    ["partial region", v => { v.surfaceIntent.features[0].geometry = { kind: "region", ring: [{ x: 1, y: 1 }, { x: 2, y: 2 }] }; }],
+    ["cyclic point", v => { const knots = v.surfaceIntent.features[0].geometry.knots; knots[0] = knots; }],
+  ];
+  it.each(malformed)("rejects %s without permissive repair", (_name, mutate) => {
+    const value = raw(); mutate(value); expect(validateHoleTemplateV1(value).ok).toBe(false);
+  });
+  it("matches the actual chord loop on short chords with distant handles and keeps custom width", () => {
+    const value = raw(), feature = value.surfaceIntent.features[0], result = validateHoleTemplateV1(value);
+    expect(result.ok).toBe(true); if (!result.ok) throw new Error("Expected bounded distant handles");
+    const sampled = sampleCorridor(feature.geometry.knots, .2, feature.geometry.tangents);
+    expect(sampled.length).toBe(Math.max(1, Math.ceil(Math.hypot(.2, 0) / .2)) + 1);
+    expect(result.value.surfaceIntent!.features[0].geometry).toEqual(feature.geometry);
+  });
+  it("enforces aggregate budgets before expensive arrays or model sampling", () => {
+    const feature = surfaces().features[0];
+    const check = (features: unknown[], width = 256, height = 256, cells?: Set<number>) => validateHoleTemplateSurfaceIntent({ version: 1, features }, width, height, cells);
+    const nodes = Array.from({ length: 256 }, () => ({ x: 1, y: 1 }));
+    expect(check(Array.from({ length: 33 }, (_, i) => ({ ...feature, id: `surface-${i}`, geometry: { kind: "corridor", knots: nodes, width: 1 } })))).toMatchObject({ ok: false, issues: expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining("nodes") })]) });
+    const coverage = Array.from({ length: 65_536 }, (_, i) => i);
+    expect(check(Array.from({ length: 5 }, (_, i) => ({ ...feature, id: `surface-${i}`, coverage })))).toMatchObject({ ok: false, issues: expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining("coverage") })]) });
+    const ring = Array.from({ length: 256 }, () => ({ x: 1, y: 1 }));
+    expect(check(Array.from({ length: 5 }, (_, i) => ({ ...feature, id: `surface-${i}`, renderRings: Array(32).fill(ring) })))).toMatchObject({ ok: false, issues: expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining("mask") })]) });
+    expect(check(Array.from({ length: 26 }, (_, i) => ({ ...feature, id: `surface-${i}`, geometry: { kind: "corridor", knots: [{ x: 0, y: 0 }, { x: 256, y: 0 }], width: 1 } })))).toMatchObject({ ok: false, issues: expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining("sampling") })]) });
+    expect(check([feature], 257, 1, new Set([5])).ok).toBe(false);
   });
 });

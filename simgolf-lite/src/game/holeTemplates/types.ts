@@ -6,6 +6,7 @@ import type {
   Point,
   TeeSet,
   Terrain,
+  SurfaceFeature,
 } from "../models/types";
 
 export const HOLE_TEMPLATE_VERSION = 1 as const;
@@ -76,6 +77,13 @@ export interface HoleTemplateHoleV1 {
 export type HoleTemplateObstacleV1 = Omit<Obstacle, "origin">;
 export type HoleTemplateDecorationV1 = Omit<Decoration, "origin">;
 
+/** Portable accepted authoring metadata; allocation state and derived graphs
+ * belong to the target course and are never carried in a template. */
+export interface HoleTemplateSurfaceIntentV1 {
+  version: 1;
+  features: SurfaceFeature[];
+}
+
 /** Portable sparse, local-coordinate hole blueprint. */
 export interface HoleTemplateV1 {
   format: typeof HOLE_TEMPLATE_FORMAT;
@@ -95,6 +103,8 @@ export interface HoleTemplateV1 {
   /** Historical V1 packages omit this field and are safely treated as Sketch.
    * Keep it omitted during normalization to preserve their signed checksum. */
   fidelity?: HoleTemplateFidelityV1;
+  /** Keep absent historical fields absent to preserve canonical checksums. */
+  surfaceIntent?: HoleTemplateSurfaceIntentV1;
 }
 
 export interface HoleTemplateValidationIssue {
