@@ -870,6 +870,7 @@ body:has([data-testid="tutorial-overlay"] [data-opening-treatment="true"]) .cc-d
   color: #fff3c2;
   font-weight: 900;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .cc-minimap-toggle {
@@ -880,6 +881,23 @@ body:has([data-testid="tutorial-overlay"] [data-opening-treatment="true"]) .cc-d
   width: 38px;
   height: 34px;
   font-size: 20px;
+}
+
+/* Keep a live, usable course overview beside the 226px phone design dock.
+   It stays in normal pane stacking and remains visible in either dock state. */
+@media (max-width: 560px) {
+  .cc-minimap,
+  .cc-minimap-toggle {
+    top: 68px;
+    bottom: auto;
+  }
+
+  .cc-minimap {
+    box-sizing: border-box;
+    right: 14px;
+    width: 96px;
+    height: 96px;
+  }
 }
 
 .cc-minimap-compass {

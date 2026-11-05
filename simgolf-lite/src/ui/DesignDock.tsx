@@ -300,7 +300,7 @@ export function PathWidthControl(props: PathWidthControlProps) {
   const t = useContext(I18nContext)?.t ?? translateCurrent;
   const custom = !PATH_WIDTH_PRESETS.some((preset) => preset.envelopeWidth === props.width);
   return <>
-    <label className="cc-design-toolbar__width" style={{ gridTemplateColumns: "auto minmax(90px, 1fr)" }}>
+    <label className="cc-design-toolbar__width cc-design-toolbar__width--path">
       <span>{t("designDock.pathWidth")}</span>
       <select aria-label={t("designDock.pathWidth")} data-testid="design-path-width" value={props.width}
         disabled={props.disabled} onChange={(event) => props.onChange(Number(event.target.value))}>

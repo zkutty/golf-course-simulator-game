@@ -92,6 +92,15 @@
   margin-left: auto;
 }
 
+.cc-design-toolbar__width--path {
+  grid-template-columns: auto minmax(90px, 1fr);
+}
+
+.cc-design-toolbar__width--path select {
+  min-width: 0;
+  width: 100%;
+}
+
 .cc-design-toolbar__width input {
   min-width: 58px;
   accent-color: #8bc573;
@@ -395,9 +404,7 @@
     width: max-content;
   }
 
-  .cc-course-pane:has(.cc-design-dock[data-collapsed="false"]) .cc-live-controls,
-  .cc-course-pane:has(.cc-design-dock[data-collapsed="false"]) .cc-minimap,
-  .cc-course-pane:has(.cc-design-dock[data-collapsed="false"]) .cc-minimap-toggle {
+  .cc-course-pane:has(.cc-design-dock[data-collapsed="false"]) .cc-live-controls {
     visibility: hidden;
     pointer-events: none;
   }
@@ -432,7 +439,24 @@
 
   .cc-design-toolbar__width {
     order: 4;
+    flex: 1 0 100%;
+    box-sizing: border-box;
     width: 100%;
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .cc-design-toolbar__width--path {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  }
+
+  .cc-design-toolbar__history {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .cc-design-toolbar__history button {
+    flex: 1 1 auto;
   }
 
   .cc-design-dock__body {
@@ -494,6 +518,10 @@
   .cc-design-toolbar__tools button {
     padding-inline: 4px;
     font-size: .62rem;
+  }
+
+  .cc-design-toolbar__width--path {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   }
 }
 
