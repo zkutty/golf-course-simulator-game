@@ -364,7 +364,26 @@ interface HoleScoreCacheEntry {
   elevationDependencies: Map<number, number>;
   elevationToken: object | null;
   result: HoleScore;
+  borrowProof?: PublicBorrowProof;
 }
+
+type DataSnapshot = { key: PropertyKey; descriptor: PropertyDescriptor }[];
+type HoleInputSnapshot = { data: DataSnapshot; tee: DataSnapshot | null; green: DataSnapshot | null };
+type ObstacleInputSnapshot = { value: Obstacle; data: DataSnapshot }[];
+type PublicScoreContext = { complete: boolean; obstacles: ObstacleInputSnapshot };
+type PristineScore = { score: HoleScore; tee: Point | null; green: Point | null };
+type PublicBorrowProof = {
+  context: PublicScoreContext;
+  hole: HoleInputSnapshot;
+  pristine: PristineScore;
+  tiles: Course["tiles"];
+  elevations: Course["elevations"];
+};
+
+const MAX_BORROW_HOLES = 36;
+const MAX_BORROW_OBSTACLES = 900;
+const MAX_BORROW_OBJECTS = 512;
+const MAX_BORROW_PROPERTIES = 4096;
 
 let holeScoreCache = new WeakMap<Hole, HoleScoreCacheEntry>();
 let holeScoreCacheHits = 0;
@@ -422,6 +441,143 @@ function dependenciesMatch<T>(dependencies: Map<number, T>, values: T[]): boolea
   return true;
 }
 
+// The borrow proof is optional. Inspect descriptors without invoking an input
+// getter, and decline unusual data rather than changing public scoring.
+function dataSnapshot(value: unknown, maxKeys: number, scalarsOnly = false): DataSnapshot | undefined {
+  if (value === null || typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype) return;
+  const keys = Reflect.ownKeys(value);
+  if (keys.length > maxKeys) return;
+  const result: DataSnapshot = [];
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !("value" in descriptor)) return;
+    const item = descriptor.value;
+    if (scalarsOnly && (item !== null && typeof item === "object" || typeof item === "function")) return;
+    if (typeof item === "number" && !Number.isFinite(item)) return;
+    result.push({ key, descriptor });
+  }
+  return result;
+}
+
+function sameData(a: DataSnapshot, b: DataSnapshot): boolean {
+  return a.length === b.length && a.every(({ key, descriptor: x }, index) => {
+    const { key: otherKey, descriptor: y } = b[index];
+    return key === otherKey && x.enumerable === y.enumerable && x.configurable === y.configurable
+      && x.writable === y.writable && Object.is(x.value, y.value);
+  });
+}
+
+function pointSnapshot(point: Point | null): DataSnapshot | null | undefined {
+  if (point === null) return null;
+  const snapshot = dataSnapshot(point, 8, true);
+  if (!snapshot) return;
+  const x = snapshot.find((item) => item.key === "x")?.descriptor.value;
+  const y = snapshot.find((item) => item.key === "y")?.descriptor.value;
+  if (typeof x !== "number" || typeof y !== "number" || !Number.isInteger(x) || !Number.isInteger(y)
+    || Object.is(x, -0) || Object.is(y, -0)) return;
+  return snapshot;
+}
+
+function holeInputSnapshot(hole: Hole): HoleInputSnapshot | undefined {
+  const data = dataSnapshot(hole, 32);
+  if (!data || (hole.parMode !== "AUTO" && hole.parMode !== "MANUAL")
+    || hole.parManual !== undefined && (!Number.isInteger(hole.parManual) || hole.parManual < 3 || hole.parManual > 5)) return;
+  const tee = pointSnapshot(hole.tee);
+  const green = pointSnapshot(hole.green);
+  if (tee === undefined || green === undefined) return;
+  return { data, tee, green };
+}
+
+function sameHoleInput(a: HoleInputSnapshot, b: HoleInputSnapshot): boolean {
+  return sameData(a.data, b.data)
+    && (a.tee === null || b.tee === null ? a.tee === b.tee : sameData(a.tee, b.tee))
+    && (a.green === null || b.green === null ? a.green === b.green : sameData(a.green, b.green));
+}
+
+function obstacleInputSnapshot(obstacles: Obstacle[]): ObstacleInputSnapshot | undefined {
+  if (obstacles.length > MAX_BORROW_OBSTACLES || Object.getPrototypeOf(obstacles) !== Array.prototype
+    || Reflect.ownKeys(obstacles).length !== obstacles.length + 1) return;
+  const result: ObstacleInputSnapshot = [];
+  for (let index = 0; index < obstacles.length; index++) {
+    const item = Object.getOwnPropertyDescriptor(obstacles, String(index));
+    if (!item || !("value" in item)) return;
+    const data = dataSnapshot(item.value, 8, true);
+    if (!data || typeof item.value.x !== "number" || typeof item.value.y !== "number"
+      || !Number.isFinite(item.value.x) || !Number.isFinite(item.value.y)
+      || typeof item.value.type !== "string") return;
+    result.push({ value: item.value, data });
+  }
+  return result;
+}
+
+function sameObstacleInputs(a: ObstacleInputSnapshot, b: ObstacleInputSnapshot): boolean {
+  return a.length === b.length && a.every((item, index) => item.value === b[index].value && sameData(item.data, b[index].data));
+}
+
+// Clone the internally produced score, preserving its point alias graph and
+// frozen slope descriptors. Replacements bind input aliases to the private
+// projection only in the returned private copy.
+function cloneScoreGraph<T>(value: T, replacements = new Map<object, object>()): T | undefined {
+  const seen = new Map<object, object>(replacements);
+  let objects = 0;
+  let properties = 0;
+  const clone = (item: unknown): unknown => {
+    if (item === null || typeof item !== "object") {
+      if (typeof item === "function") throw new Error("unsupported score value");
+      return item;
+    }
+    const prior = seen.get(item);
+    if (prior) return prior;
+    const isArray = Array.isArray(item);
+    if (Object.getPrototypeOf(item) !== (isArray ? Array.prototype : Object.prototype)
+      || ++objects > MAX_BORROW_OBJECTS) throw new Error("unsupported score object");
+    const target: object = isArray ? [] : {};
+    seen.set(item, target);
+    const keys = Reflect.ownKeys(item);
+    if ((properties += keys.length) > MAX_BORROW_PROPERTIES) throw new Error("oversize score");
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(item, key);
+      if (!descriptor || !("value" in descriptor)) throw new Error("score accessor");
+      Object.defineProperty(target, key, { ...descriptor, value: clone(descriptor.value) });
+    }
+    if (Object.isFrozen(item)) Object.freeze(target);
+    else if (Object.isSealed(item)) Object.seal(target);
+    else if (!Object.isExtensible(item)) Object.preventExtensions(target);
+    return target;
+  };
+  try { return clone(value) as T; }
+  catch { return; }
+}
+
+function pristineScore(result: HoleScore, hole: Hole): PristineScore | undefined {
+  const tee = hole.tee ? cloneScoreGraph(hole.tee) : null;
+  const green = hole.green === hole.tee ? tee : hole.green ? cloneScoreGraph(hole.green) : null;
+  if (tee === undefined || green === undefined) return;
+  const aliases = new Map<object, object>();
+  if (hole.tee && tee) aliases.set(hole.tee, tee);
+  if (hole.green && green) aliases.set(hole.green, green);
+  const score = cloneScoreGraph(result, aliases);
+  return score && { score, tee, green };
+}
+
+function privateScoreCopy(proof: PublicBorrowProof, projectedHole: Hole): HoleScore | undefined {
+  const aliases = new Map<object, object>();
+  if (proof.pristine.tee && projectedHole.tee) aliases.set(proof.pristine.tee, projectedHole.tee);
+  if (proof.pristine.green && projectedHole.green) aliases.set(proof.pristine.green, projectedHole.green);
+  return cloneScoreGraph(proof.pristine.score, aliases);
+}
+
+function cachedHoleMatches(cached: HoleScoreCacheEntry | undefined, course: Course, holeIndex: number, searchDomain: ShotSearchDomain, elevations: number[], elevationToken: object | null): cached is HoleScoreCacheEntry {
+  return !!cached && sameShotSearchDomain(cached.searchDomain, searchDomain)
+    && cached.elevationToken === elevationToken
+    && cached.width === course.width && cached.height === course.height
+    && cached.yardsPerTile === (course.yardsPerTile ?? 10) && cached.holeIndex === holeIndex
+    && (!cached.themeSensitive || cached.theme === course.theme)
+    && cached.obstacles === course.obstacles
+    && dependenciesMatch(cached.tileDependencies, course.tiles)
+    && dependenciesMatch(cached.elevationDependencies, elevations);
+}
+
 /**
  * Memoize each hole by the exact terrain/elevation cells its previous solve
  * read. A paint stroke only invalidates a hole when it changes an input that
@@ -436,28 +592,21 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number, prepare
   return scoreHoleWithPreparedDomain(course, hole, holeIndex, searchDomain, preparedDomain === undefined && searchDomain.eligible);
 }
 
-function scoreHoleWithPreparedDomain(course: Course, hole: Hole, holeIndex: number, searchDomain: ShotSearchDomain, readOwnArray: boolean): HoleScore {
+function scoreHoleWithPreparedDomain(course: Course, hole: Hole, holeIndex: number, searchDomain: ShotSearchDomain, readOwnArray: boolean, publicContext?: PublicScoreContext): HoleScore {
   const cached = holeScoreCache.get(hole);
   const elevations = course.elevations ?? [];
   const elevationToken = searchDomain.eligible ? elevationTokenFor(elevations) : null;
-  if (
-    cached &&
-    sameShotSearchDomain(cached.searchDomain, searchDomain) &&
-    cached.elevationToken === elevationToken &&
-    cached.width === course.width &&
-    cached.height === course.height &&
-    cached.yardsPerTile === (course.yardsPerTile ?? 10) &&
-    cached.holeIndex === holeIndex &&
-    (!cached.themeSensitive || cached.theme === course.theme) &&
-    cached.obstacles === course.obstacles &&
-    dependenciesMatch(cached.tileDependencies, course.tiles) &&
-    dependenciesMatch(cached.elevationDependencies, elevations)
-  ) {
+  if (cachedHoleMatches(cached, course, holeIndex, searchDomain, elevations, elevationToken)) {
     holeScoreCacheHits++;
     return cached.result;
   }
 
   holeScoreCacheMisses++;
+  let input: HoleInputSnapshot | undefined;
+  if (publicContext) {
+    try { input = holeInputSnapshot(hole); }
+    catch { /* Optional borrow proof must not change public scoring. */ }
+  }
   const tileDependencies = new Map<number, Terrain>();
   const elevationDependencies = new Map<number, number>();
   const trackedCourse: Course = {
@@ -468,6 +617,14 @@ function scoreHoleWithPreparedDomain(course: Course, hole: Hole, holeIndex: numb
       : {}),
   };
   const result = withShotSearchDomain(trackedCourse, searchDomain, () => scoreHoleUncached(trackedCourse, hole, holeIndex));
+  let borrowProof: PublicBorrowProof | undefined;
+  if (publicContext && input) {
+    try {
+      const current = holeInputSnapshot(hole);
+      const pristine = current && sameHoleInput(input, current) ? pristineScore(result, hole) : undefined;
+      if (pristine) borrowProof = { context: publicContext, hole: input, pristine, tiles: course.tiles, elevations: course.elevations };
+    } catch { /* Optional borrow proof must not change public scoring. */ }
+  }
   holeScoreCache.set(hole, {
     searchDomain,
     width: course.width,
@@ -484,6 +641,7 @@ function scoreHoleWithPreparedDomain(course: Course, hole: Hole, holeIndex: numb
     elevationDependencies,
     elevationToken,
     result,
+    borrowProof,
   });
   return result;
 }
@@ -517,6 +675,59 @@ export function scoreCourseHoles(course: Course): CourseHoleSummary {
   return result;
 }
 
+type PrivateBorrowPlan = {
+  source: Course;
+  sourceHoles: readonly Hole[];
+  checkedContexts: Map<PublicScoreContext, boolean>;
+  consumed: HoleScoreCacheEntry[];
+};
+
+function privateBorrowedHole(course: Course, hole: Hole, holeIndex: number, searchDomain: ShotSearchDomain, plan: PrivateBorrowPlan): HoleScore | undefined {
+  if (!searchDomain.eligible || plan.source.holes.length !== course.holes.length
+    || plan.source.tiles !== course.tiles || plan.source.elevations !== course.elevations
+    || plan.source.obstacles !== course.obstacles || plan.source.width !== course.width
+    || plan.source.height !== course.height || !Object.is(plan.source.yardsPerTile, course.yardsPerTile)
+    || plan.source.theme !== course.theme) return;
+  const original = plan.sourceHoles[holeIndex];
+  if (!original || original === hole) return;
+  const cached = holeScoreCache.get(original);
+  const proof = cached?.borrowProof;
+  const elevations = course.elevations ?? [];
+  const elevationToken = elevationTokenFor(elevations);
+  if (!proof?.context.complete || proof.tiles !== course.tiles || proof.elevations !== course.elevations
+    || !cachedHoleMatches(cached, course, holeIndex, searchDomain, elevations, elevationToken)) return;
+  let valid = plan.checkedContexts.get(proof.context);
+  if (valid === undefined) {
+    const now = obstacleInputSnapshot(course.obstacles);
+    valid = !!now && sameObstacleInputs(proof.context.obstacles, now);
+    plan.checkedContexts.set(proof.context, valid);
+  }
+  if (!valid) return;
+  const sourceInput = holeInputSnapshot(original);
+  const projectedInput = holeInputSnapshot(hole);
+  if (!sourceInput || !projectedInput || !sameHoleInput(proof.hole, sourceInput)
+    || !sameHoleInput(sourceInput, projectedInput)) return;
+  const score = privateScoreCopy(proof, hole);
+  if (!score) return;
+  // The independent score belongs to the projected hole; completed dependency
+  // maps may be shared because no solve mutates them after publication.
+  holeScoreCache.set(hole, { ...cached, result: score, borrowProof: undefined });
+  plan.consumed.push(cached);
+  holeScoreCacheHits++;
+  return score;
+}
+
+/** Internal private rating bridge. Public scoreCourseHoles retains its exact
+ * identity cache, result aliases, and fallback policy. */
+export function scoreCourseHolesForPrivateRating(source: Course, projected: Course, sourceHoles: readonly Hole[]): CourseHoleSummary {
+  const effectiveCourse = courseWithEffectiveSurfaces(projected);
+  const searchDomain = prepareShotSearchDomain(effectiveCourse);
+  const plan: PrivateBorrowPlan = { source, sourceHoles, checkedContexts: new Map(), consumed: [] };
+  const result = scoreCourseHolesUncached(effectiveCourse, searchDomain, plan);
+  for (const entry of plan.consumed) entry.borrowProof = undefined;
+  return result;
+}
+
 /** Score one inspector hole with the same effective terrain and whole-course
  * search-domain eligibility used by scoreCourseHoles. */
 export function scoreSelectedCourseHole(course: Course, holeIndex: number): HoleScore | undefined {
@@ -529,10 +740,31 @@ export function scoreSelectedCourseHole(course: Course, holeIndex: number): Hole
     : scoreHole(effectiveCourse, hole, holeIndex, searchDomain);
 }
 
-function scoreCourseHolesUncached(course: Course, searchDomain: ShotSearchDomain): CourseHoleSummary {
-  const holes = course.holes.map((h, i) => searchDomain.eligible
-    ? scoreHoleWithPreparedDomain(course, h, i, searchDomain, true)
-    : scoreHole(course, h, i, searchDomain));
+function scoreCourseHolesUncached(course: Course, searchDomain: ShotSearchDomain, privatePlan?: PrivateBorrowPlan): CourseHoleSummary {
+  let publicContext: PublicScoreContext | undefined;
+  if (!privatePlan && searchDomain.eligible && course.holes.length <= MAX_BORROW_HOLES) {
+    try {
+      const obstacles = obstacleInputSnapshot(course.obstacles);
+      if (obstacles) publicContext = { complete: false, obstacles };
+    } catch { /* Optional borrow proof must not change public scoring. */ }
+  }
+  const holes = course.holes.map((h, i) => {
+    if (!searchDomain.eligible) return scoreHole(course, h, i, searchDomain);
+    if (privatePlan) {
+      const existing = holeScoreCache.get(h);
+      const elevations = course.elevations ?? [];
+      const elevationToken = elevationTokenFor(elevations);
+      if (cachedHoleMatches(existing, course, i, searchDomain, elevations, elevationToken)) {
+        holeScoreCacheHits++;
+        return existing.result;
+      }
+      try {
+        const borrowed = privateBorrowedHole(course, h, i, searchDomain, privatePlan);
+        if (borrowed) return borrowed;
+      } catch { /* Unusual inputs retain the original private scoring path. */ }
+    }
+    return scoreHoleWithPreparedDomain(course, h, i, searchDomain, true, publicContext);
+  });
   const scored = holes.filter((h) => h.isComplete);
   const holeQualityAvg =
     scored.length === 0 ? 0 : scored.reduce((acc, h) => acc + h.overallHoleScore, 0) / scored.length;
@@ -559,7 +791,9 @@ function scoreCourseHolesUncached(course: Course, searchDomain: ShotSearchDomain
 
   const courseQuality = clamp(holeQualityAvg + globalBonus + 0.15 * (variety - 70), 0, 100);
 
-  return { holes, holeQualityAvg, variety, globalBonus, courseQuality };
+  const result = { holes, holeQualityAvg, variety, globalBonus, courseQuality };
+  if (publicContext) publicContext.complete = true;
+  return result;
 }
 
 function scoreObstaclesAgainstCorridor(obstacles: Obstacle[], corridorPts: Point[]) {

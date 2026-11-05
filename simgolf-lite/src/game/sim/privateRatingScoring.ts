@@ -1,5 +1,5 @@
 import type { Course, Hole } from "../models/types";
-import { scoreCourseHoles, type CourseHoleSummary } from "./holes";
+import { scoreCourseHoles, scoreCourseHolesForPrivateRating, type CourseHoleSummary } from "./holes";
 
 type DataSnapshot = { key: PropertyKey; descriptor: PropertyDescriptor }[];
 type Entry = {
@@ -114,14 +114,15 @@ function sameOwner(a: Owner, b: Owner): boolean {
 export function scorePrivateRatingSetup(
   source: Course,
   projected: Course,
-  score: (course: Course) => CourseHoleSummary = scoreCourseHoles,
+  score?: (course: Course) => CourseHoleSummary,
 ): CourseHoleSummary {
-  if (active) return score(projected);
+  const actualScore = score === undefined ? scoreCourseHoles : score;
+  if (active) return actualScore(projected);
   active = true;
   try {
     const candidate = newOwner(source, projected);
     if (!candidate) {
-      const result = score(projected);
+      const result = actualScore(projected);
       owner = undefined;
       return result;
     }
@@ -135,7 +136,10 @@ export function scorePrivateRatingSetup(
       candidate.entries.set(original, selected);
       return selected.hole;
     });
-    const result = score({ ...projected, holes });
+    const privateCourse = { ...projected, holes };
+    const result = score === undefined
+      ? scoreCourseHolesForPrivateRating(source, privateCourse, source.holes)
+      : score(privateCourse);
     // Failures and nested calls cannot publish a partially scored generation.
     owner = candidate;
     return result;

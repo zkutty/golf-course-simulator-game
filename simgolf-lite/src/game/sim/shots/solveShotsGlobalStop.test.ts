@@ -22,6 +22,7 @@ vi.mock("./evalShotExpectedCost", async (importOriginal) => {
 
 const actualSolve = solver.solveShotsToGreen;
 const actualScore = holes.scoreCourseHoles;
+const actualPrivateScore = holes.scoreCourseHolesForPrivateRating;
 const actualPrepare = domain.prepareShotSearchDomain;
 let solverCalls = 0;
 let scorerCalls = 0;
@@ -36,6 +37,10 @@ beforeEach(() => {
   dependencyMaps = [];
   vi.spyOn(solver, "solveShotsToGreen").mockImplementation((args) => { solverCalls++; return actualSolve(args); });
   vi.spyOn(holes, "scoreCourseHoles").mockImplementation((course) => { scorerCalls++; return actualScore(course); });
+  vi.spyOn(holes, "scoreCourseHolesForPrivateRating").mockImplementation((source, projected, sourceHoles) => {
+    scorerCalls++;
+    return actualPrivateScore(source, projected, sourceHoles);
+  });
   const NativeMap = Map;
   class ObservedMap<K, V> extends NativeMap<K, V> {
     constructor(entries?: readonly (readonly [K, V])[] | null) {

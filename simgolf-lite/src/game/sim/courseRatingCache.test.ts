@@ -124,7 +124,7 @@ describe("rating geometry memo ownership", () => {
     const sizes = observeSizes();
     for (const error of [null, undefined, new Error("solver")]) {
       const next = { ...course, elevations: course.elevations.slice() };
-      const score = vi.spyOn(holes, "scoreCourseHoles").mockImplementationOnce(() => { throw error; });
+      const score = vi.spyOn(holes, "scoreCourseHolesForPrivateRating").mockImplementationOnce(() => { throw error; });
       let caught = false;
       try { computeRatingsByTee(next); } catch (actual) { caught = true; expect(actual).toBe(error); }
       expect(caught).toBe(true);
@@ -137,20 +137,20 @@ describe("rating geometry memo ownership", () => {
     expect(() => computeRatingsByTee({ ...course, get holes(): Course["holes"] { throw error; } })).toThrow(error);
     versions.forEach((version, i) => expect(computeRatingsByTee(version)).toBe(hot[i]));
     const completedCourse = versions[0];
-    const completedFailure = vi.spyOn(holes, "scoreCourseHoles").mockImplementationOnce(() => { throw error; });
+    const completedFailure = vi.spyOn(holes, "scoreCourseHolesForPrivateRating").mockImplementationOnce(() => { throw error; });
     expect(() => computeRatingForSetup(completedCourse, "member", "A", [])).toThrow(error);
     completedFailure.mockRestore();
     expect(computeRatingsByTee(completedCourse)).toBe(hot[0]);
     const next = { ...course, elevations: course.elevations.slice() };
-    const originalScore = holes.scoreCourseHoles;
-    const score = vi.spyOn(holes, "scoreCourseHoles")
+    const originalScore = holes.scoreCourseHolesForPrivateRating;
+    const score = vi.spyOn(holes, "scoreCourseHolesForPrivateRating")
       .mockImplementationOnce(originalScore).mockImplementationOnce(() => { throw error; });
     let caught = false;
     try { computeRatingsByTee(next); } catch (actual) { caught = true; expect(actual).toBe(error); }
     expect(caught).toBe(true);
     expect(score).toHaveBeenCalledTimes(2);
     score.mockRestore();
-    const retry = vi.spyOn(holes, "scoreCourseHoles");
+    const retry = vi.spyOn(holes, "scoreCourseHolesForPrivateRating");
     const first = computeRatingForSetup(next, "forward", "A");
     expect(retry).not.toHaveBeenCalled();
     expect(computeRatingForSetup(next, "forward", "A")).toBe(first);
@@ -220,7 +220,7 @@ describe("rating geometry memo ownership", () => {
       return { input, result: computeRatingForSetup(course, "member", "A", input) };
     });
     for (const error of [null, undefined, new Error("optional solver")]) {
-      const score = vi.spyOn(holes, "scoreCourseHoles").mockImplementationOnce(() => { throw error; });
+      const score = vi.spyOn(holes, "scoreCourseHolesForPrivateRating").mockImplementationOnce(() => { throw error; });
       let failed = false;
       try { computeRatingForSetup(course, "member", "A", [{ ...plan, version: `failed-${String(error)}` }]); }
       catch (actual) { failed = true; expect(actual).toBe(error); }

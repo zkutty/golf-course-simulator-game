@@ -210,7 +210,6 @@ import { PhotoModeOverlay } from "./ui/retention/PhotoModeOverlay";
 import { captureCourseCanvas, createCourseCard, downloadBlob, shareBlob } from "./utils/photoCapture";
 import { platformServices } from "./platform";
 import { usePwa } from "./hooks/usePwa";
-import { LandOfficePanel } from "./ui/LandOfficePanel";
 import { isOwnedTile } from "./game/estate/estate";
 import { isWaterHazard } from "./game/models/terrainRules";
 import {
@@ -381,7 +380,6 @@ import {
 } from "./game/campaign/campaign";
 import { CAMPAIGN_CHAPTER_BY_ID } from "./game/campaign/content";
 import { CampaignSceneModal } from "./ui/CampaignSceneModal";
-import { CampaignPanel } from "./ui/CampaignPanel";
 import { WorkspaceNav, type WorkspaceActionId, type WorkspaceId } from "./ui/WorkspaceNav";
 import { DeferredSurface } from "./app/DeferredSurface";
 import { DeferredHudSurface } from "./app/DeferredHudSurface";
@@ -423,6 +421,8 @@ const ContextualInspectorPanel = lazy(() => import("./ui/ContextualInspectorPane
 const WeekCloseReport = lazy(() => import("./ui/WeekCloseReport").then(({ WeekCloseReport }) => ({ default: WeekCloseReport })));
 const LiveOverview = lazy(() => import("./ui/LiveOverview").then(({ LiveOverview }) => ({ default: LiveOverview })));
 const PropertyManagementPanel = lazy(() => import("./ui/PropertyManagementPanel").then(({ PropertyManagementPanel }) => ({ default: PropertyManagementPanel })));
+const LandOfficePanel = lazy(() => import("./ui/LandOfficePanel").then(({ LandOfficePanel }) => ({ default: LandOfficePanel })));
+const CampaignPanel = lazy(() => import("./ui/CampaignPanel").then(({ CampaignPanel }) => ({ default: CampaignPanel })));
 const LivingClubPanel = lazy(() => import("./ui/LivingClubPanel").then(({ LivingClubPanel }) => ({ default: LivingClubPanel })));
 const SeasonsLegacyPanel = lazy(() => import("./ui/SeasonsLegacyPanel").then(({ SeasonsLegacyPanel }) => ({ default: SeasonsLegacyPanel })));
 const QUICK_SAVE_ANNOUNCEMENT_DURATION_MS = 2_500;
@@ -6472,7 +6472,7 @@ export default function App() {
             {playerRoundLocksEditing && <div role="status" style={{ position: "absolute", left: "50%", top: 54, transform: "translateX(-50%)", zIndex: 112, padding: "6px 10px", borderRadius: 8, background: "rgba(54,69,48,.92)", color: "white", fontSize: 12 }}>{t("playerPro.round.editLocked")}</div>}
             {showProgression && !activeTutorial && <Suspense fallback={null}><ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} /></Suspense>}
             {showTournaments && !activeTutorial && <Suspense fallback={null}><TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} operationsFocus={operationsFocus?.system === "tournaments" ? operationsFocus as { system: "tournaments"; nonce: number } : undefined} onSchedule={bookTournament} onClose={() => { setShowTournaments(false); setOperationsFocus(undefined); }} /></Suspense>}
-            {showLandOffice && !activeTutorial && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
+            {showLandOffice && !activeTutorial && <DeferredSurface label={t("land.title")}><LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} /></DeferredSurface>}
             {showCourseManager && !activeTutorial && <Suspense fallback={<div aria-live="polite" style={{ padding: 16 }}>{t("courseSetup.loadingInspector")}</div>}><CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onOpenArchitectureReview={() => { setShowArchitectureReview(true); setShowCourseManager(false); }} onClose={() => setShowCourseManager(false)} /></Suspense>}
             {showArchitectureReview && !activeTutorial && <ArchitectureReviewPanel
               course={course}
@@ -6522,7 +6522,7 @@ export default function App() {
               onClose={() => { setShowSeasonsLegacy(false); setOperationsFocus(undefined); }}
               biomeContext={contextualUiTheme}
             /></DeferredSurface>}
-            {showCampaign && world.campaign && !activeTutorial && <CampaignPanel
+            {showCampaign && world.campaign && !activeTutorial && <DeferredSurface label={t("campaign.panel.title")}><CampaignPanel
               course={course}
               world={world}
               onStartMatch={startCampaignMatch}
@@ -6530,7 +6530,7 @@ export default function App() {
               onNavigateSystem={(system) => { setShowCampaign(false); navigateSimulationSystem(system); }}
               onAcknowledgeLegacyRecovery={acknowledgeCampaignLegacyRecovery}
               onClose={() => setShowCampaign(false)}
-            />}
+            /></DeferredSurface>}
             {activeCampaignScene && world.campaign && !activeTutorial && <CampaignSceneModal
               campaign={world.campaign}
               scene={activeCampaignScene}

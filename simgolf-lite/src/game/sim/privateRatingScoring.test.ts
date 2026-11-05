@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Course, Hole, PinRotation, TeeSet, Terrain } from "../models/types";
 import { courseForCourseSetup } from "../models/courseSetup";
-import { createReferenceCourse } from "../testing/referenceCourse";
+import { createM27ReleaseReferenceCourse, createReferenceCourse } from "../testing/referenceCourse";
 import { courseWithEffectiveSurfaces, normalizeSurfaceCareState, surfaceCareTopology } from "../conditions/surfaceCare";
 import * as holes from "./holes";
 import * as solver from "./shots/solveShotsToGreen";
@@ -15,6 +15,7 @@ type Counts = readonly [number, number, number, number];
 let phase: "baseline" | "candidate" = "baseline";
 let counts = { baseline: 0, candidate: 0, solver: 0 };
 const actualScore = holes.scoreCourseHoles;
+const actualPrivateScore = holes.scoreCourseHolesForPrivateRating;
 const actualSolve = solver.solveShotsToGreen;
 
 beforeEach(() => {
@@ -24,6 +25,10 @@ beforeEach(() => {
   vi.spyOn(holes, "scoreCourseHoles").mockImplementation((course) => {
     counts[phase]++;
     return actualScore(course);
+  });
+  vi.spyOn(holes, "scoreCourseHolesForPrivateRating").mockImplementation((source, projected, sourceHoles) => {
+    counts[phase]++;
+    return actualPrivateScore(source, projected, sourceHoles);
   });
   vi.spyOn(solver, "solveShotsToGreen").mockImplementation((args) => {
     counts.solver++;
@@ -51,6 +56,12 @@ function fixture(): Course {
     tiles: new Array<Terrain>(144).fill("fairway"), elevations: new Array<number>(144).fill(0),
     holes: [{ ...base.holes[0], tee: { x: 2, y: 4 }, green: { x: 13, y: 4 }, parMode: "MANUAL", parManual: 4 }],
   };
+}
+
+function publicBorrowFixture(): Course {
+  const course = fixture();
+  course.holes = [{ ...course.holes[0], teeBoxes: undefined, pinPositions: undefined, parByTee: undefined }];
+  return course;
 }
 
 function fresh(course: Course, tee: TeeSet = "member", pin: PinRotation = "A") {
@@ -306,5 +317,126 @@ describe("private rating scoring: fixed finite actual-scorer ledger", () => {
     expect(candidate(course)).toEqual(oracle);
     expect(candidate(course)).toEqual(oracle);
     checkCounts([1, 3, 3, 6]);
+  });
+});
+
+describe("public-to-private score handoff", () => {
+  it("borrows all 36 actual M27 member/A scores without a second solve or a numeric output change", () => {
+    const course = createM27ReleaseReferenceCourse("parkland");
+    const effective = courseWithEffectiveSurfaces(course);
+    const oracle = holes.scoreCourseHoles(courseForCourseSetup(effective, "member", "A"));
+    holes.__resetHoleScoreCacheForTests();
+    privateScoring.__resetPrivateRatingScoringForTests();
+    const beforePublic = counts.solver;
+    const publicSummary = holes.scoreCourseHoles(effective);
+    const afterPublic = counts.solver;
+    const actual = privateScoring.scorePrivateRatingSetup(effective, courseForCourseSetup(effective, "member", "A"));
+    const afterPrivate = counts.solver;
+    expect(publicSummary.holes).toHaveLength(36);
+    expect(actual).toStrictEqual(oracle);
+    const numericBits = (value: unknown): string[] => {
+      const result: string[] = [];
+      const buffer = new ArrayBuffer(8);
+      const view = new DataView(buffer);
+      const visit = (item: unknown): void => {
+        if (typeof item === "number") {
+          view.setFloat64(0, item);
+          result.push(view.getBigUint64(0).toString(16));
+        } else if (item !== null && typeof item === "object") {
+          for (const key of Reflect.ownKeys(item)) {
+            const descriptor = Object.getOwnPropertyDescriptor(item, key);
+            if (descriptor && "value" in descriptor) visit(descriptor.value);
+          }
+        }
+      };
+      visit(value);
+      return result;
+    };
+    expect(numericBits(actual)).toEqual(numericBits(oracle));
+    expect(afterPublic).toBeGreaterThan(beforePublic);
+    expect(afterPrivate).toBe(afterPublic);
+    console.info("M27_PUBLIC_PRIVATE_SOLVES", JSON.stringify({ holes: actual.holes.length,
+      publicSolves: afterPublic - beforePublic, privateSolves: afterPrivate - afterPublic,
+      numericValues: numericBits(actual).length }));
+  }, 120_000);
+
+  it("avoids a real second low-level solve and keeps public mutations outside the private result", () => {
+    const course = publicBorrowFixture();
+    const publicSummary = holes.scoreCourseHoles(course);
+    const expected = baseline(course);
+    const before = counts.solver;
+    publicSummary.holes[0].overallHoleScore = -123;
+    publicSummary.holes[0].corridor.samples = -4;
+    publicSummary.holes[0].issues.push("public mutation");
+    publicSummary.holes[0].shotPlan[0]?.debug.push("public plan mutation");
+    const actual = candidate(course);
+    expect(actual).toEqual(expected);
+    expect(counts.solver).toBe(before);
+    expect(actual.holes[0]).not.toBe(publicSummary.holes[0]);
+    expect(actual.holes[0].shotPlan).not.toBe(publicSummary.holes[0].shotPlan);
+    expect(actual.holes[0].shotPlan[0]?.from).toBe(course.holes[0].tee);
+    expect(actual.holes[0].shotPlan[0]?.shotSlope && Object.isFrozen(actual.holes[0].shotPlan[0].shotSlope)).toBe(
+      expected.holes[0].shotPlan[0]?.shotSlope && Object.isFrozen(expected.holes[0].shotPlan[0].shotSlope),
+    );
+  });
+
+  for (const edit of [
+    { name: "nested tee", change: (course: Course) => { course.holes[0].tee!.x++; } },
+    { name: "manual par", change: (course: Course) => { course.holes[0].parManual = 5; } },
+    { name: "obstacle record", change: (course: Course) => { course.obstacles[0].x++; } },
+    { name: "observed tile", change: (course: Course) => { course.tiles[66] = "sand"; } },
+    { name: "tile array replacement", change: (course: Course) => { course.tiles = course.tiles.slice(); } },
+  ]) it(`declines stale borrowing after ${edit.name}`, () => {
+    const course = publicBorrowFixture();
+    course.obstacles = [{ type: "tree", x: 0, y: 0 }];
+    holes.scoreCourseHoles(course);
+    edit.change(course);
+    const expected = baseline(course);
+    const before = counts.solver;
+    const actual = candidate(course);
+    expect(actual).toEqual(expected);
+    expect(counts.solver).toBeGreaterThan(before);
+  });
+
+  it("honors an explicitly supplied public scorer callback rather than the bridge", () => {
+    const course = publicBorrowFixture();
+    holes.scoreCourseHoles(course);
+    const { effective, projected } = fresh(course);
+    const supplied = vi.fn((view: Course) => holes.scoreCourseHoles(view));
+    const before = counts.solver;
+    privateScoring.scorePrivateRatingSetup(effective, projected, supplied);
+    expect(supplied).toHaveBeenCalledOnce();
+    expect(counts.solver).toBeGreaterThan(before);
+  });
+
+  it("honors an explicitly supplied callback even when it is the public scorer itself", () => {
+    const course = publicBorrowFixture();
+    holes.scoreCourseHoles(course);
+    const { effective, projected } = fresh(course);
+    vi.mocked(holes.scoreCourseHoles).mockClear();
+    vi.mocked(holes.scoreCourseHolesForPrivateRating).mockClear();
+    privateScoring.scorePrivateRatingSetup(effective, projected, holes.scoreCourseHoles);
+    expect(holes.scoreCourseHoles).toHaveBeenCalledOnce();
+    expect(holes.scoreCourseHolesForPrivateRating).not.toHaveBeenCalled();
+  });
+
+  it("does not publish a borrow proof from an incomplete whole-course scoring operation", () => {
+    const course = publicBorrowFixture();
+    course.holes.push({ ...course.holes[0], tee: { x: 2, y: 5 }, green: { x: 13, y: 5 } });
+    const cause = new Error("second hole failed");
+    let solveCalls = 0;
+    vi.mocked(solver.solveShotsToGreen).mockImplementation((args) => {
+      counts.solver++;
+      if (++solveCalls === 3) throw cause;
+      return actualSolve(args);
+    });
+    expect(() => holes.scoreCourseHoles(course)).toThrow(cause);
+    vi.mocked(solver.solveShotsToGreen).mockImplementation((args) => {
+      counts.solver++;
+      return actualSolve(args);
+    });
+    const before = counts.solver;
+    expect(candidate(course).holes).toHaveLength(2);
+    expect(counts.solver).toBeGreaterThan(before);
   });
 });
