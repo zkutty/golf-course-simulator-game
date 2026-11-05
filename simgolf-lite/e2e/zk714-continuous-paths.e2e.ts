@@ -473,6 +473,218 @@ test("P714 [responsive] two unoccluded path views with separately visible design
     views: [{ viewport: [390, 844], zoom: 1 }, { viewport: [1024, 768], zoom: 2.25 }], rotation: 0, quality: "medium", matrixPathCapturesReused: 34 }, null, 2)), contentType: "application/json" });
 });
 
+test("P714 [responsive-controls] minimap pointer/touch/keyboard and saved-path width controls stay reachable", async ({ page, browser }, info) => {
+  const file = normalizedFixture(fixture("editor"));
+  await editorReady(page, file);
+  await selectS(page);
+  const initial = await surface(page);
+  const initialCash = await cash(page);
+  const dock = page.getByTestId("design-dock");
+  const collapseDock = page.getByRole("button", { name: "Collapse design dock", exact: true });
+  const expandDock = page.getByRole("button", { name: "Expand design dock", exact: true });
+  const openMap = page.getByRole("button", { name: "Open course minimap", exact: true });
+  const closeMap = page.getByRole("button", { name: "Collapse course minimap", exact: true });
+
+  async function assertUsableTarget(locator: Locator, selector: string) {
+    await expect(locator).toBeVisible();
+    const box = await locator.boundingBox();
+    expect(box, "control must have a rendered hit target").not.toBeNull();
+    const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+    expect(box!.width).toBeGreaterThan(0);
+    expect(box!.height).toBeGreaterThan(0);
+    const center = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
+    const points = [
+      { x: box!.x + 3, y: box!.y + 3 },
+      { x: box!.x + box!.width - 3, y: box!.y + 3 },
+      { x: box!.x + 3, y: box!.y + box!.height - 3 },
+      { x: box!.x + box!.width - 3, y: box!.y + box!.height - 3 },
+      center,
+    ];
+    const hitsControl = await page.evaluate(({ points, selector }) => {
+      const control = document.querySelector(selector);
+      return points.map(({ x, y }) => {
+        const hit = document.elementFromPoint(x, y);
+        return Boolean(control && hit && (control === hit || control.contains(hit)));
+      });
+    }, { points, selector });
+    expect(hitsControl, "all sampled parts of the control must receive ordinary pointer input").toEqual([true, true, true, true, true]);
+    return center;
+  }
+
+  async function assertVisibleMap() {
+    const map = page.locator(".cc-minimap");
+    await expect(map).toBeVisible();
+    await expect(map).toHaveAttribute("data-render-state", "ready");
+    const box = await map.boundingBox();
+    expect(box).not.toBeNull();
+    const viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+    if (viewport.width === 390) {
+      expect(box!.width).toBe(96);
+      expect(box!.height).toBe(96);
+    }
+    const canvas = map.locator("canvas");
+    await expect(canvas).toBeVisible();
+    const canvasBox = await canvas.boundingBox();
+    expect(canvasBox).not.toBeNull();
+    expect(canvasBox!.x).toBeGreaterThanOrEqual(box!.x);
+    expect(canvasBox!.y).toBeGreaterThanOrEqual(box!.y);
+    expect(canvasBox!.x + canvasBox!.width).toBeLessThanOrEqual(box!.x + box!.width);
+    expect(canvasBox!.y + canvasBox!.height).toBeLessThanOrEqual(box!.y + box!.height);
+    await expect.poll(() => canvas.evaluate(node => {
+      const source = node as HTMLCanvasElement;
+      const context = source.getContext("2d");
+      if (!context) return 0;
+      const image = context.getImageData(0, 0, source.width, source.height);
+      const colors = new Set<string>();
+      for (let y = 8; y < image.height; y += 24) for (let x = 8; x < image.width; x += 24) {
+        const index = (y * image.width + x) * 4;
+        colors.add(`${image.data[index]},${image.data[index + 1]},${image.data[index + 2]},${image.data[index + 3]}`);
+      }
+      return colors.size;
+    })).toBeGreaterThan(4);
+  }
+
+  async function ensureMapOpen() {
+    if (await openMap.isVisible()) {
+      const center = await assertUsableTarget(openMap, ".cc-minimap-toggle");
+      await page.mouse.click(center.x, center.y);
+    }
+    await expect(closeMap).toBeVisible();
+    await assertVisibleMap();
+  }
+
+  async function toggleMapByPointer() {
+    const target = await closeMap.isVisible() ? closeMap : openMap;
+    const center = await assertUsableTarget(target, await closeMap.isVisible() ? ".cc-minimap-collapse" : ".cc-minimap-toggle");
+    await page.mouse.click(center.x, center.y);
+    await expect(target === openMap ? closeMap : openMap).toBeVisible();
+  }
+
+  async function toggleMapByKeyboard() {
+    const target = await closeMap.isVisible() ? closeMap : openMap;
+    await expect(target).toBeVisible();
+    await target.focus();
+    await expect(target).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(target === openMap ? closeMap : openMap).toBeVisible();
+  }
+
+  for (const [width, height] of [[390, 844], [1024, 768], [1600, 1000]] as const) {
+    await page.setViewportSize({ width, height });
+    for (const dockExpanded of [false, true]) {
+      if (dockExpanded && await expandDock.isVisible()) await expandDock.click();
+      if (!dockExpanded && await collapseDock.isVisible()) await collapseDock.click();
+      await expect(dock).toHaveAttribute("data-collapsed", dockExpanded ? "false" : "true");
+      await ensureMapOpen();
+      await info.attach(`responsive-controls-${width}x${height}-dock-${dockExpanded ? "expanded" : "collapsed"}-map-open`, {
+        body: await page.screenshot(), contentType: "image/png",
+      });
+      await toggleMapByPointer();
+      await toggleMapByKeyboard();
+    }
+
+    await expect(dock).toHaveAttribute("data-collapsed", "false");
+    const widthControl = page.getByTestId("design-path-width");
+    await expect(widthControl).toBeVisible();
+    await assertUsableTarget(widthControl, '[data-testid="design-path-width"]');
+    expect(await widthControl.locator("option").evaluateAll(options => options.map(option => (option as HTMLOptionElement).value)))
+      .toEqual(["1", "1.5", "2.5"]);
+
+    const widthBeforeDraft = await surface(page);
+    const cashBeforeDraft = await cash(page);
+    await widthControl.selectOption("2.5");
+    const draftApply = page.getByTestId("design-path-width-apply");
+    const draftCancel = page.getByTestId("design-path-width-cancel");
+    await assertUsableTarget(draftApply, '[data-testid="design-path-width-apply"]');
+    await assertUsableTarget(draftCancel, '[data-testid="design-path-width-cancel"]');
+    await info.attach(`responsive-controls-${width}x${height}-path-width-draft`, {
+      body: await page.screenshot(), contentType: "image/png",
+    });
+    const draftCancelCenter = await assertUsableTarget(draftCancel, '[data-testid="design-path-width-cancel"]');
+    await page.mouse.click(draftCancelCenter.x, draftCancelCenter.y);
+    expect(await surface(page)).toEqual(widthBeforeDraft);
+    expect(await cash(page)).toBe(cashBeforeDraft);
+
+    if (width === 390) {
+      await expect(widthControl).toHaveValue("1");
+      await widthControl.selectOption("1.5");
+      await expect(widthControl).toHaveValue("1.5");
+      await widthControl.selectOption("2.5");
+      await expect(widthControl).toHaveValue("2.5");
+      const cancel = page.getByTestId("design-path-width-cancel");
+      const cancelCenter = await assertUsableTarget(cancel, '[data-testid="design-path-width-cancel"]');
+      await page.mouse.click(cancelCenter.x, cancelCenter.y);
+      expect(await surface(page)).toEqual(initial);
+      expect(await cash(page)).toBe(initialCash);
+
+      const expected = candidateWidth(file, 1.5);
+      await widthControl.selectOption("1.5");
+      const apply = page.getByTestId("design-path-width-apply");
+      await assertUsableTarget(apply, '[data-testid="design-path-width-apply"]');
+      await apply.focus();
+      await expect(apply).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect.poll(async () => (await surface(page)).features[0].width).toBe(1.5);
+      const applied = await surface(page);
+      expect(applied.tiles).toEqual(expected.tiles);
+      expect(applied.features).toEqual(expected.intent.features.map(featureView));
+      expect(await cash(page)).toBe(expected.preview.projectedCash);
+    } else {
+      const beforeDraft = await surface(page);
+      const beforeCash = await cash(page);
+      await widthControl.selectOption("1");
+      await widthControl.selectOption("2.5");
+      const cancel = page.getByTestId("design-path-width-cancel");
+      const center = await assertUsableTarget(cancel, '[data-testid="design-path-width-cancel"]');
+      await page.mouse.click(center.x, center.y);
+      expect(await surface(page)).toEqual(beforeDraft);
+      expect(await cash(page)).toBe(beforeCash);
+    }
+  }
+
+  const touchContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  try {
+    const touchPage = await touchContext.newPage();
+    await boot(touchPage);
+    await publicLoad(touchPage, file);
+    const touchDock = touchPage.getByTestId("design-dock");
+    const touchExpandDock = touchPage.getByRole("button", { name: "Expand design dock", exact: true });
+    const touchCollapseDock = touchPage.getByRole("button", { name: "Collapse design dock", exact: true });
+    const touchOpenMap = touchPage.getByRole("button", { name: "Open course minimap", exact: true });
+    const touchCloseMap = touchPage.getByRole("button", { name: "Collapse course minimap", exact: true });
+    for (const dockExpanded of [false, true]) {
+      if (dockExpanded && await touchExpandDock.isVisible()) await touchExpandDock.click();
+      if (!dockExpanded && await touchCollapseDock.isVisible()) await touchCollapseDock.click();
+      await expect(touchDock).toHaveAttribute("data-collapsed", dockExpanded ? "false" : "true");
+      const target = await touchCloseMap.isVisible() ? touchCloseMap : touchOpenMap;
+      await expect(target).toBeVisible();
+      const box = await target.boundingBox();
+      expect(box).not.toBeNull();
+      const point = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
+      const targetSelector = await touchCloseMap.isVisible() ? ".cc-minimap-collapse" : ".cc-minimap-toggle";
+      const isTopmostTarget = await touchPage.evaluate(({ x, y, selector }) => {
+        const control = document.querySelector(selector);
+        const hit = document.elementFromPoint(x, y);
+        return Boolean(control && hit && (control === hit || control.contains(hit)));
+      }, { ...point, selector: targetSelector });
+      expect(isTopmostTarget).toBe(true);
+      await touchPage.touchscreen.tap(point.x, point.y);
+      await expect(target === touchOpenMap ? touchCloseMap : touchOpenMap).toBeVisible();
+      if (target === touchOpenMap) await expect(touchPage.locator(".cc-minimap")).toBeVisible();
+    }
+  } finally {
+    await touchContext.close();
+  }
+});
+
 async function openDesignDock(page: Page) {
   // Loading remounts the dock in its collapsed state. These public controls
   // restore its workspace/mode without changing the terrain tool or draft.
