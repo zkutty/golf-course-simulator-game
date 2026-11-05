@@ -1,9 +1,9 @@
-import type { Course, Hole, LandTheme, Point, Terrain } from "../models/types";
+import type { Course, Hole, LandTheme, Point, SurfaceFeature, Terrain } from "../models/types";
 import { canonicalJson } from "../../utils/canonical";
-import { validateHoleTemplateV1 } from "../holeTemplates/serialization";
+import { HOLE_TEMPLATE_SURFACE_LIMITS, validateHoleTemplateSurfaceIntent, validateHoleTemplateV1 } from "../holeTemplates/serialization";
 import { decorationTiles } from "../models/decorations";
 import { BIOME_KEYS } from "../models/biomes";
-import type { HoleTemplateCellV1, HoleTemplateV1 } from "../holeTemplates/types";
+import type { HoleTemplateCellV1, HoleTemplateSurfaceIntentV1, HoleTemplateV1 } from "../holeTemplates/types";
 import { provenancePolicyIssues } from "../holeTemplates/provenancePolicy";
 import type { HoleTemplatePackageV1, PackageValidationResult } from "./types";
 
@@ -128,15 +128,20 @@ function local(point: Point, bounds: { minX: number; minY: number }): Point {
   return { x: point.x - bounds.minX, y: point.y - bounds.minY };
 }
 
-/** Captures exactly one built hole as a portable sparse local-coordinate template. */
-export function captureHoleTemplate(course: Course, hole: Hole, input: {
+/** Existing source-compatible API; the Library consumes warnings explicitly. */
+export function captureHoleTemplate(...args: Parameters<typeof captureHoleTemplateWithWarnings>): HoleTemplateV1 {
+  return captureHoleTemplateWithWarnings(...args).template;
+}
+
+/** Captures once; warnings are transient player feedback, never package state. */
+export function captureHoleTemplateWithWarnings(course: Course, hole: Hole, input: {
   id: string;
   title: string;
   description: string;
   yardsPerTile: number;
   provenance: HoleTemplateV1["provenance"];
   confidence: HoleTemplateV1["confidence"];
-}): HoleTemplateV1 {
+}): { template: HoleTemplateV1; warnings: HoleTemplateCaptureWarning[] } {
   if (!hole.tee || !hole.green) throw new Error("A captured hole needs tee and green markers.");
   let provenance = input.provenance;
   if (hole.templateAttribution) {
@@ -164,11 +169,13 @@ export function captureHoleTemplate(course: Course, hole: Hole, input: {
   const minY = Math.min(routeMinY, ...featurePoints.map((point) => point.y));
   const maxY = Math.max(routeMaxY, ...featurePoints.map((point) => point.y));
   const bounds = { minX, minY };
+  const surfaces = captureSurfaceIntent(course, { minX, minY, maxX, maxY });
   const inBounds = (point: Point) => point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY;
   const terrainAt = (point: Point): Terrain => course.tiles[point.y * course.width + point.x];
   const heightAt = (point: Point) => course.elevations?.[point.y * course.width + point.x] ?? 0;
   const datum = heightAt(hole.tee);
   const required = new Set(points.map((point) => `${point.x},${point.y}`));
+  for (const index of surfaces.requiredCells) required.add(`${index % course.width},${Math.floor(index / course.width)}`);
   const cells: HoleTemplateCellV1[] = [];
   for (let y = minY; y <= maxY; y += 1) for (let x = minX; x <= maxX; x += 1) {
     const point = { x, y };
@@ -179,7 +186,7 @@ export function captureHoleTemplate(course: Course, hole: Hole, input: {
     if (terrain !== "rough" || elevationOffset !== 0 || required.has(`${x},${y}`)) cells.push({ ...local(point, bounds), terrain, elevationOffset });
   }
   const translatedMarkers = <T extends Record<string, Point | null> | undefined>(markers: T) => markers && Object.fromEntries(Object.entries(markers).map(([key, point]) => [key, point ? local(point, bounds) : null])) as T;
-  return {
+  return { template: {
     format: "coursecraft-hole-template",
     version: 1,
     id: input.id,
@@ -203,5 +210,57 @@ export function captureHoleTemplate(course: Course, hole: Hole, input: {
     provenance: structuredClone(provenance),
     confidence: structuredClone(input.confidence),
     fidelity: { tier: "sketch" },
-  };
+    ...(surfaces.surfaceIntent ? { surfaceIntent: surfaces.surfaceIntent } : {}),
+  }, warnings: surfaces.warnings };
+}
+
+export type HoleTemplateCaptureWarning = { code: "partial_non_path"; count: number };
+export class HoleTemplateCaptureError extends Error {
+  readonly code: "partial_path" | "invalid_surface";
+  constructor(code: "partial_path" | "invalid_surface", message: string) { super(message); this.code = code; this.name = "HoleTemplateCaptureError"; }
+}
+
+function captureSurfaceIntent(course: Course, bounds: { minX: number; minY: number; maxX: number; maxY: number }): {
+  surfaceIntent?: HoleTemplateSurfaceIntentV1; requiredCells: Set<number>; warnings: HoleTemplateCaptureWarning[];
+} {
+  const requiredCells = new Set<number>(), candidates: SurfaceFeature[] = [];
+  const raw = course.surfaceIntent;
+  if (!raw) return { requiredCells, warnings: [] };
+  const limits = HOLE_TEMPLATE_SURFACE_LIMITS;
+  function invalid(message: string): never { throw new HoleTemplateCaptureError("invalid_surface", message); }
+  if (raw.version !== 1 || !Array.isArray(raw.features) || raw.features.length > limits.features) invalid("This hole's editable surfaces exceed the supported capture limits.");
+  let visitedCoverage = 0;
+  const insideCell = (index: number) => { const x = index % course.width, y = Math.floor(index / course.width); return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY; };
+  for (const feature of raw.features) {
+    if (!feature || !Array.isArray(feature.coverage) || feature.coverage.length > course.width * course.height || (visitedCoverage += feature.coverage.length) > limits.coverage) invalid("This hole's editable surfaces exceed the supported capture limits.");
+    if (!feature.coverage.every(index => Number.isSafeInteger(index) && index >= 0 && index < course.width * course.height)) invalid("An editable surface has invalid accepted terrain cells.");
+    if (feature.coverage.some(insideCell)) candidates.push(feature);
+  }
+  if (!candidates.length) return { requiredCells, warnings: [] };
+  const checked = validateHoleTemplateSurfaceIntent({ version: 1, features: candidates }, course.width, course.height);
+  if (!checked.ok) invalid(checked.issues.slice(0, 3).map(item => item.message).join(" "));
+  const features: SurfaceFeature[] = []; let partialNonPath = 0;
+  const width = bounds.maxX - bounds.minX + 1, height = bounds.maxY - bounds.minY + 1;
+  const insidePoint = (p: Point) => p.x >= bounds.minX && p.x <= bounds.maxX + 1 && p.y >= bounds.minY && p.y <= bounds.maxY + 1;
+  for (const feature of checked.value.features) {
+    const geometry = feature.geometry;
+    const points = geometry.kind === "corridor" ? geometry.knots : geometry.ring;
+    const allPoints = [...points, ...(geometry.tangents?.flatMap(pair => [pair.in, pair.out]) ?? []), ...(feature.renderRings?.flat() ?? [])];
+    if (!feature.coverage.every(insideCell) || !allPoints.every(insidePoint)) {
+      if (feature.terrain === "path") throw new HoleTemplateCaptureError("partial_path", "A path extends beyond this hole's captured area. Adjust the path before saving the template.");
+      partialNonPath++; continue;
+    }
+    feature.coverage.forEach(index => requiredCells.add(index));
+    const translate = (p: Point) => local(p, bounds);
+    features.push({ ...feature,
+      coverage: feature.coverage.map(index => (Math.floor(index / course.width) - bounds.minY) * width + index % course.width - bounds.minX).sort((a, b) => a - b),
+      geometry: geometry.kind === "corridor"
+        ? { ...geometry, knots: geometry.knots.map(translate), ...(geometry.tangents ? { tangents: geometry.tangents.map(pair => ({ in: translate(pair.in), out: translate(pair.out) })) } : {}) }
+        : { ...geometry, ring: geometry.ring.map(translate), ...(geometry.tangents ? { tangents: geometry.tangents.map(pair => ({ in: translate(pair.in), out: translate(pair.out) })) } : {}) },
+      ...(feature.renderRings ? { renderRings: feature.renderRings.map(ring => ring.map(translate)) } : {}),
+    });
+  }
+  if (features.length && (width > limits.dimension || height > limits.dimension)) invalid("This hole's editable surfaces exceed the supported capture dimensions.");
+  return { ...(features.length ? { surfaceIntent: { version: 1 as const, features } } : {}), requiredCells,
+    warnings: partialNonPath ? [{ code: "partial_non_path", count: partialNonPath }] : [] };
 }

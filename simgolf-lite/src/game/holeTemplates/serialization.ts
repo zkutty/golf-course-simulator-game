@@ -3,7 +3,7 @@ import { fidelityPolicyIssues, provenancePolicyIssues } from "./provenancePolicy
 import { DECORATION_KINDS, decorationSpec, decorationTiles } from "../models/decorations";
 import { ELEVATION_MAX, ELEVATION_MIN } from "../models/elevation";
 import { isPlantId, plantDefinition } from "../models/plantRegistry";
-import { PIN_ROTATIONS, TEE_SETS, type Point, type Terrain } from "../models/types";
+import { PIN_ROTATIONS, TEE_SETS, type Point, type SurfaceFeature, type Terrain } from "../models/types";
 import {
   HOLE_TEMPLATE_FORMAT,
   HOLE_TEMPLATE_VERSION,
@@ -11,6 +11,7 @@ import {
   type HoleTemplateHoleV1,
   type HoleTemplateObstacleV1,
   type HoleTemplateV1,
+  type HoleTemplateSurfaceIntentV1,
   type HoleTemplateValidationIssue,
   type HoleTemplateValidationResult,
 } from "./types";
@@ -226,7 +227,7 @@ function normalizeHole(value: HoleTemplateHoleV1): HoleTemplateHoleV1 {
   };
 }
 
-function normalizeTemplate(value: HoleTemplateV1): HoleTemplateV1 {
+function normalizeTemplate(value: HoleTemplateV1, surfaceIntent?: HoleTemplateSurfaceIntentV1): HoleTemplateV1 {
   return {
     format: HOLE_TEMPLATE_FORMAT,
     version: HOLE_TEMPLATE_VERSION,
@@ -259,6 +260,7 @@ function normalizeTemplate(value: HoleTemplateV1): HoleTemplateV1 {
       sourceAssetRetained: value.provenance.sourceAssetRetained,
     },
     ...(value.fidelity ? { fidelity: { ...value.fidelity } } : {}),
+    ...(surfaceIntent ? { surfaceIntent } : {}),
     confidence: {
       scale: value.confidence.scale,
       terrain: value.confidence.terrain,
@@ -272,7 +274,7 @@ function normalizeTemplate(value: HoleTemplateV1): HoleTemplateV1 {
 export function validateHoleTemplateV1(input: unknown): HoleTemplateValidationResult {
   const issues: HoleTemplateValidationIssue[] = [];
   if (!isRecord(input)) return { ok: false, issues: [{ code: "missing_value", path: "template", message: "Expected a HoleTemplate object." }] };
-  unknownFields(input, ["format", "version", "id", "title", "description", "width", "height", "yardsPerTile", "cells", "hole", "obstacles", "decorations", "provenance", "confidence", "fidelity"], "template", issues);
+  unknownFields(input, ["format", "version", "id", "title", "description", "width", "height", "yardsPerTile", "cells", "hole", "obstacles", "decorations", "provenance", "confidence", "fidelity", "surfaceIntent"], "template", issues);
   if (input.format !== HOLE_TEMPLATE_FORMAT || input.version !== HOLE_TEMPLATE_VERSION) {
     issue(issues, "unsupported_version", "template.version", `Only ${HOLE_TEMPLATE_FORMAT} V${HOLE_TEMPLATE_VERSION} is supported.`);
   }
@@ -308,6 +310,9 @@ export function validateHoleTemplateV1(input: unknown): HoleTemplateValidationRe
     if (!Number.isInteger(cell.elevationOffset) || (cell.elevationOffset as number) < ELEVATION_MIN - ELEVATION_MAX || (cell.elevationOffset as number) > ELEVATION_MAX - ELEVATION_MIN) issue(issues, "invalid_value", `${path}.elevationOffset`, "Elevation offset must be an integer within the supported relief range.");
   }
   validateHole(input.hole, width, height, cellTerrain, issues);
+  const surfaceIntent = input.surfaceIntent === undefined ? undefined
+    : validateHoleTemplateSurfaceIntent(input.surfaceIntent, width, height, new Set(cells.flatMap(cell => isRecord(cell) && Number.isInteger(cell.x) && Number.isInteger(cell.y) ? [(cell.y as number) * width + (cell.x as number)] : [])));
+  if (surfaceIntent && !surfaceIntent.ok) issues.push(...surfaceIntent.issues);
 
   if (!Array.isArray(input.obstacles) || input.obstacles.length > MAX_FEATURES) issue(issues, "invalid_value", "template.obstacles", "Expected at most 20,000 natural features.");
   const obstacleKeys = new Set<string>();
@@ -333,7 +338,7 @@ export function validateHoleTemplateV1(input: unknown): HoleTemplateValidationRe
   }
 
   if (issues.length > 0) return { ok: false, issues };
-  const value = normalizeTemplate(input as unknown as HoleTemplateV1);
+  const value = normalizeTemplate(input as unknown as HoleTemplateV1, surfaceIntent?.ok ? surfaceIntent.value : undefined);
   return { ok: true, value, canonicalJson: canonicalJson(value) };
 }
 
@@ -393,4 +398,102 @@ export function sha256Hex(text: string): string {
     state[6] = (state[6] + g) >>> 0; state[7] = (state[7] + h) >>> 0;
   }
   return state.map((value) => value.toString(16).padStart(8, "0")).join("");
+}
+
+/** Portable metadata limits are checked before inspecting nested arrays. */
+export const HOLE_TEMPLATE_SURFACE_LIMITS = Object.freeze({
+  features: 512, dimension: 256, pointsPerFeature: 256, nodes: 8_192,
+  handles: 16_384, coverage: 262_144, ringsPerFeature: 32,
+  pointsPerRing: 256, maskPoints: 32_768, samples: 32_768,
+});
+
+/** Capture candidates use course coordinates; cellIndices is the portable
+ * carrier's explicit terrain authority, never a newly rasterized mask. */
+export function validateHoleTemplateSurfaceIntent(
+  input: unknown, width: number, height: number, cellIndices?: ReadonlySet<number>,
+): { ok: true; value: HoleTemplateSurfaceIntentV1 } | { ok: false; issues: HoleTemplateValidationIssue[] } {
+  const issues: HoleTemplateValidationIssue[] = [], path = "template.surfaceIntent";
+  const limits = HOLE_TEMPLATE_SURFACE_LIMITS;
+  if (!isRecord(input)) return { ok: false, issues: [{ code: "invalid_value", path, message: "Expected authored surface metadata." }] };
+  unknownFields(input, ["version", "features"], path, issues);
+  if (input.version !== 1) issue(issues, "unsupported_version", `${path}.version`, "Only authored surface metadata V1 is supported.");
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || !Number.isSafeInteger(width * height)
+    || cellIndices && (width > limits.dimension || height > limits.dimension)) issue(issues, "invalid_value", path, "Authored surface template dimensions must be within 256 by 256 cells.");
+  if (!Array.isArray(input.features) || input.features.length < 1 || input.features.length > limits.features) {
+    issue(issues, "invalid_value", `${path}.features`, "Provide 1–512 authored surface features."); return { ok: false, issues };
+  }
+  let nodes = 0, handles = 0, coverageCount = 0, maskPoints = 0, samples = 0;
+  const ids = new Set<string>();
+  const point = (value: unknown, at: string): value is Point => {
+    if (!isRecord(value)) { issue(issues, "invalid_value", at, "Expected a finite continuous-coordinate point."); return false; }
+    unknownFields(value, ["x", "y"], at, issues);
+    const valid = Number.isFinite(value.x) && Number.isFinite(value.y) && (value.x as number) >= 0 && (value.x as number) <= width && (value.y as number) >= 0 && (value.y as number) <= height;
+    if (!valid) issue(issues, "invalid_value", at, "Continuous coordinates must remain inside the template bounds."); return valid;
+  };
+  for (const [index, candidate] of input.features.entries()) {
+    const at = `${path}.features[${index}]`;
+    if (!isRecord(candidate)) { issue(issues, "invalid_value", at, "Expected an authored surface feature."); continue; }
+    unknownFields(candidate, ["id", "terrain", "order", "geometry", "coverage", "renderRings"], at, issues);
+    if (typeof candidate.id !== "string" || !ID_PATTERN.test(candidate.id)) issue(issues, "invalid_value", `${at}.id`, "Use a unique portable 2–96 character surface identity.");
+    else { if (ids.has(candidate.id)) issue(issues, "duplicate_value", `${at}.id`, "Surface identity is duplicated."); ids.add(candidate.id); }
+    if (!TERRAIN_VALUES.has(candidate.terrain as Terrain)) issue(issues, "invalid_value", `${at}.terrain`, "Unsupported surface terrain.");
+    if (!Number.isSafeInteger(candidate.order) || (candidate.order as number) < 0) issue(issues, "invalid_value", `${at}.order`, "Surface order must be a nonnegative safe integer.");
+    if (!Array.isArray(candidate.coverage) || candidate.coverage.length > width * height || (coverageCount += candidate.coverage.length) > limits.coverage) {
+      issue(issues, "invalid_value", `${at}.coverage`, "Surface coverage exceeds the bounded cell budget."); return { ok: false, issues };
+    }
+    const seen = new Set<number>();
+    for (const cell of candidate.coverage) {
+      if (!Number.isSafeInteger(cell) || cell < 0 || cell >= width * height || cellIndices && !cellIndices.has(cell)) issue(issues, "invalid_value", `${at}.coverage`, "Coverage must reference explicit authored cells inside the template.");
+      else { if (seen.has(cell)) issue(issues, "duplicate_value", `${at}.coverage`, "Coverage cell is duplicated."); seen.add(cell); }
+    }
+    const geometry = candidate.geometry;
+    if (!isRecord(geometry) || geometry.kind !== "corridor" && geometry.kind !== "region") { issue(issues, "invalid_value", `${at}.geometry`, "Expected corridor or region geometry."); continue; }
+    const corridor = geometry.kind === "corridor";
+    unknownFields(geometry, corridor ? ["kind", "knots", "width", "tangents"] : ["kind", "ring", "tangents"], `${at}.geometry`, issues);
+    const points = corridor ? geometry.knots : geometry.ring;
+    if (!Array.isArray(points) || points.length < (corridor ? 1 : 3) || points.length > limits.pointsPerFeature || (nodes += points.length) > limits.nodes) {
+      issue(issues, "invalid_value", `${at}.geometry`, "Surface nodes exceed the bounded geometry budget."); return { ok: false, issues };
+    }
+    const validPoints = points.every((p, i) => point(p, `${at}.geometry.${corridor ? "knots" : "ring"}[${i}]`));
+    if (corridor && (!Number.isFinite(geometry.width) || (geometry.width as number) < .25 || (geometry.width as number) > 24)) issue(issues, "invalid_value", `${at}.geometry.width`, "Corridor width must be between 0.25 and 24.");
+    if (geometry.tangents !== undefined) {
+      if (!Array.isArray(geometry.tangents) || geometry.tangents.length !== points.length || (handles += geometry.tangents.length * 2) > limits.handles) {
+        issue(issues, "invalid_value", `${at}.geometry.tangents`, "Provide exactly one bounded handle pair per authored node."); return { ok: false, issues };
+      }
+      for (const [i, pair] of geometry.tangents.entries()) {
+        const tangentPath = `${at}.geometry.tangents[${i}]`;
+        if (!isRecord(pair)) { issue(issues, "invalid_value", tangentPath, "Expected absolute in/out handles."); continue; }
+        unknownFields(pair, ["in", "out"], tangentPath, issues); point(pair.in, `${tangentPath}.in`); point(pair.out, `${tangentPath}.out`);
+      }
+    }
+    // Exact current loop count: explicit handles do not change chord-based
+    // divisions; an unhandled region returns its authored nodes directly.
+    if (validPoints) {
+      if (!corridor && geometry.tangents === undefined) samples += points.length;
+      else {
+        samples += corridor ? 1 : 0;
+        const count = corridor ? points.length - 1 : points.length;
+        for (let i = 0; i < count; i++) { const a = points[i] as Point, b = points[(i + 1) % points.length] as Point; samples += Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / .2)); }
+      }
+      if (samples > limits.samples) { issue(issues, "invalid_value", `${at}.geometry`, "Surface sampling exceeds the bounded geometry budget."); return { ok: false, issues }; }
+    }
+    if (candidate.renderRings !== undefined) {
+      if (!Array.isArray(candidate.renderRings) || candidate.renderRings.length < 1 || candidate.renderRings.length > limits.ringsPerFeature) {
+        issue(issues, "invalid_value", `${at}.renderRings`, "Provide at most 32 bounded accepted-mask rings."); return { ok: false, issues };
+      }
+      for (const [i, ring] of candidate.renderRings.entries()) {
+        if (!Array.isArray(ring) || ring.length < 3 || ring.length > limits.pointsPerRing || (maskPoints += ring.length) > limits.maskPoints) {
+          issue(issues, "invalid_value", `${at}.renderRings[${i}]`, "Accepted-mask points exceed the bounded geometry budget."); return { ok: false, issues };
+        }
+        ring.forEach((p, j) => point(p, `${at}.renderRings[${i}][${j}]`));
+      }
+    }
+  }
+  if (issues.length) return { ok: false, issues };
+  const features = (input.features as SurfaceFeature[]).map(feature => ({
+    id: feature.id, terrain: feature.terrain, order: feature.order,
+    geometry: structuredClone(feature.geometry), coverage: [...feature.coverage].sort((a, b) => a - b),
+    ...(feature.renderRings ? { renderRings: feature.renderRings.map(ring => ring.map(p => ({ ...p }))) } : {}),
+  })).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  return { ok: true, value: { version: 1, features } };
 }
