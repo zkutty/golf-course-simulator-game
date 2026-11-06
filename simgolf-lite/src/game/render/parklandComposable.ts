@@ -590,21 +590,30 @@ function appendParklandCuesFromSharedFields(
 ): readonly ParklandComposableSemantic[] {
   const drawn: ParklandComposableSemantic[] = [];
   for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
-    const entries = components.filter(component => component.terrain === semantic)
-      .flatMap(component => component.cells.map(cell => ({ cell, component })));
-    const mesh = pending.get(semantic) ?? createParklandComposableMesh(
-      cues[semantic], entries, courseWidth, subdivisions, entry => entry.cell,
-      (entry, x, y) => worldToIso(x, y,
-        sampleLandscapeSurfaceHeight(heightfield, entry.component, x, y), rotation),
-      false, true,
-    );
+    let mesh = pending.get(semantic) ?? null;
+    let originalUnits = 0;
+    if (mesh) {
+      // The cue geometry already exists. Only its callback count is needed;
+      // read current components rather than caching units before callbacks.
+      for (const component of components) if (component.terrain === semantic) originalUnits += component.cells.length;
+    } else {
+      const entries = components.filter(component => component.terrain === semantic)
+        .flatMap(component => component.cells.map(cell => ({ cell, component })));
+      originalUnits = entries.length;
+      mesh = createParklandComposableMesh(
+        cues[semantic], entries, courseWidth, subdivisions, entry => entry.cell,
+        (entry, x, y) => worldToIso(x, y,
+          sampleLandscapeSurfaceHeight(heightfield, entry.component, x, y), rotation),
+        false, true,
+      );
+    }
     if (!mesh) continue;
     mesh.eventMode = "none";
     mesh.label = `parkland-common-phase:semantic:${semantic}`;
     mesh.tint = tintFor(semantic);
     layer.addChild(mesh);
     pending.delete(semantic);
-    onTileMesh?.(mesh, subdivisions, entries.length);
+    onTileMesh?.(mesh, subdivisions, originalUnits);
     drawn.push(semantic);
   }
   return drawn;

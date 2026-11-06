@@ -123,6 +123,54 @@ describe("internal paired turf attribute sharing", () => {
     } finally { cohort.dispose(); cleanup(layer); Object.values(textures).forEach(texture => texture.destroy(true)); }
   });
 
+  it("counts current components for staged cues without deriving units from changed geometry indices", () => {
+    for (const quality of ["high", "medium"] as const) {
+      const data = fixture(), textures = fields(quality), layer = new PIXI.Container();
+      const originalUnits = data.components.filter(component => component.terrain === "rough")
+        .reduce((sum, component) => sum + component.cells.length, 0);
+      let cueUnits: number | null = null, originalIndices: Uint32Array | null = null;
+      try {
+        append(layer, data, quality, textures, true, 0, (mesh, _subdivisions, units) => {
+          if (mesh.label === "parkland-common-phase:semantic:fairway") {
+            data.components.find(component => component.terrain === "rough")!.cells.pop();
+            const field = layer.children.find(child => child.label === "parkland-authoritative-material-field:rough") as PIXI.Mesh<PIXI.MeshGeometry>;
+            originalIndices = field.geometry.indices.slice();
+            field.geometry.indices = field.geometry.indices.slice(0, 6);
+          }
+          if (mesh.label === "parkland-common-phase:semantic:rough") cueUnits = units;
+        });
+        const [, cue] = paired(layer, "rough");
+        expect(cueUnits).toBe(originalUnits - 1);
+        expect(originalIndices).not.toBeNull();
+        expect(digest((cue.geometry as PIXI.MeshGeometry).indices)).toBe(digest(originalIndices!));
+      } finally { cleanup(layer); Object.values(textures).forEach(texture => texture.destroy(true)); }
+    }
+  });
+
+  it("keeps the original geometry/style/callback fallback when a later cue has no staged peer", () => {
+    for (const quality of ["high", "medium"] as const) {
+      const textures = fields(quality), baseline = new PIXI.Container(), shared = new PIXI.Container();
+      const render = (layer: PIXI.Container, useShared: boolean) => {
+        const data = fixture(), missing = data.components.filter(component => component.terrain === "tee");
+        data.components = data.components.filter(component => component.terrain !== "tee");
+        const calls: Array<{ label: string; subdivisions: number; units: number }> = [];
+        const diagnostics = append(layer, data, quality, textures, useShared, 0, (mesh, subdivisions, units) => {
+          calls.push({ label: mesh.label, subdivisions, units });
+          // All fields are already built. The later tee cue must take the real
+          // missing-peer tessellator path with current component contents.
+          if (mesh.label === "parkland-common-phase:semantic:fairway") data.components.push(...missing);
+        });
+        return { calls, diagnostics };
+      };
+      try {
+        expect(render(shared, true)).toEqual(render(baseline, false));
+        expect((shared.children as PIXI.Mesh[]).map(snapshot)).toEqual((baseline.children as PIXI.Mesh[]).map(snapshot));
+        expect(shared.children.some(child => child.label === "parkland-authoritative-material-field:tee")).toBe(false);
+        expect(shared.children.some(child => child.label === "parkland-common-phase:semantic:tee")).toBe(true);
+      } finally { cleanup(baseline); cleanup(shared); Object.values(textures).forEach(texture => texture.destroy(true)); }
+    }
+  });
+
   it("retires staged peers on undercoat fallback while keeping field owners and the original cue builder alive", () => {
     const data = fixture(), textures = fields("high"), layer = new PIXI.Container();
     textures.rough.source.label = "/unknown/rough.png";
