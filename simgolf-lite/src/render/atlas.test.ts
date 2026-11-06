@@ -114,10 +114,15 @@ function installManifest() {
   })));
 }
 
+// Vite asset directives remain in test URLs; classify the image path, not its query.
+function isPngAssetUrl(url: string) {
+  return new URL(url, import.meta.url).pathname.endsWith(".png");
+}
+
 beforeEach(() => {
   __resetAtlasForTests();
   assetsLoad.mockReset();
-  assetsLoad.mockImplementation(async (url: string) => url.endsWith(".png")
+  assetsLoad.mockImplementation(async (url: string) => isPngAssetUrl(url)
     ? { source: { style: {} } }
     : { textures: {} });
   installManifest();
@@ -158,7 +163,7 @@ describe("incremental biome atlas loading", () => {
       if (url.includes("buildings-parkland-high") && url.endsWith(".json")) {
         return { textures: { clubhouse: { marker: "base-building" } } };
       }
-      return url.endsWith(".png")
+      return isPngAssetUrl(url)
         ? { source: { style: {} } }
         : { textures: {} };
     });
@@ -189,7 +194,7 @@ describe("incremental biome atlas loading", () => {
     let failures = 1;
     assetsLoad.mockImplementation(async (url: string) => {
       if (url.includes("autumn-props") && failures-- > 0) throw new Error("transient overlay failure");
-      return url.endsWith(".png") ? { source: { style: {} } } : { textures: {} };
+      return isPngAssetUrl(url) ? { source: { style: {} } } : { textures: {} };
     });
 
     await loadAtlases("parkland", "high", "autumn");
@@ -254,7 +259,7 @@ describe("incremental biome atlas loading", () => {
     });
     assetsLoad.mockImplementation(async (url: string) => {
       if (url.includes("spring-fairway")) return springTexture;
-      return url.endsWith(".png")
+      return isPngAssetUrl(url)
         ? { source: { style: {} }, marker: url }
         : { textures: {} };
     });
@@ -293,7 +298,7 @@ describe("incremental biome atlas loading", () => {
     });
     assetsLoad.mockImplementation(async (url: string) => {
       if (url.includes("terrain-parkland-medium") && url.endsWith(".json")) return delayedMedium;
-      return url.endsWith(".png") ? { source: { style: {} } } : { textures: {} };
+      return isPngAssetUrl(url) ? { source: { style: {} } } : { textures: {} };
     });
 
     const mediumLoad = loadAtlases("parkland", "medium");
@@ -329,7 +334,7 @@ describe("incremental biome atlas loading", () => {
     });
     assetsLoad.mockImplementation(async (url: string) => {
       if (url.includes("terrain-parkland-medium") && url.endsWith(".json")) return delayedMedium;
-      return url.endsWith(".png") ? { source: { style: {} } } : { textures: {} };
+      return isPngAssetUrl(url) ? { source: { style: {} } } : { textures: {} };
     });
 
     const toMedium = loadAtlases("parkland", "medium", "summer");
