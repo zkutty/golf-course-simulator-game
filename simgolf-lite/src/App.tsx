@@ -107,6 +107,7 @@ import {
 } from "./game/editor/editorHistory";
 import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
+import { useAdvisorSeen } from "./hooks/useAdvisorSeen";
 import { LiveControls } from "./ui/LiveControls";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
@@ -830,7 +831,7 @@ export default function App() {
   const [showTutorialOffer, setShowTutorialOffer] = useState(false);
   const [advisorMessage, setAdvisorMessage] = useState<AdvisorMessage | null>(null);
   const [advisorWake, setAdvisorWake] = useState(0);
-  const seenAdvisorMessagesRef = useRef(new Set(loadAppProfile().advisorSeen));
+  const seenAdvisorMessagesRef = useAdvisorSeen();
   const advisorCooldownUntilRef = useRef(0);
   const [a11yMessage, setA11yMessage] = useState("");
   const [quickSaveAnnouncement, setQuickSaveAnnouncement] = useState<{ sequence: number; message: string } | null>(null);
