@@ -14,7 +14,7 @@ export function createBrowserSaveKV(factory: IDBFactory, options: BrowserSaveOpt
   let live = true;
   const client = options.useWorker ? (options.createClient ?? createSaveCommitClient)(() => { if (live) options.onUnknown(); }) : undefined;
   const assertActive = () => { if (!live) throw new Error("Save storage owner was disposed"); };
-  let tail: Promise<unknown> = Promise.resolve();
+  let tail: Promise<void> = Promise.resolve();
   return {
     ...db,
     assertActive,
@@ -26,7 +26,7 @@ export function createBrowserSaveKV(factory: IDBFactory, options: BrowserSaveOpt
         assertActive();
         return run();
       });
-      tail = access.catch(() => undefined);
+      tail = access.then(() => undefined, () => undefined);
       return access;
     },
     async commitSlot(meta, serialize) {
