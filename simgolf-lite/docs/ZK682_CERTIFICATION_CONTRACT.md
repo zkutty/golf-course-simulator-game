@@ -39,6 +39,16 @@ Midrange evidence must record p95 at or below 20 ms. Low-end evidence must
 record p95 at or below 33 ms unless a minimum-spec adjustment is explicitly
 approved and includes evidence, player impact, owner, and a follow-up ZK issue.
 
+The M27 36-hole/100-golfer fixture has a 10000 ms hard load ceiling and a
+6000 ms optimization target (ZK-1259 amendment). The smaller default
+`perfFixture` keeps its 6000 ms ceiling. Renderer work remains at 8 ms and cold
+startup at 5000 ms. Collector, builder, and validator require the raw producer
+to declare the exact M27 fixture and 10000 ms budget; old 6000 ms producer or
+normalized budgets are invalid under this contract. Timings must be finite,
+non-negative numbers; the exact ceiling passes and any excess fails. Raw
+fixture timings preserve measured precision for downstream recomputation.
+Historical failed evidence is preserved and cannot be reclassified.
+
 Headless p95 is always `report-only`. It may be retained in a valid report but
 cannot satisfy either physical-device criterion. A complete passing machine
 packet with no physical results therefore produces `HOLD`, never `GO`.

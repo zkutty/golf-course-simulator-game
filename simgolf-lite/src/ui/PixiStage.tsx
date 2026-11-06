@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 // Pixi's strict-CSP adapter replaces runtime-generated shader/uniform
 // functions with static implementations. Keep this before renderer startup so
 // Workers deployments can retain a script-src policy without 'unsafe-eval'.
 import "pixi.js/unsafe-eval";
+import { LoadingCard } from "./appShell/LoadingCard";
+import type { FirstCourseRender } from "../game/render/firstCourseRender";
 import { destroySceneSubtree } from "../game/render/destroySceneSubtree";
 import { createOwnedMacroMeshes } from "../game/render/ownedMacroGeometry";
 import { releaseIdleGraphicsPools } from "../game/render/releaseIdleGraphicsPools";
@@ -937,6 +939,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
   ] | null>(null);
   const renderRevisionTrackerRef = useRef(new RenderRevisionTracker());
   const [appReady, setAppReady] = useState(false);
+  const [rendererPresented, setRendererPresented] = useState(false);
+  const firstCourseRenderRef = useRef<FirstCourseRender | null>(null);
   const atlasRevision = atlasContext.generation;
   const seasonalPlantsSignature = seasonalPlantSceneSignature(
     props.seasonalVisualState,
@@ -1401,6 +1405,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     surfaceHeightAt,
     surfaceEditorSnapshot,
   ]);
+  const currentRenderSnapshotRef = useRef<RenderSnapshot>(renderSnapshot);
+  useLayoutEffect(() => { currentRenderSnapshotRef.current = renderSnapshot; }, [renderSnapshot]);
   // ---------------------------------------------------------------------
   // Camera: world container transform + screen↔world mapping
   // ---------------------------------------------------------------------
@@ -1943,6 +1949,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     if (!container) return;
 
     const app = new PIXI.Application();
+    let firstCourseRender: FirstCourseRender | null = null;
+    setRendererPresented(false);
     setRendererError(false);
 
     const init = async () => {
@@ -2052,11 +2060,16 @@ export function PixiStage(requestedProps: PixiStageProps) {
           resolutionScale: initialRendererConfigRef.current.resolutionScale,
         });
       }
+      firstCourseRender = deferredWorldScenes.observeFirstCourseRender(app,
+        () => currentRenderSnapshotRef.current,
+        () => { if (!cancelled && appRef.current === app) setRendererPresented(true); });
+      firstCourseRenderRef.current = firstCourseRender;
       setAppReady(true);
       devLog(`initialized ${width}x${height}`);
     };
 
     void init().catch((error: unknown) => {
+      firstCourseRender?.dispose();
       if (cancelled) {
         // A StrictMode replacement may already own these shared refs.
         if (appRef.current === app) {
@@ -2079,6 +2092,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
     return () => {
       cancelled = true;
+      firstCourseRender?.dispose();
+      if (firstCourseRenderRef.current === firstCourseRender) firstCourseRenderRef.current = null;
       supersedePendingAtlasLoad();
       setAppReady(false);
       viewportInputControllerRef.current?.destroy();
@@ -3947,6 +3962,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       setRendererError(true);
       return;
     }
+    firstCourseRenderRef.current?.prepare(null);
     const atmosphere = deferredWorldScenes.createAtmosphereSceneSystem({
       stage: app.stage,
       world: layers.world,
@@ -4038,7 +4054,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
   useEffect(() => {
     if (!appReady) return;
-    const renderedScenes = sceneSystemHostRef.current?.sync(renderSnapshot) ?? [];
+    firstCourseRenderRef.current?.prepare(null);
+    const host = sceneSystemHostRef.current;
+    const renderedScenes = host?.sync(renderSnapshot) ?? [];
     const layers = layersRef.current;
     if (layers) {
       if (renderedScenes.includes("atmosphere")) {
@@ -4060,6 +4078,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         stampAtlasGeneration(layers.sceneDecals.naturalProps, atlasRevision);
       }
     }
+    if (host && sceneSystemHostRef.current === host) firstCourseRenderRef.current?.prepare(renderSnapshot);
   }, [appReady, atlasRevision, renderSnapshot]);
 
   // Tee/cup/draft markers and live pin flags are owned by holeMarkersScene.
@@ -4273,6 +4292,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           touchAction: "none",
         }}
       />
+      {!rendererPresented && !rendererError && <LoadingCard embedded label={t("renderer.loading")} />}
       {rendererError && (
         <div
           data-testid="course-renderer-error"

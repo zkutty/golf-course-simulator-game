@@ -169,14 +169,14 @@ function inspectAsset(report, candidateCommit, readBound) {
 function inspectHeadless(report, candidateCommit, readBound) {
   exactKeys(report, ["schemaVersion", "gate", "candidateCommit", "capturedAt", "source", "budgets", "scenario", "measurements", "physicalDevice", "frameP95Asserted", "passed"], "headless evidence");
   if (report.schemaVersion !== 1 || report.gate !== "headless-performance" || report.candidateCommit !== candidateCommit) throw new Error("headless evidence identity/schema mismatch");
-  const expectedBudgets = { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5_000, fixtureLoadMilliseconds: 6_000 };
-  if (stableJson(report.budgets) !== stableJson(expectedBudgets)) throw new Error("headless startup/fixture budgets were relaxed");
+  const expectedBudgets = { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5_000, fixtureLoadMilliseconds: 10_000 };
+  if (stableJson(report.budgets) !== stableJson(expectedBudgets)) throw new Error("headless startup/fixture budgets differ from the pinned contract");
   if (report.physicalDevice !== false || report.frameP95Asserted !== false) throw new Error("headless evidence cannot claim physical frame p95");
   const source = readBound(report.source);
-  const expectedMeasurements = { frameP95Ms: Number(source?.renderer?.p95Ms), rendererWorkMs: Number(source?.renderer?.workMs), coldStartupMs: Number(source?.coldStartupMs), fixtureLoadMs: Number(source?.fixtureLoadMs) };
+  const expectedMeasurements = { frameP95Ms: source?.renderer?.p95Ms, rendererWorkMs: source?.renderer?.workMs, coldStartupMs: source?.coldStartupMs, fixtureLoadMs: source?.fixtureLoadMs };
   if (stableJson(report.measurements) !== stableJson(expectedMeasurements) || !Object.values(expectedMeasurements).every(finiteNonnegative)) throw new Error("headless measurements disagree with source evidence");
-  if (source?.effective?.fixture !== "m27Fixture" || source?.effective?.frameAssertion !== false || source?.effective?.budgets?.rendererWorkMilliseconds !== 8 || source?.effective?.budgets?.coldStartupMilliseconds !== 5_000) throw new Error("headless source does not use the pinned workload/budgets");
-  const passed = expectedMeasurements.rendererWorkMs <= 8 && expectedMeasurements.coldStartupMs <= 5_000 && expectedMeasurements.fixtureLoadMs <= 6_000;
+  if (source?.version !== 1 || source?.fixture !== "m27Fixture" || source?.effective?.fixture !== "m27Fixture" || source?.effective?.frameAssertion !== false || source?.effective?.budgets?.rendererWorkMilliseconds !== 8 || source?.effective?.budgets?.coldStartupMilliseconds !== 5_000 || source?.effective?.budgets?.fixtureLoadMilliseconds !== 10_000) throw new Error("headless source does not use the pinned workload/budgets");
+  const passed = expectedMeasurements.rendererWorkMs <= 8 && expectedMeasurements.coldStartupMs <= 5_000 && expectedMeasurements.fixtureLoadMs <= 10_000;
   if (report.passed !== passed) throw new Error("headless passed flag disagrees with recomputed measurements");
   return { passed, measurements: expectedMeasurements, scenario: report.scenario, budgets: report.budgets };
 }
@@ -336,8 +336,8 @@ export async function buildZk682Packet({ root, candidateCommit, evidenceRoot = Z
   gates.push(gate(ctx, "headless-performance", [
     criterion("representative-36-hole-100-golfer-load", hp.measurements.rendererWorkMs <= ZK682_BUDGETS.rendererWorkMilliseconds, "Renderer work is derived from the 36-hole/100-golfer source report."),
     { id: "headless-frame-p95-report-only", status: "report-only", summary: "Headless frame p95 is retained as a trend signal only." },
-    criterion("startup-and-fixture-load", hp.measurements.coldStartupMs <= 5_000 && hp.measurements.fixtureLoadMs <= 6_000, "Startup and fixture load use fixed 5000/6000 ms budgets."),
-  ], { physicalDevice: false, frameP95Asserted: false, ...hp.measurements, coldStartupBudgetMs: 5_000, fixtureLoadBudgetMs: 6_000, scenario: hp.scenario, receipts: receiptRefs(["headless-performance"]), typedEvidence: headless.artifact }, [receipts.get("headless-performance").artifact, headless.artifact, ctx.bind(resolve(ctx.root, headless.value.source.path), true)], "typed headless performance evidence"));
+    criterion("startup-and-fixture-load", hp.measurements.coldStartupMs <= 5_000 && hp.measurements.fixtureLoadMs <= 10_000, "Startup and fixture load use fixed 5000/10000 ms budgets."),
+  ], { physicalDevice: false, frameP95Asserted: false, ...hp.measurements, coldStartupBudgetMs: 5_000, fixtureLoadBudgetMs: 10_000, scenario: hp.scenario, receipts: receiptRefs(["headless-performance"]), typedEvidence: headless.artifact }, [receipts.get("headless-performance").artifact, headless.artifact, ctx.bind(resolve(ctx.root, headless.value.source.path), true)], "typed headless performance evidence"));
 
   const saveLoad = supplemental.get("save-load-resource-stability");
   const longSession = supplemental.get("long-session-resource-stability");

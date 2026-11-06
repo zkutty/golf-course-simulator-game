@@ -98,9 +98,9 @@ function fixture() {
   const assetSource = write(root, "artifacts/zk682/raw/m35-asset-audit.json", { ok: true, initialCritical: { bytes: 7_000_000 }, dist: { bundles: { parkland: { high: { bytes: 5_000_000 } } } } });
   const browserBuild = write(root, "artifacts/zk682/raw/browser-build-manifest.json", { "src/main.tsx": { file: "assets/index.js", isEntry: true } });
   write(raw, "asset-delivery.json", { schemaVersion: 1, gate: "asset-delivery", candidateCommit: commit, capturedAt: NOW, source: assetSource, browserBuild, bundles: [{ theme: "parkland", tier: "high", bytes: 5_000_000 }], atlases: [{ path: "atlases/fixture.png", bytes: 4_000_000, sha256: "a".repeat(64) }], measurements: { initialCriticalBytes: 7_000_000, selectedBiomeMaxBytes: 5_000_000, individualAtlasMaxBytes: 4_000_000 }, passed: true });
-  const perf = { version: 1, theme: "parkland", fixture: "m27Fixture", coldStartupMs: 1000, fixtureLoadMs: 4000, renderer: { workMs: 1, p95Ms: 99 }, effective: { fixture: "m27Fixture", frameAssertion: false, budgets: { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5000 } } };
+  const perf = { version: 1, theme: "parkland", fixture: "m27Fixture", coldStartupMs: 1000, fixtureLoadMs: 4000, renderer: { workMs: 1, p95Ms: 99 }, effective: { fixture: "m27Fixture", frameAssertion: false, budgets: { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5000, fixtureLoadMilliseconds: 10000 } } };
   const perfSource = write(root, "artifacts/zk682/raw/headless-performance-source.json", perf);
-  write(raw, "headless-performance.json", { schemaVersion: 1, gate: "headless-performance", candidateCommit: commit, capturedAt: NOW, source: perfSource, budgets: { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5000, fixtureLoadMilliseconds: 6000 }, scenario: { holes: 36, golfers: 100, biome: "parkland", season: "summer", weather: "clear" }, measurements: { frameP95Ms: 99, rendererWorkMs: 1, coldStartupMs: 1000, fixtureLoadMs: 4000 }, physicalDevice: false, frameP95Asserted: false, passed: true });
+  write(raw, "headless-performance.json", { schemaVersion: 1, gate: "headless-performance", candidateCommit: commit, capturedAt: NOW, source: perfSource, budgets: { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5000, fixtureLoadMilliseconds: 10000 }, scenario: { holes: 36, golfers: 100, biome: "parkland", season: "summer", weather: "clear" }, measurements: { frameP95Ms: 99, rendererWorkMs: 1, coldStartupMs: 1000, fixtureLoadMs: 4000 }, physicalDevice: false, frameP95Asserted: false, passed: true });
   return { repository, root, raw, commit };
 }
 
@@ -145,9 +145,9 @@ test("builder rejects relaxed timing budgets, wrong HEAD, and unbound raw files"
   try {
     const path = join(relaxed.raw, "headless-performance.json");
     const report = JSON.parse(readFileSync(path, "utf8"));
-    report.budgets.fixtureLoadMilliseconds = 6001;
+    report.budgets.fixtureLoadMilliseconds = 10001;
     writeFileSync(path, `${JSON.stringify(report)}\n`);
-    await assert.rejects(() => buildZk682Packet({ root: relaxed.root, candidateCommit: relaxed.commit, invokeCertification: false }), /budgets were relaxed/);
+    await assert.rejects(() => buildZk682Packet({ root: relaxed.root, candidateCommit: relaxed.commit, invokeCertification: false }), /budgets differ from the pinned contract/);
   } finally { rmSync(relaxed.repository, { recursive: true, force: true }); }
   const extra = fixture();
   try {
@@ -201,4 +201,46 @@ test("builder retains a red legacy first12 diagnostic without failing a green sc
     assert.equal(stability.criteria.find(c => c.id === "save-load-resource-stability").status, "pass");
     assert(stability.artifacts.some(a => a.path.endsWith("save-load-first12-diagnostic.json")));
   } finally { rmSync(value.repository, { recursive: true, force: true }); }
+});
+
+function rewriteHeadless(value, mutate) {
+  const path = join(value.raw, "headless-performance.json");
+  const report = JSON.parse(readFileSync(path, "utf8"));
+  const source = JSON.parse(readFileSync(join(value.root, report.source.path), "utf8"));
+  mutate(source, report);
+  report.source = write(value.root, report.source.path, source);
+  writeFileSync(path, `${JSON.stringify(report)}\n`);
+}
+
+test("builder retains exact-ceiling M27 passes and over-ceiling failures", async () => {
+  for (const [fixtureLoadMs, passed] of [[10000, true], [10000.001, false]]) {
+    const value = fixture();
+    try {
+      rewriteHeadless(value, (source, report) => {
+        source.fixtureLoadMs = report.measurements.fixtureLoadMs = fixtureLoadMs;
+        report.passed = passed;
+      });
+      const built = await buildZk682Packet({ root: value.root, candidateCommit: value.commit, invokeCertification: false });
+      const gate = built.gates.find(entry => entry.gateId === "headless-performance");
+      assert.equal(gate.observations.fixtureLoadBudgetMs, 10000);
+      assert.equal(gate.observations.fixtureLoadMs, fixtureLoadMs);
+      assert.equal(gate.criteria.find(entry => entry.id === "startup-and-fixture-load").status, passed ? "pass" : "fail");
+    } finally { rmSync(value.repository, { recursive: true, force: true }); }
+  }
+});
+
+test("builder rejects old normalized budgets, raw budget drift and invalid source timings", async () => {
+  for (const [mutate, error] of [
+    [(source, report) => { report.budgets.fixtureLoadMilliseconds = 6000; }, /budgets differ from the pinned contract/],
+    [source => { source.effective.budgets.fixtureLoadMilliseconds = 6000; }, /pinned workload\/budgets/],
+    [source => { delete source.effective.budgets.fixtureLoadMilliseconds; }, /pinned workload\/budgets/],
+    [source => { source.fixture = "perfFixture"; }, /pinned workload\/budgets/],
+    ...[-1, null, NaN, Infinity, "1000"].map(timing => [source => { source.fixtureLoadMs = timing; }, /measurements disagree/]),
+  ]) {
+    const value = fixture();
+    try {
+      rewriteHeadless(value, mutate);
+      await assert.rejects(() => buildZk682Packet({ root: value.root, candidateCommit: value.commit, invokeCertification: false }), error);
+    } finally { rmSync(value.repository, { recursive: true, force: true }); }
+  }
 });

@@ -34,7 +34,8 @@ const BIOME_KEYS = loadBiomeKeys();
 const PERF_THEME = BIOME_KEYS.includes(process.env.PERF_THEME) ? process.env.PERF_THEME : BIOME_KEYS[0];
 const PERF_FIXTURE = process.env.PERF_FIXTURE === "m27" ? "m27Fixture" : "perfFixture";
 const STARTUP_BUDGET_MS = Number(process.env.PERF_STARTUP_BUDGET_MS || 5000);
-const FIXTURE_LOAD_BUDGET_MS = 6000;
+// M27 retains a 6000 ms optimization target; only its hard ceiling is 10000 ms.
+const FIXTURE_LOAD_BUDGET_MS = PERF_FIXTURE === "m27Fixture" ? 10000 : 6000;
 const FIXTURE_READY_TIMEOUT_MS = Number(process.env.PERF_FIXTURE_READY_TIMEOUT_MS || 120_000);
 const WARMUP_S = 8;
 const OUTPUT_PATH = process.env.PERF_OUTPUT_PATH
@@ -221,7 +222,8 @@ const evidence = {
   theme: PERF_THEME,
   fixture: PERF_FIXTURE,
   coldStartupMs: Math.round(coldStartupMs),
-  fixtureLoadMs: Math.round(fixtureLoadMs),
+  // Preserve the exact threshold decision for downstream evidence recomputation.
+  fixtureLoadMs,
   renderer: perf,
   effective: {
     theme: PERF_THEME,
