@@ -8,6 +8,7 @@ import type { CourseRecords } from "../game/retention/types";
 import { platformServices } from "../platform";
 import { normalizeExperienceAxes } from "../game/balance/experience";
 import { systemControlEnvelope } from "../game/experience/systemControl";
+import { MANIFEST_KEY, SLOT_PREFIX, parseManifest, payloadKey, type SaveKV as KV } from "./saveStoreManifest";
 
 /**
  * Save repository (ZKU-174): named slots + rotating autosaves + quicksave.
@@ -67,8 +68,6 @@ export interface SaveFile {
   appProfile?: AppProfile;
 }
 
-const MANIFEST_KEY = "coursecraft_saves_manifest_v1";
-const SLOT_PREFIX = "coursecraft_save_";
 const LEGACY_KEY = LEGACY_SAVE_KEY;
 const AUTOSAVE_SLOTS = 3;
 export const MAX_MANUAL_SLOTS = 8;
@@ -76,13 +75,6 @@ export const MAX_MANUAL_SLOTS = 8;
 // ---------------------------------------------------------------------
 // KV driver: IndexedDB → localStorage → memory
 // ---------------------------------------------------------------------
-
-interface KV {
-  get(key: string): Promise<string | null>;
-  set(key: string, value: string): Promise<void>;
-  del(key: string): Promise<void>;
-  commitSlot?(meta: SaveSlotMeta, serializePayload: () => Promise<string>): Promise<SaveSlotMeta[] | null>;
-}
 
 function memoryKV(): KV {
   const m = new Map<string, string>();
@@ -109,127 +101,55 @@ function nativePlatformKV(): KV {
   };
 }
 
-function indexedDbKV(factory: IDBFactory = indexedDB): KV & { ready: Promise<void> } {
-  const open = new Promise<IDBDatabase>((resolve, reject) => {
-    const req = factory.open("coursecraft-saves", 1);
-    req.onupgradeneeded = () => req.result.createObjectStore("kv");
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-  const tx = async <T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>) => {
-    const db = await open;
-    const awaitCommit = mode === "readwrite";
-    return new Promise<T>((resolve, reject) => {
-      const t = db.transaction("kv", mode);
-      let request: IDBRequest<T> | undefined;
-      let requestSucceeded = false;
-      let result: T;
-      let settled = false;
-
-      const fail = (error: unknown) => {
-        if (settled) return;
-        settled = true;
-        reject(error);
-      };
-
-      // A successful write request is only an intermediate acknowledgement.
-      // Its data is not visible/durable until the transaction completes, and
-      // a later abort must still reject the operation. A readonly get has no
-      // commit boundary: request success already means it observed a visible
-      // value, so returning then avoids making the load UI wait on unrelated
-      // transaction cleanup after a completed save.
-      t.oncomplete = () => {
-        if (settled) return;
-        if (!requestSucceeded) {
-          fail(new Error("IndexedDB transaction completed without a successful request"));
-          return;
-        }
-        settled = true;
-        resolve(result);
-      };
-      t.onerror = () => fail(t.error ?? request?.error ?? new Error("IndexedDB transaction failed"));
-      t.onabort = () => fail(t.error ?? request?.error ?? new Error("IndexedDB transaction aborted"));
-
-      try {
-        request = run(t.objectStore("kv"));
-        request.onsuccess = () => {
-          if (!awaitCommit) {
-            settled = true;
-            resolve(request!.result);
-            return;
-          }
-          requestSucceeded = true;
-          result = request!.result;
-        };
-        request.onerror = () => fail(request!.error ?? t.error ?? new Error("IndexedDB request failed"));
-      } catch (error) {
-        fail(error);
-      }
-    });
-  };
-  return {
-    ready: open.then(() => undefined),
-    get: (k) => tx<string | undefined>("readonly", (s) => s.get(k)).then((v) => v ?? null),
-    set: (k, v) => tx("readwrite", (s) => s.put(v, k)).then(() => undefined),
-    del: (k) => tx("readwrite", (s) => s.delete(k)).then(() => undefined),
-    commitSlot: async (meta, serializePayload) => {
-      // Serialization can load modules; finish it before opening a transaction.
-      const serialized = await serializePayload();
-      const db = await open;
-      return new Promise<SaveSlotMeta[]>((resolve, reject) => {
-        const transaction = db.transaction("kv", "readwrite");
-        const store = transaction.objectStore("kv");
-        let committedManifest: SaveSlotMeta[] | undefined;
-        let settled = false;
-        const fail = (error: unknown) => {
-          if (settled) return;
-          settled = true;
-          // A callback exception must not leave already queued writes live.
-          try { transaction.abort(); } catch { /* already aborted/completed */ }
-          reject(error);
-        };
-        transaction.onerror = () => fail(transaction.error ?? new Error("IndexedDB slot commit failed"));
-        transaction.onabort = () => fail(transaction.error ?? new Error("IndexedDB slot commit aborted"));
-        transaction.oncomplete = () => {
-          if (settled) return;
-          if (!committedManifest) { fail(new Error("IndexedDB slot commit completed without a manifest")); return; }
-          settled = true;
-          resolve(committedManifest);
-        };
-        const check = (request: IDBRequest) => {
-          request.onerror = () => fail(request.error ?? transaction.error ?? new Error("IndexedDB slot request failed"));
-        };
-        try {
-          const read = store.get(MANIFEST_KEY);
-          check(read);
-          read.onsuccess = () => {
-            try {
-              const manifest = parseManifest(read.result ?? null);
-              const index = manifest.findIndex((entry) => entry.id === meta.id);
-              const previous = index >= 0 ? manifest[index] : undefined;
-              if (!meta.storageKey) throw new Error("IndexedDB slot commit requires a revision key");
-              check(store.put(serialized, meta.storageKey));
-              if (index >= 0) manifest[index] = meta;
-              else manifest.push(meta);
-              if (failNextManifestWrite) {
-                failNextManifestWrite = false;
-                throw new Error("Simulated interrupted manifest commit");
-              }
-              check(store.put(JSON.stringify(manifest), MANIFEST_KEY));
-              const previousKey = payloadKey(previous, meta.id);
-              if (previous && previousKey !== meta.storageKey) check(store.delete(previousKey));
-              committedManifest = manifest;
-            } catch (error) { fail(error); }
-          };
-        } catch (error) { fail(error); }
-      });
-    },
-  };
+/** Test hook: create the real IndexedDB driver against a controlled factory. */
+export async function __createIndexedDbKVForTests(factory: IDBFactory): Promise<KV & { ready: Promise<void> }> {
+  const { createIndexedDbKV } = await import("./saveStoreIndexedDb");
+  return createIndexedDbKV(factory, consumeManifestFailure);
 }
 
-/** Test hook: create the real IndexedDB driver against a controlled factory. */
-export function __createIndexedDbKVForTests(factory: IDBFactory): KV & { ready: Promise<void> } {
-  return indexedDbKV(factory);
+function consumeManifestFailure(): boolean {
+  if (!failNextManifestWrite) return false;
+  failNextManifestWrite = false;
+  return true;
+}
+
+function lazyBrowserKV(factory: IDBFactory, useWorker: boolean, fallbackOnOpen = false): KV & { ready: Promise<void> } {
+  let live = true;
+  // Import/factory rejection deliberately propagates. Only an actual IDB-open failure uses the old fallback policy.
+  const loaded: Promise<KV> = import("./saveStoreBrowser").then(({ createBrowserSaveKV }) => {
+    if (!live) throw new Error("Save storage owner was disposed");
+    const driver = createBrowserSaveKV(factory, {
+      useWorker,
+      consumeFailure: consumeManifestFailure,
+      restoreFailure: () => { if (live) failNextManifestWrite = true; },
+      onUnknown: () => { if (live) delete (globalThis as ManifestCacheHost).__coursecraftSaveStoreManifestV1; },
+    });
+    return driver.ready.then(() => driver, (error: unknown) => {
+      driver.dispose?.();
+      if (!fallbackOnOpen) throw error;
+      return fallbackKV();
+    });
+  });
+  const ready = loaded.then(() => undefined);
+  // Initialization may fail before any caller asks for storage; operations still receive that same rejection.
+  void ready.catch(() => undefined);
+  const assertActive = () => { if (!live) throw new Error("Save storage owner was disposed"); };
+  return {
+    ready,
+    assertActive,
+    get: (key) => loaded.then((driver) => { assertActive(); return driver.get(key); }),
+    set: (key, value) => loaded.then((driver) => { assertActive(); return driver.set(key, value); }),
+    del: (key) => loaded.then((driver) => { assertActive(); return driver.del(key); }),
+    commitSlot: async (meta, serialize) => {
+      const driver = await loaded;
+      assertActive();
+      const manifest = await driver.commitSlot?.(meta, serialize) ?? null;
+      assertActive();
+      return manifest;
+    },
+    manifestAccess: (run) => loaded.then((driver) => { assertActive(); return driver.manifestAccess ? driver.manifestAccess(run) : run(); }),
+    dispose: () => { live = false; void loaded.then((driver) => driver.dispose?.()).catch(() => undefined); },
+  };
 }
 
 function fallbackKV(): KV {
@@ -245,26 +165,24 @@ function pickKV(): KV {
   if (platformServices.capabilities.nativeFiles) return nativePlatformKV();
   try {
     if (typeof indexedDB === "undefined") return fallbackKV();
-    const idb = indexedDbKV();
-    // indexedDB.open can also fail ASYNCHRONOUSLY (private browsing,
-    // blocked storage). Route every op through a driver promise that
-    // swaps to the fallback if the database never opens.
-    const driver = idb.ready.then(
-      () => idb as KV,
-      () => fallbackKV()
-    );
-    return {
-      get: (k) => driver.then((d) => d.get(k)),
-      set: (k, v) => driver.then((d) => d.set(k, v)),
-      del: (k) => driver.then((d) => d.del(k)),
-      commitSlot: (meta, serializePayload) => driver.then((d) => d.commitSlot?.(meta, serializePayload) ?? null),
-    };
+    return lazyBrowserKV(indexedDB, true, true);
   } catch {
     return fallbackKV();
   }
 }
 
 let kv: KV = pickKV();
+if (import.meta.hot) import.meta.hot.dispose(() => {
+  // HMR disposes this owner before evaluating its replacement. Do not carry an unknown pending revision's cache forward.
+  delete (globalThis as ManifestCacheHost).__coursecraftSaveStoreManifestV1;
+  kv.dispose?.();
+});
+
+// Only browser IndexedDB drivers coordinate manifest-dependent operations; unrelated KV reads/writes stay independent.
+function withManifestAccess<T>(run: (storage: KV) => Promise<T>): Promise<T> {
+  const storage = kv;
+  return storage.manifestAccess ? storage.manifestAccess(() => run(storage)) : run(storage);
+}
 let migrated = false;
 let writeSeq = 0;
 let autosaveTail: Promise<unknown> = Promise.resolve();
@@ -314,13 +232,15 @@ function manifestCache(): SaveSlotMeta[] | null {
   return Array.isArray(cached) ? cached : null;
 }
 
-function commitManifestCache(manifest: readonly SaveSlotMeta[]): void {
+function commitManifestCache(manifest: readonly SaveSlotMeta[], storage: KV): void {
+  storage.assertActive?.();
   (globalThis as ManifestCacheHost).__coursecraftSaveStoreManifestV1 = copyManifest(manifest);
   for (const listener of manifestListeners) listener();
 }
 
 /** Test hook: swap in a fresh in-memory driver. */
 export function __resetSaveStoreForTests(): void {
+  kv.dispose?.();
   kv = memoryKV();
   migrated = false;
   writeSeq = 0;
@@ -339,6 +259,7 @@ export function __setSaveModuleImporterForTests(importer: () => Promise<SaveModu
 
 /** Test hook: exercise the store against a deliberately slow KV driver. */
 export function __setSaveStoreKVForTests(driver: KV): void {
+  kv.dispose?.();
   kv = driver;
   migrated = false;
   writeSeq = 0;
@@ -359,56 +280,43 @@ export function __failNextManifestWriteForTests(): void {
 
 /** E2E-only fixture support for pre-M13 manifests and missing revisions. */
 export async function __omitSlotThemeForTests(id: string): Promise<void> {
-  const manifest = await readManifest();
-  const entry = manifest.find((candidate) => candidate.id === id);
-  if (!entry) return;
-  delete entry.theme;
-  await writeManifest(manifest);
+  return withManifestAccess(async (storage) => {
+    const manifest = await readManifest(storage);
+    const entry = manifest.find((candidate) => candidate.id === id);
+    if (!entry) return;
+    delete entry.theme;
+    await writeManifest(manifest, storage);
+  });
 }
 
 export async function __deleteSlotPayloadForTests(id: string): Promise<void> {
-  const manifest = await readManifest();
-  await kv.del(payloadKey(manifest.find((candidate) => candidate.id === id), id));
+  return withManifestAccess(async (storage) => {
+    const manifest = await readManifest(storage);
+    await storage.del(payloadKey(manifest.find((candidate) => candidate.id === id), id));
+  });
 }
 
 // ---------------------------------------------------------------------
 // Manifest + slots
 // ---------------------------------------------------------------------
 
-async function readManifest(): Promise<SaveSlotMeta[]> {
+async function readManifest(storage: KV = kv): Promise<SaveSlotMeta[]> {
+  storage.assertActive?.();
   const cached = manifestCache();
   if (cached) return copyManifest(cached);
-  return parseManifest(await kv.get(MANIFEST_KEY));
+  return parseManifest(await storage.get(MANIFEST_KEY));
 }
 
-function parseManifest(raw: string | null): SaveSlotMeta[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as SaveSlotMeta[];
-    return Array.isArray(parsed) ? parsed.map((meta) => {
-      const axes = normalizeExperienceAxes(meta);
-      const { difficulty: _legacyDifficulty, ...current } = meta;
-      void _legacyDifficulty;
-      return { ...current, ...axes };
-    }) : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeManifest(manifest: SaveSlotMeta[]): Promise<void> {
+async function writeManifest(manifest: SaveSlotMeta[], storage: KV): Promise<void> {
+  storage.assertActive?.();
   if (failNextManifestWrite) {
     failNextManifestWrite = false;
     throw new Error("Simulated interrupted manifest commit");
   }
-  await kv.set(MANIFEST_KEY, JSON.stringify(manifest));
+  await storage.set(MANIFEST_KEY, JSON.stringify(manifest));
   // Cache only after the write transaction resolves, so a failed manifest
   // update can never advertise a slot that was not durably committed.
-  commitManifestCache(manifest);
-}
-
-function payloadKey(meta: SaveSlotMeta | undefined, id: string): string {
-  return meta?.storageKey ?? SLOT_PREFIX + id;
+  commitManifestCache(manifest, storage);
 }
 
 function metaFor(
@@ -445,19 +353,25 @@ function metaFor(
 /** One-time migration of the legacy single-slot localStorage save. */
 async function migrateLegacyOnce(): Promise<void> {
   if (migrated) return;
+  return withManifestAccess(migrateLegacyInternal);
+}
+
+async function migrateLegacyInternal(storage: KV): Promise<void> {
+  storage.assertActive?.();
+  if (migrated) return;
   migrated = true;
   try {
     if (typeof localStorage === "undefined") return;
     const raw = localStorage.getItem(LEGACY_KEY);
     if (!raw) return;
-    const manifest = await readManifest();
+    const manifest = await readManifest(storage);
     if (manifest.some((m) => m.id === "legacy")) return;
     const { normalizeLoadedSave } = await loadSaveModule();
     const normalized = normalizeLoadedSave(JSON.parse(raw));
     if (!normalized) return;
-    await kv.set(SLOT_PREFIX + "legacy", JSON.stringify(await payloadToFile(normalized)));
+    await storage.set(SLOT_PREFIX + "legacy", JSON.stringify(await payloadToFile(normalized)));
     manifest.push(metaFor("legacy", "manual", "Migrated save", normalized));
-    await writeManifest(manifest);
+    await writeManifest(manifest, storage);
     // Leave the legacy key in place so downgrades still work; new saves go
     // through the store only.
   } catch {
@@ -493,29 +407,40 @@ export async function saveToSlot(
   name: string,
   payload: SavePayload
 ): Promise<SaveSlotMeta> {
-  await migrateLegacyOnce();
+  return withManifestAccess((storage) => saveToSlotInternal(id, kind, name, payload, storage));
+}
+
+async function saveToSlotInternal(
+  id: string | null,
+  kind: SlotKind,
+  name: string,
+  payload: SavePayload,
+  storage: KV
+): Promise<SaveSlotMeta> {
+  await migrateLegacyInternal(storage);
+  storage.assertActive?.();
   const slotId = id ?? `${kind}-${Date.now().toString(36)}`;
   const meta = metaFor(slotId, kind, name, payload);
   meta.storageKey = `${SLOT_PREFIX}${slotId}@${meta.savedAt.toString(36)}-${meta.seq.toString(36)}`;
-  const committed = await kv.commitSlot?.(meta, async () => JSON.stringify(await payloadToFile(payload)));
+  const committed = await storage.commitSlot?.(meta, async () => JSON.stringify(await payloadToFile(payload)));
   if (committed) {
-    commitManifestCache(committed);
+    commitManifestCache(committed, storage);
     return meta;
   }
-  const manifest = await readManifest();
+  const manifest = await readManifest(storage);
   const idx = manifest.findIndex((m) => m.id === slotId);
   const previous = idx >= 0 ? manifest[idx] : undefined;
-  await kv.set(meta.storageKey, JSON.stringify(await payloadToFile(payload)));
+  await storage.set(meta.storageKey, JSON.stringify(await payloadToFile(payload)));
   if (idx >= 0) manifest[idx] = meta;
   else manifest.push(meta);
   try {
-    await writeManifest(manifest);
+    await writeManifest(manifest, storage);
   } catch (error) {
-    await kv.del(meta.storageKey).catch(() => undefined);
+    await storage.del(meta.storageKey).catch(() => undefined);
     throw error;
   }
   const previousKey = payloadKey(previous, slotId);
-  if (previous && previousKey !== meta.storageKey) await kv.del(previousKey).catch(() => undefined);
+  if (previous && previousKey !== meta.storageKey) await storage.del(previousKey).catch(() => undefined);
   return meta;
 }
 
@@ -525,35 +450,41 @@ export async function loadSlot(id: string): Promise<SavePayload | null> {
 }
 
 export async function loadSlotResult(id: string): Promise<SaveLoadResult> {
-  await migrateLegacyOnce();
-  const manifest = await readManifest();
-  const raw = await kv.get(payloadKey(manifest.find((meta) => meta.id === id), id));
-  if (!raw) {
-    return { ok: false, error: { code: "INVALID_SHAPE", message: "That save slot is missing." } };
-  }
-  const { parseSaveText } = await loadSaveModule();
-  return parseSaveText(raw);
+  return withManifestAccess<SaveLoadResult>(async (storage) => {
+    await migrateLegacyInternal(storage);
+    const manifest = await readManifest(storage);
+    const raw = await storage.get(payloadKey(manifest.find((meta) => meta.id === id), id));
+    if (!raw) {
+      return { ok: false, error: { code: "INVALID_SHAPE", message: "That save slot is missing." } };
+    }
+    const { parseSaveText } = await loadSaveModule();
+    return parseSaveText(raw);
+  });
 }
 
 export async function deleteSlot(id: string): Promise<void> {
-  const manifest = await readManifest();
-  const meta = manifest.find((entry) => entry.id === id);
-  await writeManifest(manifest.filter((m) => m.id !== id));
-  await kv.del(payloadKey(meta, id)).catch(() => undefined);
+  return withManifestAccess(async (storage) => {
+    const manifest = await readManifest(storage);
+    const meta = manifest.find((entry) => entry.id === id);
+    await writeManifest(manifest.filter((m) => m.id !== id), storage);
+    await storage.del(payloadKey(meta, id)).catch(() => undefined);
+  });
 }
 
 export async function renameSlot(id: string, name: string): Promise<void> {
-  const manifest = await readManifest();
-  const meta = manifest.find((m) => m.id === id);
-  if (!meta) return;
-  meta.name = name;
-  await writeManifest(manifest);
+  return withManifestAccess(async (storage) => {
+    const manifest = await readManifest(storage);
+    const meta = manifest.find((m) => m.id === id);
+    if (!meta) return;
+    meta.name = name;
+    await writeManifest(manifest, storage);
+  });
 }
 
 /** Rotating autosave: auto-0..auto-N cycle by oldest-first replacement. */
 export function autosave(payload: SavePayload): Promise<SaveSlotMeta> {
-  const save = autosaveTail.catch(() => undefined).then(async () => {
-    const manifest = await readManifest();
+  const save = autosaveTail.catch(() => undefined).then(() => withManifestAccess(async (storage) => {
+    const manifest = await readManifest(storage);
     const autos = manifest
       .filter((m) => m.kind === "auto")
       .sort((a, b) => a.savedAt - b.savedAt || (a.seq ?? 0) - (b.seq ?? 0));
@@ -561,8 +492,8 @@ export function autosave(payload: SavePayload): Promise<SaveSlotMeta> {
       autos.length < AUTOSAVE_SLOTS
         ? `auto-${autos.length}`
         : autos[0].id; // replace the oldest
-    return saveToSlot(id, "auto", "Autosave", payload);
-  });
+    return saveToSlotInternal(id, "auto", "Autosave", payload, storage);
+  }));
   autosaveTail = save;
   return save;
 }
@@ -582,9 +513,11 @@ export async function mostRecentSlot(): Promise<SaveSlotMeta | null> {
 // ---------------------------------------------------------------------
 
 export async function exportSlot(id: string): Promise<string | null> {
-  const manifest = await readManifest();
-  const raw = await kv.get(payloadKey(manifest.find((meta) => meta.id === id), id));
-  return raw ?? null;
+  return withManifestAccess(async (storage) => {
+    const manifest = await readManifest(storage);
+    const raw = await storage.get(payloadKey(manifest.find((meta) => meta.id === id), id));
+    return raw ?? null;
+  });
 }
 
 /**

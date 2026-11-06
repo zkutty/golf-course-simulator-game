@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { createBrowserSaveKV } from "./saveStoreBrowser";
+import { createSaveCommitClient, type SaveCommitWorker } from "./saveCommitWorkerClient";
+import { installSaveCommitWorker, type SaveCommitPort } from "./saveCommitWorkerHandler";
+import type { CommitReply, CommitRequest } from "./saveCommitProtocol";
 import {
   __createIndexedDbKVForTests,
   __resetSaveStoreForTests,
@@ -46,6 +50,7 @@ function transactionalIndexedDb() {
     running = false;
   };
   const database = {
+    close: () => undefined,
     transaction: (_store: string, mode: IDBTransactionMode) => {
       const record = { mode, operations: [] as string[] };
       transactions.push(record);
@@ -100,8 +105,11 @@ function transactionalIndexedDb() {
       return tx as unknown as IDBTransaction;
     },
   } as unknown as IDBDatabase;
-  const open = deferredRequest<IDBDatabase>(database);
-  const factory = { open: () => { queueMicrotask(() => open.onsuccess?.(new Event("success"))); return open; } } as unknown as IDBFactory;
+  const factory = { open: () => {
+    const open = deferredRequest<IDBDatabase>(database);
+    queueMicrotask(() => open.onsuccess?.(new Event("success")));
+    return open;
+  } } as unknown as IDBFactory;
   return {
     factory, values, transactions,
     holdCommit: () => { holdNext = true; return new Promise<void>((resolve) => { signalHeld = resolve; }); },
@@ -115,7 +123,7 @@ describe("atomic IndexedDB slot publication", () => {
 
   it("commits a slot payload and manifest in one transaction against the production driver", async () => {
     const fake = transactionalIndexedDb();
-    const driver = __createIndexedDbKVForTests(fake.factory);
+    const driver = await __createIndexedDbKVForTests(fake.factory);
     await driver.ready;
     __setSaveStoreKVForTests(driver);
     const meta = await saveToSlot("atomic", "manual", "Atomic", payload(4));
@@ -127,7 +135,7 @@ describe("atomic IndexedDB slot publication", () => {
 
   it("publishes the replacement and notifies listeners only after transaction completion", async () => {
     const fake = transactionalIndexedDb();
-    const driver = __createIndexedDbKVForTests(fake.factory);
+    const driver = await __createIndexedDbKVForTests(fake.factory);
     await driver.ready;
     __setSaveStoreKVForTests(driver);
     const previous = await saveToSlot("atomic", "manual", "Atomic", payload(2));
@@ -154,7 +162,7 @@ describe("atomic IndexedDB slot publication", () => {
 
   it("rolls back payload, manifest and cache after successful requests but an aborted commit", async () => {
     const fake = transactionalIndexedDb();
-    const driver = __createIndexedDbKVForTests(fake.factory);
+    const driver = await __createIndexedDbKVForTests(fake.factory);
     await driver.ready;
     __setSaveStoreKVForTests(driver);
     const previous = await saveToSlot("atomic", "manual", "Atomic", payload(2));
@@ -177,7 +185,7 @@ describe("atomic IndexedDB slot publication", () => {
 
   it("aborts queued payload writes if enqueueing the manifest throws synchronously", async () => {
     const fake = transactionalIndexedDb();
-    const driver = __createIndexedDbKVForTests(fake.factory);
+    const driver = await __createIndexedDbKVForTests(fake.factory);
     await driver.ready;
     __setSaveStoreKVForTests(driver);
     const previous = await saveToSlot("atomic", "manual", "Atomic", payload(2));
@@ -190,7 +198,7 @@ describe("atomic IndexedDB slot publication", () => {
 
   it("keeps both simultaneous new slots in the current durable manifest", async () => {
     const fake = transactionalIndexedDb();
-    const driver = __createIndexedDbKVForTests(fake.factory);
+    const driver = await __createIndexedDbKVForTests(fake.factory);
     await driver.ready;
     __setSaveStoreKVForTests(driver);
     const saved = await Promise.all([saveToSlot("first", "manual", "First", payload(2)), saveToSlot("second", "manual", "Second", payload(9))]);
@@ -202,7 +210,7 @@ describe("atomic IndexedDB slot publication", () => {
 
   it("serializes simultaneous replacements and removes only superseded revision keys", async () => {
     const fake = transactionalIndexedDb();
-    const driver = __createIndexedDbKVForTests(fake.factory);
+    const driver = await __createIndexedDbKVForTests(fake.factory);
     await driver.ready;
     __setSaveStoreKVForTests(driver);
     const [first, second] = await Promise.all([saveToSlot("same", "manual", "Same", payload(2)), saveToSlot("same", "manual", "Same", payload(9))]);
@@ -214,7 +222,7 @@ describe("atomic IndexedDB slot publication", () => {
 
   it("reads the durable manifest rather than overwriting an entry absent from the runtime cache", async () => {
     const fake = transactionalIndexedDb();
-    const driver = __createIndexedDbKVForTests(fake.factory);
+    const driver = await __createIndexedDbKVForTests(fake.factory);
     await driver.ready;
     __setSaveStoreKVForTests(driver);
     const previous = await saveToSlot("first", "manual", "First", payload(2));
@@ -265,6 +273,7 @@ function controlledIndexedDb() {
     objectStore: () => transaction.store as unknown as IDBObjectStore,
   } as FakeTransaction;
   const database = {
+    close: () => undefined,
     transaction: () => transaction as unknown as IDBTransaction,
   } as unknown as IDBDatabase;
   const open = deferredRequest<IDBDatabase>(database);
@@ -281,7 +290,7 @@ describe("saveStore", () => {
 
   it("waits for an IndexedDB transaction to complete before confirming a write", async () => {
     const fake = controlledIndexedDb();
-    const driver = __createIndexedDbKVForTests(fake.factory);
+    const driver = await __createIndexedDbKVForTests(fake.factory);
     fake.open.onsuccess?.(new Event("success"));
     await driver.ready;
 
@@ -301,7 +310,7 @@ describe("saveStore", () => {
 
   it("returns a readonly value at request success after a durable write boundary", async () => {
     const fake = controlledIndexedDb();
-    const driver = __createIndexedDbKVForTests(fake.factory);
+    const driver = await __createIndexedDbKVForTests(fake.factory);
     fake.open.onsuccess?.(new Event("success"));
     await driver.ready;
 
@@ -315,7 +324,7 @@ describe("saveStore", () => {
 
   it("rejects an IndexedDB write when its transaction aborts after request success", async () => {
     const fake = controlledIndexedDb();
-    const driver = __createIndexedDbKVForTests(fake.factory);
+    const driver = await __createIndexedDbKVForTests(fake.factory);
     fake.open.onsuccess?.(new Event("success"));
     await driver.ready;
 
@@ -330,7 +339,7 @@ describe("saveStore", () => {
 
   it("rejects an IndexedDB write when its transaction reports an error", async () => {
     const fake = controlledIndexedDb();
-    const driver = __createIndexedDbKVForTests(fake.factory);
+    const driver = await __createIndexedDbKVForTests(fake.factory);
     fake.open.onsuccess?.(new Event("success"));
     await driver.ready;
 
@@ -612,5 +621,317 @@ describe("saveStore", () => {
     const slots = await listSlots();
     expect(slots).toHaveLength(1);
     expect(slots[0].name).toBe("Keep me");
+  });
+});
+
+
+/** Real worker handler + real client, with only the cross-thread delivery edge controlled. */
+function workerConnection(factory: IDBFactory) {
+  const mainListeners = new Map<string, Set<(event: MessageEvent<unknown>) => void>>();
+  const workerListeners = new Set<(event: MessageEvent<unknown>) => void>();
+  let hold = false;
+  let held: CommitReply | undefined;
+  let signalHeld: (() => void) | undefined;
+  let terminated = false;
+  let disposeWorker: (() => void) | undefined;
+  const deliver = (data: CommitReply) => {
+    for (const listener of mainListeners.get("message") ?? []) listener(new MessageEvent("message", { data }));
+  };
+  const port: SaveCommitPort = {
+    addEventListener: (_type, listener) => { workerListeners.add(listener); },
+    removeEventListener: (_type, listener) => { workerListeners.delete(listener); },
+    postMessage: (data) => {
+      if (data.type === "result" && hold) { hold = false; held = data; signalHeld?.(); }
+      else queueMicrotask(() => { if (!terminated) deliver(data); });
+    },
+  };
+  const worker: SaveCommitWorker = {
+    addEventListener(type, listener) {
+      if (!mainListeners.has(type)) mainListeners.set(type, new Set());
+      mainListeners.get(type)!.add(listener);
+    },
+    removeEventListener: (type, listener) => { mainListeners.get(type)?.delete(listener); },
+    postMessage: (data: CommitRequest) => { queueMicrotask(() => {
+      if (!terminated) for (const listener of workerListeners) listener(new MessageEvent("message", { data }));
+    }); },
+    terminate: () => { terminated = true; disposeWorker?.(); },
+  };
+  return {
+    create: () => { disposeWorker = installSaveCommitWorker(port, factory); return worker; },
+    holdReply: () => { hold = true; return new Promise<void>((resolve) => { signalHeld = resolve; }); },
+    release: () => { const reply = held; held = undefined; if (reply) deliver(reply); },
+    fail: () => { for (const listener of mainListeners.get("error") ?? []) listener(new MessageEvent("error")); },
+    listenerCount: () => [...mainListeners.values()].reduce((sum, listeners) => sum + listeners.size, 0) + workerListeners.size,
+    get terminated() { return terminated; },
+  };
+}
+
+function workerStore() {
+  const fake = transactionalIndexedDb();
+  const connection = workerConnection(fake.factory);
+  let unknown = 0;
+  let injectFailure = false;
+  const driver = createBrowserSaveKV(fake.factory, {
+    useWorker: true,
+    createClient: (invalidate) => createSaveCommitClient(invalidate, connection.create),
+    onUnknown: () => {
+      unknown++;
+      delete (globalThis as { __coursecraftSaveStoreManifestV1?: unknown }).__coursecraftSaveStoreManifestV1;
+    },
+    consumeFailure: () => { const next = injectFailure; injectFailure = false; return next; },
+    restoreFailure: () => { injectFailure = true; },
+  });
+  __setSaveStoreKVForTests(driver);
+  return { fake, connection, driver, failNext: () => { injectFailure = true; }, get unknown() { return unknown; } };
+}
+
+describe("browser worker manifest access", () => {
+  beforeEach(() => __resetSaveStoreForTests());
+
+  it("holds cache/listeners until the actual worker transaction completes, and aborts after request success", async () => {
+    const { fake, connection } = workerStore();
+    const previous = await saveToSlot("same", "manual", "Original", payload(1));
+    const before = [...fake.values];
+    const held = fake.holdCommit();
+    let notifications = 0;
+    const unsubscribe = subscribeToSaveSlots(() => notifications++);
+    try {
+      const pending = saveToSlot("same", "manual", "New", payload(2));
+      const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      await held;
+      expect((await listSlots())[0].storageKey).toBe(previous.storageKey);
+      expect(notifications).toBe(0);
+      fake.finishCommit(true);
+      await rejected;
+      expect([...fake.values]).toEqual(before);
+      expect(notifications).toBe(0);
+    } finally { unsubscribe(); __resetSaveStoreForTests(); }
+    expect(connection.listenerCount()).toBe(0);
+  });
+
+  it("protects rename and load/export across a committed replacement whose success ACK is held", async () => {
+    const { fake, connection } = workerStore();
+    const first = await saveToSlot("same", "manual", "Original", payload(1));
+    const held = connection.holdReply();
+    const replacing = saveToSlot("same", "manual", "Replacement", payload(2));
+    await held;
+    expect(fake.values.has(first.storageKey!)).toBe(false);
+    expect((await listSlots())[0].week).toBe(1);
+    let renamed = false;
+    let loaded = false;
+    const rename = renameSlot("same", "Renamed").then(() => { renamed = true; });
+    const load = loadSlot("same").then((result) => { loaded = true; return result; });
+    const exported = exportSlot("same");
+    await Promise.resolve();
+    expect(renamed).toBe(false);
+    expect(loaded).toBe(false);
+    connection.release();
+    const replacement = await replacing;
+    await rename;
+    expect((await load)?.world.week).toBe(2);
+    expect(JSON.parse((await exported)!).world.week).toBe(2);
+    expect((await listSlots())[0]).toMatchObject({ name: "Renamed", storageKey: replacement.storageKey });
+    expect(JSON.parse(fake.values.get("coursecraft_saves_manifest_v1")!)[0].storageKey).toBe(replacement.storageKey);
+  });
+
+  it("queues delete and a competing commit before reading their manifest during a held ACK", async () => {
+    const { fake, connection } = workerStore();
+    await saveToSlot("same", "manual", "Original", payload(1));
+    const held = connection.holdReply();
+    const replacing = saveToSlot("same", "manual", "New", payload(2));
+    await held;
+    const deleting = deleteSlot("same");
+    const competing = saveToSlot("other", "manual", "Other", payload(3));
+    connection.release();
+    const replaced = await replacing;
+    await deleting;
+    await competing;
+    expect((await listSlots()).map((meta) => meta.id)).toEqual(["other"]);
+    expect(fake.values.has(replaced.storageKey!)).toBe(false);
+    expect(await loadSlot("same")).toBeNull();
+  });
+
+  it("keeps an already-started dependent payload read ahead of a later replacement dispatch", async () => {
+    const { fake, driver } = workerStore();
+    const first = await saveToSlot("same", "manual", "Original", payload(1));
+    let release!: () => void;
+    let observed!: () => void;
+    const reading = new Promise<void>((resolve) => { observed = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const originalGet = driver.get;
+    driver.get = async (key) => { if (key === first.storageKey) { observed(); await gate; } return originalGet(key); };
+    const loading = loadSlot("same");
+    await reading;
+    const replacing = saveToSlot("same", "manual", "New", payload(2));
+    await Promise.resolve();
+    expect(fake.values.has(first.storageKey!)).toBe(true);
+    release();
+    expect((await loading)?.world.week).toBe(1);
+    await replacing;
+    expect((await loadSlot("same"))?.world.week).toBe(2);
+  });
+
+  it("migrates legacy data under the same guard without recursive access deadlock", async () => {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    const legacy = JSON.stringify({ schemaVersion: CURRENT_SAVE_SCHEMA_VERSION, savedAt: 1, ...payload(8) });
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: () => legacy } });
+    try {
+      const { connection } = workerStore();
+      const held = connection.holdReply();
+      const saving = saveToSlot("same", "manual", "New", payload(2));
+      await held;
+      const loading = loadSlot("legacy");
+      const competing = saveToSlot("other", "manual", "Other", payload(3));
+      connection.release();
+      await saving;
+      await competing;
+      expect((await loading)?.world.week).toBe(8);
+      expect((await listSlots()).map((meta) => meta.id).sort()).toEqual(["legacy", "other", "same"]);
+    } finally {
+      if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  });
+
+  it("never replays an accepted command after unknown ACK and consults durable state on the next operation", async () => {
+    const store = workerStore();
+    const previous = await saveToSlot("same", "manual", "Original", payload(1));
+    const held = store.connection.holdReply();
+    const saving = saveToSlot("same", "manual", "New", payload(2));
+    const rejected = expect(saving).rejects.toMatchObject({ name: "SaveCommitOutcomeUnknown" });
+    await held;
+    expect(store.fake.values.has(previous.storageKey!)).toBe(false);
+    const writes = store.fake.transactions.filter((tx) => tx.mode === "readwrite").length;
+    store.connection.fail();
+    await rejected;
+    expect(store.unknown).toBe(1);
+    expect((await loadSlot("same"))?.world.week).toBe(2);
+    store.connection.release(); // A retired generation has no message listener.
+    expect(store.fake.transactions.filter((tx) => tx.mode === "readwrite")).toHaveLength(writes);
+    expect((await listSlots())[0].week).toBe(2);
+    expect(store.connection.terminated).toBe(true);
+    expect(store.connection.listenerCount()).toBe(0);
+  });
+
+  it("preserves failure injection and recovers after an aborted worker commit", async () => {
+    const store = workerStore();
+    const first = await saveToSlot("same", "manual", "Original", payload(1));
+    const before = [...store.fake.values];
+    store.failNext();
+    await expect(saveToSlot("same", "manual", "New", payload(2))).rejects.toThrow("Simulated interrupted manifest commit");
+    expect([...store.fake.values]).toEqual(before);
+    expect((await listSlots())[0].storageKey).toBe(first.storageKey);
+    await saveToSlot("same", "manual", "New", payload(3));
+    expect((await loadSlot("same"))?.world.week).toBe(3);
+  });
+
+  it("keeps autosave selection within the browser guard and preserves its three slots", async () => {
+    workerStore();
+    await Promise.all([autosave(payload(1)), autosave(payload(2)), autosave(payload(3)), autosave(payload(4))]);
+    expect((await listSlots()).filter((meta) => meta.kind === "auto").map((meta) => meta.week).sort()).toEqual([2, 3, 4]);
+  });
+
+  it("uses the same IDB engine when Worker construction is unavailable, without creating a worker per save", async () => {
+    const fake = transactionalIndexedDb();
+    let creations = 0;
+    const driver = createBrowserSaveKV(fake.factory, {
+      useWorker: true,
+      createClient: (unknown) => createSaveCommitClient(unknown, () => { creations++; throw new Error("CSP"); }),
+      onUnknown: () => { throw new Error("No mutation was dispatched"); },
+      consumeFailure: () => false, restoreFailure: () => undefined,
+    });
+    __setSaveStoreKVForTests(driver);
+    await saveToSlot("same", "manual", "Original", payload(1));
+    await saveToSlot("same", "manual", "New", payload(2));
+    expect(creations).toBe(1);
+    expect(fake.transactions.filter((tx) => tx.mode === "readwrite")).toHaveLength(2);
+    expect((await loadSlot("same"))?.world.week).toBe(2);
+  });
+
+  it("disposes an old pending owner without deleting a replacement owner cache", async () => {
+    const old = workerStore();
+    await saveToSlot("same", "manual", "Old", payload(1));
+    const held = old.connection.holdReply();
+    const pending = saveToSlot("same", "manual", "Old", payload(2));
+    const rejected = expect(pending).rejects.toMatchObject({ name: "SaveCommitOutcomeUnknown" });
+    await held;
+    __resetSaveStoreForTests();
+    await saveToSlot("replacement", "manual", "Replacement", payload(9));
+    await rejected;
+    old.connection.release();
+    expect(old.unknown).toBe(0);
+    expect((await listSlots())).toMatchObject([{ id: "replacement", week: 9 }]);
+  });
+});
+
+
+describe("disposed browser completion ownership", () => {
+  beforeEach(() => __resetSaveStoreForTests());
+
+  it("rejects a success delivered just before reset without publishing the old manifest", async () => {
+    const store = workerStore();
+    await saveToSlot("same", "manual", "Old", payload(1));
+    const held = store.connection.holdReply();
+    const saving = saveToSlot("same", "manual", "Old", payload(2));
+    const rejected = expect(saving).rejects.toThrow("disposed");
+    await held;
+    store.connection.release();
+    __resetSaveStoreForTests();
+    await saveToSlot("replacement", "manual", "Replacement", payload(9));
+    await rejected;
+    expect((await listSlots())).toMatchObject([{ id: "replacement", week: 9 }]);
+  });
+
+  it("rejects completion of an active main-IDB fallback transaction after owner disposal", async () => {
+    const fake = transactionalIndexedDb();
+    const driver = createBrowserSaveKV(fake.factory, {
+      useWorker: false, consumeFailure: () => false, restoreFailure: () => undefined, onUnknown: () => undefined,
+    });
+    __setSaveStoreKVForTests(driver);
+    const held = fake.holdCommit();
+    const saving = saveToSlot("old", "manual", "Old", payload(2));
+    const rejected = expect(saving).rejects.toThrow("disposed");
+    await held;
+    __resetSaveStoreForTests();
+    await saveToSlot("replacement", "manual", "Replacement", payload(9));
+    fake.finishCommit();
+    await rejected;
+    expect((await listSlots())).toMatchObject([{ id: "replacement", week: 9 }]);
+  });
+});
+
+
+describe("worker legacy manifest compatibility", () => {
+  beforeEach(() => __resetSaveStoreForTests());
+  it("preserves an original parser-compatible pre-sequence/pre-revision entry in a successful worker ACK", async () => {
+    const store = workerStore();
+    const legacy = { id: "old", kind: "manual", name: "Old", savedAt: 1, courseName: "Old", week: 1, cash: 1, holesOpen: 0 };
+    store.fake.values.set("coursecraft_saves_manifest_v1", JSON.stringify([legacy]));
+    await saveToSlot("new", "manual", "New", payload(2));
+    expect((await listSlots()).map((meta) => meta.id).sort()).toEqual(["new", "old"]);
+    expect(store.unknown).toBe(0);
+    expect(JSON.parse(store.fake.values.get("coursecraft_saves_manifest_v1")!).find((meta: { id: string }) => meta.id === "old")).toMatchObject(legacy);
+  });
+});
+
+
+describe("worker replacement ordering", () => {
+  beforeEach(() => __resetSaveStoreForTests());
+  it("does not dispatch a competing replacement until the held prior ACK has published", async () => {
+    const store = workerStore();
+    await saveToSlot("same", "manual", "First", payload(1));
+    const held = store.connection.holdReply();
+    const second = saveToSlot("same", "manual", "Second", payload(2));
+    await held;
+    const before = store.fake.transactions.length;
+    const third = saveToSlot("same", "manual", "Third", payload(3));
+    await Promise.resolve();
+    expect(store.fake.transactions).toHaveLength(before);
+    store.connection.release();
+    const superseded = await second;
+    const current = await third;
+    expect(store.fake.values.has(superseded.storageKey!)).toBe(false);
+    expect(store.fake.values.has(current.storageKey!)).toBe(true);
+    expect((await loadSlot("same"))?.world.week).toBe(3);
   });
 });
