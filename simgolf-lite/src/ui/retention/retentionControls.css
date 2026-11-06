@@ -1,0 +1,85 @@
+/* Static retention control appearance. Existing important shell/photo rules keep precedence. */
+.cc-news {
+  position: fixed;
+  left: 18px;
+  right: 18px;
+  bottom: 14px;
+  z-index: 1000;
+  pointer-events: auto;
+}
+
+.cc-news > div {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  background: rgba(35,48,39,.96);
+  color: white;
+  border: 2px solid #c0a060;
+  border-radius: 10px;
+  padding: 7px 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+}
+
+.cc-news > div > button:first-of-type {
+  color: inherit;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cc-news > section {
+  position: absolute;
+  right: 0;
+  bottom: 48px;
+  width: min(520px,100%);
+  max-height: 55vh;
+  overflow: auto;
+  background: #f7f0df;
+  border: 2px solid #8d806c;
+  border-radius: 12px;
+  padding: 12px;
+  color: #26362d;
+}
+
+.cc-news > section > div {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.cc-news > section > button {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  gap: 8px;
+  border: 0;
+  border-top: 1px solid #c9bea9;
+  padding: 9px;
+}
+
+[data-testid="photo-mode"] {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 100050;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  padding: 10px;
+  background: linear-gradient(#25352dda,transparent);
+  pointer-events: none;
+}
+
+[data-testid="photo-mode"] > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  pointer-events: auto;
+}

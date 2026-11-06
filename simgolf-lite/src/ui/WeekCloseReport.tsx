@@ -1,7 +1,6 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type { Course, WeekResult, World } from "../game/models/types";
-import { buildM49CourseReport } from "../game/m49/report";
 import { formatCurrency, formatNumber } from "../i18n/format";
 import { translateCurrent } from "../i18n/core";
 import { systemControlEnvelope, type AdvancedSystemId } from "../game/experience/systemControl";
@@ -22,9 +21,30 @@ export function WeekCloseReport(props: { week: number; result: WeekResult; resum
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const continueRef = useRef<HTMLButtonElement | null>(null);
   const { result } = props;
-  const management = props.course && props.world
-    ? buildM49CourseReport({ course: props.course, world: props.world, result, generatedAtWeek: props.week })
-    : undefined;
+  const hasManagement = Boolean(props.course && props.world);
+  const [managementModule, setManagementModule] = useState<typeof import("./WeekCloseManagement")>();
+  const [managementLoadFailed, setManagementLoadFailed] = useState(false);
+  useEffect(() => {
+    if (!hasManagement) return;
+    let current = true;
+    void import("./WeekCloseManagement").then(
+      (module) => { if (current) setManagementModule(module); },
+      () => { if (current) setManagementLoadFailed(true); },
+    );
+    return () => { current = false; };
+  }, [hasManagement]);
+  // Cache the module only. Rebuild from current props and locale on each render.
+  let management: ReturnType<typeof import("./WeekCloseManagement").buildWeekCloseManagement> | undefined;
+  let managementFailed = managementLoadFailed;
+  if (managementModule && props.course && props.world) {
+    try {
+      management = managementModule.buildWeekCloseManagement({
+        course: props.course, world: props.world, result, week: props.week,
+      });
+    } catch {
+      managementFailed = true;
+    }
+  }
   const control = props.world ? systemControlEnvelope(props.world) : undefined;
   const full = (id: AdvancedSystemId) => !control || control.systems.find((system) => system.id === id)?.visibility === "full";
   const biomeRows = result.biomeEconomy ? [
@@ -132,28 +152,16 @@ export function WeekCloseReport(props: { week: number; result: WeekResult; resum
           <strong className="cc-week-close-profit" style={{ color: result.profit >= 0 ? "#27643a" : "#9a332d" }}>{translateCurrent("weekClose.profit", { profit: formatCurrency(result.profit) })}</strong>
           <button ref={continueRef} data-testid="week-close-continue" onClick={props.onContinue}>{translateCurrent("weekClose.continue")}</button>
         </div>
-        {management && <details data-testid="m49-management-report" className="cc-week-close-management">
+        {props.course && props.world && <details data-testid="m49-management-report" className="cc-week-close-management">
           <summary id="week-close-management-title" tabIndex={0}>{translateCurrent("weekClose.managementEvidence")}</summary>
           <div className="cc-week-close-management-content">
-            <div className="cc-week-close-management-intro">{management.observedRounds ? translateCurrent(management.observedRounds === 1 ? "weekClose.managementIntroObservedOne" : "weekClose.managementIntroObserved", { headline: management.headline, rounds: management.observedRounds }) : translateCurrent("weekClose.managementIntroPredicted", { headline: management.headline })}</div>
-            <div className="cc-week-close-segments" aria-label={translateCurrent("weekClose.managementSupportedSegments")}>
-              {management.demand.supportedSegments.map((segment) => <span key={segment} className="cc-week-close-segment">{segment}</span>)}
-              {!management.demand.supportedSegments.length && <span className="cc-week-close-no-fit">{translateCurrent("weekClose.managementNoFit")}</span>}
+            {management?.beforeAudience}
+            <div className="cc-week-close-audiences" data-testid="week-close-audiences" role="region" aria-labelledby="week-close-management-title" tabIndex={0} aria-busy={!management && !managementFailed}>
+              {management ? management.audience : managementFailed
+                ? <div role="alert">{translateCurrent("deferredSurface.error.title", { surface: translateCurrent("weekClose.managementEvidence") })} {translateCurrent("deferredSurface.error.body")}</div>
+                : <div role="status">{translateCurrent("deferredSurface.loading", { surface: translateCurrent("weekClose.managementEvidence") })}</div>}
             </div>
-            <div className="cc-week-close-audiences" data-testid="week-close-audiences" role="region" aria-labelledby="week-close-management-title" tabIndex={0}>
-              <table>
-                <thead><tr><th scope="col">{translateCurrent("weekClose.managementAudience")}</th><th scope="col">{translateCurrent("weekClose.managementAppeal")}</th><th scope="col">{translateCurrent("weekClose.managementPay")}</th><th scope="col">{translateCurrent("weekClose.managementEvidenceLabel")}</th></tr></thead>
-                <tbody>{Object.values(management.demand.segments).map((segment) => <tr key={segment.segment}>
-                  <th scope="row">{segment.segment}</th><td>{Math.round(segment.bookingAppeal * 100)}%</td><td>{formatCurrency(segment.willingnessToPay)}</td><td>{segment.evidenceLabel}</td>
-                </tr>)}</tbody>
-              </table>
-            </div>
-            <div className="cc-week-close-condition">
-              {translateCurrent("weekClose.managementCondition", { condition: Math.round(management.condition.overall * 100), maintenance: management.condition.shortfall > 0 ? translateCurrent("weekClose.managementMaintenanceShort", { amount: formatCurrency(management.condition.shortfall) }) : translateCurrent("weekClose.managementMaintenanceOnPlan"), projected: Math.round(management.condition.projectedRecovery * 100) })}
-            </div>
-            {management.alerts.length > 0 && <div className="cc-week-close-evidence"><strong>{translateCurrent("weekClose.managementWatchNext")}</strong>{management.alerts.slice(0, 3).map((alert) => <div key={alert.id} className="cc-week-close-alert" style={{ color: alert.severity === "urgent" ? "#9a332d" : alert.severity === "warning" ? "#8a641e" : "#4c5b4c" }}>{translateCurrent("weekClose.managementAlert", { title: alert.title, action: alert.action })}</div>)}</div>}
-            {management.topCauses.length > 0 && <div className="cc-week-close-evidence"><strong>{translateCurrent("weekClose.managementObservedCauses")}</strong>{management.topCauses.slice(0, 3).map((cause) => <div key={cause.cause} className="cc-week-close-cause">{translateCurrent("weekClose.managementCause", { cause: cause.cause, count: cause.observations })}</div>)}</div>}
-            <div className="cc-week-close-ledger" style={{ color: management.reconciliation.ledgerBalanced ? "#27643a" : "#9a332d" }}>{translateCurrent(management.reconciliation.ledgerBalanced ? "weekClose.managementLedgerReconciled" : "weekClose.managementLedgerReview")}</div>
+            {management?.afterAudience}
           </div>
         </details>}
       </section>
