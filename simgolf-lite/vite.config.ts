@@ -63,6 +63,8 @@ export default defineConfig({
     __COMMIT_SHA__: JSON.stringify(commitSha),
     __ZK682_STABILITY_BUILD_ID__: JSON.stringify(process.env.ZK682_STABILITY_BUILD_ID ?? ""),
   },
+  // Workers keep one IIFE bundle; optional topology reuse is split only in the app.
+  worker: { rollupOptions: { output: { inlineDynamicImports: true } } },
   test: {
     // Desktop shell tests use Node's built-in test runner so they can verify
     // fsync/rename behavior without Vitest transforming the Electron modules.
