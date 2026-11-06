@@ -465,7 +465,8 @@ export function surfaceCareTopology(course: Course): SurfaceCareTopology {
     };
     zone.cells.push(index);
     mutable.set(key, zone);
-    zoneByTile[index] = key;
+    // Keep one key representation per zone in the long-lived tile lookup.
+    zoneByTile[index] = zone.key;
   }
   const zones = [...mutable.values()]
     .map((zone) => ({ ...zone, cells: zone.cells.sort((a, b) => a - b) }))
