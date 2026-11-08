@@ -588,6 +588,7 @@ export const en = {
   "designDock.guidanceTitle": "Design dock",
   "designDock.guidance": "Choose terrain, semantic planting, natural features, and decor from the illustrated dock over the course. Its selected-item inspector retains exact cost, care, water, and climate facts.",
   "designDock.terrainGuidance": "The illustrated Design dock over the course owns surface materials, curve/area tools, width, and edit history.",
+  "renderer.loading": "Preparing your course…",
   "renderer.error.title": "The course view could not start",
   "renderer.error.body": "Reload the page to try again. Your saved courses remain on this device.",
   "courses.open": "Courses",

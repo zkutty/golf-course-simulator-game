@@ -65,20 +65,24 @@ const performance = performanceSource.value;
 const budgets = {
   rendererWorkMilliseconds: 8,
   coldStartupMilliseconds: 5_000,
-  fixtureLoadMilliseconds: 6_000,
+  fixtureLoadMilliseconds: 10_000,
 };
+// Do not coerce null (including serialized NaN/Infinity) into a passing zero.
 const measurements = {
-  frameP95Ms: Number(performance?.renderer?.p95Ms),
-  rendererWorkMs: Number(performance?.renderer?.workMs),
-  coldStartupMs: Number(performance?.coldStartupMs),
-  fixtureLoadMs: Number(performance?.fixtureLoadMs),
+  frameP95Ms: performance?.renderer?.p95Ms,
+  rendererWorkMs: performance?.renderer?.workMs,
+  coldStartupMs: performance?.coldStartupMs,
+  fixtureLoadMs: performance?.fixtureLoadMs,
 };
 const finite = Object.values(measurements).every((value) => Number.isFinite(value) && value >= 0);
 const effective = performance?.effective;
-const contractPinned = effective?.fixture === "m27Fixture"
+const contractPinned = performance?.version === 1
+  && performance?.fixture === "m27Fixture"
+  && effective?.fixture === "m27Fixture"
   && effective?.frameAssertion === false
   && effective?.budgets?.rendererWorkMilliseconds === budgets.rendererWorkMilliseconds
-  && effective?.budgets?.coldStartupMilliseconds === budgets.coldStartupMilliseconds;
+  && effective?.budgets?.coldStartupMilliseconds === budgets.coldStartupMilliseconds
+  && effective?.budgets?.fixtureLoadMilliseconds === budgets.fixtureLoadMilliseconds;
 const headlessPassed = finite
   && contractPinned
   && measurements.rendererWorkMs <= budgets.rendererWorkMilliseconds

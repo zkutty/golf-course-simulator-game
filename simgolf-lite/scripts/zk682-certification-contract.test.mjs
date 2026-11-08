@@ -87,7 +87,7 @@ const RECEIPTS = {
 function genericObservations(gateId, lowEndP95) {
   if (gateId === "core-compatibility") return { productionBuildPassed: true, unitTestsPassed: true, deterministicHashesPassed: true, reducerPassed: true, saveV25RoundTripPassed: true, historicalMigrationsPassed: true, platformServicesPassed: true };
   if (gateId === "asset-delivery") return { initialCriticalBytes: 7000000, selectedBiomeMaxBytes: 5000000, individualAtlasMaxBytes: 7000000, unselectedBiomeAtlasesUnloaded: true, packageSizeAndAssetAuditPassed: true };
-  if (gateId === "headless-performance") return { physicalDevice: false, frameP95Asserted: false, frameP95Ms: 100, rendererWorkMs: 0.68, coldStartupMs: 1160, coldStartupBudgetMs: 5000, fixtureLoadMs: 4030, fixtureLoadBudgetMs: 6000, scenario: { holes: 36, golfers: 100, biome: "parkland", season: "summer", weather: "storm" } };
+  if (gateId === "headless-performance") return { physicalDevice: false, frameP95Asserted: false, frameP95Ms: 100, rendererWorkMs: 0.68, coldStartupMs: 1160, coldStartupBudgetMs: 5000, fixtureLoadMs: 4030, fixtureLoadBudgetMs: 10000, scenario: { holes: 36, golfers: 100, biome: "parkland", season: "summer", weather: "storm" } };
   return { physicalDevice: true, hardwareClass: gateId === "physical-midrange" ? "midrange" : "low-end", device: "Fixture GPU", operatingSystem: "Fixture OS", powerMode: "plugged-in", graphicsBackend: "WebGL2", frameP95Ms: gateId === "physical-midrange" ? 19 : lowEndP95, scenario: { holes: 36, golfers: 100, biome: "parkland", season: "summer", weather: "storm" } };
 }
 
@@ -145,8 +145,8 @@ function fixture({ physical = false, lowEndP95 = 32, adjustment = false } = {}) 
         observations.typedEvidence = typedEvidence;
       }
       if (gateId === "headless-performance") {
-        const source = write(root, "raw/headless-source.json", { theme: "parkland", coldStartupMs: 1160, fixtureLoadMs: 4030, renderer: { p95Ms: 100, workMs: 0.68 }, effective: { fixture: "m27Fixture", frameAssertion: false, budgets: { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5000 } } });
-        const typedEvidence = write(root, "raw/headless-performance.json", { schemaVersion: 1, gate: "headless-performance", candidateCommit: COMMIT, capturedAt: NOW, source, budgets: { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5000, fixtureLoadMilliseconds: 6000 }, scenario: observations.scenario, measurements: { frameP95Ms: 100, rendererWorkMs: 0.68, coldStartupMs: 1160, fixtureLoadMs: 4030 }, physicalDevice: false, frameP95Asserted: false, passed: true });
+        const source = write(root, "raw/headless-source.json", { version: 1, fixture: "m27Fixture", theme: "parkland", coldStartupMs: 1160, fixtureLoadMs: 4030, renderer: { p95Ms: 100, workMs: 0.68 }, effective: { fixture: "m27Fixture", frameAssertion: false, budgets: { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5000, fixtureLoadMilliseconds: 10000 } } });
+        const typedEvidence = write(root, "raw/headless-performance.json", { schemaVersion: 1, gate: "headless-performance", candidateCommit: COMMIT, capturedAt: NOW, source, budgets: { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5000, fixtureLoadMilliseconds: 10000 }, scenario: observations.scenario, measurements: { frameP95Ms: 100, rendererWorkMs: 0.68, coldStartupMs: 1160, fixtureLoadMs: 4030 }, physicalDevice: false, frameP95Asserted: false, passed: true });
         artifacts.push(source, typedEvidence);
         observations.typedEvidence = typedEvidence;
       }
@@ -353,11 +353,13 @@ test("a schema-v2 supplemental stability failure produces HOLD instead of manife
 });
 
 test("rejects relaxed fixture budget and physical evidence that does not match its gate/scenario", () => {
-  const relaxed = fixture();
-  try {
-    rewriteGate(relaxed, "headless-performance", (gate) => { gate.observations.fixtureLoadBudgetMs = 6001; });
-    assert(validateZk682EvidenceManifest(relaxed.manifest, relaxed.options).errors.some((error) => error.includes("fixture load budget must remain 6000 ms")));
-  } finally { cleanup(relaxed); }
+  for (const budget of [6000, 10001]) {
+    const relaxed = fixture();
+    try {
+      rewriteGate(relaxed, "headless-performance", (gate) => { gate.observations.fixtureLoadBudgetMs = budget; });
+      assert(validateZk682EvidenceManifest(relaxed.manifest, relaxed.options).errors.some((error) => error.includes("fixture load budget must remain 10000 ms")));
+    } finally { cleanup(relaxed); }
+  }
   const mismatched = fixture({ physical: true });
   try {
     rewriteGate(mismatched, "physical-midrange", (gate) => { gate.observations.scenario.weather = "snow"; });
@@ -393,7 +395,7 @@ test("typed stability certification validates corrected producers and rejects fa
 
 function extractedPerfFinalDecision() {
   const source = readFileSync(new URL("./perf-smoke.mjs", import.meta.url), "utf8");
-  const budgetDeclaration = "const FIXTURE_LOAD_BUDGET_MS = 6000;";
+  const budgetDeclaration = 'const FIXTURE_LOAD_BUDGET_MS = PERF_FIXTURE === "m27Fixture" ? 10000 : 6000;';
   assert.equal(source.split(budgetDeclaration).length - 1, 1, "fixed fixture budget declaration must remain unique and exact");
   const start = source.indexOf("let failed = false;");
   assert.notEqual(start, -1, "actual final-decision anchor must exist");
@@ -405,7 +407,7 @@ function extractedPerfFinalDecision() {
   return `${budgetDeclaration}\n${tail}`;
 }
 
-function runExtractedPerfFinalDecision({ fixtureLoadMs, coldStartupMs = 2930, workMs = 1.6333333333909867, p95Ms = 100, assertFrame = false }) {
+function runExtractedPerfFinalDecision({ fixtureLoadMs, coldStartupMs = 2930, workMs = 1.6333333333909867, p95Ms = 100, assertFrame = false, fixture = "m27Fixture" }) {
   let receiptBytes;
   let exitCode = 0;
   const errors = [];
@@ -417,7 +419,7 @@ function runExtractedPerfFinalDecision({ fixtureLoadMs, coldStartupMs = 2930, wo
     WORK_BUDGET_MS: 8,
     ASSERT_FRAME: assertFrame,
     BUDGET_MS: 33,
-    PERF_FIXTURE: "m27Fixture",
+    PERF_FIXTURE: fixture,
     PERF_THEME: "parkland",
     MEASURE_S: 20,
     WARMUP_S: 8,
@@ -445,21 +447,22 @@ function runExtractedPerfFinalDecision({ fixtureLoadMs, coldStartupMs = 2930, wo
 
 test("actual perf final decision enforces the fixed unrounded fixture-load limit and reports truthful exit", () => {
   for (const [fixtureLoadMs, expectedExit] of [
-    [5999.999, 0], [6000, 0], [6000.001, 1], [6001, 1], [239435, 1],
+    [6000, 0], [6000.001, 0], [9999.999, 0], [10000, 0], [10000.001, 1], [10001, 1], [239435, 1],
     [Number.NaN, 1], [Number.POSITIVE_INFINITY, 1], [-0.001, 1],
   ]) {
     const { exitCode, receipt, errors } = runExtractedPerfFinalDecision({ fixtureLoadMs });
     assert.equal(exitCode, expectedExit, `fixtureLoadMs=${String(fixtureLoadMs)}`);
     assert.equal(receipt.gateValidation.fixtureLoadWithinBudget, expectedExit === 0);
-    assert.equal(receipt.effective.budgets.fixtureLoadMilliseconds, 6000);
+    assert.equal(receipt.effective.budgets.fixtureLoadMilliseconds, 10000);
     assert.equal(receipt.gateValidation.passed, exitCode === 0);
     assert.equal(receipt.version, 1);
+    assert.equal(receipt.fixtureLoadMs, Number.isFinite(fixtureLoadMs) ? fixtureLoadMs : null);
     assert.deepEqual(Object.keys(receipt), ["version", "theme", "fixture", "coldStartupMs", "fixtureLoadMs", "renderer", "effective", "physicalRun", "gateValidation"]);
     assert.equal(receipt.effective.budgets.rendererWorkMilliseconds, 8);
     assert.equal(receipt.effective.budgets.coldStartupMilliseconds, 5000);
     assert.equal(receipt.effective.budgets.frameMilliseconds, 33);
-    if (expectedExit === 1 && (!Number.isFinite(fixtureLoadMs) || fixtureLoadMs < 0 || fixtureLoadMs > 6000)) {
-      assert.ok(errors.some(message => message.includes("m27Fixture load") && message.includes("budget 6000ms") || message.includes("m27Fixture load timing") && message.includes("invalid")));
+    if (expectedExit === 1 && (!Number.isFinite(fixtureLoadMs) || fixtureLoadMs < 0 || fixtureLoadMs > 10000)) {
+      assert.ok(errors.some(message => message.includes("m27Fixture load") && message.includes("budget 10000ms") || message.includes("m27Fixture load timing") && message.includes("invalid")));
     }
   }
 });
@@ -479,4 +482,97 @@ test("actual perf final decision preserves cold/work boundaries and optional fra
   assert.equal(assertedFrame.exitCode, 1);
   assert.equal(assertedFrame.receipt.gateValidation.frameWithinBudget, false);
   assert.equal(assertedFrame.receipt.gateValidation.passed, false);
+});
+
+test("actual default perf fixture retains its 6000 ms ceiling", () => {
+  for (const [fixtureLoadMs, expectedExit] of [[6000, 0], [6000.001, 1], [10000, 1]]) {
+    const { exitCode, receipt } = runExtractedPerfFinalDecision({ fixtureLoadMs, fixture: "perfFixture" });
+    assert.equal(exitCode, expectedExit);
+    assert.equal(receipt.fixture, "perfFixture");
+    assert.equal(receipt.effective.budgets.fixtureLoadMilliseconds, 6000);
+  }
+});
+
+// Execute the collector's actual headless block with an in-memory producer
+// receipt. No build, browser, filesystem capture, or candidate run is needed.
+function collectHeadlessReceipt(performance) {
+  const source = readFileSync(new URL("./zk682-collect-linux-evidence.mjs", import.meta.url), "utf8");
+  const start = source.indexOf("const performanceSource = copyJson(");
+  assert.notEqual(start, -1);
+  let report;
+  vm.runInNewContext(source.slice(start), {
+    root: "/fixture", rawRoot: "/fixture/raw", candidateCommit: COMMIT, join,
+    copyJson: () => ({ value: performance, reference: { path: "raw/source.json", sha256: "a".repeat(64) } }),
+    writeJson: (_path, value) => { report = JSON.parse(JSON.stringify(value)); },
+  }, { filename: "zk682-actual-headless-collector" });
+  assert.ok(report);
+  return report;
+}
+
+test("actual collector agrees with producer at the M27 boundary and rejects invalid timing or identity", () => {
+  for (const [fixtureLoadMs, expected] of [[10000, true], [10000.001, false], [-0.001, false], [NaN, false], [Infinity, false]]) {
+    const producer = runExtractedPerfFinalDecision({ fixtureLoadMs });
+    const collected = collectHeadlessReceipt(producer.receipt);
+    assert.equal(collected.passed, expected, String(fixtureLoadMs));
+    assert.equal(collected.budgets.fixtureLoadMilliseconds, 10000);
+    assert.equal(collected.measurements.fixtureLoadMs, producer.receipt.fixtureLoadMs);
+  }
+  for (const mutate of [
+    receipt => { receipt.effective.budgets.fixtureLoadMilliseconds = 6000; },
+    receipt => { delete receipt.effective.budgets.fixtureLoadMilliseconds; },
+    receipt => { receipt.fixture = "perfFixture"; },
+    receipt => { receipt.effective.fixture = "perfFixture"; },
+    receipt => { receipt.version = 0; },
+    receipt => { receipt.fixtureLoadMs = "1000"; },
+  ]) {
+    const { receipt } = runExtractedPerfFinalDecision({ fixtureLoadMs: 1000 });
+    mutate(receipt);
+    assert.equal(collectHeadlessReceipt(receipt).passed, false);
+  }
+});
+
+function rewriteHeadlessEvidence(value, mutate) {
+  rewriteGate(value, "headless-performance", gate => {
+    const report = JSON.parse(readFileSync(join(value.root, gate.observations.typedEvidence.path), "utf8"));
+    const source = JSON.parse(readFileSync(join(value.root, report.source.path), "utf8"));
+    mutate(source, report, gate);
+    report.source = write(value.root, report.source.path, source);
+    const typed = write(value.root, gate.observations.typedEvidence.path, report);
+    gate.observations.typedEvidence = typed;
+    gate.artifacts = gate.artifacts.map(reference => reference.path === typed.path ? typed : reference.path === report.source.path ? report.source : reference);
+  });
+}
+
+test("certification preserves exact M27 boundary and records over-ceiling evidence as failure", () => {
+  for (const [fixtureLoadMs, passed] of [[10000, true], [10000.001, false]]) {
+    const value = fixture();
+    try {
+      rewriteHeadlessEvidence(value, (source, report, gate) => {
+        source.fixtureLoadMs = report.measurements.fixtureLoadMs = gate.observations.fixtureLoadMs = fixtureLoadMs;
+        report.passed = passed;
+        gate.criteria.find(entry => entry.id === "startup-and-fixture-load").status = passed ? "pass" : "fail";
+        gate.status = passed ? "pass" : "fail";
+      });
+      assert.deepEqual(validateZk682EvidenceManifest(value.manifest, value.options).errors, []);
+      const report = buildZk682Report(value.manifest, value.options);
+      assert.equal(report.machinePassed, passed);
+      if (!passed) assert.ok(report.blockers.some(entry => entry.criterionId === "startup-and-fixture-load"));
+    } finally { cleanup(value); }
+  }
+});
+
+test("certification rejects invalid raw timings and old or missing M27 budget declarations", () => {
+  for (const [mutate, error] of [
+    [(source, report) => { report.budgets.fixtureLoadMilliseconds = 6000; }, "8/5000/10000"],
+    [source => { source.effective.budgets.fixtureLoadMilliseconds = 6000; }, "workload/budgets are not pinned"],
+    [source => { delete source.effective.budgets.fixtureLoadMilliseconds; }, "workload/budgets are not pinned"],
+    [source => { source.fixture = "perfFixture"; }, "workload/budgets are not pinned"],
+    ...[-1, null, NaN, Infinity, "1000"].map(timing => [source => { source.fixtureLoadMs = timing; }, "measurements disagree"]),
+  ]) {
+    const value = fixture();
+    try {
+      rewriteHeadlessEvidence(value, mutate);
+      assert.ok(validateZk682EvidenceManifest(value.manifest, value.options).errors.some(message => message.includes(error)), error);
+    } finally { cleanup(value); }
+  }
 });

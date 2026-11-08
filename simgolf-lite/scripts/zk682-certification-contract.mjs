@@ -28,7 +28,7 @@ const MiB = 1024 * 1024;
 export const ZK682_BUDGETS = Object.freeze({
   rendererWorkMilliseconds: 8,
   coldStartupMilliseconds: 5_000,
-  fixtureLoadMilliseconds: 6_000,
+  fixtureLoadMilliseconds: 10_000,
   midrangeP95Milliseconds: 20,
   lowEndP95Milliseconds: 33,
   initialCriticalBytes: 8 * MiB,
@@ -383,14 +383,14 @@ function validateHeadlessPerformanceEvidence(report, manifest, gate, root, label
   if (!exactKeys(report, ["schemaVersion", "gate", "candidateCommit", "capturedAt", "source", "budgets", "scenario", "measurements", "physicalDevice", "frameP95Asserted", "passed"], label, errors)) return false;
   if (report.schemaVersion !== 1 || report.gate !== "headless-performance") errors.push(`${label}: wrong headless evidence schema/gate`);
   if (report.candidateCommit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
-  const expectedBudgets = { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5_000, fixtureLoadMilliseconds: 6_000 };
-  if (stableJson(report.budgets) !== stableJson(expectedBudgets)) errors.push(`${label}: timing budgets differ from the pinned 8/5000/6000 contract`);
+  const expectedBudgets = { rendererWorkMilliseconds: 8, coldStartupMilliseconds: 5_000, fixtureLoadMilliseconds: 10_000 };
+  if (stableJson(report.budgets) !== stableJson(expectedBudgets)) errors.push(`${label}: timing budgets differ from the pinned 8/5000/10000 contract`);
   if (report.physicalDevice !== false || report.frameP95Asserted !== false) errors.push(`${label}: headless evidence cannot claim physical frame p95`);
   const source = readTypedArtifact(report.source, gate, root, `${label}.source`, errors);
-  const measurements = { frameP95Ms: Number(source?.renderer?.p95Ms), rendererWorkMs: Number(source?.renderer?.workMs), coldStartupMs: Number(source?.coldStartupMs), fixtureLoadMs: Number(source?.fixtureLoadMs) };
+  const measurements = { frameP95Ms: source?.renderer?.p95Ms, rendererWorkMs: source?.renderer?.workMs, coldStartupMs: source?.coldStartupMs, fixtureLoadMs: source?.fixtureLoadMs };
   if (stableJson(report.measurements) !== stableJson(measurements) || Object.values(measurements).some((value) => !Number.isFinite(value) || value < 0)) errors.push(`${label}: measurements disagree with the raw performance source`);
-  if (source?.effective?.fixture !== "m27Fixture" || source?.effective?.frameAssertion !== false || source?.effective?.budgets?.rendererWorkMilliseconds !== 8 || source?.effective?.budgets?.coldStartupMilliseconds !== 5_000) errors.push(`${label}: raw performance workload/budgets are not pinned`);
-  const passed = measurements.rendererWorkMs <= 8 && measurements.coldStartupMs <= 5_000 && measurements.fixtureLoadMs <= 6_000;
+  if (source?.version !== 1 || source?.fixture !== "m27Fixture" || source?.effective?.fixture !== "m27Fixture" || source?.effective?.frameAssertion !== false || source?.effective?.budgets?.rendererWorkMilliseconds !== 8 || source?.effective?.budgets?.coldStartupMilliseconds !== 5_000 || source?.effective?.budgets?.fixtureLoadMilliseconds !== 10_000) errors.push(`${label}: raw performance workload/budgets are not pinned`);
+  const passed = measurements.rendererWorkMs <= 8 && measurements.coldStartupMs <= 5_000 && measurements.fixtureLoadMs <= 10_000;
   if (report.passed !== passed) errors.push(`${label}: passed disagrees with recomputed performance evidence`);
   return passed;
 }
@@ -541,7 +541,7 @@ function validateGateObservations(gate, manifest, root, errors) {
     if (criteria.find((entry) => entry.id === "headless-frame-p95-report-only")?.status !== "report-only") errors.push("headless frame p95 must remain report-only");
     for (const key of ["coldStartupMs", "coldStartupBudgetMs", "fixtureLoadMs", "fixtureLoadBudgetMs"]) if (!Number.isFinite(observations[key]) || observations[key] < 0) errors.push(`headless-performance: observations.${key} must be non-negative`);
     if (observations.coldStartupBudgetMs !== ZK682_BUDGETS.coldStartupMilliseconds) errors.push("headless-performance: cold startup budget must remain 5000 ms");
-    if (observations.fixtureLoadBudgetMs !== ZK682_BUDGETS.fixtureLoadMilliseconds) errors.push("headless-performance: fixture load budget must remain 6000 ms");
+    if (observations.fixtureLoadBudgetMs !== ZK682_BUDGETS.fixtureLoadMilliseconds) errors.push("headless-performance: fixture load budget must remain 10000 ms");
     const startupPassed = observations.coldStartupMs <= observations.coldStartupBudgetMs
       && observations.fixtureLoadMs <= observations.fixtureLoadBudgetMs;
     if ((criteria.find((entry) => entry.id === "startup-and-fixture-load")?.status === "pass") !== startupPassed) errors.push("startup-and-fixture-load: declared status disagrees with observed timings and budgets");

@@ -11,3 +11,5 @@ export {
   createStructuresPropsSceneSystem,
 } from "./structuresPropsScene";
 export { createMobilityEntitiesSceneSystem } from "./mobilityEntitiesScene";
+
+export { observeFirstCourseRender } from "../../../game/render/firstCourseRender";

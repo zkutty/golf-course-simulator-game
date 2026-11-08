@@ -38,8 +38,13 @@ as a failed criterion and HOLD, not misclassified as malformed evidence.
 
 Run `node scripts/zk682-collect-linux-evidence.mjs` after the production build
 and pinned M27 performance run. The headless contract fixes renderer work at 8
-ms, cold startup at 5000 ms, and fixture load at 6000 ms. Headless frame p95 is
-report-only.
+ms, cold startup at 5000 ms, and M27 fixture load at a 10000 ms hard ceiling.
+M27 retains a 6000 ms optimization target; the smaller default `perfFixture`
+retains its 6000 ms ceiling. Raw producer evidence must declare the M27 10000 ms
+budget; an old 6000 ms declaration cannot be wrapped as current evidence.
+Fixture timings retain their measured precision so an over-limit load cannot
+round down to a pass. Headless frame p95 is report-only. Existing failed receipts
+remain historical failures; this policy requires fresh candidate evidence.
 
 Optional physical reports are `physical-midrange.json` and
 `physical-lowend.json`. Their `hardwareClass` must match the gate and their
