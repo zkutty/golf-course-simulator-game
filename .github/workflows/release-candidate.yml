@@ -2,6 +2,12 @@ name: Release candidate certification
 
 on:
   workflow_dispatch:
+    inputs:
+      diagnostic_pwa_sha:
+        description: "PWA-only validation of approved 9d0dda8 (full SHA); empty runs the normal suite"
+        type: string
+        required: false
+        default: ""
   push:
     tags: ["v*-rc.*"]
 
@@ -11,6 +17,7 @@ defaults:
 
 jobs:
   certify:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.diagnostic_pwa_sha == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -61,6 +68,7 @@ jobs:
           retention-days: 90
 
   browser-regression:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.diagnostic_pwa_sha == '' }}
     name: Browser regression (shard ${{ matrix.shard }}/21)
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -97,6 +105,7 @@ jobs:
           retention-days: 90
 
   zk1205-pointer-matrix:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.diagnostic_pwa_sha == '' }}
     name: ZK-1205 pointer matrix (rows ${{ matrix.start }}-${{ matrix.end }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -146,6 +155,7 @@ jobs:
           retention-days: 90
 
   zk674-biome-zoom-cache:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.diagnostic_pwa_sha == '' }}
     name: ZK-674 ${{ matrix.theme }} atlas/zoom certification
     runs-on: ubuntu-latest
     timeout-minutes: 70
@@ -180,6 +190,7 @@ jobs:
           retention-days: 90
 
   m65-certify:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.diagnostic_pwa_sha == '' }}
     name: M65 evidence and cross-engine certification
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -207,3 +218,137 @@ jobs:
         run: xvfb-run --auto-servernum npm run test:release:browsers -- --grep "ZK-813" --project=firefox --workers=1 --headed
       - name: ZK-813 WebKit certification
         run: npm run test:release:browsers -- --grep "ZK-813" --project=webkit-safari-proxy --workers=1
+
+  diagnostic-pwa:
+    name: Exact-candidate hosted PWA only
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_pwa_sha != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      CANDIDATE_SHA: ${{ inputs.diagnostic_pwa_sha }}
+      WORKFLOW_EVENT_SHA: ${{ github.sha }}
+      WORKFLOW_SOURCE_SHA: ${{ github.workflow_sha }}
+      WORKFLOW_SOURCE_REF: ${{ github.workflow_ref }}
+      DISPATCH_REF: ${{ github.ref }}
+    steps:
+      - name: Validate approved input before checkout
+        id: validate
+        working-directory: .
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, pathlib, re
+          sha = os.environ['CANDIDATE_SHA']
+          valid = re.fullmatch('[0-9a-f]{40}', sha) is not None and sha == '9d0dda8e122f7e2074c8887f5bb1683c0e2e2a81' and os.environ['GITHUB_RUN_ATTEMPT'] == '1'
+          evidence = pathlib.Path(os.environ['RUNNER_TEMP']) / 'hosted-pwa-only'
+          evidence.mkdir()
+          manifest = {'schema': 'coursecraft-hosted-pwa-job-v1', 'candidateCommit': sha, 'inputValid': valid,
+            'workflowEventSHA': os.environ['WORKFLOW_EVENT_SHA'], 'workflowSourceSHA': os.environ['WORKFLOW_SOURCE_SHA'],
+            'workflowSourceRef': os.environ['WORKFLOW_SOURCE_REF'], 'dispatchRef': os.environ['DISPATCH_REF'],
+            'runId': os.environ['GITHUB_RUN_ID'], 'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
+            'repository': os.environ['GITHUB_REPOSITORY'], 'runnerOS': os.environ['RUNNER_OS'], 'runnerArch': os.environ['RUNNER_ARCH'],
+            'scope': 'PWA-only validation; no deploy or full certification', 'automaticRetries': 0,
+            'command': 'npm run test:pwa:certification -- --expected-commit ' + sha}
+          (evidence / 'job-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          if not valid: raise SystemExit('Only the approved full SHA on first attempt is allowed; no checkout/build performed')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output: output.write('candidate_sha=' + sha + '\n')
+          PYCODE
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.diagnostic_pwa_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify clean exact candidate and frozen producer inputs
+        id: source
+        working-directory: .
+        run: |
+          python3 - <<'PYCODE'
+          import hashlib, json, os, pathlib, subprocess
+          evidence = pathlib.Path(os.environ['RUNNER_TEMP']) / 'hosted-pwa-only'
+          manifest = json.loads((evidence / 'job-manifest.json').read_text())
+          expected = {'simgolf-lite/package.json': '5dcc90ac74fb484c5657cd0a04ceaf90daaacfca12394b3b95e45aebba845c3a', 'simgolf-lite/package-lock.json': 'a2aac9114ad1bddcb8d1241baa0648c756b2773ee92059307c9f1e667a59e182', 'simgolf-lite/scripts/pwa-smoke.mjs': 'e24bd7d349240f22df512e4c65e97e8b96512171dfea05f15c0506c482896f25', 'simgolf-lite/scripts/pwa-save-evidence.mjs': '78c3abb256bc5dddaff40a46d93a63fe44480df5a071eb0d78f085e80d891c1f'}
+          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          status = subprocess.check_output(['git', 'status', '--porcelain'], text=True)
+          actual = {name: hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() for name in expected}
+          manifest['checkout'] = {'head': head, 'clean': status == '', 'status': status, 'sourceHashes': actual}
+          generated = pathlib.Path('simgolf-lite/artifacts/m35/asset-audit.json')
+          if generated.exists():
+            content = generated.read_bytes()
+            manifest['m35BeforeSHA256'] = hashlib.sha256(content).hexdigest()
+            (evidence / 'm35-asset-audit.before.json').write_bytes(content)
+          (evidence / 'job-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          if head != os.environ['CANDIDATE_SHA'] or status or actual != expected: raise SystemExit('Candidate/clean checkout/producer identity mismatch')
+          PYCODE
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx --no-install playwright install --with-deps chromium
+      - name: Original exact-candidate PWA certification
+        id: pwa
+        run: |
+          set +e
+          GITHUB_SHA="$CANDIDATE_SHA" ZK682_EXPECTED_COMMIT="$CANDIDATE_SHA" npm run test:pwa:certification -- --expected-commit "$CANDIDATE_SHA" 2>&1 | tee "$RUNNER_TEMP/hosted-pwa-only/pwa.log"
+          statuses=("${PIPESTATUS[@]}")
+          printf '%s\n' "${statuses[0]}" > "$RUNNER_TEMP/hosted-pwa-only/producer-exit.txt"
+          if [ "${statuses[0]}" -ne 0 ]; then exit "${statuses[0]}"; fi
+          exit "${statuses[1]}"
+      - name: Preserve raw result and job manifest
+        if: always()
+        working-directory: .
+        env:
+          PWA_OUTCOME: ${{ steps.pwa.outcome }}
+        run: |
+          python3 - <<'PYCODE'
+          import hashlib, json, os, pathlib, shutil, subprocess
+          evidence = pathlib.Path(os.environ['RUNNER_TEMP']) / 'hosted-pwa-only'
+          path = evidence / 'job-manifest.json'
+          manifest = json.loads(path.read_text())
+          manifest['pwaStepOutcome'] = os.environ['PWA_OUTCOME']
+          exit_path = evidence / 'producer-exit.txt'
+          manifest['producerExitCode'] = int(exit_path.read_text()) if exit_path.exists() else None
+          raw = pathlib.Path('simgolf-lite/artifacts/zk682/raw/pwa-indexeddb.json')
+          valid_report = False
+          if raw.exists():
+            shutil.copyfile(raw, evidence / 'pwa-indexeddb.json')
+            content = raw.read_bytes()
+            manifest['rawReportSHA256'] = hashlib.sha256(content).hexdigest()
+            try:
+              report = json.loads(content)
+              valid_report = report.get('passed') is True and report.get('gate') == 'offline-indexeddb-pwa' and report.get('candidateCommit') == os.environ['CANDIDATE_SHA'] and report.get('environment', {}).get('buildCommit') == os.environ['CANDIDATE_SHA']
+            except (ValueError, AttributeError): pass
+          manifest['typedReportIdentityValid'] = valid_report
+          source_inputs_intact = False
+          if manifest.get('checkout', {}).get('head') == os.environ['CANDIDATE_SHA']:
+            head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+            tracked = subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'], text=True).splitlines()
+            allowed = ' M simgolf-lite/artifacts/m35/asset-audit.json'
+            unexpected = [row for row in tracked if row != allowed]
+            before = manifest['checkout']['sourceHashes']
+            after = {name: hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() for name in before}
+            source_inputs_intact = head == os.environ['CANDIDATE_SHA'] and after == before and not unexpected
+            manifest['postProducer'] = {'head': head, 'sourceHashes': after, 'trackedStatus': tracked,
+              'allowedGeneratedChanges': [row for row in tracked if row == allowed], 'unexpectedTrackedChanges': unexpected}
+            generated = pathlib.Path('simgolf-lite/artifacts/m35/asset-audit.json')
+            if generated.exists():
+              content = generated.read_bytes()
+              manifest['m35AfterSHA256'] = hashlib.sha256(content).hexdigest()
+              (evidence / 'm35-asset-audit.after.json').write_bytes(content)
+          manifest['sourceInputsIntact'] = source_inputs_intact
+          manifest['producerPassed'] = manifest['producerExitCode'] == 0 and os.environ['PWA_OUTCOME'] == 'success' and valid_report and source_inputs_intact
+          manifest['browserSelectionInputs'] = {'CHROMIUM_PATH': os.environ.get('CHROMIUM_PATH'), 'optChromiumExists': pathlib.Path('/opt/pw-browsers/chromium').exists()}
+          path.write_text(json.dumps(manifest, indent=2) + '\n')
+          if manifest['producerExitCode'] == 0 and (not valid_report or not source_inputs_intact): raise SystemExit('Producer exit0 without valid exact-candidate report/intact source inputs')
+          PYCODE
+      - name: Upload immutable raw PWA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-pwa-${{ steps.validate.outputs.candidate_sha || 'invalid' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hosted-pwa-only
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 7
