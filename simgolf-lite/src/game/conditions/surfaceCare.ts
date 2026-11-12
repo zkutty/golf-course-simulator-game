@@ -183,19 +183,22 @@ export const SURFACE_CARE_BIOME_PRESSURES: Readonly<
   }),
 });
 
+/** Internal shared derived data: consumers must not mutate topology or zones. */
 export interface SurfaceCareZone {
-  key: string;
-  surfaceId: string;
-  cellX: number;
-  cellY: number;
-  intendedTerrain: CultivatedTerrain;
-  cells: number[];
+  readonly key: string;
+  readonly surfaceId: string;
+  readonly cellX: number;
+  readonly cellY: number;
+  readonly intendedTerrain: CultivatedTerrain;
+  readonly cells: readonly number[];
 }
 
+type MutableSurfaceCareZone = Omit<SurfaceCareZone, "cells"> & { cells: number[] };
+
 export interface SurfaceCareTopology {
-  zones: SurfaceCareZone[];
-  zoneByTile: Array<string | null>;
-  zonesByKey: ReadonlyMap<string, SurfaceCareZone>;
+  readonly zones: readonly SurfaceCareZone[];
+  readonly zoneByTile: readonly (string | null)[];
+  readonly zonesByKey: ReadonlyMap<string, SurfaceCareZone>;
 }
 
 export type EffectiveSurfaceTreatment =
@@ -386,6 +389,16 @@ const topologyCache = new WeakMap<Course["tiles"], {
   topology: SurfaceCareTopology;
 }>();
 
+// Optional acceleration never delays or changes the synchronous cold path.
+let topologyReuse: typeof import("./surfaceCareTopologyReuse") | undefined;
+let topologyReuseRequested = false;
+function requestTopologyReuse(): void {
+  if (!topologyReuseRequested) {
+    topologyReuseRequested = true;
+    void import("./surfaceCareTopologyReuse").then((module) => { topologyReuse = module; }, () => undefined);
+  }
+}
+
 /**
  * Builds stable surface/cell identities without persisting a per-tile map.
  * M35 IDs win. Legacy tile-only surfaces use a deterministic four-connected
@@ -400,6 +413,17 @@ export function surfaceCareTopology(course: Course): SurfaceCareTopology {
     && cached.width === course.width
     && cached.height === course.height
   ) return cached.topology;
+
+  requestTopologyReuse();
+  const reuse = topologyReuse?.lookupTopology(course);
+  if (reuse?.topology) {
+    const topology = reuse.topology;
+    topologyCache.set(course.tiles, {
+      intent: course.surfaceIntent, estate: course.estate,
+      width: course.width, height: course.height, topology,
+    });
+    return topology;
+  }
 
   const authored = authoredSurfaceIds(course);
   const natural = decodedNaturalTerrain(course);
@@ -444,7 +468,7 @@ export function surfaceCareTopology(course: Course): SurfaceCareTopology {
     }
   }
 
-  const mutable = new Map<string, SurfaceCareZone>();
+  const mutable = new Map<string, MutableSurfaceCareZone>();
   const zoneByTile = new Array<string | null>(course.tiles.length).fill(null);
   for (let index = 0; index < course.tiles.length; index++) {
     const surfaceId = surfaceIds[index];
@@ -465,7 +489,8 @@ export function surfaceCareTopology(course: Course): SurfaceCareTopology {
     };
     zone.cells.push(index);
     mutable.set(key, zone);
-    zoneByTile[index] = key;
+    // Keep one key representation per zone in the long-lived tile lookup.
+    zoneByTile[index] = zone.key;
   }
   const zones = [...mutable.values()]
     .map((zone) => ({ ...zone, cells: zone.cells.sort((a, b) => a - b) }))
@@ -487,6 +512,7 @@ export function surfaceCareTopology(course: Course): SurfaceCareTopology {
     height: course.height,
     topology,
   });
+  if (reuse) topologyReuse?.publishTopology(reuse.key, topology);
   return topology;
 }
 
