@@ -177,7 +177,7 @@ import { routeDestinationHierarchy } from "./renderer/scenes/routeDestinationHie
 import { createPropertyAssetsSceneSystem } from "./renderer/scenes/propertyAssetsScene";
 import { createSurfaceEditorSceneSystem } from "./renderer/scenes/surfaceEditorScene";
 import type { MobilityEntitiesSceneSystem } from "./renderer/scenes/mobilityEntitiesScene";
-import type { LiveEntitiesSceneSystem } from "./renderer/scenes/liveEntitiesScene";
+import type { LiveEntitiesSceneSystem, LiveEntityPopulation } from "./renderer/scenes/liveEntitiesScene";
 import type {
   TerrainWaterChunk,
   TerrainWaterSceneSystem,
@@ -667,6 +667,7 @@ export interface PixiStageProps {
   showGolfers?: boolean;
   showMarkers?: boolean;
   golfersRef?: React.RefObject<GolferRenderData[]>;
+  readLivePopulation?: () => LiveEntityPopulation;
   liveActive?: boolean;
   onPickGolfer?: (id: number | null) => void;
   selectedGolferId?: number | null;
@@ -3937,7 +3938,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       terrainDecals: layers.terrainDecals,
       fx: layers.fx,
       screenOverlay: layers.screenOverlay,
-    });
+    }, { readPopulation: props.readLivePopulation });
     const overlaysDiagnostics = deferredWorldScenes.createOverlaysDiagnosticsSceneSystem({
       terrainDecals: layers.terrainDecals,
       fx: layers.fx,
@@ -3997,7 +3998,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (overlaysDiagnosticsSceneRef.current === overlaysDiagnostics) overlaysDiagnosticsSceneRef.current = null;
       host.dispose();
     };
-  }, [appReady]);
+  }, [appReady, props.readLivePopulation]);
 
   useEffect(() => {
     if (!appReady) return;
@@ -4174,6 +4175,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         nowMs,
         animationsEnabled: tickerAnimationsEnabled,
         golfers: list,
+        renderGolfers: Boolean(liveActive && tickerShowGolfers !== false),
         selectedGolferId: tickerSelectedGolferId,
         followSelected: tickerFollowSelected,
         cullBounds: { left: cullL, right: cullR, top: cullT, bottom: cullB },

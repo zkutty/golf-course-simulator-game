@@ -6344,6 +6344,7 @@ export default function App() {
                 failingCorridorSegments={failingCorridorSegments}
                 showObstacles={showObstacles}
                 golfersRef={live.golfersRef}
+                readLivePopulation={live.readLivePopulation}
                 liveActive={live.liveActive}
                 onPickGolfer={live.selectGolfer}
                 selectedGolferId={live.selectedId}
