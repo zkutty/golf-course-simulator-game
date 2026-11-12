@@ -93,6 +93,7 @@ interface Window {
       managedTextureSources: number;
       canvasConnected: boolean;
     } | null;
+    saveLoadResourceSnapshot(): import("./ui/renderer/resourceSnapshot").SaveLoadResourceSnapshot;
     rendererAtlasState(): {
       requested: {
         biome: import("./game/models/types").LandTheme;

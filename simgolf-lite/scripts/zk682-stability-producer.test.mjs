@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import ts from "typescript";
 import {
   createStabilityProducer, sampleRetainedHeap, stabilityProducerKind,
   validateStabilityProducer, validateStabilityRuntime, ZK682_STABILITY_FIXTURE,
@@ -29,6 +30,44 @@ test("the exact sampler settles before one GC and reads immediately after its co
   finishGC();
   assert.equal(await pending, heap);
   assert.deepEqual(calls, [["settle", 120], ["HeapProfiler.collectGarbage"], ["Runtime.getHeapUsage"]]);
+});
+
+test("the actual E2E measure callback reads paired ownership after heap and leaves other samples raw", async () => {
+  const source = readFileSync(new URL("../e2e/zk682-stability.e2e.ts", import.meta.url), "utf8");
+  const start = source.indexOf("async function measure(");
+  const end = source.indexOf("async function canonicalState(", start);
+  assert.ok(start >= 0 && end > start);
+  const code = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const calls = [];
+  const resources = { managedTextureSources: 28 };
+  const ownedShimmer = { status: "qualified", registered: 1 };
+  const api = {
+    saveLoadResourceSnapshot() { calls.push("paired"); return { resources, ownedShimmer }; },
+    resourceSnapshot() { calls.push("raw"); return resources; },
+    rendererAtlasState() { calls.push("quality"); return { rendered: { quality: "high" } }; },
+  };
+  const expectValue = (value) => ({
+    not: { toBeNull() { assert.notEqual(value, null); } },
+    toMatch(pattern) { assert.match(value, pattern); },
+  });
+  const measure = new Function("sampleRetainedHeap", "expect", "window", `${code}\nreturn measure;`)(
+    sampleRetainedHeap, expectValue, { __coursecraftPixiTest: api },
+  );
+  const page = {
+    async waitForTimeout(ms) { calls.push(ms); },
+    async evaluate(callback, mode) { calls.push("evaluate"); return callback(mode); },
+  };
+  const cdp = { async send(command) { calls.push(command); return { usedSize: 10, totalSize: 20 }; } };
+  const prefix = [120, "HeapProfiler.collectGarbage", "Runtime.getHeapUsage", "evaluate"];
+  const saved = await measure(page, cdp, true);
+  assert.deepEqual(calls, [...prefix, "paired", "quality"]);
+  assert.equal(saved.resources, resources);
+  assert.equal(saved.ownedShimmer, ownedShimmer);
+  calls.length = 0;
+  const other = await measure(page, cdp);
+  assert.deepEqual(calls, [...prefix, "raw", "quality"]);
+  assert.equal(other.resources, resources);
+  assert.equal(Object.hasOwn(other, "ownedShimmer"), false);
 });
 
 test("failed settle or GC never yields a heap sample and transport errors propagate", async () => {

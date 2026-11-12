@@ -84,6 +84,7 @@ describe("atmosphere scene lifecycle", () => {
     expect(scene.stage.children.at(-1)).toBe(scene.screenOverlay);
     expect(scene.stage.children).toHaveLength(3);
     expect(scene.fx.children).toHaveLength(1);
+    expect(scene.system.readOwnedShimmerForTest()).toBeNull();
     expect(scene.objects.children).toHaveLength(1);
 
     host.dispose();
@@ -276,7 +277,17 @@ describe("atmosphere scene lifecycle", () => {
       expect(() => scene.system.create!(snapshot(1))).toThrow("attach failed");
     } else {
       scene.system.create!(snapshot(1));
-      expect((scene.fx.children[0] as PIXI.Sprite).texture).toBe(texture);
+      const sprite = scene.fx.children[0] as PIXI.Sprite;
+      const source = texture.source;
+      expect(sprite.texture).toBe(texture);
+      expect(scene.system.readOwnedShimmerForTest()).toEqual({
+        stage: scene.stage, world: scene.world, layer: scene.fx, sprite, texture, source,
+      });
+      const replacement = new PIXI.TextureSource({ width: 256, height: 256 });
+      texture.source = replacement;
+      expect(scene.system.readOwnedShimmerForTest()).toBeNull();
+      texture.source = source;
+      replacement.destroy();
       scene.system.tick({ dtMs: 16, nowMs: 10_000, dayMinute: 31, ambienceFx: true });
       expect(scene.fx.children[0].visible).toBe(true);
       scene.system.destroy!();
@@ -284,6 +295,7 @@ describe("atmosphere scene lifecycle", () => {
     scene.system.destroy!();
     expect(destroyTexture).toHaveBeenCalledExactlyOnceWith(true);
     expect(texture.destroyed).toBe(true);
+    expect(scene.system.readOwnedShimmerForTest()).toBeNull();
     expect(scene.system.objectCount()).toBe(0);
     expect(scene.stage.children).toEqual([scene.world, scene.screenOverlay]);
     expect(scene.fx.children).toHaveLength(0);

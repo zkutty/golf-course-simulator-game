@@ -52,7 +52,17 @@ function supplemental(gate, commit) {
   const producer = createStabilityProducer({ dev: false, prod: true, mode: "e2e", commit, buildId, privatePerfFixture: true, fixture: { ...ZK682_STABILITY_FIXTURE } }, commit, buildId);
   const measured = (index) => ({ rendererQuality: "high", resources: { displayObjects: 2000, containers: 2000, sprites: 1200, graphics: 400, meshes: 300, text: 5, attachedTextures: 80, attachedTextureSources: 20, managedTextureSources: 48, canvasConnected: true }, heap: { runtimeUsedBytes: 40_000_000 + index * 20_000, runtimeTotalBytes: 80_000_000 } });
   const samples = gate === "save-load-resource-stability"
-    ? Array.from({ length: 49 }, (_, cycle) => ({ cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef", state: { screen: "game", week: 2, cash: 42000, terrainCounts: { rough: 7700 } }, ...measured(cycle) }))
+    ? Array.from({ length: 49 }, (_, cycle) => {
+      const row = measured(cycle);
+      const registered = cycle % 2;
+      row.resources.managedTextureSources += registered;
+      return {
+        cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef",
+        state: { screen: "game", week: 2, cash: 42000, terrainCounts: { rough: 7700 } }, ...row,
+        ownedShimmer: { status: "qualified", documentTimeOrigin: 10, rendererUid: cycle + 1, stageUid: cycle + 2,
+          textureUid: cycle + 3, sourceUid: cycle + 4, registered },
+      };
+    })
     : gate === "long-session-resource-stability"
       ? Array.from({ length: 7 }, (_, index) => ({ elapsedGameMinutes: index * 22.4, courseHash: index.toString(16).padStart(8, "0"), state: { dayMinute: 100 + index * 22.4, speed: "4x", onCourse: 12 }, ...measured(index) }))
       : [
@@ -217,20 +227,26 @@ test("builder rejects old normalized budgets, raw budget drift and invalid sourc
   }
 });
 
-for (const kind of ["legacy-schema2", "diagnostic-gating", "diagnostic-independent-run", "forged-late-summary"]) test(`builder rejects ${kind} save/load evidence`, async () => {
+for (const kind of ["legacy-schema2", "old-schema3", "unknown-owner", "diagnostic-gating", "diagnostic-independent-run", "forged-late-summary"]) test(`builder rejects ${kind} save/load evidence`, async () => {
   const value = fixture();
   try {
     const report = supplemental("save-load-resource-stability", value.commit);
     const diagnostic = createZk682LegacySaveLoadDiagnostic(report);
     if (kind === "legacy-schema2") write(value.raw, "save-load-resource-stability.json", diagnostic.report);
+    if (kind === "old-schema3") { report.schemaVersion = 3; write(value.raw, "save-load-resource-stability.json", report); }
+    if (kind === "unknown-owner") { report.samples[2].ownedShimmer = { status: "unqualified", reason: "shimmer-owner" }; write(value.raw, "save-load-resource-stability.json", report); }
     if (kind === "diagnostic-gating") { diagnostic.productionGateAcceptance = true; write(value.raw, "save-load-first12-diagnostic.json", diagnostic); }
     if (kind === "diagnostic-independent-run") { diagnostic.report.samples[3].heap.runtimeUsedBytes++; write(value.raw, "save-load-first12-diagnostic.json", diagnostic); }
     if (kind === "forged-late-summary") { report.summary.lateHeapWindows[0].endGrowth++; write(value.raw, "save-load-resource-stability.json", report); }
-    await assert.rejects(() => buildZk682Packet({ root: value.root, candidateCommit: value.commit, invokeCertification: false }), kind === "legacy-schema2" ? /identity\/schema mismatch/ : kind === "forged-late-summary" ? /does not match raw/ : /diagnostic/);
+    await assert.rejects(() => buildZk682Packet({ root: value.root, candidateCommit: value.commit, invokeCertification: false }), {
+      "legacy-schema2": /identity\/schema mismatch/, "old-schema3": /identity\/schema mismatch/,
+      "unknown-owner": /does not match raw/, "forged-late-summary": /does not match raw/,
+      "diagnostic-gating": /diagnostic/, "diagnostic-independent-run": /diagnostic/,
+    }[kind]);
   } finally { rmSync(value.repository, { recursive: true, force: true }); }
 });
 
-test("builder retains a red legacy first12 diagnostic without failing a green schema3 criterion", async () => {
+test("builder retains a red legacy first12 diagnostic without failing a green schema4 criterion", async () => {
   const value = fixture();
   try {
     const input = supplemental("save-load-resource-stability", value.commit);

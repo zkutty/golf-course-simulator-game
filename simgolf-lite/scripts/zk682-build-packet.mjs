@@ -349,7 +349,7 @@ export async function buildZk682Packet({ root, candidateCommit, evidenceRoot = Z
   }
   gates.push(gate(ctx, "stability", [
     criterion("route-change-resource-stability", resourcePassed, "Renderer samples are recomputed with pinned thresholds."),
-    criterion("save-load-resource-stability", saveLoad.passed, "Schema-3 48-load samples and both late windows are recomputed; schema-2 first12 is diagnostic only."),
+    criterion("save-load-resource-stability", saveLoad.passed, "Schema-4 48-load samples, owned shimmer registration and both late windows are recomputed; schema-2 first12 is diagnostic only."),
     criterion("long-session-resource-stability", longSession.passed, "Long-session samples are validated from typed evidence."),
     criterion("editing-overlay-sleep-recovery", interaction.passed, "Interaction recovery samples are validated from typed evidence."),
   ], {

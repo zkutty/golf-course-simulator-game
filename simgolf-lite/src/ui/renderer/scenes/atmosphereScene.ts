@@ -10,6 +10,7 @@ import { tileCenterIso, worldToIso } from "../../../game/render/iso";
 import type { Point } from "../../../game/models/types";
 import type { RenderSnapshot } from "../../../game/render/renderSnapshot";
 import type { RenderSceneSystem } from "../SceneSystemHost";
+import type { OwnedShimmer } from "../resourceSnapshot";
 import { createSeasonalTerrainSceneSystem } from "./seasonalTerrainScene";
 
 export interface AtmosphereFrameInput {
@@ -24,6 +25,7 @@ export interface AtmosphereSceneSystem extends RenderSceneSystem {
   tick(input: AtmosphereFrameInput): void;
   startleAt(point: Point, nowMs: number): void;
   objectCount(): number;
+  readOwnedShimmerForTest(): OwnedShimmer | null;
 }
 
 export interface AtmosphereSceneLayers {
@@ -97,6 +99,7 @@ export function createAtmosphereSceneSystem(
   let created = false;
   let blobTexture: PIXI.Texture | null = null;
   let ownsBlobTexture = false;
+  let originalShimmerSource: WeakRef<PIXI.TextureSource> | null = null;
   let tintQuad: PIXI.Sprite | null = null;
   let shimmer: PIXI.Sprite | null = null;
   const heron: HeronState = {
@@ -125,6 +128,7 @@ export function createAtmosphereSceneSystem(
     if (ownsBlobTexture && blobTexture && !blobTexture.destroyed) blobTexture.destroy(true);
     blobTexture = null;
     ownsBlobTexture = false;
+    originalShimmerSource = null;
     tintCurrent.r = 255;
     tintCurrent.g = 255;
     tintCurrent.b = 255;
@@ -154,6 +158,9 @@ export function createAtmosphereSceneSystem(
         context.fillRect(0, 0, 256, 256);
         blobTexture = PIXI.Texture.from(canvas);
         ownsBlobTexture = true;
+        if ((import.meta.env.MODE === "e2e" || import.meta.env.MODE === "test") && typeof WeakRef === "function") {
+          originalShimmerSource = new WeakRef(blobTexture.source);
+        }
       }
     }
     blobTexture ??= PIXI.Texture.WHITE;
@@ -278,6 +285,14 @@ export function createAtmosphereSceneSystem(
     },
     objectCount() {
       return (shimmer ? 1 : 0) + (heron.graphics ? 1 : 0);
+    },
+    readOwnedShimmerForTest() {
+      const source = originalShimmerSource?.deref();
+      if (!created || !ownsBlobTexture || !shimmer || !blobTexture || !source
+        || shimmer.destroyed || blobTexture.destroyed || source.destroyed
+        || source === PIXI.Texture.WHITE.source || source === PIXI.Texture.EMPTY.source
+        || shimmer.parent !== layers.fx || shimmer.texture !== blobTexture || blobTexture.source !== source) return null;
+      return { stage: layers.stage, world: layers.world, layer: layers.fx, sprite: shimmer, texture: blobTexture, source };
     },
   };
 }

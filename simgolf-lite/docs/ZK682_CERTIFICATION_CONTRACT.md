@@ -78,20 +78,27 @@ cannot be promoted as passing.
 Their absence is not replaced with fabricated measurements; it is represented
 as a report blocker.
 
-## Schema-3 save/load criterion (ZK-1484 amendment)
+## Schema-4 save/load criterion
 
-Only save/load changes to schema 3. Long-session and editing/overlay/sleep/recovery
-remain schema 2 with their original thresholds and paths. A schema-2 save/load
-report cannot satisfy machine acceptance, even if it passed its historical gate.
-The legacy evaluator is available only for explicit diagnostic history.
+Save/load uses schema 4. Long-session and editing/overlay/sleep/recovery remain
+schema 2 with their original thresholds and paths. Save/load schemas 2 and 3
+remain historical evidence. Only schema 4 can satisfy current machine acceptance.
 
 The production producer captures exactly 49 contiguous samples (cycles 0–48),
 including a baseline and 48 real quick-save loads. The original fixture, paused
 canonicalization/save boundary, load-loop body and inter-cycle cadence are
 unchanged. Each measurement remains 120 ms settle → GC → immediate Chromium
-Runtime heap usage. State/hash, High renderer quality, the complete flat resource
-snapshot, console/page errors and production/build/producer provenance are
-validated from typed evidence; missing or altered evidence fails closed.
+Runtime heap usage. Typed evidence still requires canonical state/hash, High,
+empty console/page errors and production/build/producer provenance.
+
+Each save/load sample records the full raw resource counts and the registration
+of the exact live scene-owned shimmer source in the same synchronous snapshot.
+The proof uses current renderer, stage and document identity, the owned sprite's
+attachment and original texture/source objects, and zero or one exact
+registration in the renderer's managed registry. Missing, stale, shared or
+ambiguous ownership fails the sample. The raw managed count stays in the report.
+Its value minus the proven shimmer membership must stay flat, along with every
+other resource counter.
 
 Heap bounds are immutable and recomputed from raw samples:
 
@@ -109,7 +116,8 @@ criterion; it does not rewrite any historical red result.
 
 `save-load-first12-diagnostic.json` retains the schema-2 first-12 result in an
 explicit `diagnosticOnly: true`, `productionGateAcceptance: false` wrapper.
-Its first 13 raw samples, browser and producer must match the schema-3 run.
+Its first 13 raw samples, browser and producer must match the schema-4 run
+after removing only each sample's new shimmer ownership field.
 It is hash-bound in the packet and never changes a machine criterion's status.
 A red legacy diagnostic is expected to remain red when the new criterion passes.
 

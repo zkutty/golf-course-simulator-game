@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { validateStabilityProducer } from "./zk682-stability-producer.mjs";
 
-export const ZK682_STABILITY_SCHEMA_VERSION = 3;
+export const ZK682_STABILITY_SCHEMA_VERSION = 4;
 export const ZK682_LEGACY_STABILITY_SCHEMA_VERSION = 2;
-export const stabilitySchemaVersion = (gate) => gate === "save-load-resource-stability" ? 3 : 2;
+export const stabilitySchemaVersion = (gate) => gate === "save-load-resource-stability" ? ZK682_STABILITY_SCHEMA_VERSION : 2;
 
 const MiB = 1024 * 1024;
 const RESOURCE_LIMITS = Object.freeze({
@@ -33,7 +33,7 @@ export const ZK682_LEGACY_STABILITY_THRESHOLDS = Object.freeze({
   }),
 });
 
-// Schema 3 changes only save/load. Schema 2 long-session/recovery and the
+// Schema 4 changes only save/load ownership evidence. Schema 2 long-session/recovery and the
 // historical 12-load evaluator retain their original thresholds and semantics.
 export const ZK682_STABILITY_THRESHOLDS = Object.freeze({
   ...ZK682_LEGACY_STABILITY_THRESHOLDS,
@@ -161,6 +161,15 @@ function evaluateSaveLoads(samples, thresholds, errors) {
 const sameKeys = (value, keys) => value && typeof value === "object" && !Array.isArray(value)
   && stableStabilityJson(Object.keys(value).sort()) === stableStabilityJson([...keys].sort());
 const FULL_RESOURCE_METRICS = Object.freeze(["displayObjects", "containers", "sprites", "graphics", "meshes", "text", "attachedTextures", "attachedTextureSources", "managedTextureSources"]);
+const FLAT_RESOURCE_METRICS = FULL_RESOURCE_METRICS.filter(name => name !== "managedTextureSources");
+const OWNER_UIDS = ["rendererUid", "stageUid", "textureUid", "sourceUid"];
+
+function qualifiedShimmer(value) {
+  return sameKeys(value, ["status", "documentTimeOrigin", ...OWNER_UIDS, "registered"])
+    && value.status === "qualified" && Number.isFinite(value.documentTimeOrigin) && value.documentTimeOrigin > 0
+    && OWNER_UIDS.every(name => Number.isSafeInteger(value[name]) && value[name] >= 0)
+    && (value.registered === 0 || value.registered === 1);
+}
 
 function evaluateSaveLoadCurve(samples, thresholds, errors, runtimeErrors) {
   const observations = { saveLoads: Array.isArray(samples) ? Math.max(0, samples.length - 1) : 0, resourceGrowthBounded: false };
@@ -171,7 +180,7 @@ function evaluateSaveLoadCurve(samples, thresholds, errors, runtimeErrors) {
   if (!Array.isArray(runtimeErrors) || runtimeErrors.some(error => typeof error !== "string") || runtimeErrors.length !== 0) errors.push("runtimeErrors must be an empty console/page error array");
   const baseline = samples[0];
   for (const [index, sample] of samples.entries()) {
-    if (!sameKeys(sample, ["cycle", "slotId", "loaded", "courseHash", "state", "resources", "rendererQuality", "heap"])) {
+    if (!sameKeys(sample, ["cycle", "slotId", "loaded", "courseHash", "state", "resources", "rendererQuality", "heap", "ownedShimmer"])) {
       errors.push(`save-load sample ${index} has invalid typed sample keys`);
       continue;
     }
@@ -187,12 +196,24 @@ function evaluateSaveLoadCurve(samples, thresholds, errors, runtimeErrors) {
     if (sample.rendererQuality !== thresholds.rendererQuality) errors.push(`save-load sample ${index} must retain High renderer quality`);
     if (!sameKeys(sample.resources, [...FULL_RESOURCE_METRICS, "canvasConnected"]) || sample.resources.canvasConnected !== true
       || FULL_RESOURCE_METRICS.some(name => !Number.isSafeInteger(sample.resources[name]) || sample.resources[name] < 0)
-      || stableStabilityJson(sample.resources) !== stableStabilityJson(baseline?.resources)) errors.push(`save-load sample ${index} must retain the full flat renderer resource snapshot`);
+      || FLAT_RESOURCE_METRICS.some(name => sample.resources[name] !== baseline?.resources?.[name])) {
+      errors.push(`save-load sample ${index} must retain the full flat renderer resource snapshot apart from qualified shimmer registration`);
+    }
+    const shimmer = sample.ownedShimmer;
+    if (!qualifiedShimmer(shimmer) || shimmer.documentTimeOrigin !== baseline?.ownedShimmer?.documentTimeOrigin
+      || !(sample.resources?.managedTextureSources >= shimmer.registered)) {
+      errors.push(`save-load sample ${index} must prove exact current owned shimmer registration in the original document`);
+    } else if (qualifiedShimmer(baseline?.ownedShimmer)
+      && sample.resources.managedTextureSources - shimmer.registered
+        !== baseline.resources?.managedTextureSources - baseline.ownedShimmer.registered) {
+      errors.push(`save-load sample ${index} managed texture sources excluding the owned shimmer must stay flat`);
+    }
     if (!sameKeys(sample.heap, ["runtimeUsedBytes", "runtimeTotalBytes"]) || !Number.isSafeInteger(sample.heap.runtimeUsedBytes) || sample.heap.runtimeUsedBytes <= 0
       || !Number.isSafeInteger(sample.heap.runtimeTotalBytes) || sample.heap.runtimeTotalBytes < sample.heap.runtimeUsedBytes) errors.push(`save-load sample ${index} has invalid real Chromium heap diagnostics`);
   }
   if (errors.length) return { metrics: {}, observations };
   const metrics = evaluateResources(samples, thresholds.resources, errors);
+  metrics.managedTextureSourcesExcludingOwnedShimmer = metric(samples.map(sample => sample.resources.managedTextureSources - sample.ownedShimmer.registered));
   metrics.lateHeapWindows = thresholds.lateWindows.map(({ startCycle, endCycle }) => {
     const window = { startCycle, endCycle, ...metric(samples.slice(startCycle, endCycle + 1).map(sample => sample.heap.runtimeUsedBytes)) };
     if (window.endGrowth > thresholds.lateHeap.maxEndGrowthBytes) errors.push(`post-GC JS heap window ${startCycle}-${endCycle} ended ${window.endGrowth} bytes above its rebased baseline; limit ${thresholds.lateHeap.maxEndGrowthBytes}`);
@@ -295,8 +316,8 @@ function createReport(input, legacy) {
   }
   const curve = !legacy && input.gate === "save-load-resource-stability";
   if (curve) {
-    assert.ok(Object.hasOwn(input, "producer"), "schema-3 save/load producer attestation is required");
-    assert.ok(Array.isArray(input.runtimeErrors), "schema-3 save/load runtimeErrors array is required");
+    assert.ok(Object.hasOwn(input, "producer"), "schema-4 save/load producer attestation is required");
+    assert.ok(Array.isArray(input.runtimeErrors), "schema-4 save/load runtimeErrors array is required");
   }
   const result = legacy ? evaluateLegacyZk682Stability(input.gate, input.samples, input.thresholds) : evaluateZk682Stability(input.gate, input.samples, input.thresholds, input.runtimeErrors);
   return {
@@ -329,7 +350,7 @@ export function validateZk682SupplementalStabilityReport(report, expectedGate, e
   const legacySaveLoad = expectedGate === "save-load-resource-stability" && report.schemaVersion === 2;
   const curve = expectedGate === "save-load-resource-stability" && !legacySaveLoad;
   if (curve) expectedKeys.push("runtimeErrors");
-  if (legacySaveLoad && !allowLegacy) errors.push("schema-2 save/load evidence is diagnostic only; schema-3 is required for machine acceptance");
+  if (legacySaveLoad && !allowLegacy) errors.push("schema-2 save/load evidence is diagnostic only; schema-4 is required for machine acceptance");
   if (!Object.hasOwn(report, "producer") && (!allowLegacy || curve)) errors.push("corrected stability producer attestation is required; legacy evidence is diagnostic only");
   if (Object.hasOwn(report, "producer")) {
     expectedKeys.push("producer");
@@ -354,12 +375,21 @@ export function validateZk682SupplementalStabilityReport(report, expectedGate, e
 }
 
 // Explicitly non-gating wrapper: even a passing legacy report is not machine evidence.
+function legacySaveLoadPrefix(samples) {
+  return Array.isArray(samples) ? samples.slice(0, 13).map(sample => {
+    if (!sample || typeof sample !== "object" || Array.isArray(sample)) return sample;
+    const row = { ...sample };
+    delete row.ownedShimmer;
+    return row;
+  }) : undefined;
+}
+
 export function createZk682LegacySaveLoadDiagnostic(machineReport) {
   return { kind: "non-gating-legacy-first12", diagnosticOnly: true, productionGateAcceptance: false,
     report: createLegacyZk682StabilityReport({ ...machineReport,
       command: "legacy first12 diagnostic only; not machine acceptance",
       thresholds: ZK682_LEGACY_STABILITY_THRESHOLDS["save-load-resource-stability"],
-      samples: machineReport.samples.slice(0, 13),
+      samples: legacySaveLoadPrefix(machineReport.samples),
     }),
   };
 }
@@ -372,7 +402,7 @@ export function validateZk682LegacySaveLoadDiagnostic(diagnostic, machineReport,
   if (report?.schemaVersion !== 2) errors.push("legacy first12 diagnostic requires schema 2");
   const inspected = validateZk682SupplementalStabilityReport(report, "save-load-resource-stability", expectedCommit, { allowLegacy: true });
   errors.push(...inspected.errors.filter(error => error !== "supplemental stability report did not pass"));
-  if (report?.samples?.length !== 13 || stableStabilityJson(report?.samples) !== stableStabilityJson(machineReport?.samples?.slice(0, 13))
+  if (report?.samples?.length !== 13 || stableStabilityJson(report?.samples) !== stableStabilityJson(legacySaveLoadPrefix(machineReport?.samples))
     || stableStabilityJson(report?.producer) !== stableStabilityJson(machineReport?.producer)
     || stableStabilityJson(report?.browser) !== stableStabilityJson(machineReport?.browser)) errors.push("legacy first12 diagnostic must bind the machine run's first13 samples, producer and browser");
   return errors;

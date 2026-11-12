@@ -61,7 +61,17 @@ function resourceReport() {
 function supplemental(gate) {
   const measured = (index) => ({ rendererQuality: "high", resources: { displayObjects: 2000, containers: 2000, sprites: 1200, graphics: 400, meshes: 300, text: 5, attachedTextures: 80, attachedTextureSources: 20, managedTextureSources: 48, canvasConnected: true }, heap: { runtimeUsedBytes: 40_000_000 + index * 20_000, runtimeTotalBytes: 80_000_000 } });
   const samples = gate === "save-load-resource-stability"
-    ? Array.from({ length: 49 }, (_, cycle) => ({ cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef", state: { screen: "game", week: 2, cash: 42000, terrainCounts: { rough: 7700 } }, ...measured(cycle) }))
+    ? Array.from({ length: 49 }, (_, cycle) => {
+      const row = measured(cycle);
+      const registered = cycle % 2;
+      row.resources.managedTextureSources += registered;
+      return {
+        cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef",
+        state: { screen: "game", week: 2, cash: 42000, terrainCounts: { rough: 7700 } }, ...row,
+        ownedShimmer: { status: "qualified", documentTimeOrigin: 10, rendererUid: cycle + 1, stageUid: cycle + 2,
+          textureUid: cycle + 3, sourceUid: cycle + 4, registered },
+      };
+    })
     : gate === "long-session-resource-stability"
       ? Array.from({ length: 7 }, (_, index) => ({ elapsedGameMinutes: index * 22.4, courseHash: index.toString(16).padStart(8, "0"), state: { dayMinute: 100 + index * 22.4, speed: "4x", onCourse: 12 }, ...measured(index) }))
       : [
@@ -321,7 +331,7 @@ test("a structurally valid typed failure produces HOLD instead of manifest inval
   } finally { cleanup(value); }
 });
 
-test("a schema-v3 save/load failure produces HOLD instead of manifest invalid", () => {
+test("a schema-v4 save/load failure produces HOLD instead of manifest invalid", () => {
   const value = fixture();
   try {
     rewriteGate(value, "stability", (gate) => {
@@ -579,7 +589,7 @@ test("certification rejects invalid raw timings and old or missing M27 budget de
   }
 });
 
-for (const kind of ["legacy-schema2", "diagnostic-gating", "diagnostic-independent-run", "forged-late-summary"]) test(`certification rejects ${kind} save/load evidence`, () => {
+for (const kind of ["legacy-schema2", "old-schema3", "unknown-owner", "diagnostic-gating", "diagnostic-independent-run", "forged-late-summary"]) test(`certification rejects ${kind} save/load evidence`, () => {
   const value = fixture();
   try {
     rewriteGate(value, "stability", gate => {
@@ -587,6 +597,8 @@ for (const kind of ["legacy-schema2", "diagnostic-gating", "diagnostic-independe
       const reference = diagnosticKind ? gate.observations.saveLoadFirst12Diagnostic : gate.observations.saveLoadEvidence;
       let report = JSON.parse(readFileSync(join(value.root, reference.path), "utf8"));
       if (kind === "legacy-schema2") report = createZk682LegacySaveLoadDiagnostic(report).report;
+      if (kind === "old-schema3") report.schemaVersion = 3;
+      if (kind === "unknown-owner") report.samples[2].ownedShimmer = { status: "unqualified", reason: "shimmer-owner" };
       if (kind === "diagnostic-gating") report.productionGateAcceptance = true;
       if (kind === "diagnostic-independent-run") report.report.samples[3].heap.runtimeUsedBytes++;
       if (kind === "forged-late-summary") report.summary.lateHeapWindows[1].endGrowth++;
@@ -595,7 +607,9 @@ for (const kind of ["legacy-schema2", "diagnostic-gating", "diagnostic-independe
     });
     const errors = validateZk682EvidenceManifest(value.manifest, value.options).errors;
     const expected = {
-      "legacy-schema2": "schema-3 is required for machine acceptance",
+      "legacy-schema2": "schema-4 is required for machine acceptance",
+      "old-schema3": "wrong supplemental stability schema",
+      "unknown-owner": "declared supplemental result does not match raw samples",
       "diagnostic-gating": "legacy first12 diagnostic must be explicitly non-gating",
       "diagnostic-independent-run": "legacy first12 diagnostic must bind the machine run",
       "forged-late-summary": "declared supplemental result does not match raw samples",

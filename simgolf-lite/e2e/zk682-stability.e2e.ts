@@ -8,6 +8,7 @@ import {
 } from "../scripts/zk682-stability-contract.mjs";
 
 import { createStabilityProducer, sampleRetainedHeap } from "../scripts/zk682-stability-producer.mjs";
+import type { OwnedShimmerEvidence } from "../src/ui/renderer/resourceSnapshot";
 
 test.use({ launchOptions: { args: ["--enable-precise-memory-info"] } });
 
@@ -15,20 +16,27 @@ type Measured = {
   resources: NonNullable<ReturnType<NonNullable<Window["__coursecraftPixiTest"]>["resourceSnapshot"]>>;
   rendererQuality: "high" | "medium" | "low";
   heap: { runtimeUsedBytes: number; runtimeTotalBytes: number };
+  ownedShimmer?: OwnedShimmerEvidence | null;
 };
 
-async function measure(page: Page, cdp: CDPSession): Promise<Measured> {
+async function measure(page: Page, cdp: CDPSession, saveLoad = false): Promise<Measured> {
   const heap = await sampleRetainedHeap(page, cdp);
-  const renderer = await page.evaluate(() => ({
-    resources: window.__coursecraftPixiTest?.resourceSnapshot() ?? null,
-    quality: window.__coursecraftPixiTest?.rendererAtlasState().rendered.quality ?? null,
-  }));
+  const renderer = await page.evaluate((captureOwner) => {
+    const api = window.__coursecraftPixiTest;
+    const saveLoadSnapshot = captureOwner ? api?.saveLoadResourceSnapshot() : null;
+    return {
+      resources: (captureOwner ? saveLoadSnapshot?.resources : api?.resourceSnapshot()) ?? null,
+      quality: api?.rendererAtlasState().rendered.quality ?? null,
+      ownedShimmer: saveLoadSnapshot?.ownedShimmer ?? null,
+    };
+  }, saveLoad);
   expect(renderer.resources, "Pixi resource diagnostics must be mounted").not.toBeNull();
   expect(renderer.quality, "renderer quality must be part of every resource sample").toMatch(/^(high|medium|low)$/);
   return {
     resources: renderer.resources!,
     rendererQuality: renderer.quality!,
     heap: { runtimeUsedBytes: heap.usedSize, runtimeTotalBytes: heap.totalSize },
+    ...(saveLoad ? { ownedShimmer: renderer.ownedShimmer } : {}),
   };
 }
 
@@ -162,10 +170,10 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   await waitForStableResourceTopology(page);
   const savedCourseHash = await page.evaluate(() => window.__coursecraftTest!.state().courseHash);
   const savedState = await canonicalState(page);
-  const saveLoadSamples = [{ cycle: 0, slotId: "quick-save", loaded: false, courseHash: savedCourseHash, state: savedState, ...await measure(page, cdp) }];
+  const saveLoadSamples = [{ cycle: 0, slotId: "quick-save", loaded: false, courseHash: savedCourseHash, state: savedState, ...await measure(page, cdp, true) }];
   for (let cycle = 1; cycle <= ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"].minimumSaveLoads; cycle += 1) {
     await loadQuickSave(page);
-    saveLoadSamples.push({ cycle, slotId: "quick-save", loaded: true, courseHash: await page.evaluate(() => window.__coursecraftTest!.state().courseHash), state: await canonicalState(page), ...await measure(page, cdp) });
+    saveLoadSamples.push({ cycle, slotId: "quick-save", loaded: true, courseHash: await page.evaluate(() => window.__coursecraftTest!.state().courseHash), state: await canonicalState(page), ...await measure(page, cdp, true) });
   }
   const saveLoadReport = createZk682StabilityReport({
     gate: "save-load-resource-stability",

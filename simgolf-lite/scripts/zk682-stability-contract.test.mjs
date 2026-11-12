@@ -25,7 +25,11 @@ const baseInput = (gate, samples) => ({ producer, ...(gate === "save-load-resour
 
 function saveSamples(count = 48) {
   const state = { screen: "game", week: 2, cash: 42000, terrainCounts: { rough: 7700 } };
-  return Array.from({ length: count + 1 }, (_, cycle) => ({ cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef", state: { ...state }, ...measured(cycle) }));
+  return Array.from({ length: count + 1 }, (_, cycle) => ({
+    cycle, slotId: "quick-save", loaded: cycle > 0, courseHash: "deadbeef", state: { ...state }, ...measured(cycle),
+    ownedShimmer: { status: "qualified", documentTimeOrigin: 10, rendererUid: cycle + 1, stageUid: cycle + 2,
+      textureUid: cycle + 3, sourceUid: cycle + 4, registered: 0 },
+  }));
 }
 
 function longSamples(count = 7) {
@@ -94,19 +98,24 @@ test("report creation rejects local identity and relaxed thresholds", () => {
 });
 
 
-test("schema3 requires production attestation while legacy schema2 remains diagnostic only", () => {
+test("schema4 requires production attestation while older save/load schemas cannot certify", () => {
   const input = baseInput("save-load-resource-stability", saveSamples());
   const corrected = createZk682StabilityReport(input);
-  assert.equal(corrected.schemaVersion, 3);
+  assert.equal(corrected.schemaVersion, 4);
   const stripped = structuredClone(corrected); delete stripped.producer;
   assert.equal(validateZk682SupplementalStabilityReport(stripped, input.gate, COMMIT, { allowLegacy: true }).valid, false);
   assert.equal(validateZk682SupplementalStabilityReport(corrected, input.gate, COMMIT).valid, true);
+  const schema3 = structuredClone(corrected);
+  schema3.schemaVersion = 3;
+  for (const row of schema3.samples) delete row.ownedShimmer;
+  assert.match(validateZk682SupplementalStabilityReport(schema3, input.gate, COMMIT, { allowLegacy: true }).errors.join("\n"), /wrong supplemental stability schema/);
   for (const change of [{ producerVersion: "legacy" }, { heapMethod: "gc-delay-then-read" }, { buildMode: "development" }, { runtime: { ...runtime, dev: true } }, { runtime: { ...runtime, commit: "b".repeat(40) } }, { runtime: { ...runtime, fixture: { ...runtime.fixture, holes: 36 } } }]) {
     const falseProducer = { ...producer, ...change };
     assert.throws(() => createZk682StabilityReport({ ...input, producer: falseProducer }));
     assert.equal(validateZk682SupplementalStabilityReport({ ...corrected, producer: falseProducer }, input.gate, COMMIT, { allowLegacy: true }).valid, false);
   }
-  const historical = createLegacyZk682StabilityReport({ ...input, samples: input.samples.slice(0, 13), thresholds: ZK682_LEGACY_STABILITY_THRESHOLDS[input.gate] });
+  const prefix = createZk682LegacySaveLoadDiagnostic(corrected).report.samples;
+  const historical = createLegacyZk682StabilityReport({ ...input, samples: prefix, thresholds: ZK682_LEGACY_STABILITY_THRESHOLDS[input.gate] });
   assert.equal(stabilityProducerKind(historical), producer.producerVersion);
   assert.equal(historical.schemaVersion, 2);
   assert.equal(validateZk682SupplementalStabilityReport(historical, input.gate, COMMIT).valid, false);
@@ -115,6 +124,42 @@ test("schema3 requires production attestation while legacy schema2 remains diagn
 
 const curve = () => saveSamples().map(sample => ({ ...sample, heap: { ...sample.heap, runtimeUsedBytes: 40_000_000 } }));
 const evaluateCurve = samples => evaluateZk682Stability("save-load-resource-stability", samples);
+
+test("schema4 keeps both raw counts and normalizes only proven shimmer registration", () => {
+  const samples = curve();
+  for (const row of samples) {
+    row.ownedShimmer.registered = 1 - row.cycle % 2;
+    row.resources.managedTextureSources = 27 + row.ownedShimmer.registered;
+  }
+  const report = createZk682StabilityReport(baseInput("save-load-resource-stability", samples));
+  assert.equal(report.passed, true, report.errors.join("\n"));
+  assert.deepEqual(report.samples.slice(0, 2).map(row => row.resources.managedTextureSources), [28, 27]);
+  assert.equal(report.summary.managedTextureSources.min, 27);
+  assert.equal(report.summary.managedTextureSources.max, 28);
+  assert.equal(report.summary.managedTextureSourcesExcludingOwnedShimmer.min, 27);
+  assert.equal(report.summary.managedTextureSourcesExcludingOwnedShimmer.max, 27);
+  assert.equal(validateZk682SupplementalStabilityReport(report, report.gate, COMMIT).valid, true);
+});
+
+test("schema4 rejects absent, unknown, stale, duplicate or impossible ownership even with flat raw counts", () => {
+  for (const mutate of [
+    row => { delete row.ownedShimmer; },
+    row => { row.ownedShimmer = null; },
+    row => { row.ownedShimmer = { status: "unqualified", reason: "shimmer-owner" }; },
+    row => { row.ownedShimmer.documentTimeOrigin++; },
+    row => { row.ownedShimmer.sourceUid = "7"; },
+    row => { row.ownedShimmer.registered = 2; },
+    row => { row.ownedShimmer.registered = 1; row.resources.managedTextureSources = 0; },
+  ]) {
+    const samples = curve();
+    mutate(samples[2]);
+    assert.equal(evaluateCurve(samples).passed, false);
+  }
+  const samples = curve();
+  samples[2].ownedShimmer.registered = 1;
+  samples[2].resources.managedTextureSources += 2;
+  assert.match(evaluateCurve(samples).errors.join("\n"), /excluding the owned shimmer must stay flat/);
+});
 for (const [name, mutate, expected] of [
   ["whole peak", samples => { samples[5].heap.runtimeUsedBytes += 8 * 1024 * 1024 + 1; }, /post-GC JS heap grew/],
   ["whole endpoint", samples => { for (const sample of samples.slice(1)) sample.heap.runtimeUsedBytes += 6 * 1024 * 1024 + 1; }, /post-GC JS heap ended/],
@@ -122,13 +167,13 @@ for (const [name, mutate, expected] of [
     [`window${start} endpoint`, samples => { for (const sample of samples.slice(start + 1)) sample.heap.runtimeUsedBytes += 524_289; }, new RegExp(`window ${start}-${start + 12} ended`)],
     [`window${start} slope`, samples => { samples[start + 10].heap.runtimeUsedBytes += 2_981_889; }, new RegExp(`window ${start}-${start + 12} slope`)],
   ]),
-]) test(`schema3 independently rejects one-byte excess: ${name}`, () => {
+]) test(`schema4 independently rejects one-byte excess: ${name}`, () => {
   const samples = curve(); mutate(samples); const result = evaluateCurve(samples);
   assert.equal(result.passed, false); assert.match(result.errors.join("\n"), expected);
   assert.equal(result.errors.length, 1, `negative control must isolate ${name}`);
 });
 
-test("schema3 includes both window boundaries and accepts exact byte/slope limits", () => {
+test("schema4 includes both window boundaries and accepts exact byte/slope limits", () => {
   const samples = curve(); for (const sample of samples.slice(1)) sample.heap.runtimeUsedBytes += 6 * 1024 * 1024;
   samples[5].heap.runtimeUsedBytes = samples[0].heap.runtimeUsedBytes + 8 * 1024 * 1024;
   assert.equal(evaluateCurve(samples).passed, true);
@@ -140,7 +185,7 @@ test("schema3 includes both window boundaries and accepts exact byte/slope limit
   }
 });
 
-test("schema3 strictly validates 49 contiguous typed samples, all full resources, hash/state and heap", () => {
+test("schema4 strictly validates 49 contiguous typed samples, all full resources, hash/state and heap", () => {
   const mutations = [samples => samples.pop(), samples => samples.push(structuredClone(samples.at(-1))), samples => { samples[2].cycle = 1; },
     samples => { samples[2].loaded = false; }, samples => { samples[2].slotId = "fake"; }, samples => { samples[2].courseHash = "cafef00d"; },
     samples => { for (const sample of samples) delete sample.courseHash; }, samples => { samples[2].state.cash += 1; }, samples => { for (const sample of samples) sample.state = {}; },
@@ -151,12 +196,13 @@ test("schema3 strictly validates 49 contiguous typed samples, all full resources
   for (const mutate of mutations) { const samples = curve(); mutate(samples); assert.equal(evaluateCurve(samples).passed, false); }
 });
 
-test("schema3 rechecks thresholds, console errors and every declared result from raw evidence", () => {
+test("schema4 rechecks thresholds, console errors and every declared result from raw evidence", () => {
   const input = baseInput("save-load-resource-stability", curve()), report = createZk682StabilityReport(input);
   assert.throws(() => { const missing = { ...input }; delete missing.runtimeErrors; createZk682StabilityReport(missing); }, /runtimeErrors/);
   assert.equal(createZk682StabilityReport({ ...input, runtimeErrors: ["console.error: failure"] }).passed, false);
   for (const mutate of [r => { r.schemaVersion = 2; }, r => { delete r.runtimeErrors; }, r => { r.runtimeErrors = ["pageerror"]; }, r => { r.summary.lateHeapWindows[1].endGrowth++; },
-    r => { r.summary.heap.endGrowth++; }, r => { r.observations.saveLoads = 12; }, r => { r.thresholds = { ...r.thresholds, lateHeap: { ...r.thresholds.lateHeap, maxEndGrowthBytes: 524289 } }; }, r => { r.passed = false; }, r => { r.candidateCommit = "b".repeat(40); }]) {
+    r => { r.summary.heap.endGrowth++; }, r => { r.summary.managedTextureSourcesExcludingOwnedShimmer.endGrowth++; },
+    r => { r.observations.saveLoads = 12; }, r => { r.thresholds = { ...r.thresholds, lateHeap: { ...r.thresholds.lateHeap, maxEndGrowthBytes: 524289 } }; }, r => { r.passed = false; }, r => { r.candidateCommit = "b".repeat(40); }]) {
     const changed = structuredClone(report); mutate(changed); assert.equal(validateZk682SupplementalStabilityReport(changed, input.gate, COMMIT).valid, false);
   }
 });
@@ -165,9 +211,11 @@ test("legacy first12 red is preserved and non-gating, with exact binding to the 
   const samples = curve(); for (const sample of samples.slice(1)) sample.heap.runtimeUsedBytes += 4_500_000;
   const report = createZk682StabilityReport(baseInput("save-load-resource-stability", samples)); assert.equal(report.passed, true);
   const diagnostic = createZk682LegacySaveLoadDiagnostic(report); assert.equal(diagnostic.report.passed, false); assert.equal(diagnostic.productionGateAcceptance, false);
+  assert.equal(diagnostic.report.samples.some(sample => Object.hasOwn(sample, "ownedShimmer")), false);
+  assert.deepEqual(diagnostic.report.samples.map(sample => sample.resources), report.samples.slice(0, 13).map(sample => sample.resources));
   assert.deepEqual(validateZk682LegacySaveLoadDiagnostic(diagnostic, report, COMMIT), []);
   assert.equal(validateZk682SupplementalStabilityReport(diagnostic.report, report.gate, COMMIT).valid, false);
-  for (const mutate of [d => { d.diagnosticOnly = false; }, d => { d.productionGateAcceptance = true; }, d => { d.report.browser.version = "other-run"; }, d => { d.report.samples[5].heap.runtimeUsedBytes++; }, d => { d.report.passed = true; }, d => { d.report.producer.buildId = "bad"; }]) {
+  for (const mutate of [d => { d.diagnosticOnly = false; }, d => { d.productionGateAcceptance = true; }, d => { d.report.browser.version = "other-run"; }, d => { d.report.samples[5].heap.runtimeUsedBytes++; }, d => { d.report.samples[5].resources.managedTextureSources++; }, d => { d.report.passed = true; }, d => { d.report.producer.buildId = "bad"; }]) {
     const changed = structuredClone(diagnostic); mutate(changed); assert.notEqual(validateZk682LegacySaveLoadDiagnostic(changed, report, COMMIT).length, 0);
   }
 });
