@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { validateStabilityProducer } from "./zk682-stability-producer.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { certifyOfflineIndexedDbSave, PWA_PERSISTENCE_REPORT_SCHEMA_VERSION } from "./pwa-save-evidence.mjs";
@@ -12,12 +11,8 @@ import {
   ZK682_RESOURCE_GROWTH_SCHEMA_VERSION,
   ZK682_RESOURCE_GROWTH_THRESHOLDS,
 } from "./zk682-resource-growth-contract.mjs";
-import {
-  evaluateZk682Stability,
-  stableStabilityJson,
-  ZK682_STABILITY_SCHEMA_VERSION,
-  ZK682_STABILITY_THRESHOLDS,
-} from "./zk682-stability-contract.mjs";
+import { validateZk682SupplementalStabilityReport, validateZk682LegacySaveLoadDiagnostic } from "./zk682-stability-contract.mjs";
+
 import { inspectZk682CommandReceipt } from "./zk682-command-receipt.mjs";
 
 export const ZK682_SCHEMA_VERSION = 2;
@@ -61,7 +56,7 @@ export const ZK682_CRITERIA = Object.freeze([
   { id: "historical-save-migrations", gate: "core-compatibility", requirement: "machine", title: "Historical save migrations remain compatible." },
   { id: "platform-services", gate: "core-compatibility", requirement: "machine", title: "PlatformServices browser and desktop contracts remain compatible." },
   { id: "route-change-resource-stability", gate: "stability", requirement: "machine", title: "Repeated route changes show no material memory or resource growth." },
-  { id: "save-load-resource-stability", gate: "stability", requirement: "machine", title: "Repeated save loads show no material memory or resource growth." },
+  { id: "save-load-resource-stability", gate: "stability", requirement: "machine", title: "48 original-cadence loads satisfy whole-curve and rebased late-window heap limits." },
   { id: "long-session-resource-stability", gate: "stability", requirement: "machine", title: "Long-running live simulation shows no material memory or resource growth." },
   { id: "editing-overlay-sleep-recovery", gate: "stability", requirement: "machine", title: "Representative overlays, editing, sleep/wake, and recovery paths pass." },
 ]);
@@ -269,60 +264,10 @@ function validateResourceGrowthEvidence(report, manifest, label, errors) {
   return recomputed.passed === true;
 }
 
-const SUPPLEMENTAL_STABILITY_GATES = Object.freeze({
-  "save-load-resource-stability": ["saveLoads", "resourceGrowthBounded"],
-  "long-session-resource-stability": ["sessionMinutes", "resourceGrowthBounded"],
-  "editing-overlay-sleep-recovery": ["scenarios", "recoveryPassed"],
-});
-
 function validateSupplementalStabilityEvidence(report, expectedGate, manifest, label, errors) {
-  const schemaV1 = report?.schemaVersion === 1;
-  const expectedKeys = schemaV1
-    ? ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "observations", "passed"]
-    : ["schemaVersion", "gate", "candidateCommit", "capturedAt", "command", "browser", "thresholds", "samples", "observations", "summary", "errors", "passed"];
-  if (!schemaV1 && report && Object.hasOwn(report, "producer")) expectedKeys.push("producer");
-  if (!exactKeys(report, expectedKeys, label, errors)) return false;
-  if (!Object.hasOwn(report, "producer")) {
-    errors.push(`${label}: corrected stability producer attestation is required; legacy evidence is diagnostic only`);
-    return false;
-  }
-  if (!schemaV1 && Object.hasOwn(report, "producer")) errors.push(...validateStabilityProducer(report.producer, manifest.candidateCommit).map((error) => `${label}: ${error}`));
-  if (![1, ZK682_STABILITY_SCHEMA_VERSION].includes(report.schemaVersion) || report.gate !== expectedGate) errors.push(`${label}: wrong supplemental stability schema/gate`);
-  if (!validCommit(report.candidateCommit) || report.candidateCommit !== manifest.candidateCommit) errors.push(`${label}: candidate commit mismatch`);
-  if (!validCapturedAt(report.capturedAt)) errors.push(`${label}: capturedAt is invalid`);
-  if (typeof report.command !== "string" || !report.command) errors.push(`${label}: command is required`);
-  if (!schemaV1 && (report.browser?.name !== "chromium" || report.browser?.cdpHeap !== true || typeof report.browser?.version !== "string" || !report.browser.version)) errors.push(`${label}: real Chromium CDP heap evidence is required`);
-  if (!schemaV1 && stableStabilityJson(report.thresholds) !== stableStabilityJson(ZK682_STABILITY_THRESHOLDS[expectedGate])) errors.push(`${label}: thresholds differ from the immutable stability contract`);
-  const keys = SUPPLEMENTAL_STABILITY_GATES[expectedGate];
-  let passed = false;
-  if (exactKeys(report.observations, keys, `${label}.observations`, errors)) {
-    if (expectedGate === "save-load-resource-stability") {
-      if (!Number.isFinite(report.observations.saveLoads) || report.observations.saveLoads <= 0 || typeof report.observations.resourceGrowthBounded !== "boolean") errors.push(`${label}: save-load observations are invalid`);
-      else passed = report.observations.resourceGrowthBounded;
-    }
-    if (expectedGate === "long-session-resource-stability") {
-      if (!Number.isFinite(report.observations.sessionMinutes) || report.observations.sessionMinutes <= 0 || typeof report.observations.resourceGrowthBounded !== "boolean") errors.push(`${label}: long-session observations are invalid`);
-      else passed = report.observations.resourceGrowthBounded;
-    }
-    if (expectedGate === "editing-overlay-sleep-recovery") {
-      const scenarios = Array.isArray(report.observations.scenarios) ? [...report.observations.scenarios].sort() : [];
-      if (stableJson(scenarios) !== stableJson(["editing", "overlay", "recovery", "sleep-wake"]) || typeof report.observations.recoveryPassed !== "boolean") errors.push(`${label}: interaction recovery observations are invalid`);
-      else passed = report.observations.recoveryPassed;
-    }
-  }
-  if (schemaV1) {
-    if (report.passed !== passed) errors.push(`${label}: passed must agree with the typed observations`);
-    return passed;
-  }
-  const recomputed = evaluateZk682Stability(expectedGate, report.samples, ZK682_STABILITY_THRESHOLDS[expectedGate]);
-  if (stableJson(recomputed.observations) !== stableJson(report.observations)
-    || stableJson(recomputed.metrics) !== stableJson(report.summary)
-    || stableJson(recomputed.errors) !== stableJson(report.errors)
-    || recomputed.passed !== report.passed) {
-    errors.push(`${label}: declared supplemental result does not match raw samples`);
-  }
-  if (report.passed !== passed) errors.push(`${label}: passed must agree with the typed observations`);
-  return report.passed === true && recomputed.passed === true && passed;
+  const inspected = validateZk682SupplementalStabilityReport(report, expectedGate, manifest.candidateCommit);
+  errors.push(...inspected.errors.filter(error => error !== "supplemental stability report did not pass").map(error => `${label}: ${error}`));
+  return inspected.passed;
 }
 
 const RECEIPT_IDS_BY_GATE = Object.freeze({
@@ -546,7 +491,7 @@ function validateGateObservations(gate, manifest, root, errors) {
       && observations.fixtureLoadMs <= observations.fixtureLoadBudgetMs;
     if ((criteria.find((entry) => entry.id === "startup-and-fixture-load")?.status === "pass") !== startupPassed) errors.push("startup-and-fixture-load: declared status disagrees with observed timings and budgets");
   } else if (gate.gateId === "stability") {
-    exactKeys(observations, ["routeChangesStable", "saveLoadsStable", "longSessionStable", "interactionRecoveryPassed", "routeChanges", "saveLoads", "sessionMinutes", "resourceGrowthEvidence", "saveLoadEvidence", "longSessionEvidence", "interactionRecoveryEvidence"], "stability.observations", errors);
+    exactKeys(observations, ["routeChangesStable", "saveLoadsStable", "longSessionStable", "interactionRecoveryPassed", "routeChanges", "saveLoads", "sessionMinutes", "resourceGrowthEvidence", "saveLoadEvidence", "saveLoadFirst12Diagnostic", "longSessionEvidence", "interactionRecoveryEvidence"], "stability.observations", errors);
     expectBooleanObservation(observations, "routeChangesStable", "route-change-resource-stability", criteria, errors);
     expectBooleanObservation(observations, "saveLoadsStable", "save-load-resource-stability", criteria, errors);
     expectBooleanObservation(observations, "longSessionStable", "long-session-resource-stability", criteria, errors);
@@ -564,6 +509,10 @@ function validateGateObservations(gate, manifest, root, errors) {
       const label = `stability.${referenceKey}`;
       const report = readTypedArtifact(observations[referenceKey], gate, root, label, errors);
       const passed = report ? validateSupplementalStabilityEvidence(report, expectedGate, manifest, label, errors) : false;
+      if (expectedGate === "save-load-resource-stability" && report) {
+        const diagnostic = readTypedArtifact(observations.saveLoadFirst12Diagnostic, gate, root, "stability.saveLoadFirst12Diagnostic", errors);
+        if (diagnostic) errors.push(...validateZk682LegacySaveLoadDiagnostic(diagnostic, report, manifest.candidateCommit).map(error => `stability.saveLoadFirst12Diagnostic: ${error}`));
+      }
       if (countKey && report?.observations?.[countKey] !== observations[countKey]) errors.push(`${label}: normalized count disagrees with typed evidence`);
       if (observations[observationKey] !== passed) errors.push(`${expectedGate}: declared status disagrees with typed evidence`);
     }

@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import {
   ZK682_STABILITY_THRESHOLDS,
   createZk682StabilityReport,
+  createZk682LegacySaveLoadDiagnostic,
 } from "../scripts/zk682-stability-contract.mjs";
 
 import { createStabilityProducer, sampleRetainedHeap } from "../scripts/zk682-stability-producer.mjs";
@@ -139,6 +140,13 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
   const runtime = await page.evaluate(() => window.__coursecraftTest!.stabilityRuntime());
   const producer = createStabilityProducer(runtime, expectedCommit!, process.env.ZK682_STABILITY_BUILD_ID);
 
+  // Certify the declared High renderer path even on software-rendered CI.
+  // The private fixture hook changes only this browser session and the report
+  // still checks the actual rendered quality on every post-GC sample.
+  await page.evaluate(() => window.__coursecraftTest!.setGraphicsQualityFixture("high"));
+  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState().rendered.quality), { timeout: 120_000 }).toBe("high");
+  await waitForStableResourceTopology(page);
+
   // Repeated production quick-save loads, including real IndexedDB reads and
   // full App state restoration, are measured after a post-GC baseline.
   await pauseSimulation(page);
@@ -168,8 +176,11 @@ test("ZK-682 produces candidate-bound supplemental stability evidence", async ({
     browser: { name: browserName, version: page.context().browser()?.version() ?? "unknown", cdpHeap: true },
     thresholds: ZK682_STABILITY_THRESHOLDS["save-load-resource-stability"],
     samples: saveLoadSamples,
+    runtimeErrors: [...errors],
   });
   await writeFile(resolve(outputDirectory, "save-load-resource-stability.json"), `${JSON.stringify(saveLoadReport, null, 2)}\n`);
+
+  await writeFile(resolve(outputDirectory, "save-load-first12-diagnostic.json"), `${JSON.stringify(createZk682LegacySaveLoadDiagnostic(saveLoadReport), null, 2)}\n`);
 
   // Run the actual mutable live simulation for at least two in-game hours.
   await page.keyboard.press("Digit3");
