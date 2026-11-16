@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { certifyOfflineIndexedDbSave } from "./pwa-save-evidence.mjs";
@@ -53,12 +53,57 @@ function git(root, args, encoding = "utf8") {
   return result.stdout;
 }
 
-function walkFiles(directory) {
+function walkFiles(directory, rejectSymlinksUnder) {
   if (!existsSync(directory)) return [];
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
-    return entry.isDirectory() ? walkFiles(path) : entry.isFile() ? [path] : [];
+    if (entry.isSymbolicLink() && rejectSymlinksUnder
+      && (path === rejectSymlinksUnder || path.startsWith(`${rejectSymlinksUnder}${sep}`))) {
+      throw new Error(`invalid Playwright stability screenshot: symlink in Playwright output: ${path}`);
+    }
+    return entry.isDirectory() ? walkFiles(path, rejectSymlinksUnder) : entry.isFile() ? [path] : [];
   });
+}
+
+function bindStabilityScreenshotArtifacts(ctx) {
+  const screenshot = join(ctx.rawRoot, "zk682-stability-final.png");
+  const original = lstatSync(screenshot, { throwIfNoEntry: false });
+  if (original && (!original.isFile() || original.nlink !== 1 || realpathSync(screenshot) !== screenshot)) {
+    throw new Error("invalid Playwright stability screenshot: expected a regular, unlinked original");
+  }
+  const artifacts = original ? [ctx.bind(screenshot, true)] : [];
+
+  // Locked Playwright names this test's output directory from its spec and title.
+  let directory = ctx.rawRoot;
+  for (const part of ["playwright", "zk682-stability.e2e.ts-ZK--95686-lemental-stability-evidence", "attachments"]) {
+    directory = join(directory, part);
+    const entry = lstatSync(directory, { throwIfNoEntry: false });
+    if (!entry) return artifacts;
+    if (!entry.isDirectory() || realpathSync(directory) !== directory) {
+      throw new Error("invalid Playwright stability screenshot: expected a real attachment directory");
+    }
+  }
+  const names = readdirSync(directory);
+  if (names.length === 0) return artifacts;
+
+  // Playwright hashes the absolute source path for path attachments. The
+  // producer and aggregator use the same workspace path in certification CI.
+  const pathHash = createHash("sha1").update(screenshot).digest("hex");
+  const name = `zk682-stability-final-${pathHash}.png`;
+  if (names.length !== 1 || names[0] !== name || !original) {
+    throw new Error("invalid Playwright stability screenshot: expected one exact producer attachment and its original");
+  }
+  const attached = join(directory, name);
+  const entry = lstatSync(attached);
+  if (!entry.isFile() || entry.nlink !== 1 || realpathSync(attached) !== attached
+    || entry.size !== original.size || !readFileSync(screenshot).equals(readFileSync(attached))) {
+    throw new Error("invalid Playwright stability screenshot: expected a regular byte-identical attachment");
+  }
+  const attachmentArtifact = ctx.bind(attached, true);
+  if (attachmentArtifact.sha256 !== artifacts[0].sha256) {
+    throw new Error("invalid Playwright stability screenshot: artifact digest changed during binding");
+  }
+  return [...artifacts, attachmentArtifact];
 }
 
 function createContext(root, candidateCommit, evidenceRoot) {
@@ -343,10 +388,9 @@ export async function buildZk682Packet({ root, candidateCommit, evidenceRoot = Z
   const longSession = supplemental.get("long-session-resource-stability");
   const interaction = supplemental.get("editing-overlay-sleep-recovery");
   const stabilityArtifacts = [resource.artifact, saveLoad.artifact, first12Diagnostic.artifact, longSession.artifact, interaction.artifact];
-  for (const name of ["zk682-resource-growth-final.png", "zk682-stability-final.png"]) {
-    const screenshot = join(ctx.rawRoot, name);
-    if (existsSync(screenshot)) stabilityArtifacts.push(ctx.bind(screenshot, true));
-  }
+  const resourceScreenshot = join(ctx.rawRoot, "zk682-resource-growth-final.png");
+  if (existsSync(resourceScreenshot)) stabilityArtifacts.push(ctx.bind(resourceScreenshot, true));
+  stabilityArtifacts.push(...bindStabilityScreenshotArtifacts(ctx));
   gates.push(gate(ctx, "stability", [
     criterion("route-change-resource-stability", resourcePassed, "Renderer samples are recomputed with pinned thresholds."),
     criterion("save-load-resource-stability", saveLoad.passed, "Schema-4 48-load samples, owned shimmer registration and both late windows are recomputed; schema-2 first12 is diagnostic only."),
@@ -383,7 +427,7 @@ export async function buildZk682Packet({ root, candidateCommit, evidenceRoot = Z
     writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
     return { gateId: value.gateId, ...ctx.bind(path) };
   }).sort((a, b) => a.gateId.localeCompare(b.gateId));
-  const unboundRaw = walkFiles(ctx.rawRoot).filter((path) => !ctx.usedRaw.has(resolve(path)));
+  const unboundRaw = walkFiles(ctx.rawRoot, join(ctx.rawRoot, "playwright")).filter((path) => !ctx.usedRaw.has(resolve(path)));
   if (unboundRaw.length) throw new Error(`unbound raw evidence: ${unboundRaw.map((path) => relative(ctx.root, path)).join(", ")}`);
   const manifest = {
     schemaVersion: ZK682_SCHEMA_VERSION,

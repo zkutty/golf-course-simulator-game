@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -135,6 +136,83 @@ test("builder emits a hash-bound v2 packet and HOLD only for absent physical gat
       "artifacts/zk682/raw/zk682-stability-final.png",
     ]);
   } finally { rmSync(value.repository, { recursive: true, force: true }); }
+});
+
+function stabilityScreenshotLayout(raw) {
+  const root = realpathSync(raw);
+  const source = join(root, "zk682-stability-final.png");
+  const pathHash = createHash("sha1").update(source).digest("hex");
+  const directory = "playwright/zk682-stability.e2e.ts-ZK--95686-lemental-stability-evidence/attachments";
+  const name = `zk682-stability-final-${pathHash}.png`;
+  return { source, directory, name, relative: `${directory}/${name}` };
+}
+
+test("builder binds the producer-owned Playwright stability screenshot copy without changing a red gate", async () => {
+  const value = fixture();
+  try {
+    const screenshot = stabilityScreenshotLayout(value.raw);
+    const copy = write(value.raw, screenshot.relative, readFileSync(screenshot.source));
+    write(value.raw, ZK682_PACKET_RECEIPTS["core-determinism"], commandReceipt("core-determinism", value.commit, false));
+    const built = await buildZk682Packet({ root: value.root, candidateCommit: value.commit, invokeCertification: false });
+    const stability = built.gates.find((gate) => gate.gateId === "stability");
+    assert.deepEqual(stability.artifacts.filter(({ path }) => path.includes("zk682-stability-final")), [
+      { path: `artifacts/zk682/raw/${screenshot.relative}`, sha256: copy.sha256 },
+      { path: "artifacts/zk682/raw/zk682-stability-final.png", sha256: copy.sha256 },
+    ]);
+    const manifest = JSON.parse(readFileSync(built.manifestPath, "utf8"));
+    const report = buildZk682Report(manifest, { root: value.root, expectedCommit: value.commit, commitExists: () => true,
+      readCandidateFile: () => readFileSync(join(value.root, "package-lock.json")) });
+    assert.equal(report.machinePassed, false);
+    assert(report.blockers.some((blocker) => blocker.criterionId === "deterministic-hashes"));
+    writeFileSync(join(value.raw, screenshot.relative), "changed after binding");
+    assert.throws(() => buildZk682Report(manifest, { root: value.root, expectedCommit: value.commit, commitExists: () => true,
+      readCandidateFile: () => readFileSync(join(value.root, "package-lock.json")) }), /stability: raw artifact SHA-256 mismatch/);
+  } finally { rmSync(value.repository, { recursive: true, force: true }); }
+});
+
+test("builder rejects tampered or unowned Playwright stability screenshot files", async (t) => {
+  for (const kind of ["different bytes", "wrong name", "wrong path", "missing original", "attachment symlink", "directory symlink", "misplaced symlink", "original symlink", "hard link", "ambiguous copies"]) {
+    await t.test(kind, async () => {
+      const value = fixture();
+      try {
+        const { source, directory, name, relative } = stabilityScreenshotLayout(value.raw);
+        const bytes = readFileSync(source);
+        const wrongName = `${directory}/zk682-stability-final-${"0".repeat(40)}.png`;
+        const copyPath = join(value.raw, relative);
+        if (kind === "different bytes") write(value.raw, relative, Buffer.alloc(bytes.length));
+        else if (kind === "wrong name") write(value.raw, wrongName, bytes);
+        else if (kind === "wrong path") write(value.raw, relative.replace("-evidence/", "-evidence-retry1/"), bytes);
+        else if (kind === "misplaced symlink") {
+          write(value.raw, relative, bytes);
+          symlinkSync(source, join(value.raw, "playwright", "unexpected-link.png"));
+        }
+        else if (kind === "missing original") {
+          rmSync(source);
+          write(value.raw, relative, bytes);
+        } else if (kind === "attachment symlink" || kind === "hard link") {
+          mkdirSync(dirname(copyPath), { recursive: true });
+          const link = kind === "attachment symlink" ? symlinkSync : linkSync;
+          link(source, copyPath);
+        } else if (kind === "directory symlink") {
+          const other = join(value.repository, "foreign");
+          write(other, name, bytes);
+          mkdirSync(dirname(join(value.raw, directory)), { recursive: true });
+          symlinkSync(other, join(value.raw, directory), "dir");
+        } else if (kind === "original symlink") {
+          rmSync(source);
+          const other = join(value.repository, "foreign.png");
+          writeFileSync(other, bytes);
+          symlinkSync(other, source);
+          write(value.raw, relative, bytes);
+        } else {
+          write(value.raw, relative, bytes);
+          write(value.raw, wrongName, bytes);
+        }
+        await assert.rejects(() => buildZk682Packet({ root: value.root, candidateCommit: value.commit, invokeCertification: false }),
+          /unbound raw evidence|invalid Playwright stability screenshot/);
+      } finally { rmSync(value.repository, { recursive: true, force: true }); }
+    });
+  }
 });
 
 test("builder derives a machine criterion failure from a failed receipt", async () => {
