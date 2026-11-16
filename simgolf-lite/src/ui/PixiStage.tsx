@@ -115,6 +115,7 @@ import {
   pathMaterialLayerMesh,
   pathUnderlayForRenderer,
 } from "./renderer/scenes/pathMaterialScene";
+import { createPathLayerOwnership } from "./renderer/scenes/pathLayerOwnership";
 import {
   pickNaturalProp,
 } from "../game/render/naturalProps";
@@ -834,6 +835,12 @@ function visualHeightfieldForRenderer(
  */
 const CHUNK_TILES = 16;
 const CHUNK_DEBUG = false; // dev flag: chunk borders + rebuild logging
+
+// Keep the ownership observer on the atlas fixture, outside unrelated E2E heap measurements.
+const pathLayerOwnership = import.meta.env.MODE === "e2e"
+  && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("m53Fixture") === "1"
+  ? createPathLayerOwnership()
+  : null;
 
 type AtlasStampedContainer = PIXI.Container & {
   __coursecraftAtlasGeneration?: number;
@@ -1781,6 +1788,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
       rendererAtlasState: () => {
         const layers = layersRef.current;
         const world = layers?.world;
+        const app = appRef.current;
+        const connectedSurfaceOwnership = layers && app?.canvas.isConnected
+          && world?.parent === app.stage && layers.smoothSurfaces.parent === world
+          && terrainWaterSceneRef.current?.layers.smoothSurfaces === layers.smoothSurfaces
+          ? pathLayerOwnership?.read(layers.smoothSurfaces, {
+            generation: atlasContext.generation, quality: atlasContext.quality, planKey: pathScenePlan.key,
+          }) ?? null
+          : null;
         const requestedTheme = getBiomeDefinition(requestedProps.course.theme).key;
         const requestedQuality = requestedProps.graphicsQuality;
         const renderedTier = visibleGroundCoverTier(
@@ -1866,6 +1881,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
             terrainChunks: terrainWaterSceneRef.current?.diagnostics().chunksTotal ?? 0,
             terrainRebuilds: terrainWaterSceneRef.current?.diagnostics().chunkRebuilds ?? 0,
             connectedSurfaces: layers.smoothSurfaces.children.length,
+            connectedSurfaceOwnership,
             structuresAndProps: structureSpriteCountRef.current
               + (naturalPropsSceneRef.current?.contentCount() ?? 0),
             naturalProps: {
@@ -1939,6 +1955,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     fitDefaultView,
     fitWholeCourse,
     minimumZoom,
+    pathScenePlan.key,
     requestedProps.course.theme,
     requestedProps.graphicsQuality,
     requestedProps.resolutionScale,
@@ -3148,6 +3165,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       ownership: pathScenePlan.suppressWholeCellPaths ? ["accepted-path-coverage"] : [],
       planKey: pathScenePlan.key, triangleCount: pathScenePlan.triangleCount, widthRange: pathScenePlan.widths,
     };
+    // The same last-child append serves both Low paths and the connected tiers.
+    const observePathRelief = pathLayerOwnership?.observeAttachment(layer, pathMaterialLayer, atlasRevision, pathScenePlan);
 
     const componentDepth = (component: LandscapeComponent) => {
       let total = 0;
@@ -3768,6 +3787,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (!pathMacroData) return;
       const mesh = new PIXI.Mesh({ geometry: new PIXI.MeshGeometry({ positions: pathMacroData.positions, uvs: pathMacroData.uvs, indices: pathMacroData.indices }), texture });
       mesh.eventMode = "none"; mesh.blendMode = blendMode; mesh.label = label; pathMaterialLayer.addChild(mesh);
+      observePathRelief?.(mesh);
     };
     const generatedMacroTextures: PIXI.Texture[] = [];
     const shadowTexture = textureFromRgba(macroRaster.shadow);

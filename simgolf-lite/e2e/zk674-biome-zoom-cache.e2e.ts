@@ -207,6 +207,7 @@ async function expectAtomicGeneration(page: Page, quality: "high" | "medium" | "
   await expect.poll(async () => {
     const state = await rendererState(page);
     if (!state?.layers) return null;
+    const ownership = state.counts?.connectedSurfaceOwnership;
     return {
       requested: state.requested.quality,
       rendered: state.rendered.quality,
@@ -215,6 +216,10 @@ async function expectAtomicGeneration(page: Page, quality: "high" | "medium" | "
       stampsMatch: Object.values(state.layers).every((generation) => generation === state.rendered.generation),
       terrainChunks: state.counts?.terrainChunks ?? 0,
       connectedSurfaces: state.counts?.connectedSurfaces ?? -1,
+      connectedTerrainOwners: ownership?.otherOwners ?? -1,
+      visibleIndexedTerrain: ownership?.hasVisibleIndexedTerrain ?? null,
+      pathOwnerCurrent: ownership?.generation === state.rendered.generation && ownership?.quality === quality,
+      pathContentPresent: Boolean(ownership && ownership.pathMeshes > 0 && ownership.pathTriangles > 0),
       structuresAndProps: state.counts?.structuresAndProps ?? 0,
       dressing: state.counts?.dressing ?? 0,
     };
@@ -225,13 +230,26 @@ async function expectAtomicGeneration(page: Page, quality: "high" | "medium" | "
     generations: [expect.any(Number)],
     stampsMatch: true,
     terrainChunks: expect.any(Number),
-    connectedSurfaces: quality === "low" ? 0 : expect.any(Number),
+    connectedSurfaces: expect.any(Number),
+    connectedTerrainOwners: quality === "low" ? 0 : expect.any(Number),
+    visibleIndexedTerrain: quality !== "low",
+    pathOwnerCurrent: true,
+    pathContentPresent: true,
     structuresAndProps: expect.any(Number),
     dressing: quality === "low" ? 0 : expect.any(Number),
   });
   const state = await rendererState(page);
   expect(state?.counts?.terrainChunks).toBeGreaterThan(0);
-  if (quality !== "low") expect(state?.counts?.connectedSurfaces).toBeGreaterThan(0);
+  const ownership = state?.counts?.connectedSurfaceOwnership;
+  expect(ownership).not.toBeNull();
+  expect(ownership?.generation).toBe(state?.rendered.generation);
+  expect(ownership?.quality).toBe(quality);
+  expect(ownership?.pathMeshes).toBeGreaterThan(0);
+  expect(ownership?.pathTriangles).toBeGreaterThan(0);
+  expect(state?.counts?.connectedSurfaces).toBe(1 + (ownership?.otherOwners ?? -1));
+  if (quality === "low") expect(ownership?.otherOwners).toBe(0);
+  else expect(ownership?.otherOwners).toBeGreaterThan(0);
+  expect(ownership?.hasVisibleIndexedTerrain).toBe(quality !== "low");
   expect(state?.counts?.structuresAndProps).toBeGreaterThan(0);
   if (quality !== "low") expect(state?.counts?.dressing).toBeGreaterThan(0);
   expect(state?.fallbacks).toEqual([]);

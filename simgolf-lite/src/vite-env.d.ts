@@ -170,6 +170,7 @@ interface Window {
         terrainChunks: number;
         terrainRebuilds: number;
         connectedSurfaces: number;
+        connectedSurfaceOwnership: import("./ui/renderer/scenes/pathLayerOwnership").ConnectedSurfaceOwnership | null;
         structuresAndProps: number;
         naturalProps: {
           content: number;
