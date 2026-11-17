@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Writable } from "node:stream";
 import test from "node:test";
 import vm from "node:vm";
+import { flushM27PhaseLine, summarizeM27Phases } from "../src/game/render/m27PhaseObservation.mjs";
 import { createPwaPersistenceReport } from "./pwa-save-evidence.mjs";
 import { createZk682DesktopPersistenceReport } from "./zk682-desktop-persistence-contract.mjs";
 import { ZK682_RESOURCE_GROWTH_THRESHOLDS, createZk682ResourceGrowthReport } from "./zk682-resource-growth-contract.mjs";
@@ -419,10 +421,23 @@ function extractedPerfFinalDecision() {
   return `${budgetDeclaration}\n${tail}`;
 }
 
-function runExtractedPerfFinalDecision({ fixtureLoadMs, coldStartupMs = 2930, workMs = 1.6333333333909867, p95Ms = 100, assertFrame = false, fixture = "m27Fixture" }) {
+async function runExtractedPerfFinalDecision({ fixtureLoadMs, coldStartupMs = 2930, workMs = 1.6333333333909867, p95Ms = 100, assertFrame = false, fixture = "m27Fixture", m27Phases = false }) {
   let receiptBytes;
   let exitCode = 0;
   const errors = [];
+  const phaseLines = [];
+  const events = [];
+  const capturedExit = new Error("captured process.exit");
+  const stdout = new Writable({
+    write(chunk, _encoding, callback) {
+      phaseLines.push(String(chunk));
+      events.push("phase-write");
+      setImmediate(() => {
+        events.push("phase-flushed");
+        callback();
+      });
+    },
+  });
   const sandbox = {
     fixtureLoadMs,
     coldStartupMs,
@@ -433,6 +448,14 @@ function runExtractedPerfFinalDecision({ fixtureLoadMs, coldStartupMs = 2930, wo
     BUDGET_MS: 33,
     PERF_FIXTURE: fixture,
     PERF_THEME: "parkland",
+    M27_PHASES: m27Phases,
+    phaseHost: null,
+    phasePage: null,
+    phaseClockBefore: null,
+    phaseClockAfter: null,
+    Buffer,
+    summarizeM27Phases,
+    flushM27PhaseLine,
     MEASURE_S: 20,
     WARMUP_S: 8,
     HEADED: false,
@@ -440,29 +463,37 @@ function runExtractedPerfFinalDecision({ fixtureLoadMs, coldStartupMs = 2930, wo
     OUTPUT_PATH: "/captured/perf-receipt.json",
     dirname: () => "/captured",
     mkdirSync() {},
-    writeFileSync(_path, bytes) { receiptBytes = String(bytes); },
+    writeFileSync(_path, bytes) {
+      receiptBytes = String(bytes);
+      events.push("receipt-write");
+    },
     console: { log() {}, error(message) { errors.push(String(message)); } },
     process: {
       env: {},
-      exit(code) { exitCode = code; throw Object.assign(new Error("captured process.exit"), { code }); },
+      stdout,
+      exit(code) {
+        exitCode = code;
+        events.push("exit");
+        throw capturedExit;
+      },
     },
   };
   try {
-    vm.runInNewContext(extractedPerfFinalDecision(), sandbox, { filename: "perf-smoke-actual-final-decision" });
+    await vm.runInNewContext(`(async () => {\n${extractedPerfFinalDecision()}\n})()`, sandbox, { filename: "perf-smoke-actual-final-decision" });
+    events.push("return");
   } catch (error) {
-    if (error.message !== "captured process.exit") throw error;
-    exitCode = error.code;
+    if (error !== capturedExit) throw error;
   }
   assert.ok(receiptBytes, "actual final-decision tail must serialize its receipt before exit");
-  return { exitCode, receipt: JSON.parse(receiptBytes), errors };
+  return { exitCode, receipt: JSON.parse(receiptBytes), receiptBytes, errors, phaseLines, events };
 }
 
-test("actual perf final decision enforces the fixed unrounded fixture-load limit and reports truthful exit", () => {
+test("actual perf final decision enforces the fixed unrounded fixture-load limit and reports truthful exit", async () => {
   for (const [fixtureLoadMs, expectedExit] of [
     [6000, 0], [6000.001, 0], [9999.999, 0], [10000, 0], [10000.001, 1], [10001, 1], [239435, 1],
     [Number.NaN, 1], [Number.POSITIVE_INFINITY, 1], [-0.001, 1],
   ]) {
-    const { exitCode, receipt, errors } = runExtractedPerfFinalDecision({ fixtureLoadMs });
+    const { exitCode, receipt, errors } = await runExtractedPerfFinalDecision({ fixtureLoadMs });
     assert.equal(exitCode, expectedExit, `fixtureLoadMs=${String(fixtureLoadMs)}`);
     assert.equal(receipt.gateValidation.fixtureLoadWithinBudget, expectedExit === 0);
     assert.equal(receipt.effective.budgets.fixtureLoadMilliseconds, 10000);
@@ -479,29 +510,49 @@ test("actual perf final decision enforces the fixed unrounded fixture-load limit
   }
 });
 
-test("actual perf final decision preserves cold/work boundaries and optional frame reporting", () => {
+test("actual perf final decision preserves cold/work boundaries and optional frame reporting", async () => {
   for (const [coldStartupMs, workMs, expectedExit] of [
     [5000, 8, 0], [5000.001, 8, 1], [5000, 8.001, 1],
   ]) {
-    const { exitCode, receipt } = runExtractedPerfFinalDecision({ fixtureLoadMs: 6000, coldStartupMs, workMs });
+    const { exitCode, receipt } = await runExtractedPerfFinalDecision({ fixtureLoadMs: 6000, coldStartupMs, workMs });
     assert.equal(exitCode, expectedExit);
     assert.equal(receipt.gateValidation.passed, exitCode === 0);
   }
-  const reportOnlyFrame = runExtractedPerfFinalDecision({ fixtureLoadMs: 6000, p95Ms: 100, assertFrame: false });
+  const reportOnlyFrame = await runExtractedPerfFinalDecision({ fixtureLoadMs: 6000, p95Ms: 100, assertFrame: false });
   assert.equal(reportOnlyFrame.exitCode, 0);
   assert.equal(reportOnlyFrame.receipt.gateValidation.frameWithinBudget, null);
-  const assertedFrame = runExtractedPerfFinalDecision({ fixtureLoadMs: 6000, p95Ms: 100, assertFrame: true });
+  const assertedFrame = await runExtractedPerfFinalDecision({ fixtureLoadMs: 6000, p95Ms: 100, assertFrame: true });
   assert.equal(assertedFrame.exitCode, 1);
   assert.equal(assertedFrame.receipt.gateValidation.frameWithinBudget, false);
   assert.equal(assertedFrame.receipt.gateValidation.passed, false);
 });
 
-test("actual default perf fixture retains its 6000 ms ceiling", () => {
+test("actual default perf fixture retains its 6000 ms ceiling", async () => {
   for (const [fixtureLoadMs, expectedExit] of [[6000, 0], [6000.001, 1], [10000, 1]]) {
-    const { exitCode, receipt } = runExtractedPerfFinalDecision({ fixtureLoadMs, fixture: "perfFixture" });
+    const { exitCode, receipt } = await runExtractedPerfFinalDecision({ fixtureLoadMs, fixture: "perfFixture" });
     assert.equal(exitCode, expectedExit);
     assert.equal(receipt.fixture, "perfFixture");
     assert.equal(receipt.effective.budgets.fixtureLoadMilliseconds, 6000);
+  }
+});
+
+test("actual M27 phase diagnostics preserve the raw receipt and flush before return or failure", async () => {
+  for (const [fixtureLoadMs, exitCode, terminal] of [[10000, 0, "return"], [10000.001, 1, "exit"]]) {
+    const off = await runExtractedPerfFinalDecision({ fixtureLoadMs });
+    const on = await runExtractedPerfFinalDecision({ fixtureLoadMs, m27Phases: true });
+    assert.equal(off.exitCode, exitCode);
+    assert.equal(on.exitCode, exitCode);
+    assert.equal(on.receiptBytes, off.receiptBytes);
+    assert.deepEqual(on.errors, off.errors);
+    assert.deepEqual(off.phaseLines, []);
+    assert.deepEqual(off.events, ["receipt-write", terminal]);
+    assert.deepEqual(on.events, ["receipt-write", "phase-write", "phase-flushed", terminal]);
+    assert.equal(on.phaseLines.length, 1);
+    const prefix = "[perf-smoke] m27-phase ";
+    assert.ok(on.phaseLines[0].startsWith(prefix) && on.phaseLines[0].endsWith("\n"));
+    assert.deepEqual(JSON.parse(on.phaseLines[0].slice(prefix.length)), {
+      schema: "coursecraft-m27-phase-v1", status: "inconclusive", reason: "host-stamps", fixtureLoadMs,
+    });
   }
 });
 
@@ -521,9 +572,9 @@ function collectHeadlessReceipt(performance) {
   return report;
 }
 
-test("actual collector agrees with producer at the M27 boundary and rejects invalid timing or identity", () => {
+test("actual collector agrees with producer at the M27 boundary and rejects invalid timing or identity", async () => {
   for (const [fixtureLoadMs, expected] of [[10000, true], [10000.001, false], [-0.001, false], [NaN, false], [Infinity, false]]) {
-    const producer = runExtractedPerfFinalDecision({ fixtureLoadMs });
+    const producer = await runExtractedPerfFinalDecision({ fixtureLoadMs });
     const collected = collectHeadlessReceipt(producer.receipt);
     assert.equal(collected.passed, expected, String(fixtureLoadMs));
     assert.equal(collected.budgets.fixtureLoadMilliseconds, 10000);
@@ -537,7 +588,7 @@ test("actual collector agrees with producer at the M27 boundary and rejects inva
     receipt => { receipt.version = 0; },
     receipt => { receipt.fixtureLoadMs = "1000"; },
   ]) {
-    const { receipt } = runExtractedPerfFinalDecision({ fixtureLoadMs: 1000 });
+    const { receipt } = await runExtractedPerfFinalDecision({ fixtureLoadMs: 1000 });
     mutate(receipt);
     assert.equal(collectHeadlessReceipt(receipt).passed, false);
   }

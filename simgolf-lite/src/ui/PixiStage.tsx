@@ -7,6 +7,7 @@ import "pixi.js/unsafe-eval";
 import { LoadingCard } from "./appShell/LoadingCard";
 import { createRendererResourceSnapshots } from "./renderer/resourceSnapshot";
 import type { FirstCourseRender } from "../game/render/firstCourseRender";
+import { currentM27PhaseObservation, startM27PhaseObservation } from "../game/render/m27PhaseObservation.mjs";
 import { destroySceneSubtree } from "../game/render/destroySceneSubtree";
 import { releaseIdleGraphicsPools } from "../game/render/releaseIdleGraphicsPools";
 import * as PIXI from "pixi.js";
@@ -1982,6 +1983,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     if (!container) return;
 
     const app = new PIXI.Application();
+    const m27Phases = import.meta.env.DEV ? startM27PhaseObservation(app) : null;
     let firstCourseRender: FirstCourseRender | null = null;
     setRendererPresented(false);
     setRendererError(false);
@@ -1990,6 +1992,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const width = Math.max(container.clientWidth || 800, 100);
       const height = Math.max(container.clientHeight || 600, 100);
 
+      m27Phases?.stamp("appInitStart");
       await app.init({
         width,
         height,
@@ -1998,6 +2001,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         resolution: (window.devicePixelRatio || 1) * initialRendererConfigRef.current.resolutionScale,
         autoDensity: true,
       });
+      m27Phases?.stamp("appInitEnd");
 
       if (cancelled) {
         app.stage.removeChildren().forEach(destroySceneSubtree);
@@ -2005,6 +2009,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         releaseIdleGraphicsPools(idleGraphicsPoolApi);
         return;
       }
+      m27Phases?.stamp("deferredStart");
       const [deferredWorldScenes, terrainWaterScenes, compositionModule, cameraModule, viewportInputControllerModule] = await Promise.all([
         import("./renderer/scenes/deferredWorldScenes"),
         import("./renderer/scenes/terrainWaterScene"),
@@ -2012,6 +2017,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         import("../game/render/courseSceneCamera"),
         import("./renderer/viewportInputController"),
       ]);
+      m27Phases?.stamp("deferredEnd");
       if (cancelled) {
         app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
@@ -2019,11 +2025,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
         return;
       }
 
+      m27Phases?.stamp("atlasStart");
       const activation = await loadAtlases(
         initialRendererConfigRef.current.theme,
         initialRendererConfigRef.current.graphicsQuality,
         initialRendererConfigRef.current.season,
       );
+      m27Phases?.stamp("atlasEnd");
       if (cancelled) {
         app.stage.removeChildren().forEach(destroySceneSubtree);
         app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true, texture: true });
@@ -2051,6 +2059,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       app.canvas.style.top = "0";
       app.canvas.style.left = "0";
       container.appendChild(app.canvas);
+      m27Phases?.attach(app.canvas);
 
       // Shared white diamond texture, tinted per terrain.
       const g = new PIXI.Graphics();
@@ -2102,13 +2111,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
       firstCourseRender = deferredWorldScenes.observeFirstCourseRender(app,
         () => currentRenderSnapshotRef.current,
-        () => { if (!cancelled && appRef.current === app) setRendererPresented(true); });
+        () => {
+          if (!cancelled && appRef.current === app) {
+            setRendererPresented(true);
+            m27Phases?.stamp("firstRootPresented");
+          }
+        });
       firstCourseRenderRef.current = firstCourseRender;
       setAppReady(true);
       devLog(`initialized ${width}x${height}`);
     };
 
     void init().catch((error: unknown) => {
+      m27Phases?.dispose();
       firstCourseRender?.dispose();
       if (cancelled) {
         terrainWaterSceneRef.current?.destroy();
@@ -2128,6 +2143,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
     return () => {
       cancelled = true;
+      m27Phases?.dispose();
       firstCourseRender?.dispose();
       if (firstCourseRenderRef.current === firstCourseRender) firstCourseRenderRef.current = null;
       supersedePendingAtlasLoad();
@@ -3992,7 +4008,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
     if (!appReady) return;
     firstCourseRenderRef.current?.prepare(null);
     const host = sceneSystemHostRef.current;
+    const phaseApp = import.meta.env.DEV && host ? appRef.current : null;
+    const m27Phases = phaseApp ? currentM27PhaseObservation(phaseApp) : null;
+    const phaseSyncStart = m27Phases?.startSync();
     const renderedScenes = host?.sync(renderSnapshot) ?? [];
+    if (m27Phases) {
+      if (appRef.current === phaseApp && sceneSystemHostRef.current === host) m27Phases.finishSync(phaseSyncStart);
+      else m27Phases.dispose();
+    }
     const layers = layersRef.current;
     if (layers) {
       if (renderedScenes.includes("atmosphere")) {

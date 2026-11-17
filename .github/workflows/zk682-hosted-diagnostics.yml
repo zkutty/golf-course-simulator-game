@@ -1,0 +1,166 @@
+name: ZK-682 M27 and WebKit failure diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full 40-character commit SHA to diagnose
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: simgolf-lite
+
+jobs:
+  linux-diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ZK682_EXPECTED_COMMIT: ${{ inputs.candidate_sha }}
+      VITE_COMMIT_SHA: ${{ inputs.candidate_sha }}
+    steps:
+      - name: Validate candidate before checkout
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: '[[ "$ZK682_EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]'
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify exact candidate checkout
+        id: verified-checkout
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$ZK682_EXPECTED_COMMIT"
+          git cat-file -e "${ZK682_EXPECTED_COMMIT}^{commit}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          test "$RUNNER_OS" = Linux
+          test "$RUNNER_ARCH" = X64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - name: Record diagnostic run identity
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from "node:child_process";
+          import { createHash } from "node:crypto";
+          import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+
+          const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
+          const sourceFiles = [
+            "package-lock.json", "scripts/perf-smoke.mjs", "scripts/zk682-run-command-receipt.mjs",
+            "scripts/zk682-command-receipt.mjs", "playwright.config.ts", "playwright.release.config.ts",
+            "e2e/m47-certification.e2e.ts",
+          ];
+          const identity = {
+            schema: "coursecraft-zk682-linux-diagnostics-v1",
+            candidateCommit: git("rev-parse", "HEAD"),
+            candidateTree: git("rev-parse", "HEAD^{tree}"),
+            workflowCommit: process.env.GITHUB_WORKFLOW_SHA,
+            workflowRef: process.env.GITHUB_WORKFLOW_REF,
+            runId: process.env.GITHUB_RUN_ID,
+            runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+            runnerOS: process.env.RUNNER_OS,
+            runnerArchitecture: process.env.RUNNER_ARCH,
+            node: process.version,
+            sourceSHA256: Object.fromEntries(sourceFiles.map((path) =>
+              [path, createHash("sha256").update(readFileSync(path)).digest("hex")])),
+          };
+          const output = "artifacts/zk682/failure-diagnostics";
+          mkdirSync(output, { recursive: true });
+          writeFileSync(`${output}/identity.json`, JSON.stringify(identity, null, 2) + "\n", { flag: "wx" });
+          NODE
+      - run: npm ci
+      - name: Install diagnostic browsers
+        id: install-browsers
+        run: npx playwright install --with-deps chromium webkit
+      - name: M27 performance receipt
+        env:
+          PERF_FIXTURE_READY_TIMEOUT_MS: "300000"
+          PERF_FIXTURE: m27
+          PERF_THEME: parkland
+          PERF_M27_PHASE_DIAGNOSTICS: "1"
+          PERF_OUTPUT_PATH: artifacts/zk682/failure-diagnostics/m27-perf.json
+        run: >-
+          env -u GITHUB_SHA node scripts/zk682-run-command-receipt.mjs
+          --id headless-performance
+          --output artifacts/zk682/failure-diagnostics/headless-performance-command.json
+          --candidate "$ZK682_EXPECTED_COMMIT"
+          -- npm run test:perf
+      - name: M47 WebKit receipt
+        if: ${{ !cancelled() && steps.install-browsers.outcome == 'success' }}
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          DEBUG: "pw:browser"
+          PLAYWRIGHT_JSON_OUTPUT_FILE: artifacts/zk682/failure-diagnostics/m47-playwright.json
+        run: >-
+          env -u GITHUB_SHA node scripts/zk682-run-command-receipt.mjs
+          --id browser-supported
+          --output artifacts/zk682/failure-diagnostics/browser-supported.json
+          --candidate "$ZK682_EXPECTED_COMMIT"
+          -- npm run test:release:browsers --
+          e2e/m47-certification.e2e.ts --grep-invert "ZK-813" --project=webkit-safari-proxy --workers=1 --retries=0 --reporter=list,json
+      - name: Upload exact-candidate failure diagnostics
+        if: always() && steps.verified-checkout.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zk682-failure-diagnostics-${{ inputs.candidate_sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: |
+            simgolf-lite/artifacts/zk682/failure-diagnostics/identity.json
+            simgolf-lite/artifacts/zk682/failure-diagnostics/m27-perf.json
+            simgolf-lite/artifacts/zk682/failure-diagnostics/headless-performance-command.json
+            simgolf-lite/artifacts/zk682/failure-diagnostics/browser-supported.json
+            simgolf-lite/artifacts/zk682/failure-diagnostics/m47-playwright.json
+            simgolf-lite/test-results/m47-certification.e2e.ts-*/trace.zip
+            simgolf-lite/test-results/m47-certification.e2e.ts-*/video*.webm
+            simgolf-lite/test-results/m47-certification.e2e.ts-*/error-context.md
+            simgolf-lite/test-results/m47-certification.e2e.ts-*/test-failed-*.png
+            simgolf-lite/test-results/m47-certification.e2e.ts-*/inspector-desktop.png
+            simgolf-lite/test-results/m47-certification.e2e.ts-*/inspector-mobile.png
+            simgolf-lite/test-results/m47-certification.e2e.ts-*/m47-pseudo-channel.png
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require both diagnostic commands to pass
+        if: always() && steps.install-browsers.outcome == 'success'
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$ZK682_EXPECTED_COMMIT"
+          git diff --exit-code HEAD --
+          node --input-type=module <<'NODE'
+          import { existsSync, readFileSync } from "node:fs";
+          import { inspectZk682CommandReceipt } from "./scripts/zk682-command-receipt.mjs";
+
+          const root = "artifacts/zk682/failure-diagnostics";
+          for (const [receiptId, file] of [
+            ["headless-performance", "headless-performance-command.json"],
+            ["browser-supported", "browser-supported.json"],
+          ]) {
+            try {
+              const raw = JSON.parse(readFileSync(`${root}/${file}`, "utf8"));
+              const receipt = inspectZk682CommandReceipt(raw, {
+                candidateCommit: process.env.ZK682_EXPECTED_COMMIT,
+                receiptId,
+              });
+              if (!receipt.valid || !receipt.passed) throw new Error(receipt.errors.join("; ") || `exit ${raw.exitCode}`);
+            } catch (error) {
+              console.error(`${receiptId}: ${error.message}`);
+              process.exitCode = 1;
+            }
+          }
+          if (!existsSync(`${root}/m27-perf.json`)) {
+            console.error("M27 raw performance report missing");
+            process.exitCode = 1;
+          }
+          if (!existsSync(`${root}/m47-playwright.json`)) {
+            console.error("M47 Playwright report missing");
+            process.exitCode = 1;
+          }
+          NODE

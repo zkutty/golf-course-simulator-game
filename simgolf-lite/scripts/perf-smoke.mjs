@@ -23,6 +23,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { loadBiomeKeys } from "./biome-registry.mjs";
+import { flushM27PhaseLine, summarizeM27Phases } from "../src/game/render/m27PhaseObservation.mjs";
 
 const WORK_BUDGET_MS = Number(process.env.PERF_WORK_BUDGET_MS || 8);
 const BUDGET_MS = Number(process.env.PERF_BUDGET_MS || 33);
@@ -32,6 +33,7 @@ const MEASURE_S = Number(process.env.PERF_MEASURE_S || 20);
 const BIOME_KEYS = loadBiomeKeys();
 const PERF_THEME = BIOME_KEYS.includes(process.env.PERF_THEME) ? process.env.PERF_THEME : BIOME_KEYS[0];
 const PERF_FIXTURE = process.env.PERF_FIXTURE === "m27" ? "m27Fixture" : "perfFixture";
+const M27_PHASES = process.env.PERF_M27_PHASE_DIAGNOSTICS === "1" && PERF_FIXTURE === "m27Fixture" && PERF_THEME === "parkland";
 const STARTUP_BUDGET_MS = Number(process.env.PERF_STARTUP_BUDGET_MS || 5000);
 // M27 retains a 6000 ms optimization target; only its hard ceiling is 10000 ms.
 const FIXTURE_LOAD_BUDGET_MS = PERF_FIXTURE === "m27Fixture" ? 10000 : 6000;
@@ -90,21 +92,28 @@ page.on("pageerror", (error) => console.error(`[perf-smoke] page error: ${error.
 page.on("console", (message) => {
   if (message.type() === "error") console.error(`[perf-smoke] console error: ${message.text()}`);
 });
-await page.addInitScript(() => {
+await page.addInitScript((armM27Phases) => {
   localStorage.setItem("coursecraft_perfhud", "on");
   localStorage.setItem("coursecraft_ambience", "on");
-});
+  if (armM27Phases) window.__ccM27PhaseProbe = { generation: 0 };
+}, M27_PHASES);
 const coldStartedAt = performance.now();
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 await page.getByRole("button", { name: "Quick Start" }).waitFor({ state: "visible", timeout: 30_000 });
 const coldStartupMs = performance.now() - coldStartedAt;
 const fixtureStartedAt = performance.now();
+const phaseHost = M27_PHASES ? { fixtureStart: fixtureStartedAt } : null;
 await page.goto(`http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+if (phaseHost) phaseHost.domContentLoaded = performance.now();
 console.log("[perf-smoke] document loaded; waiting for the visible course canvas …");
+if (phaseHost) phaseHost.sleepStart = performance.now();
 await sleep(500);
+if (phaseHost) phaseHost.sleepEnd = performance.now();
 const canvas = page.locator(".cc-pixi-stage canvas");
 try {
+  if (phaseHost) phaseHost.visibleStart = performance.now();
   await canvas.waitFor({ state: "visible", timeout: FIXTURE_READY_TIMEOUT_MS });
+  if (phaseHost) phaseHost.visibleEnd = performance.now();
 } catch (error) {
   const status = await page.evaluate(() => {
     const text = window.render_game_to_text?.();
@@ -121,12 +130,17 @@ try {
   console.error(`[perf-smoke] fixture readiness timeout: ${JSON.stringify(status)}`);
   throw error;
 }
+if (phaseHost) phaseHost.dimensionsStart = performance.now();
 await page.waitForFunction(() => {
   const target = document.querySelector(".cc-pixi-stage canvas");
   return target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
 }, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
+if (phaseHost) phaseHost.dimensionsEnd = performance.now();
+if (phaseHost) phaseHost.boundsStart = performance.now();
 const box = await canvas.boundingBox();
-const fixtureLoadMs = performance.now() - fixtureStartedAt;
+const fixtureMeasuredAt = performance.now();
+const fixtureLoadMs = fixtureMeasuredAt - fixtureStartedAt;
+if (phaseHost) phaseHost.boundsEnd = fixtureMeasuredAt;
 console.log(`[perf-smoke] game state ready in ${fixtureLoadMs.toFixed(0)}ms`);
 await sleep(1200);
 if (!box) throw new Error("performance fixture did not create a renderer canvas");
@@ -148,7 +162,8 @@ while (Date.now() - t0 < MEASURE_S * 1000) {
   await sleep(400);
 }
 const perf = await page.evaluate(() => window.__ccPerf ?? null);
-const browserEvidence = await page.evaluate(() => {
+const phaseClockBefore = M27_PHASES ? performance.now() : null;
+const observedBrowserEvidence = await page.evaluate((readM27Phases) => {
   const canvas = [...document.querySelectorAll("canvas")]
     .sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
   let renderer = null;
@@ -164,6 +179,10 @@ const browserEvidence = await page.evaluate(() => {
     // Evidence stays explicitly unknown rather than failing an otherwise valid
     // physical run on browsers that withhold debug renderer information.
   }
+  let phasePage = null;
+  if (readM27Phases) {
+    try { phasePage = window.__ccM27PhaseProbe?.read?.() ?? null; } catch { /* diagnostic only */ }
+  }
   return {
     userAgent: navigator.userAgent,
     viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
@@ -171,8 +190,11 @@ const browserEvidence = await page.evaluate(() => {
     renderer,
     vendor,
     context,
+    ...(readM27Phases ? { phasePage } : {}),
   };
-});
+}, M27_PHASES);
+const phaseClockAfter = M27_PHASES ? performance.now() : null;
+const { phasePage, ...browserEvidence } = observedBrowserEvidence;
 await browser.close();
 vite.kill();
 
@@ -244,6 +266,18 @@ mkdirSync(typeof OUTPUT_PATH === "string"
   ? dirname(OUTPUT_PATH)
   : new URL(".", OUTPUT_PATH), { recursive: true });
 writeFileSync(OUTPUT_PATH, `${JSON.stringify(evidence, null, 2)}\n`);
+if (M27_PHASES) {
+  const fallback = (reason) => JSON.stringify({ schema: "coursecraft-m27-phase-v1", status: "inconclusive", reason });
+  let phaseOutput;
+  try {
+    phaseOutput = JSON.stringify(summarizeM27Phases({ host: phaseHost, page: phasePage,
+      clockBefore: phaseClockBefore, clockAfter: phaseClockAfter, fixtureLoadMs }));
+    if (Buffer.byteLength(phaseOutput) > 32 * 1024) phaseOutput = fallback("output-cap");
+  } catch {
+    phaseOutput = fallback("summary-error");
+  }
+  await flushM27PhaseLine(process.stdout, phaseOutput);
+}
 if (failed) process.exit(1);
 console.log(
   `[perf-smoke] PASS: tick work ${perf.workMs.toFixed(2)}ms ≤ ${WORK_BUDGET_MS}ms` +

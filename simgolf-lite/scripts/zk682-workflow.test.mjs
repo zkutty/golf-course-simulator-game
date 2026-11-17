@@ -50,6 +50,47 @@ test("Linux stability captures pristine candidate source before browser gates", 
   assert.match(linux.slice(linux.indexOf("- name: Upload exact-candidate Linux evidence")), /if: always\(\)/);
 });
 
+test("supported-browser failure evidence is retained before another Playwright command", () => {
+  const linux = jobBlock("linux-evidence", "native-evidence");
+  const steps = linux.split("\n      - name: ");
+  const supportedIndex = steps.findIndex((step) => step.startsWith("Supported-browser receipt\n"));
+  assert.ok(supportedIndex > 0, "missing supported-browser receipt step");
+  const supported = steps[supportedIndex];
+  assert.match(supported, /\n        id: supported-browser\n/);
+  assert.match(supported, /\n          DEBUG: "pw:browser"\n/);
+  assert.equal(workflow.match(/^[ \t]*DEBUG:/gm)?.length, 1);
+  assert.doesNotMatch(supported, /continue-on-error/);
+
+  const diagnostic = steps[supportedIndex + 1];
+  assert.ok(steps[supportedIndex + 2]?.startsWith("Golden browser receipt\n"));
+  assert.equal(diagnostic, [
+    "Retain supported-browser diagnostics",
+    "        if: always() && steps.supported-browser.outcome != 'skipped'",
+    "        continue-on-error: true",
+    "        uses: actions/upload-artifact@v4",
+    "        with:",
+    "          name: zk682-supported-browser-diagnostics-${{ inputs.candidate_sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}",
+    "          path: |",
+    "            simgolf-lite/artifacts/zk682/raw/browser-supported.json",
+    ...["m28-release-candidate", "m47-certification"].flatMap((file) =>
+      ["trace.zip", "video*.webm", "error-context.md", "test-failed-*.png"]
+        .map((artifact) => `            simgolf-lite/test-results/${file}.e2e.ts-*/${artifact}`)),
+    "          if-no-files-found: warn",
+    "          retention-days: 7",
+  ].join("\n"));
+  assert.doesNotMatch(jobBlock("aggregate", null), /zk682-supported-browser-diagnostics-|test-results/);
+});
+
+test("M27 phase diagnostics are scoped to the existing Parkland performance receipt", () => {
+  const linux = jobBlock("linux-evidence", "native-evidence");
+  const performance = linux.split("\n      - name: ")
+    .find((step) => step.startsWith("Headless performance receipt\n"));
+  assert.ok(performance);
+  assert.match(performance, /^Headless performance receipt\n        env:\n          PERF_FIXTURE_READY_TIMEOUT_MS: "300000"\n          PERF_FIXTURE: m27\n          PERF_THEME: parkland\n          PERF_M27_PHASE_DIAGNOSTICS: "1"\n        run: >-\n/);
+  assert.match(performance, /-- npm run test:perf\n?$/);
+  assert.equal(workflow.match(/PERF_M27_PHASE_DIAGNOSTICS:/g)?.length, 1);
+});
+
 test("native darwin arm64 evidence uses the supported macOS 15 runner", () => {
   const native = jobBlock("native-evidence", "aggregate");
   const matrix = native.slice(native.indexOf("      matrix:\n"), native.indexOf("    steps:\n"));
