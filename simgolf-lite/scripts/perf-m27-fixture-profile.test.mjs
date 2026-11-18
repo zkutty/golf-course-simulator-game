@@ -104,7 +104,7 @@ test("rejected CPU evidence retains bounded numerical rejection details without 
     [{ ...rawProfile(), nodes: [] }, "shape-or-bounds", null, null],
     [{ ...rawProfile(), nodes: [...rawProfile().nodes, rawProfile().nodes[1]] }, "invalid-node", 2, 2],
     [{ ...rawProfile(), samples: [3, 2] }, "unknown-sample-node", 0, 3],
-    [{ ...rawProfile(), timeDeltas: [-7, 0] }, "invalid-sample-delta", 0, -7],
+    [{ ...rawProfile(), timeDeltas: [-7, 0] }, "sample-before-profile-start", 0, -7],
     [{ ...rawProfile(), timeDeltas: [Infinity, 0] }, "invalid-sample-delta", 0, null],
     [{ ...rawProfile(), timeDeltas: [0, 8_001] }, "elapsed-exceeds-duration", 1, 8_001],
   ];
@@ -141,10 +141,53 @@ test("CPU rejection keeps the collector incomplete without fabricating a clock i
   assert.equal(result.cpu, null);
   assert.equal(result.candidateHostMinusProfileMs, null);
   assert.deepEqual(result.failures, ["invalid-or-capped-cpu-profile"]);
-  assert.equal(result.cpuValidation.reason, "invalid-sample-delta");
+  assert.equal(result.cpuValidation.reason, "sample-before-profile-start");
   assert.equal(result.cpuValidation.value, -7);
   assert.equal(result.detached, true);
   assert.equal(session.eventNames().length, 0);
+});
+
+test("signed CDP deltas retain exact raw pairs and bounded protocol-order timestamps", () => {
+  const input = { ...rawProfile(), samples: [2, 1, 2], timeDeltas: [100, -2, 4] };
+  const { cpu, validation } = inspectCPUProfile(input, origin);
+  assert.equal(validation.status, "accepted");
+  assert.deepEqual(cpu.samples, [2, 1, 2]);
+  assert.deepEqual(cpu.timeDeltas, [100, -2, 4]);
+  assert.deepEqual(cpu.sampleTimestamps, [1_100, 1_098, 1_102]);
+  assert.equal(cpu.sampleOrder, "protocol");
+  assert.equal(cpu.timestampsMonotonic, false);
+  // Consumers sort paired timestamps/IDs, never isolated IDs or deltas.
+  assert.deepEqual(cpu.samples.map((sample, index) => ({ sample, timestamp: cpu.sampleTimestamps[index], index }))
+    .sort((a, b) => a.timestamp - b.timestamp || a.index - b.index), [
+    { sample: 1, timestamp: 1_098, index: 1 },
+    { sample: 2, timestamp: 1_100, index: 0 },
+    { sample: 2, timestamp: 1_102, index: 2 },
+  ]);
+  const ties = inspectCPUProfile({ ...input, timeDeltas: [100, 0, 4] }, origin).cpu;
+  assert.deepEqual(ties.samples, input.samples);
+  assert.deepEqual(ties.sampleTimestamps, [1_100, 1_100, 1_104]);
+  assert.equal(ties.timestampsMonotonic, true);
+});
+
+test("signed timing still rejects every out-of-window, fractional and unsafe cumulative timestamp", () => {
+  for (const [timeDeltas, reason, index] of [
+    [[-1, 3], "sample-before-profile-start", 0],
+    [[100, -101], "sample-before-profile-start", 1],
+    [[7_001, -1], "elapsed-exceeds-duration", 0],
+    [[100, -0.5], "invalid-sample-delta", 1],
+    [[100, Number.NaN], "invalid-sample-delta", 1],
+  ]) {
+    const result = inspectCPUProfile({ ...rawProfile(), timeDeltas }, origin);
+    assert.equal(result.cpu, null);
+    assert.equal(result.validation.reason, reason);
+    assert.equal(result.validation.index, index);
+  }
+  const unsafe = inspectCPUProfile({ ...rawProfile(0, Number.MAX_SAFE_INTEGER),
+    timeDeltas: [Number.MAX_SAFE_INTEGER, 1] }, origin);
+  assert.equal(unsafe.cpu, null);
+  assert.equal(unsafe.validation.reason, "unsafe-cumulative-time");
+  const edges = inspectCPUProfile({ ...rawProfile(), samples: [1, 2, 1], timeDeltas: [0, 7_000, -7_000] }, origin).cpu;
+  assert.deepEqual(edges.sampleTimestamps, [1_000, 8_000, 1_000]);
 });
 
 test("binds request rows to the exact main document and strips queries, headers and unrelated URLs", () => {

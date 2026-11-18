@@ -91,13 +91,24 @@ export function inspectCPUProfile(profile, origin) {
   }
   if (visited.size !== ids.size) return reject("disconnected-tree", null, visited.size);
   let elapsed = 0;
+  const sampleTimestamps = [];
+  let timestampsMonotonic = true;
   for (let index = 0; index < samples.length; index++) {
     if (!ids.has(samples[index])) return reject("unknown-sample-node", index, samples[index]);
-    if (!validId(timeDeltas[index])) return reject("invalid-sample-delta", index, timeDeltas[index]);
+    if (!Number.isSafeInteger(timeDeltas[index])) return reject("invalid-sample-delta", index, timeDeltas[index]);
     elapsed += timeDeltas[index];
+    if (!Number.isSafeInteger(elapsed)) return reject("unsafe-cumulative-time", index, elapsed);
+    if (elapsed < 0) return reject("sample-before-profile-start", index, elapsed);
     if (elapsed > endTime - startTime) return reject("elapsed-exceeds-duration", index, elapsed);
+    const timestamp = startTime + elapsed;
+    if (index && timestamp < sampleTimestamps[index - 1]) timestampsMonotonic = false;
+    sampleTimestamps.push(timestamp);
   }
-  return { cpu: { startTime, endTime, nodes: [...byId.values()], samples, timeDeltas },
+  // CDP deltas can be signed: DevTools reconstructs cumulative timestamps
+  // before sorting timestamp/sample pairs. Keep the original pair order and
+  // deltas as evidence. Never treat signed deltas as per-node durations.
+  return { cpu: { startTime, endTime, nodes: [...byId.values()], samples, timeDeltas,
+    sampleTimestamps, sampleOrder: "protocol", timestampsMonotonic },
     validation: { status: "accepted", reason: null, ...shape, index: null, value: null } };
 }
 
