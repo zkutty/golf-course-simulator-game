@@ -592,9 +592,7 @@ interface FlatGroup {
 
 function deriveFlatGroups(course: Course): FlatGroup[] {
   const groups: FlatGroup[] = [];
-  const components = buildLandscapeComponents(course.tiles, course.width, course.height, {
-    cornerRadius: 0,
-  });
+  const components = buildLandscapeComponentSkeletons(course.tiles, course.width, course.height);
   for (const component of components) {
     if (
       component.terrain !== "water" &&

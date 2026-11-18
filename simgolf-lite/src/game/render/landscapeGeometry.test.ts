@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Course, Terrain } from "../models/types";
+import { starterPropertyCourse } from "../property/property";
+import { ELEVATION_STEP_PX } from "./iso";
 import {
   buildLandscapeComponents,
   buildHazardDepthSections,
@@ -13,6 +15,9 @@ import {
   sampleVisualHeight,
   shouldRenderLegacyElevationFace,
 } from "./landscapeGeometry";
+import * as meshCells from "./landscapeMeshGeometry";
+import * as sharedBoundaries from "./sharedBoundaryContours";
+import { terrainSurfaceInsetPx } from "./terrainRelief";
 
 function courseWith(
   width: number,
@@ -213,6 +218,55 @@ describe("shared visual heightfield", () => {
     ];
     expect(Math.max(...waterSamples) - Math.min(...waterSamples)).toBeLessThan(1e-6);
     expect(waterSamples[0]).toBeLessThan(2.5);
+  });
+
+  it("preserves wet and facility pad heights without constructing presentation geometry", () => {
+    const course = courseWith(6, 5, [
+      "water", "water", "water", "wetland", "rough", "wetland",
+      "water", "rough", "water", "wetland", "rough", "wetland",
+      "water", "water", "water", "wetland", "rough", "rough",
+      "rough", "rough", "rough", "rough", "rough", "rough",
+      "water", "water", "rough", "wetland", "rough", "rough",
+    ], [
+      2, 4, 6, 9, 1, 14,
+      8, 15, 10, 11, 1, 16,
+      12, 14, 16, 13, 1, 1,
+      4, 5, 7, 21, 1, 1,
+      20, 24, 2, 30, 1, 1,
+    ]);
+    course.buildings = [{ id: "shop", type: "pro_shop", x: 2, y: 2, tier: 1 }];
+    const property = starterPropertyCourse();
+    course.property = {
+      ...property,
+      assets: [{ ...property.assets[0], x: 3.25, y: 2, width: 1, height: 1 }],
+    };
+    const before = JSON.stringify(course);
+    const contours = vi.spyOn(sharedBoundaries, "buildSharedBoundaryContours");
+    const meshes = vi.spyOn(meshCells, "buildLandscapeMeshCellSet");
+    try {
+      const field = buildVisualHeightfield(course);
+      const vertex = (x: number, y: number) => field.vertices[y * (field.width + 1) + x];
+      const wetHeight = (elevation: number, terrain: "water" | "wetland") =>
+        Math.fround(elevation - terrainSurfaceInsetPx(terrain) / ELEVATION_STEP_PX);
+
+      expect(vertex(1, 1)).toBe(wetHeight(9, "water")); // Inside the water ring at the dry island.
+      expect(vertex(0, 5)).toBe(wetHeight(22, "water")); // Separate component meeting the world edge.
+      expect(vertex(3, 0)).toBe(wetHeight(11, "wetland")); // Later wet pad owns the shared vertex.
+      expect(vertex(6, 0)).toBe(wetHeight(15, "wetland"));
+      expect(vertex(2, 2)).toBe(14.5); // Building pad overrides water.
+      expect(vertex(3, 2)).toBe(7); // The later property pad has equal priority.
+      expect(JSON.stringify(course)).toBe(before);
+      expect(contours).toHaveBeenCalledTimes(0);
+      expect(meshes).toHaveBeenCalledTimes(0);
+
+      const components = buildLandscapeComponents(course.tiles, course.width, course.height);
+      expect(contours).toHaveBeenCalledTimes(1);
+      expect(meshes).toHaveBeenCalledTimes(components.length);
+      expect(components.length).toBeGreaterThan(0);
+    } finally {
+      contours.mockRestore();
+      meshes.mockRestore();
+    }
   });
 
   it.each(["green", "tee", "fairway"] as const)(
