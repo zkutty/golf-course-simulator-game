@@ -36,8 +36,9 @@ test("original commands use isolated receipts and M27 failure still permits the 
   assert.doesNotMatch(m27, /PERF_(?:MEASURE|WORK_BUDGET|STARTUP_BUDGET|HEADED|ASSERT_FRAME)/);
   const m47 = step("M47 WebKit receipt");
   assert.ok(m47.includes("if: ${{ !cancelled() && steps.install-browsers.outcome == 'success' }}"));
-  assert.match(m47, /LIBGL_ALWAYS_SOFTWARE: "1"\n          DEBUG: "pw:browser"\n          PLAYWRIGHT_JSON_OUTPUT_FILE: artifacts\/zk682\/failure-diagnostics\/m47-playwright\.json\n/);
+  assert.match(m47, /LIBGL_ALWAYS_SOFTWARE: "1"\n          DEBUG: "pw:browser"\n          PLAYWRIGHT_JSON_OUTPUT_FILE: artifacts\/zk682\/failure-diagnostics\/m47-playwright\.json\n          ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS: "1"\n        run: >-\n/);
   assert.equal(workflow.match(/PLAYWRIGHT_JSON_OUTPUT_FILE:/g)?.length, 1);
+  assert.equal(workflow.match(/ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS:/g)?.length, 1);
   assert.match(m47, /--id browser-supported[\s\S]*?--candidate "\$ZK682_EXPECTED_COMMIT"\n          -- npm run test:release:browsers --\n          e2e\/m47-certification\.e2e\.ts --grep-invert "ZK-813" --project=webkit-safari-proxy --workers=1 --retries=0 --reporter=list,json$/);
   for (const command of [m27, m47]) {
     assert.match(command, /env -u GITHUB_SHA node scripts\/zk682-run-command-receipt\.mjs/);

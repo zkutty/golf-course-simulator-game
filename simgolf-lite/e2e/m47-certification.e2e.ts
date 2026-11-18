@@ -5,6 +5,17 @@ async function advanceLive(page: Page, bursts = 4) {
 }
 
 test("M47 Golfer Inspector exposes evidence and remains accessible/responsive", async ({ page }, testInfo) => {
+  if (process.env.ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS === "1") {
+    const record = (kind: "armed" | "page-crash" | "page-close" | "context-close" | "browser-disconnected") => {
+      console.error(`[m47-webkit-lifecycle] ${JSON.stringify({ kind, atMs: performance.now() })}`);
+    };
+    const context = page.context();
+    page.once("crash", () => record("page-crash"));
+    page.once("close", () => record("page-close"));
+    context.once("close", () => record("context-close"));
+    context.browser()?.once("disconnected", () => record("browser-disconnected"));
+    record("armed");
+  }
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });

@@ -101,6 +101,7 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
           DEBUG: "pw:browser"
           PLAYWRIGHT_JSON_OUTPUT_FILE: artifacts/zk682/failure-diagnostics/m47-playwright.json
+          ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS: "1"
         run: >-
           env -u GITHUB_SHA node scripts/zk682-run-command-receipt.mjs
           --id browser-supported
