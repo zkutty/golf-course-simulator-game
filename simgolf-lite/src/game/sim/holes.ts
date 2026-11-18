@@ -493,6 +493,15 @@ export function __resetHoleScoreCacheForTests(): void {
 // course objects produced by drag painting/sculpting.
 const summaryCache = new WeakMap<Course, { result: CourseHoleSummary; searchDomain: ShotSearchDomain; everOptimized: boolean }>();
 
+export function scoreSelectedCourseHole(course: Course, holeIndex: number): HoleScore | undefined {
+  if (!Number.isInteger(holeIndex) || holeIndex < 0 || holeIndex >= course.holes.length) return;
+  const effectiveCourse = courseWithEffectiveSurfaces(course);
+  const hole = effectiveCourse.holes[holeIndex];
+  if (!hole) return;
+  // Match the full summary's eligibility even when another hole affects it.
+  return scoreHole(effectiveCourse, hole, holeIndex, prepareShotSearchDomain(effectiveCourse));
+}
+
 export function scoreCourseHoles(course: Course): CourseHoleSummary {
   const cached = summaryCache.get(course);
   if (cached && shotSearchConfigUnchanged(cached.searchDomain, cached.everOptimized)) return cached.result;
