@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
-  createNetworkLedger, profileClockBounds, profileOutputPath, projectCPUProfile, startProfile, writeProfileOutput,
+  createNetworkLedger, inspectCPUProfile, profileClockBounds, profileOutputPath, projectCPUProfile, startProfile, writeProfileOutput,
 } from "./perf-m27-fixture-profile.mjs";
 
 const origin = "http://127.0.0.1:5199";
@@ -97,6 +97,54 @@ test("uses conservative intersecting profile clock brackets and rejects disjoint
   const cpu = rawProfile(1_000, 10_000);
   assert.deepEqual(profileClockBounds(cpu, [2, 4], [12, 13]), [2, 3]);
   assert.equal(profileClockBounds(cpu, [2, 4], [25, 26]), null);
+});
+
+test("rejected CPU evidence retains bounded numerical rejection details without source strings", () => {
+  const cases = [
+    [{ ...rawProfile(), nodes: [] }, "shape-or-bounds", null, null],
+    [{ ...rawProfile(), nodes: [...rawProfile().nodes, rawProfile().nodes[1]] }, "invalid-node", 2, 2],
+    [{ ...rawProfile(), samples: [3, 2] }, "unknown-sample-node", 0, 3],
+    [{ ...rawProfile(), timeDeltas: [-7, 0] }, "invalid-sample-delta", 0, -7],
+    [{ ...rawProfile(), timeDeltas: [Infinity, 0] }, "invalid-sample-delta", 0, null],
+    [{ ...rawProfile(), timeDeltas: [0, 8_001] }, "elapsed-exceeds-duration", 1, 8_001],
+  ];
+  for (const [input, reason, index, value] of cases) {
+    const result = inspectCPUProfile(input, origin);
+    assert.equal(result.cpu, null);
+    assert.deepEqual(result.validation, { status: "rejected", reason, nodeCount: input.nodes.length,
+      sampleCount: 2, deltaCount: 2, startTime: 1_000, endTime: 8_000, index, value });
+    assert.doesNotMatch(JSON.stringify(result), /private|createM27|127\.0\.0\.1/);
+  }
+  const cycle = rawProfile();
+  cycle.nodes[1].children = [1];
+  assert.equal(inspectCPUProfile(cycle, origin).validation.reason, "invalid-tree-child");
+  const missingChild = rawProfile();
+  missingChild.nodes[0].children = [3];
+  assert.equal(inspectCPUProfile(missingChild, origin).validation.reason, "invalid-tree-reference");
+  const disconnected = rawProfile();
+  disconnected.nodes[0].children = [];
+  assert.equal(inspectCPUProfile(disconnected, origin).validation.reason, "disconnected-tree");
+  assert.equal(inspectCPUProfile(undefined, origin).validation.nodeCount, null);
+  assert.deepEqual(inspectCPUProfile(rawProfile(), origin).cpu, projectCPUProfile(rawProfile(), origin));
+});
+
+test("CPU rejection keeps the collector incomplete without fabricating a clock inconsistency", async () => {
+  const session = new Session();
+  const send = session.send.bind(session);
+  session.send = async (method, params) => method === "Profiler.stop"
+    ? { profile: { ...rawProfile(), timeDeltas: [-7, 0] } } : send(method, params);
+  const capture = await startProfile(session, fixture);
+  emitDocument(session);
+  session.navigated = true;
+  const result = await capture.finish("fixture-bounds", async () => ({ phasePage: { generation: 2 } }));
+  assert.equal(result.status, "incomplete");
+  assert.equal(result.cpu, null);
+  assert.equal(result.candidateHostMinusProfileMs, null);
+  assert.deepEqual(result.failures, ["invalid-or-capped-cpu-profile"]);
+  assert.equal(result.cpuValidation.reason, "invalid-sample-delta");
+  assert.equal(result.cpuValidation.value, -7);
+  assert.equal(result.detached, true);
+  assert.equal(session.eventNames().length, 0);
 });
 
 test("binds request rows to the exact main document and strips queries, headers and unrelated URLs", () => {

@@ -65,6 +65,53 @@ class NativeObserverTest(unittest.TestCase):
             with patch.object(observer, "read_proc", side_effect=changed.__getitem__):
                 self.assertIsNone(observer.confirm_ancestry(4, snapshot, {2}, 1, 1))
 
+    def test_real_proc_fixture_enrolls_wpe_children_and_maps_the_content_cgroup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            proc = root / "proc"
+            webkit = root / ".cache/ms-playwright/webkit-2311"
+            wpe = webkit / "minibrowser-wpe/bin"
+            cgroup = root / "cgroup"
+            scope = cgroup / "job.slice/content.scope"
+            scope.mkdir(parents=True)
+            (scope / "memory.events.local").write_text("oom 0\noom_kill 0\n")
+            (scope / "memory.current").write_text("123456\n")
+            (scope / "memory.max").write_text("max\n")
+            children = [
+                (1, 0, 1, None),
+                (2, 1, 10, wpe / "MiniBrowser"),
+                (3, 2, 11, wpe / "WPEWebProcess"),
+                (4, 2, 12, wpe / "WPENetworkProcess"),
+                (5, 2, 13, wpe / "WPEGPUProcess"),
+                (6, 2, 14, root / "foreign/WPEWebProcess"),
+                (7, 2, 15, wpe / "WPEWebProcess.unknown"),
+            ]
+            for pid, parent, start, exe in children:
+                folder = proc / str(pid)
+                folder.mkdir(parents=True)
+                fields = ["S", str(parent), *["0"] * 17, str(start), "0", "10"]
+                (folder / "stat").write_text(f"{pid} (fixture) " + " ".join(fields))
+                if exe is not None:
+                    exe.parent.mkdir(parents=True, exist_ok=True)
+                    exe.touch()
+                    (folder / "exe").symlink_to(exe)
+            (proc / "3/cgroup").write_text("0::/job.slice/content.scope\n")
+            tracker = observer.Observer(webkit)
+            with (patch.object(observer, "PROC", proc), patch.object(observer, "CGROUP", cgroup),
+                  patch.object(observer, "boottime_us", return_value=100)):
+                tracker.sample(1, 1, 100)
+                self.assertEqual(tracker.scopes()["webContent"]["end"]["currentBytes"], 123456)
+            self.assertEqual({row["pid"]: row["role"] for row in tracker.records.values()}, {
+                2: "MiniBrowser", 3: "WebKitWebProcess", 4: "WebKitNetworkProcess", 5: "WebKitGPUProcess",
+            })
+            self.assertEqual(tracker.content_scope_status, "mapped")
+            self.assertEqual(tracker.content_baseline["scope"], "local")
+
+    def test_original_gtk_executable_roles_remain_exact(self):
+        for role in ("MiniBrowser", "WebKitWebProcess", "WebKitNetworkProcess", "WebKitGPUProcess"):
+            with patch.object(observer.os, "readlink", return_value=str(ROOT / "minibrowser-gtk/bin" / role)):
+                self.assertEqual(observer.executable_role(123, ROOT), role)
+
     def test_only_owned_pid_lifetime_and_same_boot_qualify(self):
         self.assertEqual(observer.correlate("observed", [event()], [process()], BOOT, 0, 100, None), {
             "status": "OWNED_NATIVE_EVENT",

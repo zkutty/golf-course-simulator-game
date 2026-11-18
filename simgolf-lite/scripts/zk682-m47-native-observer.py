@@ -25,7 +25,15 @@ MAX_PROC_ENTRIES = 4096
 MAX_JOURNAL_BYTES = 64 * 1024
 MAX_JOURNAL_ROWS = 64
 MAX_OUTPUT_BYTES = 256 * 1024
-ROLES = {"MiniBrowser", "WebKitWebProcess", "WebKitNetworkProcess", "WebKitGPUProcess"}
+EXECUTABLE_ROLES = {
+    "MiniBrowser": "MiniBrowser",
+    "WebKitWebProcess": "WebKitWebProcess",
+    "WebKitNetworkProcess": "WebKitNetworkProcess",
+    "WebKitGPUProcess": "WebKitGPUProcess",
+    "WPEWebProcess": "WebKitWebProcess",
+    "WPENetworkProcess": "WebKitNetworkProcess",
+    "WPEGPUProcess": "WebKitGPUProcess",
+}
 KERNEL_FILTER = r"Killed process |segfault at |trap "
 
 
@@ -100,8 +108,8 @@ def descendants(pid, identity):
 
 def executable_role(pid, webkit_root):
     target = Path(os.readlink(PROC / str(pid) / "exe"))
-    if target.is_relative_to(webkit_root) and target.name in ROLES:
-        return target.name
+    if target.is_relative_to(webkit_root):
+        return EXECUTABLE_ROLES.get(target.name)
     return None
 
 

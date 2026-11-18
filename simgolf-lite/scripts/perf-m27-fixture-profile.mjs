@@ -48,20 +48,30 @@ function localPath(url, origin) {
   return null;
 }
 
-export function projectCPUProfile(profile, origin) {
+export function inspectCPUProfile(profile, origin) {
   const { nodes, samples, timeDeltas, startTime, endTime } = profile ?? {};
+  const scalar = (value) => Number.isSafeInteger(value) ? value : null;
+  const shape = {
+    nodeCount: Array.isArray(nodes) ? nodes.length : null,
+    sampleCount: Array.isArray(samples) ? samples.length : null,
+    deltaCount: Array.isArray(timeDeltas) ? timeDeltas.length : null,
+    startTime: scalar(startTime), endTime: scalar(endTime),
+  };
+  const reject = (reason, index = null, value = null) => ({
+    cpu: null, validation: { status: "rejected", reason, ...shape, index, value: scalar(value) },
+  });
   if (!Array.isArray(nodes) || nodes.length === 0 || nodes.length > maxNodes
     || !Array.isArray(samples) || samples.length === 0 || samples.length > maxSamples
     || !Array.isArray(timeDeltas) || samples.length !== timeDeltas.length
-    || !validId(startTime) || !validId(endTime) || endTime <= startTime) return null;
+    || !validId(startTime) || !validId(endTime) || endTime <= startTime) return reject("shape-or-bounds");
   const ids = new Set();
   const byId = new Map();
-  for (const node of nodes) {
+  for (const [index, node] of nodes.entries()) {
     const id = node?.id;
     const children = node?.children ?? [];
     const frame = node?.callFrame;
     if (!validId(id) || ids.has(id) || !Array.isArray(children) || children.length >= nodes.length
-      || !frame || !Number.isSafeInteger(frame.lineNumber) || !Number.isSafeInteger(frame.columnNumber)) return null;
+      || !frame || !Number.isSafeInteger(frame.lineNumber) || !Number.isSafeInteger(frame.columnNumber)) return reject("invalid-node", index, id);
     const pathname = localPath(frame.url, origin);
     const internal = frame.url === "" && ["(root)", "(program)", "(idle)", "(garbage collector)"].includes(frame.functionName);
     const functionName = (pathname || internal) && text(frame.functionName, 128) ? frame.functionName : null;
@@ -72,21 +82,27 @@ export function projectCPUProfile(profile, origin) {
   const pending = [nodes[0].id];
   while (pending.length) {
     const id = pending.pop();
-    if (visited.has(id) || !byId.has(id)) return null;
+    if (visited.has(id) || !byId.has(id)) return reject("invalid-tree-reference", null, id);
     visited.add(id);
     for (const child of byId.get(id).children) {
-      if (!validId(child) || pending.length + visited.size >= nodes.length) return null;
+      if (!validId(child) || pending.length + visited.size >= nodes.length) return reject("invalid-tree-child", null, child);
       pending.push(child);
     }
   }
-  if (visited.size !== ids.size) return null;
+  if (visited.size !== ids.size) return reject("disconnected-tree", null, visited.size);
   let elapsed = 0;
   for (let index = 0; index < samples.length; index++) {
-    if (!ids.has(samples[index]) || !validId(timeDeltas[index])) return null;
+    if (!ids.has(samples[index])) return reject("unknown-sample-node", index, samples[index]);
+    if (!validId(timeDeltas[index])) return reject("invalid-sample-delta", index, timeDeltas[index]);
     elapsed += timeDeltas[index];
-    if (elapsed > endTime - startTime) return null;
+    if (elapsed > endTime - startTime) return reject("elapsed-exceeds-duration", index, elapsed);
   }
-  return { startTime, endTime, nodes: [...byId.values()], samples, timeDeltas };
+  return { cpu: { startTime, endTime, nodes: [...byId.values()], samples, timeDeltas },
+    validation: { status: "accepted", reason: null, ...shape, index: null, value: null } };
+}
+
+export function projectCPUProfile(profile, origin) {
+  return inspectCPUProfile(profile, origin).cpu;
 }
 
 export function profileClockBounds(cpu, begin, end) {
@@ -262,6 +278,7 @@ export async function startProfile(session, fixtureURL) {
       const before = performance.now();
       let end = null;
       let cpu = null;
+      let cpuValidation = { status: "unavailable", reason: "profiler-stop-unavailable" };
       let browserEvidence = null;
       let terminalFrame = null;
       let detached = false;
@@ -271,7 +288,7 @@ export async function startProfile(session, fixtureURL) {
       try {
         const result = await withTimeout(() => session.send("Profiler.stop"), stopMs);
         end = [before, performance.now()];
-        cpu = projectCPUProfile(result?.profile, new URL(fixtureURL).origin);
+        ({ cpu, validation: cpuValidation } = inspectCPUProfile(result?.profile, new URL(fixtureURL).origin));
         if (!cpu) failures.push("invalid-or-capped-cpu-profile");
       } catch {
         failures.push("profiler-stop-failed");
@@ -297,11 +314,11 @@ export async function startProfile(session, fixtureURL) {
         failures.push("session-detach-failed");
       }
       const candidateHostMinusProfileMs = profileClockBounds(cpu, begin, end);
-      if (!candidateHostMinusProfileMs) failures.push("cpu-clock-bracket-inconsistent");
+      if (cpu && !candidateHostMinusProfileMs) failures.push("cpu-clock-bracket-inconsistent");
       if (network.status !== "observed") failures.push("network-incomplete");
       return { status: failures.length ? "incomplete" : "observed", failures, reason, samplingIntervalUs,
         profileHostStartBracketMs: begin, profileHostEndBracketMs: end, candidateHostMinusProfileMs,
-        detached, network, cpu, browserEvidence };
+        detached, network, cpu, cpuValidation, browserEvidence };
     })();
     return finishing;
   }
