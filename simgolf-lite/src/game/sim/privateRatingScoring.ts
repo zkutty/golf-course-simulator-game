@@ -1,5 +1,5 @@
 import type { Course, Hole } from "../models/types";
-import { scoreCourseHoles, type CourseHoleSummary } from "./holes";
+import { scoreCourseHoles, type CourseHoleSummary, type RatingHoleSummary } from "./holes";
 
 type DataSnapshot = { key: PropertyKey; descriptor: PropertyDescriptor }[];
 type Entry = {
@@ -111,31 +111,45 @@ function sameOwner(a: Owner, b: Owner): boolean {
 }
 
 /** Scoring-only identity reuse. Never return the private Course/Hole to callers. */
+export function scorePrivateRatingSetup(source: Course, projected: Course, score: "rating"): RatingHoleSummary;
 export function scorePrivateRatingSetup(
   source: Course,
   projected: Course,
-  score: (course: Course) => CourseHoleSummary = scoreCourseHoles,
-): CourseHoleSummary {
-  if (active) return score(projected);
+  score?: (course: Course) => CourseHoleSummary,
+): CourseHoleSummary;
+export function scorePrivateRatingSetup(
+  source: Course,
+  projected: Course,
+  score: ((course: Course) => CourseHoleSummary) | "rating" = scoreCourseHoles,
+): RatingHoleSummary | CourseHoleSummary {
+  const fullScore = score === "rating" ? scoreCourseHoles : score;
+  if (active) return fullScore(projected);
   active = true;
   try {
     const candidate = newOwner(source, projected);
     if (!candidate) {
-      const result = score(projected);
+      const result = fullScore(projected);
       owner = undefined;
       return result;
     }
     const previous = owner && sameOwner(owner, candidate) ? owner : undefined;
+    let allEntriesAdmitted = true;
     const holes = projected.holes.map((hole, index) => {
       const original = source.holes[index];
       const entry = entryFor(original, hole);
-      if (!entry) return hole;
+      if (!entry) {
+        allEntriesAdmitted = false;
+        return hole;
+      }
       const old = previous?.entries.get(original);
       const selected = old && sameEntry(old, entry) ? old : entry;
       candidate.entries.set(original, selected);
       return selected.hole;
     });
-    const result = score({ ...projected, holes });
+    const scoringCourse = { ...projected, holes };
+    const result = score === "rating" && allEntriesAdmitted
+      ? scoreCourseHoles(scoringCourse, "rating")
+      : fullScore(scoringCourse);
     // Failures and nested calls cannot publish a partially scored generation.
     owner = candidate;
     return result;

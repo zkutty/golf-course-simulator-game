@@ -50,6 +50,11 @@ export interface CourseHoleSummary {
   courseQuality: number; // 0..100
 }
 
+export type RatingHoleScore = Pick<HoleScore, "isComplete" | "isValid" | "effectiveDistance" | "corridor" | "difficultyScore">;
+export interface RatingHoleSummary {
+  holes: RatingHoleScore[];
+}
+
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
 }
@@ -93,11 +98,13 @@ export function sampleLine(a: Point, b: Point, samples = 13): Point[] {
   });
 }
 
-function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleScore {
+function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number, mode: "rating"): RatingHoleScore;
+function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleScore;
+function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number, mode?: "rating"): HoleScore | RatingHoleScore {
   const issues: string[] = [];
   if (!hole.tee || !hole.green) {
     const par = hole.parMode === "MANUAL" ? (hole.parManual ?? 4) : 4;
-    return {
+    const missing: HoleScore = {
       holeIndex,
       isComplete: false,
       isValid: false,
@@ -131,6 +138,11 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
       layoutIssues: ["Missing tee/green placement"],
       issues: ["Missing tee/green placement"],
     };
+    if (mode === "rating") {
+      const { isComplete, isValid, effectiveDistance, corridor, difficultyScore } = missing;
+      return { isComplete, isValid, effectiveDistance, corridor, difficultyScore };
+    }
+    return missing;
   }
 
   const tee = hole.tee;
@@ -144,12 +156,12 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
 
   const straightDistance = dist(tee, green);
   const scratch = getGolferProfile("SCRATCH", course);
-  const bogey = getGolferProfile("BOGEY", course);
+  const bogey = mode === "rating" ? null : getGolferProfile("BOGEY", course);
   const scratchSolve = solveShotsToGreen({ course, tee, green, golfer: scratch });
-  const bogeySolve = solveShotsToGreen({ course, tee, green, golfer: bogey });
+  const bogeySolve = mode === "rating" ? null : solveShotsToGreen({ course, tee, green, golfer: bogey! });
 
   const scratchShotsToGreen = scratchSolve.expectedShotsToGreen;
-  const bogeyShotsToGreen = bogeySolve.expectedShotsToGreen;
+  const bogeyShotsToGreen = mode === "rating" ? undefined : bogeySolve!.expectedShotsToGreen;
   const reachable = scratchSolve.reachable;
 
   const minDistOk = straightDistance * scratch.yardsPerTile >= BALANCE.shots.hole.minHoleDistanceYards;
@@ -327,6 +339,10 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
 
   const isValid = issues.length === 0 && maxOk && minDistOk;
 
+  if (mode === "rating") {
+    return { isComplete: true, isValid, effectiveDistance, corridor: corridorCounts, difficultyScore };
+  }
+
   return {
     holeIndex,
     isComplete: true,
@@ -334,7 +350,7 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
     par,
     autoPar,
     scratchShotsToGreen,
-    bogeyShotsToGreen,
+    bogeyShotsToGreen: bogeyShotsToGreen!,
     reachableInTwo,
     straightDistance,
     effectiveDistance,
@@ -351,7 +367,9 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
   };
 }
 
-interface HoleScoreCacheEntry {
+type ScoredHole = { kind: "full"; result: HoleScore } | { kind: "rating"; result: RatingHoleScore };
+
+type HoleScoreCacheEntry = ScoredHole & {
   searchDomain: ShotSearchDomain;
   width: number;
   height: number;
@@ -363,8 +381,7 @@ interface HoleScoreCacheEntry {
   tileDependencies: Map<number, Terrain>;
   elevationDependencies: Map<number, number>;
   elevationToken: object | null;
-  result: HoleScore;
-}
+};
 
 let holeScoreCache = new WeakMap<Hole, HoleScoreCacheEntry>();
 let holeScoreCacheHits = 0;
@@ -420,14 +437,20 @@ function dependenciesMatch<T>(dependencies: Map<number, T>, values: T[]): boolea
  * participated in that hole's Dijkstra search, while immutable marker and
  * obstacle identities invalidate naturally.
  */
-export function scoreHole(course: Course, hole: Hole, holeIndex: number, preparedDomain?: ShotSearchDomain): HoleScore {
+export function scoreHole(course: Course, hole: Hole, holeIndex: number, preparedDomain: ShotSearchDomain, mode: "rating"): RatingHoleScore;
+export function scoreHole(course: Course, hole: Hole, holeIndex: number, preparedDomain?: ShotSearchDomain): HoleScore;
+export function scoreHole(
+  course: Course, hole: Hole, holeIndex: number, preparedDomain?: ShotSearchDomain, mode?: "rating",
+): HoleScore | RatingHoleScore {
   course = courseWithEffectiveSurfaces(course);
   const searchDomain = preparedDomain ?? prepareShotSearchDomain(course, hole);
+  const ratingOnly = mode === "rating" && searchDomain.eligible;
   const cached = holeScoreCache.get(hole);
   const elevations = course.elevations ?? [];
   const elevationToken = searchDomain.eligible ? elevationTokenFor(elevations) : null;
   if (
     cached &&
+    (ratingOnly || cached.kind === "full") &&
     sameShotSearchDomain(cached.searchDomain, searchDomain) &&
     cached.elevationToken === elevationToken &&
     cached.width === course.width &&
@@ -453,7 +476,10 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number, prepare
       ? { elevations: trackArrayReads(course.elevations, elevationDependencies) }
       : {}),
   };
-  const result = withShotSearchDomain(trackedCourse, searchDomain, () => scoreHoleUncached(trackedCourse, hole, holeIndex));
+  const scored = withShotSearchDomain(trackedCourse, searchDomain, (): ScoredHole =>
+    ratingOnly
+      ? { kind: "rating", result: scoreHoleUncached(trackedCourse, hole, holeIndex, "rating") }
+      : { kind: "full", result: scoreHoleUncached(trackedCourse, hole, holeIndex) });
   holeScoreCache.set(hole, {
     searchDomain,
     width: course.width,
@@ -469,9 +495,9 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number, prepare
     tileDependencies,
     elevationDependencies,
     elevationToken,
-    result,
+    ...scored,
   });
-  return result;
+  return scored.result;
 }
 
 export function __getHoleScoreCacheStatsForTests(): { hits: number; misses: number } {
@@ -502,11 +528,16 @@ export function scoreSelectedCourseHole(course: Course, holeIndex: number): Hole
   return scoreHole(effectiveCourse, hole, holeIndex, prepareShotSearchDomain(effectiveCourse));
 }
 
-export function scoreCourseHoles(course: Course): CourseHoleSummary {
+export function scoreCourseHoles(course: Course, mode: "rating"): RatingHoleSummary;
+export function scoreCourseHoles(course: Course): CourseHoleSummary;
+export function scoreCourseHoles(course: Course, mode?: "rating"): RatingHoleSummary | CourseHoleSummary {
   const cached = summaryCache.get(course);
   if (cached && shotSearchConfigUnchanged(cached.searchDomain, cached.everOptimized)) return cached.result;
   const effectiveCourse = courseWithEffectiveSurfaces(course);
   const searchDomain = prepareShotSearchDomain(effectiveCourse);
+  if (mode === "rating" && searchDomain.eligible) {
+    return { holes: effectiveCourse.holes.map((hole, index) => scoreHole(effectiveCourse, hole, index, searchDomain, "rating")) };
+  }
   const result = scoreCourseHolesUncached(effectiveCourse, searchDomain);
   summaryCache.set(course, { result, searchDomain, everOptimized: !!cached?.everOptimized || searchDomain.eligible });
   return result;
