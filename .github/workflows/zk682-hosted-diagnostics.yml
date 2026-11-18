@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      webkit_snapshot_diagnostic:
+        description: Run a separate non-certifying M47 probe with trace snapshots and HAR disabled
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -57,7 +62,7 @@ jobs:
           node --input-type=module <<'NODE'
           import { execFileSync } from "node:child_process";
           import { createHash } from "node:crypto";
-          import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+          import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
           const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
           const sourceFiles = [
@@ -66,6 +71,8 @@ jobs:
             "e2e/m47-certification.e2e.ts",
             "scripts/perf-m27-fixture-profile.mjs", "scripts/zk682-m47-native-observer.py",
           ];
+          const snapshotConfig = "playwright.webkit-snapshot-diagnostic.config.ts";
+          if (existsSync(snapshotConfig)) sourceFiles.push(snapshotConfig);
           const identity = {
             schema: "coursecraft-zk682-linux-diagnostics-v1",
             candidateCommit: git("rev-parse", "HEAD"),
@@ -187,3 +194,47 @@ jobs:
             process.exitCode = 1;
           }
           NODE
+      - name: Secondary WebKit snapshots-off probe (not certification)
+        id: webkit-snapshot-probe
+        if: ${{ !cancelled() && inputs.webkit_snapshot_diagnostic && steps.install-browsers.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          DEBUG: "pw:browser"
+          PLAYWRIGHT_JSON_OUTPUT_FILE: artifacts/zk682/webkit-snapshot-diagnostic/playwright.json
+          ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS: "1"
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$ZK682_EXPECTED_COMMIT"
+          config=playwright.webkit-snapshot-diagnostic.config.ts
+          git cat-file -e "HEAD:simgolf-lite/$config"
+          git diff --exit-code HEAD --
+          output=artifacts/zk682/webkit-snapshot-diagnostic
+          test ! -e "$output"
+          mkdir -p "$output"
+          printf '%s\n' '{"schema":"coursecraft-zk256-webkit-snapshot-diagnostic-v1","certifying":false,"traceSnapshots":false,"traceHar":false}' > "$output/probe.json"
+          env -u GITHUB_SHA node scripts/zk682-run-command-receipt.mjs \
+            --id webkit-snapshot-diagnostic --output "$output/command.json" --candidate "$ZK682_EXPECTED_COMMIT" -- \
+            timeout --signal=TERM --kill-after=5s 180s ./node_modules/.bin/playwright test --config "$config" \
+            e2e/m47-certification.e2e.ts --grep-invert "ZK-813" --project=webkit-safari-proxy --workers=1 --retries=0 --reporter=list,json \
+            --output "$output/test-results"
+      - name: Upload WebKit snapshots-off evidence
+        if: ${{ !cancelled() && (steps.webkit-snapshot-probe.outcome == 'success' || steps.webkit-snapshot-probe.outcome == 'failure') }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: zk682-webkit-snapshot-diagnostic-${{ inputs.candidate_sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: |
+            simgolf-lite/artifacts/zk682/failure-diagnostics/identity.json
+            simgolf-lite/artifacts/zk682/webkit-snapshot-diagnostic/probe.json
+            simgolf-lite/artifacts/zk682/webkit-snapshot-diagnostic/command.json
+            simgolf-lite/artifacts/zk682/webkit-snapshot-diagnostic/playwright.json
+            simgolf-lite/artifacts/zk682/webkit-snapshot-diagnostic/test-results/m47-certification.e2e.ts-*/trace.zip
+            simgolf-lite/artifacts/zk682/webkit-snapshot-diagnostic/test-results/m47-certification.e2e.ts-*/video*.webm
+            simgolf-lite/artifacts/zk682/webkit-snapshot-diagnostic/test-results/m47-certification.e2e.ts-*/error-context.md
+            simgolf-lite/artifacts/zk682/webkit-snapshot-diagnostic/test-results/m47-certification.e2e.ts-*/test-failed-*.png
+            simgolf-lite/artifacts/zk682/webkit-snapshot-diagnostic/test-results/m47-certification.e2e.ts-*/inspector-desktop.png
+            simgolf-lite/artifacts/zk682/webkit-snapshot-diagnostic/test-results/m47-certification.e2e.ts-*/inspector-mobile.png
+            simgolf-lite/artifacts/zk682/webkit-snapshot-diagnostic/test-results/m47-certification.e2e.ts-*/m47-pseudo-channel.png
+          if-no-files-found: warn
+          retention-days: 7

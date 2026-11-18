@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 const COMMIT = "a".repeat(40);
 const workflow = readFileSync(new URL("../../.github/workflows/zk682-hosted-diagnostics.yml", import.meta.url), "utf8");
@@ -37,8 +39,8 @@ test("original commands use isolated receipts and M27 failure still permits the 
   const m47 = step("M47 WebKit receipt");
   assert.ok(m47.includes("if: ${{ !cancelled() && steps.install-browsers.outcome == 'success' }}"));
   assert.match(m47, /LIBGL_ALWAYS_SOFTWARE: "1"\n          DEBUG: "pw:browser"\n          PLAYWRIGHT_JSON_OUTPUT_FILE: artifacts\/zk682\/failure-diagnostics\/m47-playwright\.json\n          ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS: "1"\n        run: >-\n/);
-  assert.equal(workflow.match(/PLAYWRIGHT_JSON_OUTPUT_FILE:/g)?.length, 1);
-  assert.equal(workflow.match(/ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS:/g)?.length, 1);
+  assert.equal(workflow.match(/PLAYWRIGHT_JSON_OUTPUT_FILE: artifacts\/zk682\/failure-diagnostics\/m47-playwright\.json/g)?.length, 1);
+  assert.equal(workflow.match(/ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS:/g)?.length, 2);
   assert.match(m47, /run: >-\n          python3 scripts\/zk682-m47-native-observer\.py --\n          env -u GITHUB_SHA node/);
   assert.equal(workflow.match(/python3 scripts\/zk682-m47-native-observer\.py/g)?.length, 1);
   assert.match(m47, /--id browser-supported[\s\S]*?--candidate "\$ZK682_EXPECTED_COMMIT"\n          -- npm run test:release:browsers --\n          e2e\/m47-certification\.e2e\.ts --grep-invert "ZK-813" --project=webkit-safari-proxy --workers=1 --retries=0 --reporter=list,json$/);
@@ -83,6 +85,77 @@ test("secondary profile is opt-in, bounded, separate from both original commands
   assert.ok(identity.includes('"scripts/perf-m27-fixture-profile.mjs", "scripts/zk682-m47-native-observer.py"'));
 });
 
+test("the optional snapshots-off probe preserves the original workload and isolates its evidence", () => {
+  const name = "Secondary WebKit snapshots-off probe (not certification)";
+  const uploadName = "Upload WebKit snapshots-off evidence";
+  const root = "artifacts/zk682/webkit-snapshot-diagnostic";
+  const config = "playwright.webkit-snapshot-diagnostic.config.ts";
+  const probe = step(name);
+  assert.match(workflow, /webkit_snapshot_diagnostic:\n        description: .*\n        required: false\n        default: false\n        type: boolean/);
+  assert.ok(probe.includes("if: ${{ !cancelled() && inputs.webkit_snapshot_diagnostic && steps.install-browsers.outcome == 'success' }}"));
+  assert.match(probe, /continue-on-error: true\n        env:\n          LIBGL_ALWAYS_SOFTWARE: "1"\n          DEBUG: "pw:browser"\n/);
+  assert.ok(probe.includes(`          PLAYWRIGHT_JSON_OUTPUT_FILE: ${root}/playwright.json\n          ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS: "1"\n`));
+  assert.ok(probe.includes(`config=${config}\n          git cat-file -e "HEAD:simgolf-lite/$config"\n          git diff --exit-code HEAD --\n`));
+  assert.ok(probe.includes(`output=${root}\n          test ! -e "$output"`));
+  assert.match(probe, /"certifying":false,"traceSnapshots":false,"traceHar":false/);
+  assert.match(probe, /--id webkit-snapshot-diagnostic --output "\$output\/command\.json" --candidate "\$ZK682_EXPECTED_COMMIT" --/);
+  assert.ok(probe.includes('timeout --signal=TERM --kill-after=5s 180s ./node_modules/.bin/playwright test --config "$config"'));
+  const m47 = step("M47 WebKit receipt");
+  const args = /e2e\/m47-certification\.e2e\.ts --grep-invert "ZK-813" --project=webkit-safari-proxy --workers=1 --retries=0 --reporter=list,json/;
+  assert.match(probe, args);
+  assert.equal(probe.match(args)[0], m47.match(args)?.[0]);
+  assert.ok(probe.endsWith('            --output "$output/test-results"'));
+  assert.doesNotMatch(probe, /--trace|--timeout|failure-diagnostics|browser-supported/);
+  assert.equal(workflow.match(/PLAYWRIGHT_JSON_OUTPUT_FILE:/g)?.length, 2);
+
+  const identity = step("Record diagnostic run identity");
+  assert.ok(identity.includes(`const snapshotConfig = "${config}";\n          if (existsSync(snapshotConfig)) sourceFiles.push(snapshotConfig);`));
+  const verdict = "Require both diagnostic commands to pass";
+  assert.doesNotMatch(step(verdict), /webkit-snapshot|snapshot-diagnostic/);
+  assert.ok(workflow.indexOf(`      - name: ${verdict}`) < workflow.indexOf(`      - name: ${name}`));
+  assert.ok(workflow.indexOf(`      - name: ${name}`) < workflow.indexOf(`      - name: ${uploadName}`));
+  const artifact = step(uploadName);
+  assert.ok(artifact.includes("if: ${{ !cancelled() && (steps.webkit-snapshot-probe.outcome == 'success' || steps.webkit-snapshot-probe.outcome == 'failure') }}"));
+  assert.match(artifact, /continue-on-error: true\n        uses: actions\/upload-artifact@v4/);
+  assert.ok(artifact.includes("name: zk682-webkit-snapshot-diagnostic-${{ inputs.candidate_sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}"));
+  assert.deepEqual(artifact.match(/^ {12}simgolf-lite\/\S+$/gm).map((path) => path.trim()), [
+    "simgolf-lite/artifacts/zk682/failure-diagnostics/identity.json",
+    ...["probe.json", "command.json", "playwright.json"].map((file) => `simgolf-lite/${root}/${file}`),
+    ...["trace.zip", "video*.webm", "error-context.md", "test-failed-*.png", "inspector-desktop.png",
+      "inspector-mobile.png", "m47-pseudo-channel.png"].map((file) => `simgolf-lite/${root}/test-results/m47-certification.e2e.ts-*/${file}`),
+  ]);
+  assert.match(artifact.trimEnd(), /if-no-files-found: warn\n          retention-days: 7$/);
+});
+
+test("Playwright resolves the snapshots-off configuration with only the trace override", async () => {
+  const { configLoader } = createRequire(import.meta.url)("playwright/lib/common");
+  const { loadConfigFromFile } = configLoader;
+  const config = (name) => fileURLToPath(new URL(`../${name}`, import.meta.url));
+  const overrides = { workers: 1, retries: 0 };
+  const release = await loadConfigFromFile(config("playwright.release.config.ts"), overrides);
+  const diagnosticPath = config("playwright.webkit-snapshot-diagnostic.config.ts");
+  const diagnostic = await loadConfigFromFile(diagnosticPath, overrides);
+  const publicConfig = (loaded) => Object.fromEntries(Object.entries(loaded.config));
+  const expected = publicConfig(release);
+  const originalProjects = expected.projects;
+  assert.ok(originalProjects.some(({ name }) => name === "webkit-safari-proxy"));
+  for (const project of originalProjects) assert.equal(project.use.trace, "retain-on-failure");
+  assert.deepEqual(publicConfig(diagnostic), {
+    ...expected,
+    configFile: diagnosticPath,
+    projects: originalProjects.map((project) => ({
+      ...project,
+      use: { ...project.use, trace: { mode: "retain-on-failure", snapshots: false, screenshots: true } },
+    })),
+  });
+  assert.deepEqual(diagnostic.webServers, release.webServers);
+
+  const outputDir = config("artifacts/zk682/webkit-snapshot-diagnostic/test-results");
+  const isolated = await loadConfigFromFile(diagnosticPath, { ...overrides, outputDir });
+  for (const project of isolated.config.projects) assert.equal(project.outputDir, outputDir);
+  for (const project of originalProjects) assert.equal(project.outputDir, config("test-results"));
+});
+
 test("the actual diagnostic verdict rejects either original failure or incomplete receipts", (t) => {
   const verdict = step("Require both diagnostic commands to pass")
     .match(/node --input-type=module <<'NODE'\n([\s\S]+?)\n {10}NODE/);
@@ -109,9 +182,13 @@ test("the actual diagnostic verdict rejects either original failure or incomplet
   }
   const m27 = "headless-performance-command.json";
   const m47 = "browser-supported.json";
+  const diagnostic = join(cwd, "artifacts/zk682/webkit-snapshot-diagnostic");
+  mkdirSync(diagnostic);
+  writeFileSync(join(diagnostic, "command.json"), '{"passed":false,"exitCode":124}');
   receipt(m27, "headless-performance", 0);
   receipt(m47, "browser-supported", 0);
   assert.equal(run().status, 0);
+  writeFileSync(join(diagnostic, "command.json"), '{"passed":true,"exitCode":0}');
   receipt(m27, "headless-performance", 1);
   const m27Red = run();
   assert.equal(m27Red.status, 1);
