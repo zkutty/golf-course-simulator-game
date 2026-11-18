@@ -39,6 +39,8 @@ test("original commands use isolated receipts and M27 failure still permits the 
   assert.match(m47, /LIBGL_ALWAYS_SOFTWARE: "1"\n          DEBUG: "pw:browser"\n          PLAYWRIGHT_JSON_OUTPUT_FILE: artifacts\/zk682\/failure-diagnostics\/m47-playwright\.json\n          ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS: "1"\n        run: >-\n/);
   assert.equal(workflow.match(/PLAYWRIGHT_JSON_OUTPUT_FILE:/g)?.length, 1);
   assert.equal(workflow.match(/ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS:/g)?.length, 1);
+  assert.match(m47, /run: >-\n          python3 scripts\/zk682-m47-native-observer\.py --\n          env -u GITHUB_SHA node/);
+  assert.equal(workflow.match(/python3 scripts\/zk682-m47-native-observer\.py/g)?.length, 1);
   assert.match(m47, /--id browser-supported[\s\S]*?--candidate "\$ZK682_EXPECTED_COMMIT"\n          -- npm run test:release:browsers --\n          e2e\/m47-certification\.e2e\.ts --grep-invert "ZK-813" --project=webkit-safari-proxy --workers=1 --retries=0 --reporter=list,json$/);
   for (const command of [m27, m47]) {
     assert.match(command, /env -u GITHUB_SHA node scripts\/zk682-run-command-receipt\.mjs/);
@@ -55,12 +57,30 @@ test("the bounded raw artifact is uploaded before evaluating final command statu
   assert.ok(artifact.includes("name: zk682-failure-diagnostics-${{ inputs.candidate_sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}"));
   assert.match(artifact, /uses: actions\/upload-artifact@v4[\s\S]*?if-no-files-found: error\n          retention-days: 7$/);
   assert.deepEqual(artifact.match(/^ {12}simgolf-lite\/\S+$/gm).map((path) => path.trim()), [
-    ...["identity.json", "m27-perf.json", "headless-performance-command.json", "browser-supported.json", "m47-playwright.json"]
+    ...["identity.json", "m27-perf.json", "headless-performance-command.json", "browser-supported.json", "m47-playwright.json", "m47-native-process.json", "m27-fixture-profile.json"]
       .map((file) => `simgolf-lite/artifacts/zk682/failure-diagnostics/${file}`),
     ...["trace.zip", "video*.webm", "error-context.md", "test-failed-*.png", "inspector-desktop.png",
       "inspector-mobile.png", "m47-pseudo-channel.png"].map((file) => `simgolf-lite/test-results/m47-certification.e2e.ts-*/${file}`),
   ]);
   assert.match(step(names[3]), /if: always\(\) && steps.install-browsers.outcome == 'success'[\s\S]*?git diff --exit-code HEAD --/);
+});
+
+test("secondary profile is opt-in, bounded, separate from both original commands and verdict", () => {
+  assert.match(workflow, /profile_startup:\n        description: .*\n        required: false\n        default: false\n        type: boolean/);
+  const profile = step("Secondary startup profile (not certification)");
+  assert.ok(profile.includes("if: ${{ !cancelled() && inputs.profile_startup && steps.install-browsers.outcome == 'success' }}"));
+  assert.match(profile, /PERF_M27_FIXTURE_PROFILE: "1"/);
+  assert.match(profile, /PERF_M27_PHASE_DIAGNOSTICS: "1"/);
+  assert.match(profile, /PERF_M27_FIXTURE_PROFILE_OUTPUT: artifacts\/zk682\/failure-diagnostics\/m27-fixture-profile\.json/);
+  assert.match(profile, /set -o pipefail\n          timeout --signal=TERM --kill-after=5s 60s env -u GITHUB_SHA npm run test:perf 2>&1 \| head -c 16777216$/);
+  assert.doesNotMatch(profile, /PERF_OUTPUT_PATH|zk682-run-command-receipt|PERF_(?:MEASURE|WORK_BUDGET|STARTUP_BUDGET|HEADED|ASSERT_FRAME)|continue-on-error/);
+  for (const name of ["M27 performance receipt", "M47 WebKit receipt", "Require both diagnostic commands to pass"]) {
+    assert.doesNotMatch(step(name), /PERF_M27_FIXTURE_PROFILE|m27-fixture-profile/);
+  }
+  assert.ok(workflow.indexOf("      - name: M47 WebKit receipt") < workflow.indexOf("      - name: Secondary startup profile"));
+  assert.ok(workflow.indexOf("      - name: Secondary startup profile") < workflow.indexOf("      - name: Upload exact-candidate"));
+  const identity = step("Record diagnostic run identity");
+  assert.ok(identity.includes('"scripts/perf-m27-fixture-profile.mjs", "scripts/zk682-m47-native-observer.py"'));
 });
 
 test("the actual diagnostic verdict rejects either original failure or incomplete receipts", (t) => {

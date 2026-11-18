@@ -7,6 +7,11 @@ on:
         description: Full 40-character commit SHA to diagnose
         required: true
         type: string
+      profile_startup:
+        description: Collect a separate non-certifying startup CPU and network profile
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -59,6 +64,7 @@ jobs:
             "package-lock.json", "scripts/perf-smoke.mjs", "scripts/zk682-run-command-receipt.mjs",
             "scripts/zk682-command-receipt.mjs", "playwright.config.ts", "playwright.release.config.ts",
             "e2e/m47-certification.e2e.ts",
+            "scripts/perf-m27-fixture-profile.mjs", "scripts/zk682-m47-native-observer.py",
           ];
           const identity = {
             schema: "coursecraft-zk682-linux-diagnostics-v1",
@@ -103,12 +109,26 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_FILE: artifacts/zk682/failure-diagnostics/m47-playwright.json
           ZK682_WEBKIT_LIFECYCLE_DIAGNOSTICS: "1"
         run: >-
+          python3 scripts/zk682-m47-native-observer.py --
           env -u GITHUB_SHA node scripts/zk682-run-command-receipt.mjs
           --id browser-supported
           --output artifacts/zk682/failure-diagnostics/browser-supported.json
           --candidate "$ZK682_EXPECTED_COMMIT"
           -- npm run test:release:browsers --
           e2e/m47-certification.e2e.ts --grep-invert "ZK-813" --project=webkit-safari-proxy --workers=1 --retries=0 --reporter=list,json
+      - name: Secondary startup profile (not certification)
+        if: ${{ !cancelled() && inputs.profile_startup && steps.install-browsers.outcome == 'success' }}
+        env:
+          PERF_M27_FIXTURE_PROFILE: "1"
+          PERF_M27_PHASE_DIAGNOSTICS: "1"
+          PERF_FIXTURE: m27
+          PERF_THEME: parkland
+          PERF_FIXTURE_READY_TIMEOUT_MS: "300000"
+          PERF_M27_FIXTURE_PROFILE_OUTPUT: artifacts/zk682/failure-diagnostics/m27-fixture-profile.json
+        shell: bash
+        run: |
+          set -o pipefail
+          timeout --signal=TERM --kill-after=5s 60s env -u GITHUB_SHA npm run test:perf 2>&1 | head -c 16777216
       - name: Upload exact-candidate failure diagnostics
         if: always() && steps.verified-checkout.outcome == 'success'
         uses: actions/upload-artifact@v4
@@ -120,6 +140,8 @@ jobs:
             simgolf-lite/artifacts/zk682/failure-diagnostics/headless-performance-command.json
             simgolf-lite/artifacts/zk682/failure-diagnostics/browser-supported.json
             simgolf-lite/artifacts/zk682/failure-diagnostics/m47-playwright.json
+            simgolf-lite/artifacts/zk682/failure-diagnostics/m47-native-process.json
+            simgolf-lite/artifacts/zk682/failure-diagnostics/m27-fixture-profile.json
             simgolf-lite/test-results/m47-certification.e2e.ts-*/trace.zip
             simgolf-lite/test-results/m47-certification.e2e.ts-*/video*.webm
             simgolf-lite/test-results/m47-certification.e2e.ts-*/error-context.md

@@ -43,6 +43,10 @@ const OUTPUT_PATH = process.env.PERF_OUTPUT_PATH
   ? resolve(process.env.PERF_OUTPUT_PATH)
   : new URL(`../artifacts/m28/performance-${PERF_THEME}.json`, import.meta.url);
 const PORT = 5199;
+const fixtureProfileHelpers = process.env.PERF_M27_FIXTURE_PROFILE === "1"
+  ? await import("./perf-m27-fixture-profile.mjs")
+  : null;
+const fixtureProfileOutput = fixtureProfileHelpers?.profileOutputPath(process.env, M27_PHASES, OUTPUT_PATH);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -101,47 +105,144 @@ const coldStartedAt = performance.now();
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 await page.getByRole("button", { name: "Quick Start" }).waitFor({ state: "visible", timeout: 30_000 });
 const coldStartupMs = performance.now() - coldStartedAt;
-const fixtureStartedAt = performance.now();
-const phaseHost = M27_PHASES ? { fixtureStart: fixtureStartedAt } : null;
-await page.goto(`http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-if (phaseHost) phaseHost.domContentLoaded = performance.now();
-console.log("[perf-smoke] document loaded; waiting for the visible course canvas …");
-if (phaseHost) phaseHost.sleepStart = performance.now();
-await sleep(500);
-if (phaseHost) phaseHost.sleepEnd = performance.now();
-const canvas = page.locator(".cc-pixi-stage canvas");
-try {
-  if (phaseHost) phaseHost.visibleStart = performance.now();
-  await canvas.waitFor({ state: "visible", timeout: FIXTURE_READY_TIMEOUT_MS });
-  if (phaseHost) phaseHost.visibleEnd = performance.now();
-} catch (error) {
-  const status = await page.evaluate(() => {
-    const text = window.render_game_to_text?.();
-    const parsed = text ? JSON.parse(text) : null;
-    return {
-      screen: parsed?.screen ?? null,
-      course: parsed?.course?.name ?? null,
-      theme: parsed?.course?.theme ?? null,
-      holesOpen: parsed?.course?.holesOpen ?? null,
-      canvasCount: document.querySelectorAll("canvas").length,
-      bodyText: document.body.innerText.slice(0, 300),
-    };
-  });
-  console.error(`[perf-smoke] fixture readiness timeout: ${JSON.stringify(status)}`);
-  throw error;
+const fixtureURL = `http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`;
+async function measureFixture() {
+  const fixtureStartedAt = performance.now();
+  const phaseHost = M27_PHASES ? { fixtureStart: fixtureStartedAt } : null;
+  await page.goto(fixtureURL, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  if (phaseHost) phaseHost.domContentLoaded = performance.now();
+  console.log("[perf-smoke] document loaded; waiting for the visible course canvas …");
+  if (phaseHost) phaseHost.sleepStart = performance.now();
+  await sleep(500);
+  if (phaseHost) phaseHost.sleepEnd = performance.now();
+  const canvas = page.locator(".cc-pixi-stage canvas");
+  try {
+    if (phaseHost) phaseHost.visibleStart = performance.now();
+    await canvas.waitFor({ state: "visible", timeout: FIXTURE_READY_TIMEOUT_MS });
+    if (phaseHost) phaseHost.visibleEnd = performance.now();
+  } catch (error) {
+    const status = await page.evaluate(() => {
+      const text = window.render_game_to_text?.();
+      const parsed = text ? JSON.parse(text) : null;
+      return {
+        screen: parsed?.screen ?? null,
+        course: parsed?.course?.name ?? null,
+        theme: parsed?.course?.theme ?? null,
+        holesOpen: parsed?.course?.holesOpen ?? null,
+        canvasCount: document.querySelectorAll("canvas").length,
+        bodyText: document.body.innerText.slice(0, 300),
+      };
+    });
+    console.error(`[perf-smoke] fixture readiness timeout: ${JSON.stringify(status)}`);
+    throw error;
+  }
+  if (phaseHost) phaseHost.dimensionsStart = performance.now();
+  await page.waitForFunction(() => {
+    const target = document.querySelector(".cc-pixi-stage canvas");
+    return target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
+  }, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
+  if (phaseHost) phaseHost.dimensionsEnd = performance.now();
+  if (phaseHost) phaseHost.boundsStart = performance.now();
+  const box = await canvas.boundingBox();
+  const fixtureMeasuredAt = performance.now();
+  const fixtureLoadMs = fixtureMeasuredAt - fixtureStartedAt;
+  if (phaseHost) phaseHost.boundsEnd = fixtureMeasuredAt;
+  console.log(`[perf-smoke] game state ready in ${fixtureLoadMs.toFixed(0)}ms`);
+  return { box, phaseHost, fixtureLoadMs };
 }
-if (phaseHost) phaseHost.dimensionsStart = performance.now();
-await page.waitForFunction(() => {
-  const target = document.querySelector(".cc-pixi-stage canvas");
-  return target && (target.width || target.clientWidth) > 0 && (target.height || target.clientHeight) > 0;
-}, null, { timeout: FIXTURE_READY_TIMEOUT_MS });
-if (phaseHost) phaseHost.dimensionsEnd = performance.now();
-if (phaseHost) phaseHost.boundsStart = performance.now();
-const box = await canvas.boundingBox();
-const fixtureMeasuredAt = performance.now();
-const fixtureLoadMs = fixtureMeasuredAt - fixtureStartedAt;
-if (phaseHost) phaseHost.boundsEnd = fixtureMeasuredAt;
-console.log(`[perf-smoke] game state ready in ${fixtureLoadMs.toFixed(0)}ms`);
+
+async function runSecondaryFixtureProfile() {
+  const { startProfile, withTimeout, writeProfileOutput } = fixtureProfileHelpers;
+  let measurement = null;
+  let capture = null;
+  let setupFailed = false;
+  let browserClosed = false;
+  let measurementFailed = false;
+  let measurementTimedOut = false;
+  try {
+    let abandoned = false;
+    const acquisition = page.context().newCDPSession(page).then((session) => {
+      if (abandoned) void withTimeout(() => session.detach(), 2_000).catch(() => {});
+      return session;
+    });
+    let session;
+    try {
+      session = await withTimeout(() => acquisition, 2_000);
+    } catch (error) {
+      abandoned = true;
+      throw error;
+    }
+    capture = await startProfile(session, fixtureURL);
+  } catch {
+    setupFailed = true;
+  }
+  if (capture) {
+    try {
+      measurement = await Promise.race([
+        measureFixture(),
+        capture.deadline.then(() => {
+          measurementTimedOut = true;
+          return null;
+        }),
+      ]);
+    } catch {
+      measurementFailed = true;
+    }
+  }
+  const observed = capture && await capture.finish(
+    measurement?.box ? "fixture-bounds" : "fixture-readiness-incomplete",
+    measurement?.box ? async () => {
+      const clockBefore = performance.now();
+      const pageEvidence = await page.evaluate(() => {
+        const canvas = document.querySelector(".cc-pixi-stage canvas");
+        const gl = canvas?.getContext("webgl2") ?? canvas?.getContext("webgl") ?? null;
+        const debug = gl?.getExtension("WEBGL_debug_renderer_info");
+        return {
+          phasePage: window.__ccM27PhaseProbe?.read?.() ?? null,
+          userAgent: navigator.userAgent.slice(0, 512),
+          viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
+          visibilityState: document.visibilityState,
+          renderer: debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)).slice(0, 512) : null,
+        };
+      });
+      return { ...pageEvidence, clockBefore, clockAfter: performance.now() };
+    } : undefined,
+  );
+  const evidence = observed?.browserEvidence;
+  const phase = measurement && evidence?.phasePage ? summarizeM27Phases({
+    host: measurement.phaseHost,
+    fixtureLoadMs: measurement.fixtureLoadMs,
+    page: evidence.phasePage,
+    clockBefore: evidence.clockBefore,
+    clockAfter: evidence.clockAfter,
+  }) : null;
+  const browserVersion = browser.version();
+  try {
+    await withTimeout(() => browser.close(), 5_000);
+    browserClosed = true;
+  } catch {
+    /* Outer process ownership is required for a wedged browser. */
+  } finally {
+    vite.kill();
+  }
+  const status = !setupFailed && !measurementFailed && measurement?.box && browserClosed
+    && observed?.status === "observed" && phase?.status === "observed" ? "observed" : "incomplete";
+  const exported = writeProfileOutput(fixtureProfileOutput, {
+    status, setupFailed, measurementFailed, measurementTimedOut, browserClosed,
+    productParent: "14c5d136c2247735782a7304bc68c11aa875477d",
+    captureCommit: process.env.VITE_COMMIT_SHA ?? null,
+    browserVersion,
+    coldStartupMs, fixtureLoadMs: measurement?.fixtureLoadMs ?? null,
+    fixtureBudgetMs: FIXTURE_LOAD_BUDGET_MS,
+    originalTimedPrefixCompleted: Boolean(measurement?.box),
+    phase,
+    profile: observed,
+  });
+  process.exit(exported === "observed" ? 0 : 2);
+}
+
+if (fixtureProfileOutput) await runSecondaryFixtureProfile();
+const { box, phaseHost, fixtureLoadMs } = await measureFixture();
 await sleep(1200);
 if (!box) throw new Error("performance fixture did not create a renderer canvas");
 
