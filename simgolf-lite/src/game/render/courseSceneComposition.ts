@@ -702,6 +702,26 @@ function candidateBounds(occupied: readonly HabitatTileCoordinate[]): HabitatGri
   return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
 }
 
+function* shapeCandidateAnchors(course: Course, cells: ReadonlySet<number>): Iterable<Point> {
+  const width = Object.getOwnPropertyDescriptor(course, "width")?.value;
+  const height = Object.getOwnPropertyDescriptor(course, "height")?.value;
+  if (Number.isSafeInteger(width) && width > 0 && Number.isSafeInteger(height) && height > 0
+    && Number.isSafeInteger(width * height)) {
+    const anchors: Point[] = [];
+    for (const value of cells) {
+      if (!Number.isSafeInteger(value) || value < 0 || value >= width * height) break;
+      const point = pointFor(course, value);
+      if (!inside(course, point) || cell(course, point.x, point.y) !== value) break;
+      anchors.push(point);
+    }
+    if (anchors.length === cells.size) {
+      yield* anchors.sort(comparePoints);
+      return;
+    }
+  }
+  for (let y = 0; y < course.height; y += 1) for (let x = 0; x < course.width; x += 1) yield { x, y };
+}
+
 function shapeCandidates(course: Course, labels: ReadonlyMap<number, EvidenceLabel>): readonly HabitatCandidate[] {
   const groups = new Map<string, { label: EvidenceLabel; cells: Set<number> }>();
   for (const [value, label] of labels) {
@@ -733,7 +753,7 @@ function shapeCandidates(course: Course, labels: ReadonlyMap<number, EvidenceLab
     // Only choose shapes already expressible by the reduced topology atlas.
     // We inspect all local source-edge possibilities, but render only a small,
     // separated deterministic subset rather than every overlapping square.
-    for (let y = 0; y < course.height; y += 1) for (let x = 0; x < course.width; x += 1) {
+    for (const { x, y } of shapeCandidateAnchors(course, cells)) {
       if (!has(x, y)) continue;
       // A full 3x3 square or a clipped corner needs at least eight cells.
       if (policy.maxCells >= 8) {
