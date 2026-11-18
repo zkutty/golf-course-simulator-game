@@ -318,7 +318,10 @@ export function useLiveSimulation(args: {
   const onRoundRef = useRef(onRoundCompleted);
   const skipNextReconcileRef = useRef(false);
   const operationPolicyRef = useRef({ tutorialThreeHolePreview: publicThreeHoleOperation });
-  const courseCanReceiveArrivalsRef = useRef(courseCanReceiveLiveArrivals(course, { tutorialThreeHolePreview: publicThreeHoleOperation }));
+  const [initialCourseCanReceiveArrivals] = useState(() =>
+    courseCanReceiveLiveArrivals(course, { tutorialThreeHolePreview: publicThreeHoleOperation })
+  );
+  const courseCanReceiveArrivalsRef = useRef(initialCourseCanReceiveArrivals);
 
   const buildRenderData = useCallback((live: LiveState) => {
     renderBufferIndexRef.current = renderBufferIndexRef.current === 0 ? 1 : 0;
